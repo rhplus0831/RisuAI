@@ -1,6 +1,7 @@
+import type { FastifyDatabase } from './serverTypes.js'
 import type { DatabaseSync } from 'node:sqlite'
 import type { BardWikiGlobalSettings } from '@risuai/protocol'
-import type { BardWikiChatRow, BardWikiGenerationDatabase } from '../bardWikiTypes.js'
+import type { BardWikiChatRow } from '../bardWikiTypes.js'
 import { getBardWikiChatSettings } from '../bardWikiRepository.js'
 import {
   readBardWikiGlobalSettings,
@@ -63,7 +64,7 @@ export function bardWikiRequestHistoryMetadata(
 /** Build committed BardWiki rows for the shared memory_bridge stage. */
 export function buildBardWikiPromptRows(input: {
   db: DatabaseSync
-  database: BardWikiGenerationDatabase
+  database: FastifyDatabase
   querySource: PromptMemoryQuerySourceInput
 }): BardWikiPromptAssembly {
   const globalSettings = readBardWikiGlobalSettings(input.database.bardWiki)

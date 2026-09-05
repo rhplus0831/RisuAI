@@ -278,6 +278,55 @@ describe('server Lua runtime — pure edit-hook dispatch', () => {
   })
 })
 
+describe('server Lua runtime — complete chat replacement contract', () => {
+  it('keeps only role/data and cannot introduce new speaker identities through setFullChat', async () => {
+    const { ctx } = makeRuntime({
+      chat: makeChat({ message: [{ role: 'char', data: 'before', saying: 'existing', name: 'Existing' }] }),
+    })
+    const result = await runServerLua(
+      {
+        code: `
+      listenEdit('editRequest', function(id, data, meta)
+        setFullChat(id, {
+          {role='char',data='replacement',saying='new-sibling',name='Injected name',future='extension'},
+          {role='user',data='question',saying='another-sibling'},
+        })
+        return data
+      end)
+    `,
+        mode: 'editRequest',
+        data: rows('request'),
+      },
+      ctx,
+    )
+    expect(result.error).toBeUndefined()
+    expect(ctx.chat.message).toEqual([
+      { role: 'char', data: 'replacement' },
+      { role: 'user', data: 'question' },
+    ])
+  })
+
+  it('rejects non-text complete chat replacements before mutating the working history', async () => {
+    const { ctx } = makeRuntime({ chat: makeChat({ message: [{ role: 'char', data: 'before' }] }) })
+    const before = structuredClone(ctx.chat.message)
+    const result = await runServerLua(
+      {
+        code: `
+      listenEdit('editRequest', function(id, data, meta)
+        setFullChat(id, {{role='char',data=42}})
+        return data
+      end)
+    `,
+        mode: 'editRequest',
+        data: rows('request'),
+      },
+      ctx,
+    )
+    expect(result.error).toContain('setFullChat expects text message records')
+    expect(ctx.chat.message).toEqual(before)
+  })
+})
+
 describe('server Lua runtime — request() egress guard (SSRF)', () => {
   it('classifies private / loopback / link-local / metadata / ULA addresses as blocked', () => {
     for (const blocked of [
@@ -1497,6 +1546,63 @@ describe('server Lua runtime — pre-warmed engines', () => {
 })
 
 describe('server Lua runtime — runLuaEditTrigger entry', () => {
+  it.each([
+    { mode: 'editRequest', body: "return 'wrong channel'" },
+    { mode: 'editRequest', body: "return {{role='user',content=42}}" },
+    { mode: 'editOutput', body: 'return 42' },
+  ])('rejects malformed $mode edit-hook outputs at the Lua boundary: $body', async ({ mode, body }) => {
+    const chat = makeChat()
+    const char = makeChar({
+      chats: [chat],
+      triggerscript: [
+        {
+          comment: 'bad output',
+          type: 'request',
+          conditions: [],
+          effect: [{ type: 'triggerlua', code: `listenEdit('${mode}', function(id,data,meta) ${body} end)` }],
+        },
+      ],
+    })
+    const { ctx } = makeRuntime({ chat, char })
+    const { char: _char, ...editCtx } = ctx
+    const result =
+      mode === 'editOutput'
+        ? runLuaEditTrigger(char, mode, 'original', undefined, editCtx)
+        : runLuaEditTrigger(char, mode, rows('original'), undefined, editCtx)
+    await expect(result).rejects.toThrow('Lua edit hook expected')
+  })
+
+  it('preserves valid prompt-row extension data and null/no-result fallback', async () => {
+    const chat = makeChat()
+    const char = makeChar({
+      chats: [chat],
+      triggerscript: [
+        {
+          comment: 'output',
+          type: 'request',
+          conditions: [],
+          effect: [
+            {
+              type: 'triggerlua',
+              code: `
+      listenEdit('editRequest', function(id,data,meta)
+        data[1].future = {label='preserved'}
+        return data
+      end)
+      listenEdit('editOutput', function(id,data,meta) return nil end)
+    `,
+            },
+          ],
+        },
+      ],
+    })
+    const { ctx } = makeRuntime({ chat, char })
+    const { char: _char, ...editCtx } = ctx
+    const output = await runLuaEditTrigger(char, 'editRequest', rows('valid'), undefined, editCtx)
+    expect(output[0]).toEqual({ role: 'user', content: 'valid', future: { label: 'preserved' } })
+    expect(await runLuaEditTrigger(char, 'editOutput', 'unchanged', undefined, editCtx)).toBe('unchanged')
+  })
+
   it('runs a character triggerlua editRequest hook over the rows', async () => {
     const chat = makeChat()
     const char = makeChar({

@@ -1,6 +1,7 @@
+import { decodeMemoryGenerationSettings } from './prompt/generationInputDecoder.js'
 import { createHash } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
-import type { FastifyChat as Chat, FastifyDatabase as Database } from './prompt/serverTypes.js'
+import type { GenerationPreflightChat as Chat, MemoryGenerationSettings as Database } from './prompt/serverTypes.js'
 import { buildHypaV3SummaryPrompt } from './memorySummaryPrompt.js'
 import { normalizeHypaV3Settings, type HypaV3Settings } from './memoryPlanner.js'
 import {
@@ -49,20 +50,6 @@ interface HypaV3SummarizeJobPayload {
   rangeEndSeq: number
   messageIndexes: number[]
   chatMemos: string[]
-}
-
-interface DatabaseLike {
-  hypaV3Presets?: unknown
-  selectedHypaV3PresetId?: unknown
-  characters?: unknown
-}
-
-interface ChatLike {
-  id?: unknown
-  generationSettings?: {
-    modelPresetId?: string
-    promptPresetId?: string
-  }
 }
 
 export function createSummarizeMemoryJobHandler(
@@ -394,7 +381,7 @@ function loadDatabase(opts: SummarizeMemoryJobHandlerOptions, chatId: string): D
   if (!isRecord(database)) {
     throw new Error('persisted database is missing')
   }
-  return database as unknown as Database
+  return decodeMemoryGenerationSettings(database)
 }
 
 function resolveChatBoundMemoryDatabase(database: Database, chatId: string): Database {
@@ -402,20 +389,20 @@ function resolveChatBoundMemoryDatabase(database: Database, chatId: string): Dat
   const modelPresetId = chat?.generationSettings?.modelPresetId?.trim()
   if (!modelPresetId) return database
 
-  const modelPreset = database.modelPresets?.find((preset: Record<string, any>) => preset?.id === modelPresetId)
+  const modelPreset = database.modelPresets?.find((preset) => preset?.id === modelPresetId)
   if (!modelPreset) {
     throw new Error(`model preset ${modelPresetId} bound to chat ${chatId} was not found`)
   }
 
   const promptPresetId = chat?.generationSettings?.promptPresetId?.trim()
   const promptPreset = promptPresetId
-    ? database.promptPresets?.find((preset: Record<string, any>) => preset?.id === promptPresetId)
+    ? database.promptPresets?.find((preset) => preset?.id === promptPresetId)
     : undefined
   if (promptPresetId && !promptPreset) {
     throw new Error(`prompt preset ${promptPresetId} bound to chat ${chatId} was not found`)
   }
-  const effectiveDatabase = structuredClone(database) as Database
-  applyEffectivePresetComposition(effectiveDatabase as unknown as Record<string, unknown>, {
+  const effectiveDatabase: Database = { ...database }
+  applyEffectivePresetComposition(effectiveDatabase, {
     modelPreset,
     promptPreset,
     scope: 'model-runtime',
@@ -423,7 +410,7 @@ function resolveChatBoundMemoryDatabase(database: Database, chatId: string): Dat
   return effectiveDatabase
 }
 
-function findChatById(database: Database, chatId: string): ChatLike | undefined {
+function findChatById(database: Database, chatId: string): Chat | undefined {
   for (const character of database.characters ?? []) {
     const chat = character.chats?.find((candidate: Chat) => candidate.id === chatId)
     if (chat) return chat
@@ -432,31 +419,12 @@ function findChatById(database: Database, chatId: string): ChatLike | undefined 
 }
 
 function resolveHypaV3Settings(database: Database): HypaV3Settings {
-  const db = database as DatabaseLike
-  let rawSettings: unknown = null
-  const presetId = hypaV3PresetIndexFromStableId({
-    hypaV3Presets: db.hypaV3Presets,
-    selectedHypaV3PresetId: db.selectedHypaV3PresetId,
-  })
-  if (Array.isArray(db.hypaV3Presets)) {
-    const preset = db.hypaV3Presets[presetId]
-    if (isRecord(preset)) rawSettings = preset.settings
-  }
-  return normalizeHypaV3Settings(isRecord(rawSettings) ? rawSettings : null).settings
+  const presetIndex = hypaV3PresetIndexFromStableId(database)
+  return normalizeHypaV3Settings(database.hypaV3Presets?.[presetIndex]?.settings).settings
 }
 
 function assertChatExists(database: Database, chatId: string): void {
-  const db = database as DatabaseLike
-  if (!Array.isArray(db.characters)) {
-    throw new Error(`chat data not found for chat ${chatId}`)
-  }
-  for (const character of db.characters) {
-    if (!isRecord(character) || !Array.isArray(character.chats)) continue
-    for (const chat of character.chats as ChatLike[]) {
-      if (chat?.id === chatId) return
-    }
-  }
-  throw new Error(`chat data not found for chat ${chatId}`)
+  if (!findChatById(database, chatId)) throw new Error(`chat data not found for chat ${chatId}`)
 }
 
 function persistSummary(

@@ -20,11 +20,11 @@ const MAX_COMPLEX_REGEX_TIMEOUT_MS = 10 * 60 * 1000
 export type BoundedRegexStage = 'input' | 'output' | 'display'
 
 export interface BoundedRegexSettings {
-  complexRegexCompatibilityMode: 'strict' | 'worker'
-  complexRegexInputTimeoutMs: number
-  complexRegexOutputTimeoutMs: number
-  complexRegexDisplayTimeoutMs: number
-  regexOutputSizeLimitMiB: number
+  complexRegexCompatibilityMode?: 'strict' | 'worker'
+  complexRegexInputTimeoutMs?: number
+  complexRegexOutputTimeoutMs?: number
+  complexRegexDisplayTimeoutMs?: number
+  regexOutputSizeLimitMiB?: number
 }
 
 export interface BoundedRegexCompatibilityOptions {

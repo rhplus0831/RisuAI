@@ -1,3 +1,5 @@
+import Ajv from 'ajv'
+import { PromptChatRowSchema } from '@risuai/protocol/generation-sse'
 import { LuaFactory, type LuaEngine } from 'wasmoon'
 import { readFile } from 'node:fs/promises'
 import type { DatabaseSync } from 'node:sqlite'
@@ -855,18 +857,16 @@ export function throwServerLuaFailure(result: ServerLuaResult, context: string):
 function asCharacter(ctx: ServerLuaRuntimeContext): character | undefined {
   const char = ctx.char
   if (!char) return undefined
-  const type = (char as { type?: unknown }).type
-  if (type === 'character') return char as character
-  if ((type === undefined || type === null) && typeof (char as { chaId?: unknown }).chaId === 'string') {
-    return char as character
+  const type = char.type
+  if (type === 'character') return char
+  if ((type === undefined || type === null) && typeof char.chaId === 'string') {
+    return char
   }
   return undefined
 }
 
 function selectedPersonaProfileField(database: Database, field: 'name' | 'personaPrompt'): string | undefined {
-  const personas = Array.isArray(database.personas)
-    ? (database.personas as Array<{ id?: unknown; name?: unknown; personaPrompt?: unknown }>)
-    : []
+  const personas = Array.isArray(database.personas) ? database.personas : []
   const persona = personas[selectedPersonaIndexFromStableId(database)]
   if (!persona || typeof persona.id !== 'string') return undefined
   const value = persona[field]
@@ -1084,12 +1084,12 @@ async function runLuaLlm(
 ): Promise<LuaLlmResult> {
   try {
     const profile = resolveLuaLlmProfile(state, role)
-    const database = {
+    const database: Database = {
       ...state.ctx.database,
       aiModel: profile.modelId,
       halfStreaming: false,
       useStreaming: options.streaming === true,
-    } as Database
+    }
     if (profile.runtimeOptions.maxResponse !== undefined) database.maxResponse = profile.runtimeOptions.maxResponse
     if (profile.runtimeOptions.rawTemperature !== undefined)
       database.temperature = profile.runtimeOptions.rawTemperature
@@ -1131,8 +1131,7 @@ function resolveLuaLlmProfile(state: RuntimeState, role: ModelRole): ResolvedMod
   const source = state.source
   const overrides =
     source?.ownerType === 'module'
-      ? state.ctx.database.modules?.find((module: Record<string, any>) => module.id === source.ownerId)
-          ?.scriptModelOverrides
+      ? state.ctx.database.modules?.find((module) => module.id === source.ownerId)?.scriptModelOverrides
       : asCharacter(state.ctx)?.scriptModelOverrides
   const profileId =
     role === 'scriptMain' || role === 'scriptAux' ? scriptModelOverrideProfileId(overrides, role) : undefined
@@ -1162,8 +1161,8 @@ async function runLuaLlmMain(
   state: RuntimeState,
   role: ModelRole,
   promptStr: string,
-  useMultimodal = false,
-  optionsStr = '',
+  useMultimodal: boolean = false,
+  optionsStr: string = '',
   traceFn?: 'LLM' | 'axLLM',
 ): Promise<string | undefined> {
   const fn = traceFn ?? (role === 'scriptAux' ? 'axLLM' : 'LLM')
@@ -1324,6 +1323,11 @@ function randomImageSeed(): number {
   return Math.floor(Math.random() * 0x1_0000_0000)
 }
 
+function requiredImageSetting<T>(value: T | undefined, field: string): T {
+  if (value === undefined) throw new Error(`image generation setting ${field} is missing`)
+  return value
+}
+
 function buildLuaImageGenerationRequest(
   database: Database,
   prompt: string,
@@ -1332,8 +1336,8 @@ function buildLuaImageGenerationRequest(
   const credential = { source: 'stored' as const }
   switch (database.sdProvider) {
     case 'novelai': {
-      const config = database.NAIImgConfig
-      const model = database.NAIImgModel
+      const config = requiredImageSetting(database.NAIImgConfig, 'NAIImgConfig')
+      const model = requiredImageSetting(database.NAIImgModel, 'NAIImgModel')
       const isV2OrV3 =
         model.includes('nai-diffusion-3') ||
         model.includes('nai-diffusion-furry-3') ||
@@ -1353,10 +1357,18 @@ function buildLuaImageGenerationRequest(
           model.includes('nai-diffusion-3') ||
           model.includes('nai-diffusion-furry-3')
         ) {
-          skipCfgAboveSigma = Math.sqrt(config.width * config.height) * 0.01889
+          skipCfgAboveSigma =
+            Math.sqrt(
+              requiredImageSetting(config.width, 'NAIImgConfig.width') *
+                requiredImageSetting(config.height, 'NAIImgConfig.height'),
+            ) * 0.01889
         }
         if (model.includes('nai-diffusion-4-5-full') || model.includes('nai-diffusion-4-5-curated')) {
-          skipCfgAboveSigma = Math.sqrt(config.width * config.height) * 0.05766
+          skipCfgAboveSigma =
+            Math.sqrt(
+              requiredImageSetting(config.width, 'NAIImgConfig.width') *
+                requiredImageSetting(config.height, 'NAIImgConfig.height'),
+            ) * 0.05766
         }
       }
       const parameters: Record<string, unknown> = {
@@ -1431,7 +1443,7 @@ function buildLuaImageGenerationRequest(
         credential,
         prompt,
         negativePrompt,
-        model: database.stabilityModel,
+        model: requiredImageSetting(database.stabilityModel, 'stabilityModel'),
         style: database.stabllityStyle || '',
       }
     case 'fal':
@@ -1439,11 +1451,11 @@ function buildLuaImageGenerationRequest(
         provider: 'fal',
         credential,
         prompt,
-        model: database.falModel,
-        width: database.sdConfig.width,
-        height: database.sdConfig.height,
+        model: requiredImageSetting(database.falModel, 'falModel'),
+        width: requiredImageSetting(database.sdConfig, 'sdConfig').width,
+        height: requiredImageSetting(database.sdConfig, 'sdConfig').height,
         ...(database.falModel === 'fal-ai/flux-lora' && database.falLora?.trim()
-          ? { lora: { path: database.falLora, scale: database.falLoraScale } }
+          ? { lora: { path: database.falLora, scale: requiredImageSetting(database.falLoraScale, 'falLoraScale') } }
           : {}),
       }
     case 'Imagen':
@@ -1451,19 +1463,19 @@ function buildLuaImageGenerationRequest(
         provider: 'imagen',
         credential,
         prompt,
-        model: database.ImagenModel,
-        imageSize: database.ImagenImageSize,
-        aspectRatio: database.ImagenAspectRatio,
-        personGeneration: database.ImagenPersonGeneration,
+        model: requiredImageSetting(database.ImagenModel, 'ImagenModel'),
+        imageSize: requiredImageSetting(database.ImagenImageSize, 'ImagenImageSize'),
+        aspectRatio: requiredImageSetting(database.ImagenAspectRatio, 'ImagenAspectRatio'),
+        personGeneration: requiredImageSetting(database.ImagenPersonGeneration, 'ImagenPersonGeneration'),
       }
     case 'openai-compat':
       return { provider: 'openai-compat', credential, prompt }
     case 'wavespeed': {
-      const config = database.wavespeedImage
+      const config = requiredImageSetting(database.wavespeedImage, 'wavespeedImage')
       const loras = Array.isArray(config.loras)
         ? config.loras
-            .filter((lora: { path?: string; scale?: number }) => lora?.path?.trim())
-            .map((lora: { path?: string; scale?: number }) => ({
+            .filter((lora) => lora?.path?.trim())
+            .map((lora) => ({
               path: lora.path,
               scale: typeof lora.scale === 'number' ? lora.scale : 1,
             }))
@@ -1503,7 +1515,7 @@ async function runLuaImageGeneration(state: RuntimeState, prompt: string, negati
       buildLuaImageGenerationRequest(state.ctx.database, String(prompt ?? ''), String(negativePrompt ?? '')),
     )
     const execute = state.ctx.luaImageGeneration?.execute ?? executeImageGeneration
-    const image = await execute(request, state.ctx.database as unknown as Record<string, unknown>, {
+    const image = await execute(request, state.ctx.database, {
       signal: state.ctx.signal,
     })
     const assetId = await persistLuaGeneratedImage(state, image)
@@ -1527,8 +1539,8 @@ const UNBOUND_RUNTIME_STATE: RuntimeState = (() => {
   aborted.abort()
   return {
     ctx: {
-      chat: { message: [] } as unknown as Chat,
-      database: {} as Database,
+      chat: { message: [], note: '', name: '', localLore: [] },
+      database: { characters: [] },
       selectedCharID: 0,
       chatPage: 0,
       varEngine: null as unknown as TriggerVarEngine,
@@ -1562,10 +1574,10 @@ const UNBOUND_RUNTIME_STATE: RuntimeState = (() => {
  */
 function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
   let state: RuntimeState = UNBOUND_RUNTIME_STATE
-  const declare = (name: string, fn: (...args: any[]) => unknown) => {
+  const declare = <Args extends unknown[]>(name: string, fn: (...args: Args) => unknown) => {
     // Every host fn is the abort checkpoint: once the request signal
     // fires, the next host call throws, terminating the surrounding pcall.
-    engine.global.set(name, (...args: any[]) => {
+    engine.global.set(name, (...args: Args) => {
       if (state.ctx.signal?.aborted) {
         throw new LuaAbortError('request aborted')
       }
@@ -1832,11 +1844,14 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
   )
   declare('setFullChatMain', (id: string, value: string) => {
     if (!canWrite(id)) return
-    const parsed = JSON.parse(value) as Array<{ role: string; data: string }>
-    state.ctx.chat.message = parsed.map((v) => ({
-      role: v.role === 'user' ? 'user' : 'char',
-      data: v.data,
-    }))
+    const parsed: unknown = JSON.parse(value)
+    if (!Array.isArray(parsed)) throw new Error('setFullChat expects an array')
+    state.ctx.chat.message = parsed.map((row: unknown): Message => {
+      if (!row || typeof row !== 'object' || !('data' in row) || typeof row.data !== 'string') {
+        throw new Error('setFullChat expects text message records')
+      }
+      return { role: 'role' in row && row.role === 'user' ? 'user' : 'char', data: row.data }
+    })
   })
   declare('getCharacterLastMessage', (_id: string) => {
     const messages = state.ctx.chat.message
@@ -1959,7 +1974,7 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
         secondkey: secondKey,
         selective: !!secondKey,
         useRegex: regex,
-      } as never)
+      })
     },
   )
   declare('getLoreBooksMain', (_id: string, search: string) => {
@@ -2036,7 +2051,7 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
     if (!canLowLevel(id)) return
     return runLuaSimilarity(state, String(source ?? ''), values)
   })
-  declare('generateImage', async (id: string, prompt: string, negativePrompt = '') => {
+  declare('generateImage', async (id: string, prompt: string, negativePrompt: string = '') => {
     if (!canLowLevel(id)) return
     return runLuaImageGeneration(state, prompt, negativePrompt)
   })
@@ -2048,7 +2063,7 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
   })
 
   // Supported low-level LLM host fns.
-  declare('LLMMain', async (id: string, promptStr: string, useMultimodal = false, optionsStr = '') => {
+  declare('LLMMain', async (id: string, promptStr: string, useMultimodal: boolean = false, optionsStr: string = '') => {
     const progressCall = state.progressSink?.beginLlmCall('LLM')
     if (!canLowLevel(id)) {
       progressCall?.finish()
@@ -2066,24 +2081,27 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
       progressCall?.finish()
     }
   })
-  declare('axLLMMain', async (id: string, promptStr: string, useMultimodal = false, optionsStr = '') => {
-    const progressCall = state.progressSink?.beginLlmCall('axLLM')
-    if (!canLowLevel(id)) {
-      progressCall?.finish()
-      state.traceSink?.recordHostEvent({
-        type: 'llm',
-        fn: 'axLLM',
-        status: 'blocked',
-        promptSummary: summarizeLuaTraceValue(promptStr),
-      })
-      return
-    }
-    try {
-      return await runLuaLlmMain(state, 'scriptAux', promptStr, useMultimodal, optionsStr, 'axLLM')
-    } finally {
-      progressCall?.finish()
-    }
-  })
+  declare(
+    'axLLMMain',
+    async (id: string, promptStr: string, useMultimodal: boolean = false, optionsStr: string = '') => {
+      const progressCall = state.progressSink?.beginLlmCall('axLLM')
+      if (!canLowLevel(id)) {
+        progressCall?.finish()
+        state.traceSink?.recordHostEvent({
+          type: 'llm',
+          fn: 'axLLM',
+          status: 'blocked',
+          promptSummary: summarizeLuaTraceValue(promptStr),
+        })
+        return
+      }
+      try {
+        return await runLuaLlmMain(state, 'scriptAux', promptStr, useMultimodal, optionsStr, 'axLLM')
+      } finally {
+        progressCall?.finish()
+      }
+    },
+  )
   declare('simpleLLM', async (id: string, prompt: string) => {
     if (!canLowLevel(id)) return
     return runLuaLlm(state, 'scriptMain', [{ role: 'user', content: String(prompt ?? '') } as PromptMessage])
@@ -2578,6 +2596,20 @@ function summarizeLuaEditContent(value: unknown): LuaEditContentSummary {
   return summary
 }
 
+type LuaEditContent = string | PromptMessage[]
+const isLuaEditPromptRow = new Ajv({ strict: false, strictNumbers: true }).compile<PromptMessage>(PromptChatRowSchema)
+
+/** Lua edit hooks may replace content, but cannot change its concrete channel. */
+function checkedLuaEditContent(value: unknown, previous: LuaEditContent): { value: LuaEditContent; error?: string } {
+  if (value === undefined || value === null) return { value: previous }
+  if (typeof previous === 'string') {
+    return typeof value === 'string' ? { value } : { value: previous, error: 'Lua edit hook expected text output' }
+  }
+  if (Array.isArray(value) && value.every((row: unknown): row is PromptMessage => isLuaEditPromptRow(row)))
+    return { value }
+  return { value: previous, error: 'Lua edit hook expected prompt row output' }
+}
+
 /**
  * Server port of `runLuaEditTrigger` (`scriptings.ts`). Remaps the edit-mode
  * casing, early-returns for `editprocess` (a browser no-op), then runs each
@@ -2587,13 +2619,27 @@ function summarizeLuaEditContent(value: unknown): LuaEditContentSummary {
  * Lua failures throw with context instead of returning the original `content`;
  * otherwise callers cannot distinguish a no-op hook from a broken hook.
  */
-export async function runLuaEditTrigger<T extends string | PromptMessage[]>(
+export function runLuaEditTrigger(
   char: character | SimpleCharacterArgument,
   mode: string,
-  content: T,
+  content: string,
   meta: object | undefined,
   ctx: ServerLuaEditTriggerContext,
-): Promise<T> {
+): Promise<string>
+export function runLuaEditTrigger(
+  char: character | SimpleCharacterArgument,
+  mode: string,
+  content: PromptMessage[],
+  meta: object | undefined,
+  ctx: ServerLuaEditTriggerContext,
+): Promise<PromptMessage[]>
+export async function runLuaEditTrigger(
+  char: character | SimpleCharacterArgument,
+  mode: string,
+  content: LuaEditContent,
+  meta: object | undefined,
+  ctx: ServerLuaEditTriggerContext,
+): Promise<LuaEditContent> {
   switch (mode) {
     case 'editinput':
       mode = 'editInput'
@@ -2609,7 +2655,7 @@ export async function runLuaEditTrigger<T extends string | PromptMessage[]>(
   }
 
   try {
-    let data: T = content
+    let data: LuaEditContent = content
 
     const owner: LuaEditTriggerOwner = char
     const ownTriggers: triggerscript[] = (owner.triggerscript ?? []).map((trigger, index) => {
@@ -2620,7 +2666,7 @@ export async function runLuaEditTrigger<T extends string | PromptMessage[]>(
           ownerType: 'character',
           ownerId: owner.chaId,
           ownerName: owner.name,
-          triggerId: (trigger as { id?: string }).id,
+          triggerId: trigger.id,
           triggerIndex: index,
           triggerComment: trigger.comment,
           triggerType: trigger.type,
@@ -2632,7 +2678,7 @@ export async function runLuaEditTrigger<T extends string | PromptMessage[]>(
 
     for (const trigger of triggers) {
       if (trigger?.effect?.[0]?.type === 'triggerlua') {
-        const effect = trigger.effect[0] as { code: string; type: string }
+        const effect = trigger.effect[0]
         const source = withTriggerEffectSource(getTriggerSource(trigger), 0, effect.type)
         const before = summarizeLuaEditContent(data)
         const traceRun =
@@ -2678,8 +2724,10 @@ export async function runLuaEditTrigger<T extends string | PromptMessage[]>(
           })
           throw error
         }
+        const checked = checkedLuaEditContent(runResult.res, data)
+        if (checked.error && !runResult.error) runResult.error = checked.error
         const failure = serverLuaFailureMessage(runResult, `Lua ${mode} edit trigger failed`)
-        const nextData = (runResult.res as T) ?? data
+        const nextData = checked.value
         progressRun?.finish(failure ? 'error' : 'finished')
         traceRun?.finish({
           status: failure ? 'error' : 'ok',

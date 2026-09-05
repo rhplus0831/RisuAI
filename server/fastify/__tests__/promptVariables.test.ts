@@ -265,7 +265,7 @@ describe('expandVariables — active module CBS visibility', () => {
           namespace: 'inactive-space',
           lorebook: [{ content: 'Inactive module lore' }],
         },
-      ] as Database['modules'],
+      ] as unknown as Database['modules'],
       characters: [
         makeCharacter({
           modules: ['character-module'],

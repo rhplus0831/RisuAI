@@ -3,7 +3,6 @@ import type { DatabaseSync } from 'node:sqlite'
 import { isDeepStrictEqual } from 'node:util'
 import { resolveModelProfile, type FirstClassModelProfileProviderId } from '@risuai/shared-core/model-profile-resolver'
 import { resolveMemoryModelCapability } from '@risuai/shared-core/memory-model-capability'
-import type { FastifyDatabase as Database } from '../prompt/serverTypes.js'
 import {
   MODEL_ROLES,
   modelRoleProfileInheritSource,
@@ -658,7 +657,7 @@ function validateBindingTarget(
 }
 
 function validateMemoryRoleCapability(target: Record<string, unknown>): void {
-  const profile = resolveModelProfile({ database: target as unknown as Database, role: 'memory' })
+  const profile = resolveModelProfile({ database: target, role: 'memory' })
   const capability = resolveMemoryModelCapability(profile)
   if (capability.ok === false) {
     throw new ValidationError(`bindings.memory is unsupported: ${capability.error}`)

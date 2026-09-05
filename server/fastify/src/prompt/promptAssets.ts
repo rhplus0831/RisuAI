@@ -26,7 +26,8 @@ export function buildPromptAssetTable(args: {
   currentChat: Chat
 }): PromptAssetEntry[] {
   promptAssetTableInstrumentation.builds++
-  return (args.currentChar.additionalAssets ?? []).concat(
-    getModuleAssets(getActiveModules(args.database, args.currentChar, args.currentChat)),
-  )
+  return [
+    ...(args.currentChar.additionalAssets ?? []),
+    ...getModuleAssets(getActiveModules(args.database, args.currentChar, args.currentChat)),
+  ]
 }

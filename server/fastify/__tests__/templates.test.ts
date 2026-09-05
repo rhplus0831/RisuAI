@@ -249,7 +249,7 @@ describe('normalizeTemplate', () => {
     const result = normalizeTemplate(db, makeCharacter())
 
     expect(result.promptTemplate?.map((c) => c.type)).toEqual(['description', 'postEverything'])
-    expect(db.promptPresets[0].promptTemplate).toEqual([{ type: 'description' }])
+    expect(db.promptPresets![0].promptTemplate).toEqual([{ type: 'description' }])
   })
 })
 

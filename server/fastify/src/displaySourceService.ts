@@ -1,3 +1,4 @@
+import { decodeGenerationDatabase } from './prompt/generationInputDecoder.js'
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import type { DatabaseSync } from 'node:sqlite'
@@ -412,7 +413,7 @@ export class DisplaySourceService {
     if (!persisted.database || typeof persisted.database !== 'object') {
       throw new ValidationError('Server database is not initialized')
     }
-    return persisted.database as Database
+    return decodeGenerationDatabase(persisted.database)
   }
 
   private async transformTarget(

@@ -1,3 +1,4 @@
+import { adaptServerCbsDatabase } from './cbsAdapter.js'
 import type { FastifyCharacter as character, FastifyDatabase as Database } from './serverTypes.js'
 import type { LLMModel } from '@risuai/shared-core/model-types'
 import type { CbsConditions } from '@risuai/shared-core/risuchat-parser-helpers'
@@ -35,6 +36,7 @@ const parserChatVariables = { getChatVar, getGlobalChatVar }
 
 export interface ExpandContext {
   database: Database
+  resolveSpeakerName?: (characterId: string) => string | undefined
   /** Current chat-message index for CBS callbacks such as `{{chat_index}}`. */
   chatID?: number
   /** Index into `database.characters`. Defaults to `database.currentChar ?? 0`. */
@@ -92,7 +94,7 @@ export interface ExpandResult {
 }
 
 export function expandVariables(input: string, ctx: ExpandContext): ExpandResult {
-  const currentCharIndex = (ctx.database as { currentChar?: unknown }).currentChar
+  const currentCharIndex = ctx.database.currentChar
   const selectedCharID = ctx.selectedCharID ?? (typeof currentCharIndex === 'number' ? currentCharIndex : 0)
   const char = ctx.database.characters[selectedCharID]
   const chatPage = ctx.chatPage ?? char?.chatPage ?? 0
@@ -103,8 +105,8 @@ export function expandVariables(input: string, ctx: ExpandContext): ExpandResult
     chat.scriptstate = {}
   }
 
-  const scriptstate = (chat?.scriptstate ?? {}) as Record<string, unknown>
-  const globalChatVariables = (ctx.database.globalChatVariables ?? {}) as Record<string, unknown>
+  const scriptstate = chat?.scriptstate ?? {}
+  const globalChatVariables = ctx.database.globalChatVariables ?? {}
 
   setActivePromptScope({
     database: ctx.database,
@@ -120,7 +122,7 @@ export function expandVariables(input: string, ctx: ExpandContext): ExpandResult
   try {
     const text = risuChatParser(expandAgentPresetOutputs(input, ctx), {
       chatID: ctx.chatID,
-      db: ctx.database,
+      db: adaptServerCbsDatabase(ctx.database),
       chara: ctx.chara ?? char,
       var: ctx.slot,
       runVar: ctx.runVar ?? false,

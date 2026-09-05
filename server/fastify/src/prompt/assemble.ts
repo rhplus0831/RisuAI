@@ -111,7 +111,7 @@ import { tokenizeHypaV3PrefixChat } from './prefixTokenMemo.js'
 import { ensureTokenizerLoadedForDb, tokenizerOptionsFromDb } from './tokenizerConfig.js'
 import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
 import { bumpAssemblyCbsHistoryGeneration, createAssemblyCbsCallbackMemo } from './cbsCallbackMemo.js'
-import { buildEffectiveGenerationConfig } from './effectiveGenerationConfig.js'
+import { buildEffectiveGenerationConfig, cloneGenerationWorkingCharacter } from './effectiveGenerationConfig.js'
 import { summarizePromptRows, type PromptRowsSummary } from './promptSummary.js'
 import {
   AgentPresetGenerationError,
@@ -133,7 +133,7 @@ import {
   type AgentPresetResolution,
 } from '@risuai/shared-core/agent-preset-resolver'
 import type { ResolvedModelProfile } from '@risuai/shared-core/model-profile-resolver'
-import type { AgentPresetRecord } from '@risuai/shared-core/agent-preset-records'
+import type { ReadonlyAgentPresetRecord as AgentPresetRecord } from '@risuai/shared-core/agent-preset-records'
 
 /**
  * Root prompt assembly entry point.
@@ -154,6 +154,7 @@ import type { AgentPresetRecord } from '@risuai/shared-core/agent-preset-records
  */
 export interface AssembleDeps {
   loadDatabase(): Database | null
+  resolveSpeakerName?: (characterId: string) => string | undefined
   loadMemoryDatabase?(): DatabaseSync | null
   /** Server asset root used by Lua image generation. */
   assetDataDir?: string
@@ -709,7 +710,7 @@ function resolveScope(input: AssembleInput, deps: AssembleDeps): ResolvedScope {
     throw new EntityNotFoundError('database not found')
   }
 
-  const characters = database.characters as character[]
+  const characters = database.characters
   const selectedCharID = characters.findIndex((c) => c.chaId === input.characterId)
   if (selectedCharID === -1) {
     throw new EntityNotFoundError(`character not found: ${input.characterId}`)
@@ -720,7 +721,7 @@ function resolveScope(input: AssembleInput, deps: AssembleDeps): ResolvedScope {
   if (chatPage === -1) {
     throw new EntityNotFoundError(`chat not found: ${input.chatId}`)
   }
-  const currentChat = structuredClone(currentChar.chats[chatPage])
+  const currentChat = currentChar.chats[chatPage]
 
   const effective = buildEffectiveGenerationConfig({
     database,
@@ -761,6 +762,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     chatPage,
     modelInfo: modelInfoForPromptScope(resolvedMainProfile),
     signal: deps.signal,
+    resolveSpeakerName: deps.resolveSpeakerName,
     luaExecBudget,
     ...(memoryDatabase ? { requestHistoryDb: memoryDatabase } : {}),
     ...(deps.assetDataDir ? { assetDataDir: deps.assetDataDir } : {}),
@@ -1101,7 +1103,7 @@ function appendUserMessageRow(state: AssemblyState): void {
       ...structuredClone(lastMessage),
       chatId: lastMessage.chatId ?? randomUUID(),
       time: lastMessage.time ?? Date.now(),
-      name: null as unknown as undefined,
+      name: null,
     } as Message
     messages[lastIndex] = message
     const checkpointMessage = structuredClone(message) as Message
@@ -1123,7 +1125,7 @@ function appendUserMessageRow(state: AssemblyState): void {
     data: userMessage,
     time: Date.now(),
     chatId: state.input.acceptedMessageId ?? randomUUID(),
-    name: null as unknown as undefined,
+    name: null,
   } as Message
   const index = messages.length
   messages.push(message)
@@ -1556,7 +1558,12 @@ export function fillStaticSlots(state: AssemblyState): void {
 
 export async function runAgentPresetBeforeMainStage(state: AssemblyState, deps: AssembleDeps): Promise<void> {
   const resolution = resolveAgentPresetForChat({
-    database: state.database,
+    database: {
+      ...state.database,
+      agentPresets: state.database.agentPresets ?? [],
+      agents: state.database.agents ?? [],
+      modelProfiles: state.database.modelProfiles ?? [],
+    },
     currentCharacter: state.currentChar,
     currentChat: state.currentChat,
     generationSettings: state.currentChat.generationSettings,
@@ -1826,6 +1833,7 @@ export function fillLorebookSlots(state: AssemblyState): void {
     currentChar,
     currentChat,
     cbsContext: state.ctx,
+    resolveSpeakerName: state.ctx.resolveSpeakerName,
     writeChatVar: (key, value) => {
       const persisted = currentPersistedChat(state)
       if (!persisted) return
@@ -1851,6 +1859,7 @@ export async function fillLorebookSlotsAsync(state: AssemblyState): Promise<void
     currentChar,
     currentChat,
     cbsContext: state.ctx,
+    resolveSpeakerName: state.ctx.resolveSpeakerName,
     writeChatVar: (key, value) => {
       const persisted = currentPersistedChat(state)
       if (!persisted) return
@@ -2757,8 +2766,12 @@ function cloneAgentPresetRuntime(runtime: AgentPresetRuntimeState | undefined): 
 }
 
 function clonePostGenerationState(state: AssemblyState): AssemblyState {
-  const database = structuredClone(state.database)
-  const currentChar = structuredClone(state.currentChar)
+  const database: Database = {
+    ...state.database,
+    characters: state.database.characters.slice(),
+    globalChatVariables: { ...state.database.globalChatVariables },
+  }
+  const currentChar = cloneGenerationWorkingCharacter(state.currentChar)
   const currentChat = structuredClone(state.currentChat)
   const luaExecBudget = state.luaExecBudget ? { ...state.luaExecBudget } : undefined
   currentChar.chats[state.chatPage] = currentChat

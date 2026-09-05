@@ -43,7 +43,7 @@ export interface PromptMemoryQueryMessage {
   role: 'user' | 'char'
   data: string
   chatId?: string
-  name?: string
+  name?: string | null
   disabled?: false | true | 'allBefore'
   saying?: string
 }

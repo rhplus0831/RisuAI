@@ -513,7 +513,7 @@ function isPreparedInputScopeName(value: string): value is AgentPresetStepInputS
 }
 
 function agentPromptLocation(input: AgentPresetPreparedInputContext): { selectedCharID?: number; chatPage?: number } {
-  const characters = input.database.characters as character[]
+  const characters = input.database.characters
   const selectedCharID = characters.findIndex(
     (candidate) => candidate === input.currentChar || candidate.chaId === input.currentChar.chaId,
   )
@@ -981,7 +981,7 @@ async function collectProviderOutput(
 }
 
 function prepareDatabaseForStep(database: Database, step: AgentPresetStepRecord): Database {
-  const copy = structuredClone(database) as Database
+  const copy: Database = { ...database }
   copy.halfStreaming = false
   copy.useStreaming = false
   copy.maxResponse = maxOutputCharsForStep(step)

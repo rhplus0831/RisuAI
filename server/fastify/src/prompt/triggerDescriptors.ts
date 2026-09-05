@@ -1,3 +1,4 @@
+import type { DeepReadonly } from './serverTypes.js'
 export interface triggerscript {
   id?: string
   comment: string
@@ -1066,7 +1067,7 @@ export type triggerV2DeclareLocalVar = {
 }
 
 /** Fastify-owned aliases for the exact persisted trigger descriptor mirror. */
-export type ServerTriggerScript = triggerscript
+export type ServerTriggerScript = DeepReadonly<triggerscript>
 export type ServerTriggerCondition = triggerCondition
 export type ServerTriggerEffect = triggerEffect
 export type ServerAdditionalSystemPrompt = additonalSysPrompt

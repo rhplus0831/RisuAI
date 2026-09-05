@@ -127,7 +127,7 @@ describe('Fastify tokenizer configuration', () => {
       const db = database({
         aiModel,
         customTokenizer: 'tik',
-        customModels: [{ id: aiModel, tokenizer }] as Database['customModels'],
+        customModels: [{ id: aiModel, tokenizer }] as unknown as Database['customModels'],
       })
       expect(tokenizerEncodingFromDb(db), String(tokenizer)).toBe(encoding)
     }

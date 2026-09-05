@@ -1,0 +1,222 @@
+import { DatabaseSync } from 'node:sqlite'
+import { createMessageTable, getChatMessages } from '../src/messageStore.js'
+import { createMessageRecord } from '../src/commands/messages.js'
+import fs from 'node:fs'
+import { describe, expect, it } from 'vitest'
+import { generateGenerationInputSchema, generationInputSchemaPath } from '../../../util/generation-input-schema.js'
+import {
+  decodeGenerationSettings,
+  decodeGenerationDatabase,
+  decodeGenerationPreflightInputs,
+  GenerationInputValidationError,
+} from '../src/prompt/generationInputDecoder.js'
+import { normalizeRisuSaveSnapshotDatabase } from '../src/risuSave/importSnapshot.js'
+
+function selectedDatabaseWithMessage(message: unknown) {
+  const base = decodeGenerationDatabase(
+    normalizeRisuSaveSnapshotDatabase({
+      characters: [{ chaId: 'character', name: 'Character', chats: [{ id: 'chat', message: [] }] }],
+    }),
+  )
+  return {
+    ...base,
+    characters: [{ ...base.characters[0], chats: [{ ...base.characters[0].chats[0], message: [message] }] }],
+  }
+}
+
+describe('selected generation persistence decoder', () => {
+  it('keeps its runtime schema synchronized with the finite server contract', () => {
+    expect(JSON.parse(fs.readFileSync(generationInputSchemaPath, 'utf8'))).toEqual(generateGenerationInputSchema())
+  }, 60_000)
+
+  it('preserves sparse supported settings, imported extensions, and source identity without defaults or copies', () => {
+    const input = {
+      temperature: 50,
+      hypaV3Presets: [{ id: 'hypa', name: 'Memory', settings: { memoryTokensRatio: 0.3 } }],
+      dynamicOutput: { dynamicMessages: true },
+      extension: { future: ['untouched'] },
+    }
+    const bytes = JSON.stringify(input)
+    const decoded = decodeGenerationSettings(input)
+    expect(decoded).toBe(input)
+    expect(decoded.hypaV3Presets).toBe(input.hypaV3Presets)
+    expect(Object.getOwnPropertyDescriptor(decoded, 'extension')?.value).toBe(input.extension)
+    expect(JSON.stringify(decoded)).toBe(bytes)
+    expect(decodeGenerationSettings({})).toEqual({})
+  })
+
+  it('decodes metadata-only preflight without transcript or character body defaults', () => {
+    const input = {
+      database: {
+        modules: [{ id: 'module', namespace: 'module-space', customModuleToggle: 'enabled=Module' }],
+        modelPresets: [{ id: 'm', aiModel: 'echo_model' }],
+        promptPresets: [{ id: 'p' }],
+        personas: [{ id: 'u' }],
+      },
+      currentChar: { chaId: 'character', modules: [], supaMemory: true },
+      currentChat: {
+        id: 'chat',
+        generationSettings: { modelPresetId: 'm', promptPresetId: 'p', personaId: 'u' },
+        modules: [],
+      },
+    }
+    const decoded = decodeGenerationPreflightInputs(input)
+    expect(decoded).toBe(input)
+    expect(Object.keys(decoded.currentChar)).toEqual(['chaId', 'modules', 'supaMemory'])
+    expect(Object.hasOwn(decoded.database, 'characters')).toBe(false)
+    expect(Object.hasOwn(decoded.currentChat, 'message')).toBe(false)
+  })
+
+  it('accepts preflight module metadata while requiring full execution module fields', () => {
+    const database = { modules: [{ id: 'module', namespace: 'space', customModuleToggle: 'mode=Mode' }] }
+    const input = { database, currentChar: { chaId: 'character' }, currentChat: { id: 'chat' } }
+    expect(decodeGenerationPreflightInputs(input)).toBe(input)
+    expect(() => decodeGenerationSettings(database)).toThrow(GenerationInputValidationError)
+  })
+
+  it.each([
+    { temperature: '50' },
+    { promptSettings: { sendName: 'yes' } },
+    { modelPresets: [{ id: 'm', temperature: 'hot' }] },
+    { modelProfiles: [{ id: 'profile', name: 'Main', runtimeOptions: { dynamicOutput: { dynamicMessages: 'yes' } } }] },
+    {
+      modules: [
+        {
+          id: 'module',
+          name: 'Module',
+          description: '',
+          regex: [{ comment: 'r', in: 'a', out: 'b', type: 'editinput', ableFlag: 'yes' }],
+        },
+      ],
+    },
+  ])('rejects malformed known settings without exposing their values: %j', (input) => {
+    expect(() => decodeGenerationSettings(input)).toThrow(GenerationInputValidationError)
+    try {
+      decodeGenerationSettings(input)
+    } catch (error) {
+      expect(String(error)).not.toContain('hot')
+    }
+  })
+
+  it.each([null, [], undefined])('preserves explicit template ownership value %j', (template) => {
+    const input =
+      template === undefined
+        ? { promptPresets: [{ id: 'preset' }] }
+        : { promptTemplate: template, promptPresets: [{ id: 'preset', promptTemplate: template }] }
+    expect(decodeGenerationSettings(input)).toBe(input)
+    expect(Object.hasOwn(input, 'promptTemplate')).toBe(template !== undefined)
+  })
+
+  it('round-trips every nullable message metadata field accepted by commands and SQLite', () => {
+    const db = new DatabaseSync(':memory:')
+    try {
+      createMessageTable(db)
+      const row = createMessageRecord({
+        chatId: 'message',
+        role: 'user',
+        data: 'accepted',
+        name: null,
+        time: null,
+        translation: null,
+        promptInfo: {},
+        generationInfo: {},
+        saying: 'speaker',
+        otherUser: false,
+        disabled: 'allBefore',
+        isComment: false,
+      })
+      db.prepare('INSERT INTO messages (chat_id,seq,uid,role,data,json) VALUES (?,?,?,?,?,?)').run(
+        'chat',
+        0,
+        row.chatId,
+        row.role,
+        row.data,
+        JSON.stringify(row),
+      )
+      const [stored] = getChatMessages(db, 'chat')
+      expect(decodeGenerationDatabase(selectedDatabaseWithMessage(stored)).characters[0].chats[0].message[0]).toBe(
+        stored,
+      )
+      expect(stored).toEqual(row)
+      expect(stored).toMatchObject({ name: null, time: null, translation: null, promptInfo: {}, generationInfo: {} })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('preserves omitted regex comments and supported legacy role aliases', () => {
+    const raw = {
+      globalscript: [{ in: 'a', out: 'b', type: 'editinput' }],
+      promptTemplate: [
+        { type: 'memory', role2: 'assistant' },
+        { type: 'authornote', role2: null },
+      ],
+    }
+    expect(decodeGenerationSettings(raw)).toBe(raw)
+  })
+
+  it.each([3, false, { id: 'old' }])(
+    'keeps malformed stable Hypa selection on the established no-selection path: %j',
+    (selected) => {
+      const presets = [{ id: 'valid', name: 'Valid', settings: { memoryTokensRatio: 0.3 } }]
+      const raw = { selectedHypaV3PresetId: selected, hypaV3Presets: presets, hypaV3PresetId: 0 }
+      const decoded = decodeGenerationSettings(raw)
+      expect(decoded.selectedHypaV3PresetId).toBeNull()
+      expect(decoded.hypaV3Presets).toBe(presets)
+      expect(raw.selectedHypaV3PresetId).toBe(selected)
+      expect(Object.getOwnPropertyDescriptor(decoded, 'hypaV3PresetId')?.value).toBe(0)
+    },
+  )
+
+  it('accepts sparse provider settings with existing per-provider defaults', () => {
+    const raw = {
+      hordeConfig: { apiKey: 'horde-key' },
+      google: { projectId: 'project' },
+      openrouterProvider: { only: ['provider'] },
+    }
+    expect(decodeGenerationSettings(raw)).toBe(raw)
+  })
+
+  it('checks selected character regex values while permitting absent comment metadata', () => {
+    const base = selectedDatabaseWithMessage({ role: 'user', data: 'message' })
+    const input = {
+      ...base,
+      characters: [{ ...base.characters[0], customscript: [{ in: 'a', out: 'b', type: 'editinput' }] }],
+    }
+    expect(decodeGenerationDatabase(input)).toBe(input)
+    const invalid = {
+      ...base,
+      characters: [{ ...base.characters[0], customscript: [{ in: 'a', out: 5, type: 'editinput' }] }],
+    }
+    expect(() => decodeGenerationDatabase(invalid)).toThrow(GenerationInputValidationError)
+  })
+
+  it('checks message values while preserving round-trip extension data', () => {
+    const message = { role: 'char', data: 'reply', saying: 'sibling', future: { count: 2 } }
+    expect(decodeGenerationDatabase(selectedDatabaseWithMessage(message)).characters[0].chats[0].message[0]).toBe(
+      message,
+    )
+    expect(() => decodeGenerationDatabase(selectedDatabaseWithMessage({ ...message, data: 5 }))).toThrow(
+      GenerationInputValidationError,
+    )
+    expect(() => decodeGenerationDatabase(selectedDatabaseWithMessage({ ...message, role: 'system' }))).toThrow(
+      GenerationInputValidationError,
+    )
+  })
+
+  it('accepts the supported legacy-save normalization boundary without changing its output', () => {
+    const normalized = normalizeRisuSaveSnapshotDatabase({
+      characters: [
+        { chaId: 'character', name: 'Legacy', chats: [{ id: 'chat', message: [{ role: 'user', data: 'Hello' }] }] },
+      ],
+      botPresets: [{ id: 'legacy', name: 'Legacy', mainPrompt: 'system' }],
+      personas: [{ id: 'persona', name: 'User' }],
+      hypaV3Presets: [{ id: 'memory', name: 'Memory', settings: { memoryTokensRatio: 0.3 } }],
+      enabledModules: [],
+      modules: [],
+    })
+    const bytes = JSON.stringify(normalized)
+    expect(decodeGenerationDatabase(normalized)).toBe(normalized)
+    expect(JSON.stringify(normalized)).toBe(bytes)
+  })
+})

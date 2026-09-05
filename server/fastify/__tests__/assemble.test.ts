@@ -1,3 +1,4 @@
+import { adaptServerCbsDatabase } from '../src/prompt/cbsAdapter.js'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -5,7 +6,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type {
   FastifyChat as Chat,
   FastifyCharacter as character,
-  FastifyDatabase as Database,
+  FastifyDatabase as PromptDatabase,
+  ServerPromptPreset,
   FastifyLoreBook as loreBook,
   FastifyMessage as Message,
 } from '../src/prompt/serverTypes.js'
@@ -90,6 +92,17 @@ afterEach(() => {
     rmSync(dataDir, { recursive: true, force: true })
   }
 })
+
+/** Legacy test import fields remain local to this compatibility fixture. */
+type Database = PromptDatabase & {
+  botPresets?: ServerPromptPreset[]
+  botPresetsId?: number
+  apiType?: string
+  agentContextEnabled?: boolean
+  agentContextPrompt?: string
+  agentContextMaxOutput?: number
+  agentContextMaxToolRounds?: number
+}
 
 function makeChat(overrides: Partial<Chat> = {}): Chat {
   return {
@@ -189,9 +202,9 @@ function makeDatabase(overrides: Partial<Database> = {}): Database {
       if (Object.prototype.hasOwnProperty.call(chat, 'generationSettings')) continue
       chat.generationSettings = {
         configured: true,
-        personaId: database.personas[0]?.id ?? 'persona-default',
-        modelPresetId: database.modelPresets[0]?.id ?? 'model-preset-default',
-        promptPresetId: database.promptPresets[0]?.id ?? 'preset-default',
+        personaId: database.personas?.[0]?.id ?? 'persona-default',
+        modelPresetId: database.modelPresets?.[0]?.id ?? 'model-preset-default',
+        promptPresetId: database.promptPresets?.[0]?.id ?? 'preset-default',
         jailbreakToggle: database.jailbreakToggle === true,
         sidebarToggles: {},
       }
@@ -1794,7 +1807,7 @@ describe('resolveScope (via beginAssembly)', () => {
     const state = beginAssembly(baseInput(), depsFor(explicitOffDb))
     fillStaticSlots(state)
 
-    expect(state.database.globalChatVariables.toggle_mode).toBe('0')
+    expect(state.database.globalChatVariables!.toggle_mode).toBe('0')
     expect(state.unformated.main.map((row) => row.content)).toEqual(['OFF'])
   })
 
@@ -1883,7 +1896,13 @@ describe('resolveScope (via beginAssembly)', () => {
   it('uses selected preset module integration when resolving required sidebar toggles', () => {
     const db = makeDatabase({
       modules: [
-        { id: 'module-a', namespace: 'ns-a', customModuleToggle: 'moduleMode=Module Mode' },
+        {
+          id: 'module-a',
+          name: 'Module A',
+          description: '',
+          namespace: 'ns-a',
+          customModuleToggle: 'moduleMode=Module Mode',
+        },
       ] as Database['modules'],
       enabledModules: [],
       moduleIntergration: '',
@@ -1947,8 +1966,20 @@ describe('resolveScope (via beginAssembly)', () => {
   it('adds effective Agent Preset module integration to the selected Prompt Preset', () => {
     const db = makeDatabase({
       modules: [
-        { id: 'module-prompt', namespace: 'prompt-space', customModuleToggle: 'promptMode=Prompt Mode' },
-        { id: 'module-agent', namespace: 'agent-space', customModuleToggle: 'agentMode=Agent Mode' },
+        {
+          id: 'module-prompt',
+          name: 'Prompt Module',
+          description: '',
+          namespace: 'prompt-space',
+          customModuleToggle: 'promptMode=Prompt Mode',
+        },
+        {
+          id: 'module-agent',
+          name: 'Agent Module',
+          description: '',
+          namespace: 'agent-space',
+          customModuleToggle: 'agentMode=Agent Mode',
+        },
       ] as Database['modules'],
       enabledModules: [],
       moduleIntergration: '',
@@ -2108,6 +2139,73 @@ describe('resolveScope (via beginAssembly)', () => {
     expect(db.mainPrompt).toBe('GLOBAL MAIN')
     expect(db.personaPrompt).toBe('GLOBAL PERSONA')
     expect(db.globalChatVariables).toEqual({ toggle_mode: 'global' })
+  })
+
+  it.each([
+    { legacy: true, modern: true, expected: 'modern' },
+    { legacy: false, modern: true, expected: 'modern' },
+    { legacy: true, modern: false, expected: 'legacy' },
+    { legacy: false, modern: false, expected: undefined },
+  ])('preserves selected preset regex precedence (legacy=$legacy, modern=$modern)', ({ legacy, modern, expected }) => {
+    const legacyRegex = legacy ? [{ comment: 'legacy', in: 'value', out: 'legacy', type: 'editinput' }] : []
+    const modernRegex = modern ? [{ comment: 'modern', in: 'value', out: 'modern', type: 'editinput' }] : []
+    const db = freezeDeep(
+      makeDatabase({
+        promptPresets: [{ id: 'preset-default', name: 'Selected', regex: legacyRegex, presetRegex: modernRegex }],
+      }),
+    )
+    const state = beginAssembly(baseInput(), depsFor(db))
+    expect(state.database.presetRegex?.map((script) => script.out)).toEqual(expected ? [expected] : [])
+    if (expected) expect(state.database.presetRegex).not.toBe(expected === 'modern' ? modernRegex : legacyRegex)
+    expect(legacyRegex.map((script) => script.out)).toEqual(legacy ? ['legacy'] : [])
+    expect(modernRegex.map((script) => script.out)).toEqual(modern ? ['modern'] : [])
+  })
+
+  it('shares readonly configuration while isolating each selected working state', () => {
+    const chat = makeChat({
+      message: [{ role: 'user', data: 'original' }],
+      scriptstate: { $owned: 'source' },
+      localLore: [],
+    })
+    const untouchedSibling = makeChat({ id: 'sibling-chat', message: [{ role: 'char', data: 'sibling body' }] })
+    const original = makeCharacter({ chats: [chat, untouchedSibling], globalLore: [] })
+    const db = freezeDeep(
+      makeDatabase({
+        characters: [original],
+        modules: [{ id: 'module', name: 'Module', description: 'configuration', regex: [] }],
+        globalChatVariables: { owned: 'source' },
+      }),
+    )
+    const before = JSON.stringify(db)
+    const first = beginAssembly(baseInput(), depsFor(db))
+    const second = beginAssembly(baseInput(), depsFor(db))
+    expect(first.database.modules).toBe(db.modules)
+    expect(first.database.personas).toBe(db.personas)
+    expect(first.database.modelPresets).toBe(db.modelPresets)
+    expect(first.currentChar).not.toBe(original)
+    expect(first.currentChar.chats[1]).toBe(untouchedSibling)
+    expect(first.currentChat).not.toBe(second.currentChat)
+    expect(first.currentChat.message).not.toBe(chat.message)
+    expect(first.currentChat.message).not.toBe(first.authoritativeMessages)
+    first.currentChar.name = 'working name'
+    first.currentChat.message[0].data = 'working text'
+    first.currentChat.scriptstate!.$owned = 'working variable'
+    first.database.globalChatVariables!.owned = 'working global variable'
+    first.currentChat.localLore.push({
+      key: '',
+      secondkey: '',
+      insertorder: 0,
+      comment: 'working',
+      content: 'working lore',
+      mode: 'normal',
+      alwaysActive: true,
+      selective: false,
+    })
+    expect(JSON.stringify(db)).toBe(before)
+    expect(second.currentChat.message[0].data).toBe('original')
+    expect(second.currentChat.scriptstate!.$owned).toBe('source')
+    expect(second.database.globalChatVariables!.owned).toBe('source')
+    expect(second.currentChat.localLore).toEqual([])
   })
 
   it('does not mutate a frozen input database while building the effective config', () => {
@@ -2656,7 +2754,11 @@ describe('fillMemoryAndPostHistory', () => {
 
       const trimDb = structuredClone(db)
       trimDb.maxContext = Math.max(1, (preview.inputTokens ?? 100) - 1)
-      if (trimDb.modelPresets?.[0]) trimDb.modelPresets[0].maxContext = trimDb.maxContext
+      if (trimDb.modelPresets?.[0])
+        trimDb.modelPresets = [
+          { ...trimDb.modelPresets[0], maxContext: trimDb.maxContext },
+          ...trimDb.modelPresets.slice(1),
+        ]
       const trimmed = await assemblePrompt(
         baseInput({ mode: 'preview_prompt', userMessage: 'Where is Alice?' }),
         depsFor(trimDb, { loadMemoryDatabase: () => memoryDb }),
@@ -3404,7 +3506,7 @@ describe('fillMemoryAndPostHistory', () => {
       expect(state.stopSending).toBe(false)
       expect(state.abortReason).toBeUndefined()
       expect(state.formated?.filter((row) => row.memo === 'hypaMemory')).toHaveLength(1)
-      expect(state.inputTokens).toBeLessThanOrEqual(db.maxContext)
+      expect(state.inputTokens).toBeLessThanOrEqual(db.maxContext!)
     } finally {
       memoryDb.close()
     }
@@ -4888,7 +4990,7 @@ describe('run-var fixed-point skip', () => {
     ]
     for (const text of fixedPoints) {
       expect(isRunVarParserFixedPoint(text), `should skip: ${JSON.stringify(text)}`).toBe(true)
-      expect(risuChatParser(text, { db, runVar: true })).toBe(text)
+      expect(risuChatParser(text, { db: adaptServerCbsDatabase(db), runVar: true })).toBe(text)
     }
 
     // Anything the parser can rewrite must NOT be skipped.

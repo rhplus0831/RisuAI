@@ -1,0 +1,89 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import ts from 'typescript'
+
+type JsonSchema = Record<string, unknown>
+const roots = [
+  'GenerationSettings',
+  'FastifyDatabase',
+  'GenerationPreflightInputs',
+  'ProviderGenerationSettings',
+  'MemoryGenerationSettings',
+] as const
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+export const generationInputSchemaPath = path.join(root, 'server/fastify/src/prompt/generationInputSchema.json')
+
+/** Build-time only: emit the finite server contract; never load browser state. */
+export function generateGenerationInputSchema(): JsonSchema {
+  const configPath = path.join(root, 'server/fastify/tsconfig.json')
+  const config = ts.readConfigFile(configPath, ts.sys.readFile)
+  const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, path.dirname(configPath))
+  const input = path.join(root, 'server/fastify/src/prompt/serverTypes.ts')
+  const program = ts.createProgram([input], parsed.options)
+  const checker = program.getTypeChecker()
+  const source = program.getSourceFile(input)!
+  const definitions: Record<string, JsonSchema> = {}
+  const seen = new Map<ts.Type, string>()
+  const sourceSymbols = checker.getExportsOfModule(checker.getSymbolAtLocation(source)!)
+
+  function schema(type: ts.Type): JsonSchema {
+    if (type.flags & ts.TypeFlags.Any)
+      throw new Error(`Unrestricted any in generation contract: ${checker.typeToString(type)}`)
+    if (type.flags & ts.TypeFlags.Unknown) return {}
+    if (type.flags & ts.TypeFlags.Never) return { not: {} }
+    if (type.flags & ts.TypeFlags.StringLiteral) return { const: (type as ts.StringLiteralType).value }
+    if (type.flags & ts.TypeFlags.NumberLiteral) return { const: (type as ts.NumberLiteralType).value }
+    if (type.flags & ts.TypeFlags.BooleanLiteral) return { const: checker.typeToString(type) === 'true' }
+    if (type.flags & ts.TypeFlags.String) return { type: 'string' }
+    if (type.flags & ts.TypeFlags.Number) return { type: 'number' }
+    if (type.flags & ts.TypeFlags.Boolean) return { type: 'boolean' }
+    if (type.flags & ts.TypeFlags.Null) return { type: 'null' }
+    if (type.isUnion()) {
+      const members = type.types.filter((member) => !(member.flags & ts.TypeFlags.Undefined))
+      if (members.length === 1) return schema(members[0])
+      return { anyOf: members.map(schema) }
+    }
+    if (checker.isTupleType(type)) {
+      const arguments_ = checker.getTypeArguments(type as ts.TypeReference)
+      return { type: 'array', items: arguments_.map(schema), minItems: arguments_.length, maxItems: arguments_.length }
+    }
+    if (checker.isArrayType(type))
+      return { type: 'array', items: schema(checker.getTypeArguments(type as ts.TypeReference)[0]) }
+    if (type.flags & ts.TypeFlags.Object || type.isIntersection()) {
+      const existing = seen.get(type)
+      if (existing) return { $ref: `#/$defs/${existing}` }
+      const key = `record${seen.size}`
+      seen.set(type, key)
+      const properties: Record<string, JsonSchema> = {}
+      const required: string[] = []
+      const definition: JsonSchema = { type: 'object', properties }
+      definitions[key] = definition
+      for (const property of checker.getPropertiesOfType(type)) {
+        const location = property.valueDeclaration ?? property.declarations?.[0] ?? source
+        const propertyType = checker.getTypeOfSymbolAtLocation(property, location)
+        properties[property.name] = schema(propertyType)
+        if (!(property.flags & ts.SymbolFlags.Optional)) required.push(property.name)
+      }
+      if (required.length) definition.required = required
+      const index = checker.getIndexTypeOfType(type, ts.IndexKind.String)
+      if (index) definition.additionalProperties = schema(index)
+      // JSON imports may carry future extension properties. They are retained as
+      // data, but are deliberately absent from the consumer's finite TypeScript view.
+      return { $ref: `#/$defs/${key}` }
+    }
+    throw new Error(`Unsupported generation contract: ${checker.typeToString(type)}`)
+  }
+
+  const entries: Record<string, JsonSchema> = {}
+  for (const name of roots) {
+    const symbol = sourceSymbols.find((candidate) => candidate.name === name)
+    if (!symbol) throw new Error(`Missing generation contract ${name}`)
+    entries[name] = schema(checker.getDeclaredTypeOfSymbol(symbol))
+  }
+  return { $schema: 'http://json-schema.org/draft-07/schema#', $defs: definitions, ...entries }
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  fs.writeFileSync(generationInputSchemaPath, `${JSON.stringify(generateGenerationInputSchema(), null, 2)}\n`)
+}

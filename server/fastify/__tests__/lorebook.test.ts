@@ -732,6 +732,56 @@ describe('activateLorebook — keyword matching', () => {
     expect(report.actives).toEqual([])
   })
 
+  it.each(['sync', 'async'] as const)(
+    'isolates child activation from readonly module configuration (%s)',
+    async (mode) => {
+      const parent = Object.freeze(
+        makeLore({ id: 'shared', alwaysActive: false, key: 'unmatched', comment: 'Parent', content: 'Parent body' }),
+      )
+      const child = Object.freeze(
+        makeLore({ id: 'shared', mode: 'child', alwaysActive: true, key: '', comment: 'Child', content: 'Child body' }),
+      )
+      const module = Object.freeze({ id: 'module', name: 'Module', description: '', lorebook: Object.freeze([child]) })
+      const database = makeDb({
+        modules: [module],
+        enabledModules: ['module'],
+        complexRegexCompatibilityMode: mode === 'async' ? 'worker' : 'strict',
+      })
+      const input = {
+        database,
+        currentChar: makeChar({ globalLore: [parent] }),
+        currentChat: makeChat({ message: [makeMessage({ data: 'plain input' })] }),
+      }
+      const before = JSON.stringify({ parent, module })
+      const report = mode === 'sync' ? activateLorebook(input) : await activateLorebookAsync(input)
+      expect(report.actives).toHaveLength(1)
+      expect(report.actives[0]).toMatchObject({ source: 'Parent', prompt: 'Parent body' })
+      expect(JSON.stringify({ parent, module })).toBe(before)
+    },
+  )
+
+  it.each([
+    { saying: 'external', key: 'CapturedSibling', name: undefined },
+    { saying: 'char-tess', key: 'RenamedTarget', name: undefined },
+    { saying: 'external', key: 'ExplicitSpeaker', name: 'ExplicitSpeaker' },
+    { saying: 'missing', key: 'RenamedTarget', name: undefined },
+  ])('resolves lore speaker names with request-owned precedence: $key', ({ saying, key, name }) => {
+    const currentChar = makeChar({
+      name: 'RenamedTarget',
+      globalLore: [makeLore({ key: 'unrelated', alwaysActive: false, content: 'speaker match' })],
+    })
+    const database = makeDb({ characters: [currentChar] })
+    const report = activateLorebook({
+      database,
+      currentChar,
+      currentChat: makeChat({ message: [makeMessage({ role: 'char', data: 'unrelated text', saying, name })] }),
+      resolveSpeakerName: (id) =>
+        id === 'external' ? 'CapturedSibling' : id === 'char-tess' ? 'OldTarget' : undefined,
+    })
+    expect(report.actives.map((entry) => entry.prompt)).toEqual(['speaker match'])
+    expect(report.matchLog[0]?.prompt).toContain(key.toLocaleLowerCase())
+  })
+
   it('child mode mirrors the previous parent when the parent did not fire', () => {
     const parent = makeLore({
       id: 'shared-id',

@@ -1,4 +1,5 @@
-import type { CBSRegisterArg, CbsDatabase, CbsMatcherArg as matcherArg } from '@risuai/shared-core/cbs-contracts'
+import type { FastifyDatabase } from './serverTypes.js'
+import type { CBSRegisterArg, CbsMatcherArg as matcherArg } from '@risuai/shared-core/cbs-contracts'
 import { risuChatParser } from '@risuai/shared-core/risuchat-parser'
 import { dateTimeFormat, makeArray, parseArray, parseDict } from '@risuai/shared-core/risuchat-parser-helpers'
 import { calculateString } from '@risuai/shared-core/calculation'
@@ -74,6 +75,27 @@ function reportedScreenHeight(): string {
   return ''
 }
 
+/**
+ * Checked generation input is adapted to the legacy callback's required scalar
+ * surface. Empty prompt strings are parser identities; absent toggle is false.
+ * Model callbacks use the resolved prompt scope before these legacy fallbacks.
+ * The metadata locale fallback is empty when no application locale was saved.
+ * Character/chat references remain the selected mutable script context.
+ */
+export function adaptServerCbsDatabase(database: FastifyDatabase) {
+  return {
+    ...database,
+    aiModel: database.aiModel ?? '',
+    subModel: database.subModel ?? '',
+    maxContext: database.maxContext ?? 0,
+    mainPrompt: database.mainPrompt ?? '',
+    jailbreak: database.jailbreak ?? '',
+    globalNote: database.globalNote ?? '',
+    jailbreakToggle: database.jailbreakToggle ?? false,
+    language: database.language ?? '',
+  }
+}
+
 export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
   return {
     getDatabase: () => {
@@ -81,7 +103,7 @@ export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
       if (!db) {
         throw new Error('promptScope not set; call setActivePromptScope before expandVariables')
       }
-      return db as CbsDatabase
+      return adaptServerCbsDatabase(db)
     },
     getUserName: () => {
       const db = getActiveDatabase()

@@ -1,8 +1,14 @@
+import { decodeGenerationSettings } from './generationInputDecoder.js'
 import type {
   FastifyChat as Chat,
   FastifyCharacter as character,
   FastifyDatabase as Database,
   FastifyMessagePresetInfo as MessagePresetInfo,
+  WorkingGenerationSettings,
+  GenerationPreflightModule,
+  GenerationConfigurationSettings,
+  ResolvedGenerationConfigurationSettings,
+  GenerationPreflightInputs,
 } from './serverTypes.js'
 import {
   createChatGenerationSettingsIncompleteError,
@@ -10,8 +16,7 @@ import {
   type ChatGenerationSettingsIncompleteErrorBody,
   type ChatGenerationSettingsReadiness,
 } from '@risuai/shared-core/chat-generation-settings'
-import type { ModelPresetRecord, PromptPresetRecord } from '../commands/splitPresets.js'
-import { mirrorLegacyProfile, type PersonaRecord } from '../commands/personas.js'
+import { mirrorLegacyProfile } from '../commands/personas.js'
 import {
   applyEffectivePresetComposition,
   applyPromptPresetModelOverrides,
@@ -32,9 +37,6 @@ import { resolveEffectiveAgentPresetId } from '@risuai/shared-core/agent-preset-
 import { combineModuleIntegrations, resolveAgentPresetModuleIntegration } from '@risuai/shared-core/module-integration'
 import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
 import { selectedPersonaIndexFromStableId } from '@risuai/shared-core/persona-selection-identity'
-
-type JsonRecord = Record<string, unknown>
-type EffectivePromptPresetRecord = PromptPresetRecord & { moduleIntergration?: unknown }
 
 export class ChatGenerationSettingsIncompleteAssemblyError extends Error {
   readonly statusCode = 409
@@ -87,12 +89,29 @@ export interface EffectiveGenerationConfigResult {
   resolvedMainProfile: ResolvedModelProfile
 }
 
-export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigInput): EffectiveGenerationConfigResult {
+type GenerationSettings = Omit<WorkingGenerationSettings, 'modules'>
+type ResolvedConfiguration<Module extends GenerationPreflightModule> = {
+  database: ResolvedGenerationConfigurationSettings<Module>
+  promptInfo: MessagePresetInfo
+  resolvedMainProfile: ResolvedModelProfile
+}
+export type ResolvedGenerationPreflightConfiguration = ResolvedConfiguration<GenerationPreflightModule>
+
+/** Resolve configuration without a transcript or executable module bodies. */
+export function resolveGenerationPreflightConfiguration(
+  input: GenerationPreflightInputs,
+): ResolvedGenerationPreflightConfiguration {
+  return resolveGenerationConfiguration(input)
+}
+
+function resolveGenerationConfiguration<Module extends GenerationPreflightModule>(
+  input: Omit<GenerationPreflightInputs, 'database'> & { database: GenerationConfigurationSettings<Module> },
+): ResolvedConfiguration<Module> {
   const settings = input.currentChat.generationSettings
   const effectiveAgentPresetId = resolveEffectiveAgentPresetId(input.database, settings)
-  const modelPresets = (input.database.modelPresets ?? []) as unknown as ModelPresetRecord[]
-  const promptPresets = (input.database.promptPresets ?? []) as unknown as EffectivePromptPresetRecord[]
-  const personas = (input.database.personas ?? []) as PersonaRecord[]
+  const modelPresets = input.database.modelPresets ?? []
+  const promptPresets = input.database.promptPresets ?? []
+  const personas = input.database.personas ?? []
   const selectedModelPreset = findById(modelPresets, settings?.modelPresetId)
   const selectedPromptPreset = resolveUniquePromptPreset(promptPresets, settings?.promptPresetId)
   const readiness = resolveChatGenerationSettingsReadiness({
@@ -115,9 +134,9 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
     throw new ChatGenerationSettingsIncompleteAssemblyError(readiness, input.currentChat.id)
   }
 
-  const persona = findById(personas, settings?.personaId) as PersonaRecord | undefined
-  const modelPreset = selectedModelPreset as ModelPresetRecord | undefined
-  const promptPreset = selectedPromptPreset as PromptPresetRecord | undefined
+  const persona = findById(personas, settings?.personaId)
+  const modelPreset = selectedModelPreset
+  const promptPreset = selectedPromptPreset
   if (!persona || !modelPreset || !promptPreset) {
     throw new ChatGenerationSettingsIncompleteAssemblyError(readiness, input.currentChat.id)
   }
@@ -129,26 +148,19 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
     sidebarToggles: settings?.sidebarToggles,
   })
 
-  const effectiveDatabase = structuredClone(input.database) as Database
-  const effectiveModelPresets = (effectiveDatabase.modelPresets ?? []) as unknown as ModelPresetRecord[]
-  const effectivePromptPresets = (effectiveDatabase.promptPresets ?? []) as unknown as EffectivePromptPresetRecord[]
-  const effectivePersonas = (effectiveDatabase.personas ?? []) as PersonaRecord[]
-  const effectiveModelPresetIndex = effectiveModelPresets.findIndex(
-    (candidate: ModelPresetRecord) => candidate.id === modelPreset.id,
-  )
-  const effectivePromptPreset = resolveUniquePromptPreset(effectivePromptPresets, promptPreset.id)
-  const effectivePromptPresetIndex = effectivePromptPreset ? effectivePromptPresets.indexOf(effectivePromptPreset) : -1
-  const effectivePersonaIndex = effectivePersonas.findIndex((candidate: PersonaRecord) => candidate.id === persona.id)
-  const effectiveModelPreset = effectiveModelPresets[effectiveModelPresetIndex] as ModelPresetRecord | undefined
-  const effectivePersona = effectivePersonas[effectivePersonaIndex] as PersonaRecord | undefined
-
-  if (!effectiveModelPreset || !effectivePromptPreset || !effectivePersona) {
-    throw new ChatGenerationSettingsIncompleteAssemblyError(readiness, input.currentChat.id)
-  }
+  // Preset composition clones only selected overlay fields that it writes.
+  // Selected collection records remain shared configuration, while all mutable
+  // prompt/character/chat state is owned by the assembly wrapper below.
+  const effectiveDatabase: GenerationConfigurationSettings<Module> = { ...input.database }
+  const effectiveModelPresetIndex = modelPresets.indexOf(modelPreset)
+  const effectivePromptPresetIndex = promptPresets.indexOf(promptPreset)
+  const effectiveModelPreset = modelPreset
+  const effectivePromptPreset = promptPreset
+  const effectivePersona = persona
 
   effectiveDatabase.modelPresetsId = effectiveModelPresetIndex
   effectiveDatabase.promptPresetsId = effectivePromptPresetIndex
-  applyEffectivePresetComposition(effectiveDatabase as unknown as JsonRecord, {
+  applyEffectivePresetComposition(effectiveDatabase, {
     modelPreset: effectiveModelPreset,
     promptPreset: effectivePromptPreset,
     scope: 'full-generation',
@@ -159,12 +171,14 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
   )
   const promptPresetRegex = resolvePromptPresetRegexField(effectivePromptPreset)
   effectiveDatabase.presetRegex = structuredClone(
-    promptPresetRegex.present && Array.isArray(promptPresetRegex.value) ? promptPresetRegex.value : [],
-  ) as Database['presetRegex']
+    promptPresetRegex.present && Array.isArray(promptPresetRegex.value)
+      ? (decodeGenerationSettings({ presetRegex: promptPresetRegex.value }).presetRegex ?? [])
+      : [],
+  )
 
   effectiveDatabase.selectedPersonaId = effectivePersona.id
   effectiveDatabase.selectedPersona = selectedPersonaIndexFromStableId(effectiveDatabase)
-  mirrorLegacyProfile(effectiveDatabase as unknown as JsonRecord, effectivePersona)
+  mirrorLegacyProfile(effectiveDatabase, effectivePersona)
 
   effectiveDatabase.globalChatVariables = {
     ...recordOfStrings(effectiveDatabase.globalChatVariables),
@@ -189,7 +203,7 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
   // Durable profile runtime fields materialize onto the flat request settings.
   // Prompt preset model overrides are the final user-facing layer for a chat, so
   // reapply them after profile runtime defaults/profile-local options.
-  applyPromptPresetModelOverrides(effectiveDatabase as unknown as JsonRecord, effectivePromptPreset)
+  applyPromptPresetModelOverrides(effectiveDatabase, effectivePromptPreset)
   if (profile.source.kind === 'durable-profile') {
     effectiveDatabase.customTokenizer = resolveModelProfileTokenizerSelection(effectiveDatabase, profile)
   }
@@ -198,26 +212,45 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
     throw new ModelProfileGenerationGuardAssemblyError(tokenizerBlockReason)
   }
 
-  const effectiveCurrentChar = effectiveDatabase.characters[input.selectedCharID]
-  const effectiveStoredChat = effectiveCurrentChar?.chats?.[input.chatPage]
-  if (!effectiveCurrentChar || !effectiveStoredChat) {
-    throw new ChatGenerationSettingsIncompleteAssemblyError(readiness, input.currentChat.id)
-  }
+  return { database: effectiveDatabase, promptInfo, resolvedMainProfile: profile }
+}
 
+export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigInput): EffectiveGenerationConfigResult {
+  const resolved = resolveGenerationConfiguration(input)
+  const storedChat = input.currentChar.chats[input.chatPage]
+  if (!storedChat) throw new Error('selected generation chat is unavailable')
+  const currentChar = cloneGenerationWorkingCharacter(input.currentChar)
+  currentChar.chats[input.chatPage] = structuredClone(storedChat)
+  const characters = input.database.characters.slice()
+  characters[input.selectedCharID] = currentChar
+  const database: Database = { ...resolved.database, characters }
   return {
-    database: effectiveDatabase,
-    currentChar: effectiveCurrentChar,
-    currentChat: structuredClone(effectiveStoredChat) as Chat,
-    promptInfo,
-    resolvedMainProfile: profile,
+    ...resolved,
+    database,
+    currentChar,
+    currentChat: structuredClone(storedChat),
   }
 }
 
-export function applyProfileBoundGenerationFields(database: Database, profile: ResolvedModelProfile): void {
+/** Own mutable character fields without copying sibling transcripts. */
+export function cloneGenerationWorkingCharacter(source: character): character {
+  const copy: character = structuredClone({ ...source, chats: [] })
+  copy.chats = source.chats.slice()
+  return copy
+}
+
+export function applyProfileBoundGenerationFields(database: GenerationSettings, profile: ResolvedModelProfile): void {
   if (profile.source.kind !== 'durable-profile') return
 
   database.aiModel = profile.modelId
   const runtime = profile.runtimeOptions
+  const checkedRuntime = decodeGenerationSettings({
+    thinkingType: runtime.thinkingType,
+    deepseekThinkingType: runtime.deepseekThinkingType,
+    adaptiveThinkingEffort: runtime.adaptiveThinkingEffort,
+    deepseekReasoningEffort: runtime.deepseekReasoningEffort,
+    dynamicOutput: runtime.dynamicOutput,
+  })
   assignIfDefined(database, 'maxContext', runtime.maxContext)
   assignIfDefined(database, 'maxResponse', runtime.maxResponse)
   assignIfDefined(database, 'temperature', runtime.rawTemperature)
@@ -230,22 +263,10 @@ export function applyProfileBoundGenerationFields(database: Database, profile: R
   assignIfDefined(database, 'PresensePenalty', scaleSamplerForDatabase(runtime.presencePenalty))
   assignIfDefined(database, 'reasoningEffort', runtime.reasoningEffort)
   assignIfDefined(database, 'thinkingTokens', runtime.thinkingTokens)
-  assignIfDefined(database, 'thinkingType', runtime.thinkingType as Database['thinkingType'] | undefined)
-  assignIfDefined(
-    database,
-    'deepseekThinkingType',
-    runtime.deepseekThinkingType as Database['deepseekThinkingType'] | undefined,
-  )
-  assignIfDefined(
-    database,
-    'adaptiveThinkingEffort',
-    runtime.adaptiveThinkingEffort as Database['adaptiveThinkingEffort'] | undefined,
-  )
-  assignIfDefined(
-    database,
-    'deepseekReasoningEffort',
-    runtime.deepseekReasoningEffort as Database['deepseekReasoningEffort'] | undefined,
-  )
+  assignIfDefined(database, 'thinkingType', checkedRuntime.thinkingType)
+  assignIfDefined(database, 'deepseekThinkingType', checkedRuntime.deepseekThinkingType)
+  assignIfDefined(database, 'adaptiveThinkingEffort', checkedRuntime.adaptiveThinkingEffort)
+  assignIfDefined(database, 'deepseekReasoningEffort', checkedRuntime.deepseekReasoningEffort)
   assignIfDefined(database, 'verbosity', runtime.verbosity)
   assignIfDefined(database, 'halfStreaming', runtime.halfStreaming)
   assignIfDefined(database, 'useStreaming', runtime.useStreaming)
@@ -255,14 +276,50 @@ export function applyProfileBoundGenerationFields(database: Database, profile: R
   assignIfDefined(database, 'jsonSchema', runtime.jsonSchema)
   assignIfDefined(database, 'strictJsonSchema', runtime.strictJsonSchema)
   assignIfDefined(database, 'outputImageModal', runtime.outputImageModal)
-  assignIfDefined(database, 'dynamicOutput', runtime.dynamicOutput as Database['dynamicOutput'])
+  assignIfDefined(database, 'dynamicOutput', checkedRuntime.dynamicOutput)
   database.modelTools = [...runtime.modelTools]
   assignIfDefined(database, 'enableCustomFlags', runtime.enableCustomFlags)
   if (runtime.customFlags !== undefined) database.customFlags = [...runtime.customFlags]
   assignIfDefined(database, 'customTokenizer', runtime.customTokenizer)
 }
 
-function assignIfDefined<K extends keyof Database>(database: Database, key: K, value: Database[K] | undefined): void {
+type ProfileBoundGenerationFields = Pick<
+  GenerationSettings,
+  | 'maxContext'
+  | 'maxResponse'
+  | 'temperature'
+  | 'top_p'
+  | 'top_k'
+  | 'min_p'
+  | 'top_a'
+  | 'repetition_penalty'
+  | 'frequencyPenalty'
+  | 'PresensePenalty'
+  | 'reasoningEffort'
+  | 'thinkingTokens'
+  | 'thinkingType'
+  | 'deepseekThinkingType'
+  | 'adaptiveThinkingEffort'
+  | 'deepseekReasoningEffort'
+  | 'verbosity'
+  | 'halfStreaming'
+  | 'useStreaming'
+  | 'genTime'
+  | 'extractJson'
+  | 'jsonSchemaEnabled'
+  | 'jsonSchema'
+  | 'strictJsonSchema'
+  | 'outputImageModal'
+  | 'dynamicOutput'
+  | 'enableCustomFlags'
+  | 'customTokenizer'
+>
+
+function assignIfDefined<K extends keyof ProfileBoundGenerationFields>(
+  database: GenerationSettings,
+  key: K,
+  value: GenerationSettings[K] | undefined,
+): void {
   if (value !== undefined) {
     database[key] = value
   }

@@ -1,3 +1,4 @@
+import { decodeProviderGenerationSettings } from './prompt/generationInputDecoder.js'
 import type { DatabaseSync } from 'node:sqlite'
 import {
   COMMAND_EVENT_CATALOG,
@@ -337,7 +338,7 @@ function loadAnalysisDatabase(options: BardWikiApplyTurnHandlerOptions, chatId: 
   if (!loaded || typeof loaded !== 'object' || Array.isArray(loaded)) {
     throw new BardWikiJobHandlerError('bardwiki_model_unavailable', 'BardWiki model settings are unavailable')
   }
-  return loaded as BardWikiGenerationDatabase
+  return decodeProviderGenerationSettings(loaded)
 }
 
 function commitChangeSet(

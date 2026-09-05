@@ -1,9 +1,9 @@
 import type { ScriptModelOverrides } from '@risuai/shared-core/script-model-overrides'
-import type { triggerscript } from './triggerDescriptors.js'
+import type { ServerTriggerScript as triggerscript } from './triggerDescriptors.js'
 
 export interface customscript {
   id?: string
-  comment: string
+  comment?: string
   in: string
   out: string
   type: string
@@ -29,7 +29,7 @@ export interface loreBook {
   activationPercent?: number
   loreCache?: {
     key: string
-    data: string[]
+    data: readonly string[]
   }
   useRegex?: boolean
   bookVersion?: number

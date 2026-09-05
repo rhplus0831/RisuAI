@@ -32,7 +32,7 @@ export interface PromptItemTyped {
   id?: string
   type: 'persona' | 'description' | 'lorebook' | 'postEverything' | 'memory'
   innerFormat?: string
-  role2?: PromptRole
+  role2?: string | null
   name?: string
 }
 
@@ -41,7 +41,7 @@ export interface PromptItemAuthorNote {
   type: 'authornote'
   innerFormat?: string
   defaultText?: string
-  role2?: PromptRole
+  role2?: string | null
   name?: string
 }
 

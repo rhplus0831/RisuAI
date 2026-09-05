@@ -26,9 +26,13 @@ export type CbsDatabase = {
   globalNote: string
   jailbreakToggle: boolean
   language: string
-  promptPresets?: Array<{ id?: string; name?: string; promptTemplate?: Array<{ type?: string; defaultText?: string }> }>
+  promptPresets?: ReadonlyArray<{
+    id?: string
+    name?: string
+    promptTemplate?: ReadonlyArray<{ type?: string; defaultText?: string }> | null
+  }>
   promptPresetsId?: number
-  promptTemplate?: Array<{ type?: string; defaultText?: string }>
+  promptTemplate?: ReadonlyArray<{ type?: string; defaultText?: string }> | null
 }
 
 export type CbsMessage = {
@@ -63,7 +67,7 @@ export type CbsCharacter = {
   chatPage: number
   emotionImages?: Array<[string, ...unknown[]]>
   additionalAssets?: Array<[string, string, ...unknown[]]>
-  prebuiltAssetCommand?: string
+  prebuiltAssetCommand?: boolean | string
   prebuiltAssetExclude?: string[]
 }
 
@@ -86,8 +90,8 @@ export type CbsModule = {
   id?: string
   name?: string
   namespace?: string
-  lorebook?: CbsLoreBook[]
-  assets?: Array<[string, string, ...unknown[]]>
+  lorebook?: readonly CbsLoreBook[]
+  assets?: ReadonlyArray<readonly [string, string, ...unknown[]]>
 }
 
 export type CBSModelRole = 'chatMain' | 'chatAux'

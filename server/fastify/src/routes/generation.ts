@@ -1,5 +1,6 @@
+import { decodeProviderGenerationSettings } from '../prompt/generationInputDecoder.js'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import type { FastifyDatabase as Database } from '../prompt/serverTypes.js'
+import type { ProviderGenerationSettings as Database } from '../prompt/serverTypes.js'
 import type { PromptMessage } from '../prompt/promptMessage.js'
 import type { LegacyModelMode } from '@risuai/shared-core/model-roles'
 import {
@@ -358,7 +359,7 @@ function selectedCompletionProfile(db: Database, body: CompletionRequestBody): R
 }
 
 function buildCompletionDatabase(db: Database, body: CompletionRequestBody, profile: ResolvedModelProfile): Database {
-  const next = { ...db } as Database
+  const next: Database = { ...db }
   applyProfileBoundGenerationFields(next, profile)
   next.aiModel = profile.modelId
   // `/completion` callers explicitly negotiate their transport via `stream`.
@@ -379,13 +380,13 @@ function buildCompletionDatabase(db: Database, body: CompletionRequestBody, prof
   }
   if (typeof body.currentCharName === 'string' && body.currentCharName.length > 0) {
     const first = Array.isArray(db.characters) ? db.characters[0] : undefined
-    next.characters = [{ ...(first as object), name: body.currentCharName }] as Database['characters']
+    next.characters = [{ ...first, name: body.currentCharName }]
   }
   return next
 }
 
 function settingsToCompletionDatabase(settings: Record<string, unknown>): Database {
-  return settings as unknown as Database
+  return decodeProviderGenerationSettings(settings)
 }
 
 function badRequest(reply: FastifyReply, error: string): void {

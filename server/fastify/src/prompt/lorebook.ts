@@ -128,6 +128,7 @@ export interface LorebookActivationReport {
 }
 
 export interface ActivateLorebookInput {
+  resolveSpeakerName?: (characterId: string) => string | undefined
   database: Database
   currentChar: character
   currentChat: Chat
@@ -307,6 +308,7 @@ function buildSearchableCorpus(
   messages: Message[],
   database: Database,
   currentChar: character,
+  resolveSpeakerName?: (characterId: string) => string | undefined,
 ): SearchableMessageCorpus {
   const username = database.username ?? 'user'
   const baseEntries = messages.map((msg) => {
@@ -318,7 +320,11 @@ function buildSearchableCorpus(
         kind: 'base',
       }) as SearchableMessageBase
     }
-    const speakerName = msg.name ?? findCharByChaId(database, msg.saying)?.name ?? currentChar.name
+    const speakerName =
+      msg.name ??
+      findCharByChaId(database, msg.saying)?.name ??
+      (msg.saying ? resolveSpeakerName?.(msg.saying) : undefined) ??
+      currentChar.name
     return normalizeSearchableBase({
       prompt: `\x01{{${speakerName}}}:` + msg.data + '\x01',
       data: msg.data,
@@ -598,7 +604,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
   const disabledUIPrompts: string[] = []
   const matchLog: LoreMatchLogEntry[] = []
   const activatedIndexes = new Set<number>()
-  const searchCorpus = buildSearchableCorpus(currentChat.message ?? [], database, currentChar)
+  const searchCorpus = buildSearchableCorpus(currentChat.message ?? [], database, currentChar, input.resolveSpeakerName)
 
   // Includes the implicit first message, matching `loadLoreBookV3Prompt`.
   const chatLength = (currentChat.message?.length ?? 0) + 1
@@ -623,7 +629,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
     matching = false
 
     for (let i = 0; i < entries.length; i++) {
-      const entry = entries[i]
+      let entry = entries[i]
       if (!entry) continue
       if (activatedIndexes.has(i)) continue
       if (entry.mode === 'folder') continue
@@ -653,9 +659,8 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
         for (let j = 0; j < i; j++) {
           if (entries[j] && entries[j].id === entry.id) {
             if (!activatedIndexes.has(j)) {
-              entry.comment = entries[j].comment
-              entry.content = entries[j].content
-              entry.alwaysActive = true
+              entry = { ...entry, comment: entries[j].comment, content: entries[j].content, alwaysActive: true }
+              entries[i] = entry
               activated = true
             }
             break
@@ -974,7 +979,7 @@ export async function activateLorebookAsync(input: ActivateLorebookInput): Promi
   const disabledUIPrompts: string[] = []
   const matchLog: LoreMatchLogEntry[] = []
   const activatedIndexes = new Set<number>()
-  const searchCorpus = buildSearchableCorpus(currentChat.message ?? [], database, currentChar)
+  const searchCorpus = buildSearchableCorpus(currentChat.message ?? [], database, currentChar, input.resolveSpeakerName)
 
   const chatLength = (currentChat.message?.length ?? 0) + 1
   const defaultScanDepth = currentChar.loreSettings?.scanDepth ?? database.loreBookDepth ?? 5
@@ -988,7 +993,7 @@ export async function activateLorebookAsync(input: ActivateLorebookInput): Promi
     matching = false
 
     for (let i = 0; i < entries.length; i++) {
-      const entry = entries[i]
+      let entry = entries[i]
       if (!entry) continue
       if (activatedIndexes.has(i)) continue
       if (entry.mode === 'folder') continue
@@ -1015,9 +1020,8 @@ export async function activateLorebookAsync(input: ActivateLorebookInput): Promi
         for (let j = 0; j < i; j++) {
           if (entries[j] && entries[j].id === entry.id) {
             if (!activatedIndexes.has(j)) {
-              entry.comment = entries[j].comment
-              entry.content = entries[j].content
-              entry.alwaysActive = true
+              entry = { ...entry, comment: entries[j].comment, content: entries[j].content, alwaysActive: true }
+              entries[i] = entry
               activated = true
             }
             break

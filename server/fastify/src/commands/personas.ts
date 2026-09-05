@@ -227,7 +227,10 @@ export function saveSelectedPersonaSnapshot(database: JsonRecord, personas: Pers
   }
 }
 
-export function mirrorLegacyProfile(database: JsonRecord, persona: PersonaRecord): void {
+export function mirrorLegacyProfile(
+  database: JsonRecord,
+  persona: Pick<PersonaRecord, 'name' | 'icon' | 'personaPrompt' | 'note'>,
+): void {
   database.username = stringValue(persona.name)
   database.userIcon = stringValue(persona.icon)
   database.personaPrompt = stringValue(persona.personaPrompt)

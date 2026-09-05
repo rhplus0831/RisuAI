@@ -1,11 +1,7 @@
-import type { ChatDispatchDatabase } from './prompt/chatDispatch.js'
+import type { ProviderGenerationSettings } from './prompt/serverTypes.js'
 
-/**
- * BardWiki consumes the database through Fastify's provider-dispatch boundary.
- * The dispatch domain remains responsible for removing its browser aggregate
- * dependency in the matching server-consumer slice.
- */
-export type BardWikiGenerationDatabase = ChatDispatchDatabase
+/** BardWiki provider work consumes selected provider settings and optional display names. */
+export type BardWikiGenerationDatabase = ProviderGenerationSettings
 
 /** Narrow prompt row shape authored by BardWiki server code. */
 export interface BardWikiChatRow {

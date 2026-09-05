@@ -1,3 +1,4 @@
+import { decodeProviderGenerationSettings } from './prompt/generationInputDecoder.js'
 import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import {
@@ -685,7 +686,7 @@ function loadAnalysisDatabase(options: BardWikiRebuildHandlerOptions, chatId: st
   if (!loaded || typeof loaded !== 'object' || Array.isArray(loaded)) {
     throw new BardWikiJobHandlerError('bardwiki_model_unavailable', 'BardWiki model settings are unavailable')
   }
-  return loaded as BardWikiGenerationDatabase
+  return decodeProviderGenerationSettings(loaded)
 }
 
 function sourceChanged(): BardWikiJobHandlerError {

@@ -1,9 +1,10 @@
+import { decodeProviderGenerationSettings } from './prompt/generationInputDecoder.js'
 import { Readable } from 'node:stream'
 import { finished } from 'node:stream/promises'
 import { StringDecoder } from 'node:string_decoder'
 import type { DatabaseSync } from 'node:sqlite'
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import type { FastifyDatabase as Database } from './prompt/serverTypes.js'
+import type { ProviderGenerationSettings as Database } from './prompt/serverTypes.js'
 import type { LegacyModelMode } from '@risuai/shared-core/model-roles'
 import { LLMFormat } from '@risuai/shared-core/model-types'
 import {
@@ -99,7 +100,7 @@ export async function handleOllamaCloudToolProxy(
     payload = parsePayload(req.body, query.protocol)
     const settings = loadServerIntentCompletionSettings(db)
     if (settings === null) throw new Error('database is not initialized')
-    database = settings as unknown as Database
+    database = decodeProviderGenerationSettings(settings)
     target = resolveTarget(database, query)
   } catch (error) {
     const message = error instanceof Error && error.message ? error.message : 'invalid Ollama Cloud tool request'
@@ -267,8 +268,7 @@ function resolveTarget(database: Database, query: OllamaCloudToolQuery): Resolve
   const profile = selectedProfile(database, query)
   assertModelProfileGenerationReady(profile)
   const durableProviderOptions = query.profileId
-    ? database.modelProfiles?.find((candidate: Record<string, any>) => candidate.id === query.profileId)
-        ?.providerOptions
+    ? database.modelProfiles?.find((candidate) => candidate.id === query.profileId)?.providerOptions
     : undefined
   const ollama = profile.providerOptions.ollama
   const cloud = ollama?.cloud ?? profile.modelId === 'ollama-cloud'

@@ -42,7 +42,7 @@ export interface ProviderCapabilityConfig {
   forceReplaceUrl?: string
   proxyKey?: string
   oaiCompApiKeys?: Record<string, string | undefined>
-  customModels?: CustomModelEntryLike[]
+  customModels?: readonly CustomModelEntryLike[]
   googleProjectId?: string
   vertexRegion?: string
   vertexClientEmail?: string

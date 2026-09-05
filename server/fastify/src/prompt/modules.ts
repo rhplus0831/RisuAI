@@ -1,10 +1,12 @@
-import type { FastifyChat as Chat, FastifyCharacter as character, FastifyDatabase as Database } from './serverTypes.js'
-import type { ServerTriggerScript as triggerscript } from './triggerDescriptors.js'
 import type {
-  ServerModule as RisuModule,
-  ServerModuleLorebook as loreBook,
-  ServerModuleRegexScript as customscript,
-} from './moduleDescriptors.js'
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+  DeepReadonly,
+  FastifyLoreBook as loreBook,
+} from './serverTypes.js'
+import type { ServerTriggerScript as triggerscript } from './triggerDescriptors.js'
+import type { ServerModule, ServerModuleRegexScript as customscript } from './moduleDescriptors.js'
 import {
   hasModuleActivationIdentifiers,
   moduleActivationIdentifiersKey,
@@ -15,6 +17,8 @@ import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-
 import { parseModuleIntegration, resolveAgentPresetModuleIntegration } from '@risuai/shared-core/module-integration'
 import { attachTriggerSource } from './triggerSource.js'
 import { selectedPersonaIndexFromStableId } from '@risuai/shared-core/persona-selection-identity'
+
+type RisuModule = DeepReadonly<ServerModule>
 
 /**
  * Server-side module helpers ported from `src/ts/process/modules.ts`. Resolves
@@ -46,7 +50,7 @@ interface ActiveModulesMemoEntry {
   /** The activation identifiers the cached result was computed from. */
   key: string
   /** The `database.modules` array the cached result was filtered from. */
-  modulesRef: RisuModule[] | undefined
+  modulesRef: readonly RisuModule[] | undefined
   result: RisuModule[]
 }
 
@@ -61,7 +65,10 @@ function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
 
-function resolveServerEffectiveAgentPresetId(database: Database, settings: any): string | undefined {
+function resolveServerEffectiveAgentPresetId(
+  database: Database,
+  settings: Chat['generationSettings'],
+): string | undefined {
   if (settings && Object.prototype.hasOwnProperty.call(settings, 'agentPresetId')) {
     return nonEmptyString(settings.agentPresetId) ? settings.agentPresetId.trim() : undefined
   }
@@ -82,7 +89,7 @@ function resolveServerPersonaModuleIds(database: Database, currentChat: Chat | u
   }
   if (!personaId) return []
 
-  const persona = database.personas?.find((candidate: any) => candidate.id === personaId)
+  const persona = database.personas?.find((candidate) => candidate.id === personaId)
   if (!persona || !Array.isArray(persona.modules)) return []
   return Array.from(
     new Set(persona.modules.filter((moduleId: unknown): moduleId is string => nonEmptyString(moduleId))),
@@ -99,10 +106,7 @@ function resolveServerActiveModuleIdentifiers(
     typeof promptPresetId === 'string' && promptPresetId.trim().length > 0
       ? {
           source: 'promptPresetIntegration' as const,
-          value: resolveUniquePromptPreset(
-            database.promptPresets as readonly { id?: unknown; moduleIntergration?: unknown }[] | undefined,
-            promptPresetId,
-          )?.moduleIntergration,
+          value: resolveUniquePromptPreset(database.promptPresets, promptPresetId)?.moduleIntergration,
         }
       : { source: 'legacyIntegration' as const, value: database.moduleIntergration }
   const agentPresetIntegration = resolveAgentPresetModuleIntegration(
@@ -138,11 +142,11 @@ export function getActiveModules(
     modules: database.modules ?? [],
     identifiers: activationIdentifiers,
   }).map((state) => state.module)
-  activeModulesMemo.set(database, { key, modulesRef: database.modules, result: result as RisuModule[] })
-  return result as RisuModule[]
+  activeModulesMemo.set(database, { key, modulesRef: database.modules, result })
+  return result
 }
 
-export function getModuleRegexScripts(modules: RisuModule[]): customscript[] {
+export function getModuleRegexScripts(modules: readonly RisuModule[]): customscript[] {
   const out: customscript[] = []
   for (const m of modules) {
     if (!m?.regex) continue
@@ -151,7 +155,7 @@ export function getModuleRegexScripts(modules: RisuModule[]): customscript[] {
   return out
 }
 
-export function getModuleLorebooks(modules: RisuModule[]): loreBook[] {
+export function getModuleLorebooks(modules: readonly RisuModule[]): loreBook[] {
   const out: loreBook[] = []
   for (const m of modules) {
     if (!m?.lorebook) continue
@@ -165,8 +169,8 @@ export function getModuleLorebooks(modules: RisuModule[]): loreBook[] {
  * `src/ts/process/modules.ts` `getModuleAssets()` for the prompt
  * leaf's `{{asset_prompt::…}}` resolution.
  */
-export function getModuleAssets(modules: RisuModule[]): [string, string, string][] {
-  const out: [string, string, string][] = []
+export function getModuleAssets(modules: readonly RisuModule[]): Array<readonly [string, string, string]> {
+  const out: Array<readonly [string, string, string]> = []
   for (const m of modules) {
     if (!m?.assets) continue
     for (const a of m.assets) out.push(a)
@@ -184,7 +188,7 @@ export function getModuleAssets(modules: RisuModule[]): [string, string, string]
  * (`{ ...t, lowLevelAccess }`) and never mutates the module's own trigger
  * objects. The server also attaches source metadata for diagnostics.
  */
-export function getModuleTriggers(modules: RisuModule[]): triggerscript[] {
+export function getModuleTriggers(modules: readonly RisuModule[]): triggerscript[] {
   const out: triggerscript[] = []
   for (const m of modules) {
     if (!m?.trigger) continue
@@ -197,7 +201,7 @@ export function getModuleTriggers(modules: RisuModule[]): triggerscript[] {
           ownerType: 'module',
           ownerId: m.id,
           ownerName: m.name,
-          triggerId: (t as { id?: string }).id,
+          triggerId: t.id,
           triggerIndex: index,
           triggerComment: t.comment,
           triggerType: t.type,

@@ -36,7 +36,7 @@ function db(overrides: Partial<Database> = {}): Database {
         providerId: 'debug-echo',
         modelId: 'debug-echo',
       },
-    ] as Database['modelProfiles'])
+    ] as NonNullable<Database['modelProfiles']>)
   const modelRoleProfiles =
     overrides.modelRoleProfiles ??
     ({
@@ -142,7 +142,15 @@ function preset(steps: AgentPresetStepRecord[]): AgentPresetRecord {
 }
 
 function beforeMainPlan(database: Database, steps: AgentPresetStepRecord[]) {
-  const planning = planAgentPreset({ database, preset: preset(steps) })
+  const planning = planAgentPreset({
+    database: {
+      ...database,
+      modelProfiles: database.modelProfiles ?? [],
+      agents: database.agents ?? [],
+      agentPresets: database.agentPresets ?? [],
+    },
+    preset: preset(steps),
+  })
   expect(planning.plan).toBeDefined()
   return planning.plan!.beforeMain
 }
@@ -669,7 +677,15 @@ describe('Agent Preset phase execution', () => {
           text: 'before-output',
         },
       ],
-      plan: planAgentPreset({ database, preset: preset([after]) }).plan!.afterMain,
+      plan: planAgentPreset({
+        database: {
+          ...database,
+          modelProfiles: database.modelProfiles ?? [],
+          agents: database.agents ?? [],
+          agentPresets: database.agentPresets ?? [],
+        },
+        preset: preset([after]),
+      }).plan!.afterMain,
       executeStep,
     })
 

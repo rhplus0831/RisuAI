@@ -157,7 +157,7 @@ interface PreparedScript {
   reg: BoundedRegexLike | null
 }
 
-function parseScripts(rawScripts: customscript[]): {
+function parseScripts(rawScripts: readonly customscript[]): {
   parsed: ParsedScript[]
   orderChanged: boolean
 } {
@@ -633,10 +633,10 @@ interface PreparedScriptsMemoEntry {
    *  request loads a fresh `Database`, so within one assembly these refs are
    *  stable across the whole per-message walk. */
   charRef: character
-  globalscriptRef: customscript[] | undefined
-  presetRegexRef: customscript[] | undefined
+  globalscriptRef: readonly customscript[] | undefined
+  presetRegexRef: readonly customscript[] | undefined
   customscriptRef: customscript[] | undefined
-  activeModulesRef: RisuModule[]
+  activeModulesRef: ReturnType<typeof getActiveModules>
   compatEnabled: boolean
   compatStage: BoundedRegexCompatibilityOptions['stage'] | null
   prepared: PreparedScript[]

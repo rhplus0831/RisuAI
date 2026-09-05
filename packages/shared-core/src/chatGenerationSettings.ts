@@ -1,4 +1,8 @@
-import { agentToggleStorageKey, type AgentPresetUseRecord, type AgentToggleDefinition } from './agentPresetRecords.js'
+import {
+  agentToggleStorageKey,
+  type AgentPresetUseRecord,
+  type ReadonlyAgentToggleDefinition,
+} from './agentPresetRecords.js'
 import { resolveModuleActivationStates } from './moduleActivation.js'
 import { parseModuleIntegration, resolveAgentPresetModuleIntegration } from './moduleIntegration.js'
 import type { ChatGenerationSidebarToggleKind } from './chatGenerationTogglePresetRecords.js'
@@ -195,7 +199,7 @@ export interface ChatGenerationAgentPresetReference {
 export interface ChatGenerationAgentReference {
   id?: string | null
   name?: string | null
-  toggles?: readonly AgentToggleDefinition[] | null
+  toggles?: readonly ReadonlyAgentToggleDefinition[] | null
 }
 
 export interface ChatGenerationModuleReference {

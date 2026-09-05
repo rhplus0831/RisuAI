@@ -1,4 +1,4 @@
-import type { FastifyDatabase as Database } from './serverTypes.js'
+import type { ProviderGenerationSettings as Database, ServerSeparateParameters } from './serverTypes.js'
 import type { DatabaseSync } from 'node:sqlite'
 import type { PromptMessage } from './promptMessage.js'
 import { LLMFlags, LLMFormat, LLMProvider, type LLMFormat as LLMFormatValue } from '@risuai/shared-core/model-types'
@@ -29,7 +29,6 @@ import { resolveOpenRouterFreeModel } from '../generation/openrouterFreeModel.js
 import { buildOobaLegacyStopStrings, resolveOobaLegacyRequest, runOobaLegacy } from '../generation/oobaLegacy.js'
 import {
   resolveProviderCapability,
-  type CustomModelEntryLike,
   type ProviderCapabilityInput,
   type ProviderUnsupportedReason,
 } from '@risuai/shared-core/provider-capability'
@@ -105,16 +104,7 @@ interface ChatDispatchArgs {
   onWarning?: (warning: GeminiResponseWarning) => void
 }
 
-interface CustomModelEntry {
-  id?: unknown
-  name?: unknown
-  internalId?: unknown
-  url?: unknown
-  key?: unknown
-  format?: unknown
-  params?: unknown
-  tokenizer?: unknown
-}
+type CustomModelEntry = NonNullable<Database['customModels']>[number]
 
 interface ModelInfoLite {
   id: string
@@ -174,6 +164,8 @@ function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 
+function asNumber<T extends number>(value: T | undefined): T | undefined
+function asNumber(value: unknown): number | undefined
 function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
@@ -198,11 +190,24 @@ interface DispatchParameters {
   verbosity?: string
 }
 
-function dispatchParameterSource(db: Database, profile: ResolvedModelProfile): Record<string, unknown> | Database {
-  if (!db.seperateParametersEnabled || !db.seperateParametersByModel) return db
-  const override = db.seperateParameters?.overrides?.[profile.modelId]
-  return override && typeof override === 'object' ? (override as unknown as Record<string, unknown>) : db
+function dispatchParameterOverride(db: Database, profile: ResolvedModelProfile): ServerSeparateParameters | undefined {
+  if (!db.seperateParametersEnabled || !db.seperateParametersByModel) return undefined
+  return db.seperateParameters?.overrides?.[profile.modelId]
 }
+
+const dispatchSamplerFields = {
+  temperature: 'temperature',
+  top_p: 'top_p',
+  top_k: 'top_k',
+  min_p: 'min_p',
+  top_a: 'top_a',
+  repetition_penalty: 'repetition_penalty',
+  frequency_penalty: 'frequencyPenalty',
+  presence_penalty: 'PresensePenalty',
+  reasoning_effort: 'reasoningEffort',
+  thinking_tokens: 'thinkingTokens',
+  verbosity: 'verbosity',
+} as const satisfies Partial<Record<keyof ServerSeparateParameters, keyof Database>>
 
 function reasoningEffort(
   value: unknown,
@@ -339,37 +344,36 @@ export function resolveOpenAILogitBias(
 /** Resolve only parameters declared by the selected model's capability row. */
 export function resolveDispatchParameters(db: Database, profile: ResolvedModelProfile): DispatchParameters {
   const supported = new Set(profile.modelInfo.parameters)
-  const source = dispatchParameterSource(db, profile) as Record<string, unknown>
-  const from = (separateKey: string, databaseKey: keyof Database, databaseDefault?: unknown): unknown =>
-    source === (db as unknown as Record<string, unknown>) ? (db[databaseKey] ?? databaseDefault) : source[separateKey]
+  const override = dispatchParameterOverride(db, profile)
+  const from = (key: keyof typeof dispatchSamplerFields, databaseDefault?: number): number | undefined =>
+    override ? override[key] : (db[dispatchSamplerFields[key]] ?? databaseDefault)
   const out: DispatchParameters = {}
-  if (supported.has('temperature'))
-    out.temperature = normalizeDispatchSampler(from('temperature', 'temperature'), { scale: 100 })
-  if (supported.has('top_p')) out.topP = normalizeDispatchSampler(from('top_p', 'top_p'))
-  if (supported.has('top_k')) out.topK = normalizeDispatchSampler(from('top_k', 'top_k'))
-  if (supported.has('min_p')) out.minP = normalizeDispatchSampler(from('min_p', 'min_p'))
-  if (supported.has('top_a')) out.topA = normalizeDispatchSampler(from('top_a', 'top_a'))
+  if (supported.has('temperature')) out.temperature = normalizeDispatchSampler(from('temperature'), { scale: 100 })
+  if (supported.has('top_p')) out.topP = normalizeDispatchSampler(from('top_p'))
+  if (supported.has('top_k')) out.topK = normalizeDispatchSampler(from('top_k'))
+  if (supported.has('min_p')) out.minP = normalizeDispatchSampler(from('min_p'))
+  if (supported.has('top_a')) out.topA = normalizeDispatchSampler(from('top_a'))
   if (supported.has('repetition_penalty')) {
-    out.repetitionPenalty = normalizeDispatchSampler(from('repetition_penalty', 'repetition_penalty'))
+    out.repetitionPenalty = normalizeDispatchSampler(from('repetition_penalty'))
   }
   if (supported.has('frequency_penalty')) {
-    out.frequencyPenalty = normalizeDispatchSampler(from('frequency_penalty', 'frequencyPenalty'), { scale: 100 })
+    out.frequencyPenalty = normalizeDispatchSampler(from('frequency_penalty'), { scale: 100 })
   }
   if (supported.has('presence_penalty')) {
-    out.presencePenalty = normalizeDispatchSampler(from('presence_penalty', 'PresensePenalty'), { scale: 100 })
+    out.presencePenalty = normalizeDispatchSampler(from('presence_penalty'), { scale: 100 })
   }
   if (supported.has('reasoning_effort')) {
     out.reasoningEffort = reasoningEffort(
-      from('reasoning_effort', 'reasoningEffort'),
+      from('reasoning_effort'),
       supported.has('reasoning_effort_none') ? 'none' : 'minimal',
       supported.has('reasoning_effort_xhigh'),
       supported.has('reasoning_effort_min_medium') ? 'medium' : 'low',
     )
   }
   if (supported.has('thinking_tokens')) {
-    out.thinkingTokens = normalizeDispatchSampler(from('thinking_tokens', 'thinkingTokens'))
+    out.thinkingTokens = normalizeDispatchSampler(from('thinking_tokens'))
   }
-  if (supported.has('verbosity')) out.verbosity = verbosity(from('verbosity', 'verbosity', 1))
+  if (supported.has('verbosity')) out.verbosity = verbosity(from('verbosity', 1))
   return out
 }
 
@@ -396,7 +400,7 @@ function parseXcustomParams(params: unknown): Array<[string, string]> | undefine
 }
 
 function findXcustomEntry(db: Database, aiModel: string): CustomModelEntry | null {
-  const models = Array.isArray(db.customModels) ? (db.customModels as CustomModelEntry[]) : []
+  const models = Array.isArray(db.customModels) ? db.customModels : []
   return models.find((m) => m.id === aiModel) ?? null
 }
 
@@ -475,7 +479,7 @@ function resolveModelInfo(db: Database): ModelInfoLite {
     return {
       id: aiModel,
       internalID: asString(db.customProxyRequestModel) ?? aiModel,
-      format: (asNumber(db.customAPIFormat) ?? LLMFormat.OpenAICompatible) as LLMFormatValue,
+      format: asNumber(db.customAPIFormat) ?? LLMFormat.OpenAICompatible,
       flags: DEFAULT_OPENAI_FLAGS,
     }
   }
@@ -486,7 +490,7 @@ function resolveModelInfo(db: Database): ModelInfoLite {
       return {
         id: asString(entry.id) ?? aiModel,
         internalID: asString(entry.internalId) ?? asString(entry.id) ?? aiModel,
-        format: (asNumber(entry.format) ?? LLMFormat.OpenAICompatible) as LLMFormatValue,
+        format: asNumber(entry.format) ?? LLMFormat.OpenAICompatible,
         flags: DEFAULT_OPENAI_FLAGS,
       }
     }
@@ -522,7 +526,7 @@ function resolveModelInfo(db: Database): ModelInfoLite {
   if (aiModel === 'ollama-cloud') {
     return {
       id: aiModel,
-      format: (asNumber(db.ollamaRequestFormat) ?? LLMFormat.OpenAICompatible) as LLMFormatValue,
+      format: asNumber(db.ollamaRequestFormat) ?? LLMFormat.OpenAICompatible,
       flags: DEFAULT_OPENAI_FLAGS,
     }
   }
@@ -717,7 +721,7 @@ function buildChatCapabilityInput(db: Database, info: ModelInfoLite): ProviderCa
       forceReplaceUrl: asString(db.forceReplaceUrl),
       proxyKey: asString(db.proxyKey),
       oaiCompApiKeys: db.OaiCompAPIKeys,
-      customModels: db.customModels as CustomModelEntryLike[] | undefined,
+      customModels: db.customModels,
       googleProjectId: db.google?.projectId,
       vertexRegion: db.vertexRegion,
       vertexClientEmail: db.vertexClientEmail,
@@ -726,7 +730,7 @@ function buildChatCapabilityInput(db: Database, info: ModelInfoLite): ProviderCa
       instructChatTemplate: asString(db.instructChatTemplate),
       jinjaTemplate: asString(db.JinjaTemplate),
       ollamaApiKey: asString(db.ollamaApiKey),
-      ollamaRequestFormat: asNumber(db.ollamaRequestFormat) as LLMFormatValue | undefined,
+      ollamaRequestFormat: asNumber(db.ollamaRequestFormat),
       ollamaURL: asString(db.ollamaURL),
     },
   }
@@ -1073,7 +1077,7 @@ function unstringlizeChat(text: string, formated: PromptMessage[], char: string,
 
 function cleanupCharacterName(args: ChatDispatchArgs, db: Database): string {
   if (args.currentCharacterName) return args.currentCharacterName
-  const currentChar = (db as Database & { currentChar?: unknown }).currentChar
+  const currentChar = db.currentChar
   const selected = typeof currentChar === 'number' && Number.isInteger(currentChar) ? currentChar : 0
   return db.characters?.[selected]?.name ?? ''
 }

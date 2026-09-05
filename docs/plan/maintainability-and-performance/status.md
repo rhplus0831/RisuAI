@@ -7,9 +7,9 @@ Updated: 2026-09-05
 - State: Phases 0–2 accepted; executing Phase 3 generation inputs and types.
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
-- Next phase: [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md), slice 3a.
-- Next task: define concrete server-owned generation views, then narrow selected
-  configuration/history reads and separate immutable configuration from working state.
+- Next phase: [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md), final acceptance.
+- Next task: finish native-browser parity and isolated preparation measurements,
+  then accept the checked views/selected-route cutover and proceed to Phase 4.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence and completed Phase 2 slices are recorded below.
@@ -24,7 +24,7 @@ selected [phase](phases/README.md) for implementation detail.
 | [0. Character creation safety](phases/phase-0-character-creation-safety.md) | F01 | Accepted | Targeted append; 18 HTTP preservation/replay/rollback cases |
 | [1. Baselines and budgets](phases/phase-1-baselines-and-budgets.md) | F02–F10 | Accepted | [Baselines and numeric budgets](evidence/baselines.md) |
 | [2. Browser work](phases/phase-2-browser-work.md) | F03, F05, F04, F06 | Accepted | Scoped rollback, single normalization, background cache, selected locale |
-| [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md) | F02, F09 | Executing 3a | Accepted dependency/type inventory; explicit views next |
+| [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md) | F02, F09 | Final acceptance | Selected loaders, checked views and immutable working ownership; final measurements pending |
 | [4. Server maintenance](phases/phase-4-server-maintenance.md) | F07 | Pending Phase 3 | None |
 | [5. Transcript residency](phases/phase-5-transcript-residency.md) | F08 | Pending Phase 4; implementation decision open | None |
 | [6. Shared policy and closeout](phases/phase-6-shared-policy-and-closeout.md) | F10; all closeout evidence | Pending prior phases | None |
@@ -74,6 +74,13 @@ needed to reproduce them here or in the owning phase's bounded slice record.
   paging must record its supported fixture envelope and revisit trigger.
 - The single-writer model, durable outbox, revision/event ordering, and existing
   shared-package boundaries remain invariants, not optimization targets.
+
+- 2026-09-05, F08 product amendment: the user's commit `4e90ff094` accepts
+  full-transcript native browser find being unavailable for unmounted messages
+  and limits cross-message drag selection/copy. Phase 5 still preserves mounted
+  message selection, per-message copy, in-app search, jumps, export, and
+  temporary full-transcript screenshots. The phase document is authoritative
+  for this accepted constraint change.
 
 Future amendments belong here with date, affected finding, evidence, owner,
 residual cost, and revisit condition. If an amendment changes stable scope or
@@ -360,7 +367,7 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
 
 ## Phase 3: Nullable Message Wire Contract Corrected
 
-- Implementation: accompanying generation-wire correction. Command validation
+- Implementation: `706b18bc8`. Command validation
   already permits stored `time: null`, and generation restoration/mutation
   envelopes preserve it, but the SSE schema previously accepted numbers only.
   The schema now describes the supported nullable timestamp without changing
@@ -369,3 +376,25 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
   null metadata round trips through mutation/restoration and invalid string
   rejection. Prettier, whitespace and documentation checks pass. This correction
   was exposed by concrete prompt types; full F09 acceptance is still pending.
+
+## Phase 3: Concrete Immutable Consumer Contracts Implemented
+
+- Implementation: accompanying type/consumer commit. Finite settings and all six
+  participating record views replace the unrestricted prompt contract. Five
+  persistence/provider/memory/preflight boundaries validate a generated schema,
+  preserve imported extension data, and reject invalid known fields without
+  leaking values. Deep readonly configuration is borrowed; mutable character,
+  target transcripts, global variables and scalar overlays have explicit owners.
+- Focused exact tests: decoder 21, compiler contract 1, assembly 142, Lua 60,
+  lorebook 85, modules 15, templates 71, dispatch profile options 100, memory
+  worker 24, display 3, raw translation 33, completion 96, proxy 32, BardWiki
+  apply 12 and rebuild 5. Native Node ESM imports pass. Details are in the
+  [generation input evidence](evidence/generation-inputs.md).
+- The browser accepted-send suite passes all 11 cases on the combined worktree.
+  This validates native imports, reload/retry/stop/recovery and concurrent chats;
+  it does not close performance acceptance.
+- Three matched isolated before/after timing cycles confirm improved large
+  unrelated-library preparation but a small-case regression: pooled assembly
+  median 2.190 to 2.792 ms. The original 2.409 ms budget is unchanged. F02 and
+  the phase gate remain open while this added per-request work is investigated.
+  Root route/cost/durable integration is still the next separate commit.

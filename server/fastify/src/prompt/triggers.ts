@@ -118,7 +118,7 @@ export interface TriggerLuaRunResult {
  * seams used by condition evaluation and effect handlers.
  */
 export interface TriggerRunContext {
-  modules: RisuModule[]
+  modules: ReturnType<typeof getActiveModules>
   model?: string | null
   database: Database
   /** Index into `database.characters`; the scope `setVar` persists into. */
@@ -553,7 +553,7 @@ function chargeTriggerLoopBack(ctx: TriggerRunContext, budget: TriggerExecutionB
  * never mutated across runs. `getModuleTriggers` does the same for module
  * triggers; both server paths also attach source metadata for diagnostics.
  */
-export function collectTriggers(char: character, modules: RisuModule[]): triggerscript[] {
+export function collectTriggers(char: character, modules: ReturnType<typeof getActiveModules>): triggerscript[] {
   const characterLowLevelAccess = char.lowLevelAccess ?? false
   const own: triggerscript[] = (char.triggerscript ?? []).map((v, index) =>
     attachTriggerSource(
@@ -700,7 +700,7 @@ export function matchesTrigger(trigger: triggerscript, mode: TriggerMode, manual
  * `runTrigger`), keeping effect-free condition checks side-effect-free.
  */
 export function evaluateConditions(
-  conditions: triggerCondition[],
+  conditions: readonly triggerCondition[],
   engine: TriggerVarEngine,
   chat: Chat,
   expand: (text: string) => string,
@@ -796,7 +796,7 @@ function stageForTriggerMode(mode: TriggerMode) {
 }
 
 async function evaluateConditionsAsync(
-  conditions: triggerCondition[],
+  conditions: readonly triggerCondition[],
   engine: TriggerVarEngine,
   chat: Chat,
   expand: (text: string) => string,

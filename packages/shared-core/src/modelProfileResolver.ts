@@ -75,7 +75,7 @@ export interface ModelProfileResolverDatabase {
   openrouterKey?: string
   openrouterFallback?: boolean
   openrouterMiddleOut?: boolean
-  openrouterProvider?: { order?: string[]; only?: string[]; ignore?: string[] }
+  openrouterProvider?: { order?: readonly string[]; only?: readonly string[]; ignore?: readonly string[] }
   openrouterRequestModel?: string
   nanogptProvider?: string
   nanogptUseSubscriptionEndpoint?: boolean
@@ -2525,9 +2525,9 @@ function cloneProviderCapabilityInput(input: ProviderCapabilityInput): ProviderC
 }
 
 function cloneOpenrouterProvider(value?: {
-  order?: string[]
-  only?: string[]
-  ignore?: string[]
+  order?: readonly string[]
+  only?: readonly string[]
+  ignore?: readonly string[]
 }): NonNullable<ModelProfileProviderOptions['openrouter']>['provider'] {
   if (!value) return undefined
   return {

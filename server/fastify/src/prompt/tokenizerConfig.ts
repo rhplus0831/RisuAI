@@ -1,4 +1,5 @@
-import type { FastifyDatabase as Database } from './serverTypes.js'
+import type { WorkingGenerationSettings } from './serverTypes.js'
+type Database = Omit<WorkingGenerationSettings, 'modules'>
 import { LLMFlags, LLMTokenizer } from '@risuai/shared-core/model-types'
 import { resolveModelProfile, resolveServerSafeTokenizerFamily } from '@risuai/shared-core/model-profile-resolver'
 import { encodingForModel, ensureTokenizerLoaded, type TokenEncoding, type TokenizeChatOptions } from './tokens.js'

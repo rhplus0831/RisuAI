@@ -1,5 +1,6 @@
+import { decodeProviderGenerationSettings } from '../prompt/generationInputDecoder.js'
 import { createHash } from 'node:crypto'
-import type { FastifyDatabase as Database } from '../prompt/serverTypes.js'
+import type { ProviderGenerationSettings as Database } from '../prompt/serverTypes.js'
 import {
   resolveModelProfile,
   resolveModelProfileByProfileId,
@@ -122,12 +123,12 @@ function translateProfileCacheIdentity(
   settings: Record<string, unknown>,
   chat: Record<string, unknown> | undefined,
 ): Record<string, unknown> {
-  const database = {
+  const database = decodeProviderGenerationSettings({
     ...settings,
     characters: [],
     halfStreaming: false,
     useStreaming: false,
-  } as unknown as Database
+  })
   let profile = resolveModelProfile({ database, role: 'translate' })
   if (profile.modelId.length === 0) {
     profile = resolveModelProfile({ database, role: 'translate', staticModel: 'echo_model' })
@@ -412,12 +413,12 @@ async function translateWithLlm(
   historyResolver?: TranslatorHistoryResolver,
   requestHistory?: Omit<ChatDispatchHistoryInput, 'source'>,
 ) {
-  const database = {
+  const database = decodeProviderGenerationSettings({
     ...settings,
     characters: character ? [character] : [],
     halfStreaming: false,
     useStreaming: false,
-  } as unknown as Database
+  })
   const steps = resolveTranslatorPipeline(settings, boundTranslatorPresetId(chat))
   return runTranslatorPipeline(
     {
@@ -439,7 +440,7 @@ async function translateWithLlm(
         profile = resolveModelProfile({ database, role: 'translate', staticModel: 'echo_model' })
       }
       assertModelProfileGenerationReady(profile)
-      const dispatchDatabase = { ...database } as Database
+      const dispatchDatabase: Database = { ...database }
       applyProfileBoundGenerationFields(dispatchDatabase, profile)
       // A translator step owns its response budget and always uses buffered
       // dispatch, while the profile still owns output-affecting samplers.
