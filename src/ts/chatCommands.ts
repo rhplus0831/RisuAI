@@ -1332,6 +1332,29 @@ export interface ChatRowMetadataSnapshot {
   attempted?: ChatSnapshot
 }
 
+/** Captured before an optimistic metadata write; contains only affected fields. */
+export interface ChatMetadataPatchSnapshot extends ChatRowMetadataSnapshot {
+  characterId: string
+  attempted: ChatSnapshot
+}
+
+export function captureChatMetadataPatch(
+  chatId: string,
+  patch: ChatSnapshot,
+  characterId?: string,
+): ChatMetadataPatchSnapshot | null {
+  const location = locateChatById(chatId, characterId)
+  if (!location?.character.chaId) return null
+  const snapshot = chatRowMetadataRollbackFromPrevious(
+    chatId,
+    patch,
+    get(selectedCharID),
+    location.character.chaId,
+    location.chat,
+  )
+  return snapshot ? { ...snapshot, characterId: location.character.chaId, attempted: snapshot.attempted! } : null
+}
+
 export type ChatRowMetadataRollback = (snapshot: ChatRowMetadataSnapshot) => void
 
 export function restoreChatRowMetadata(snapshot: ChatRowMetadataSnapshot): void {
@@ -1392,6 +1415,36 @@ export interface ChatFolderRowMetadataSnapshot {
   folderId: string
   metadata: ChatFolderSnapshot
   attempted?: ChatFolderSnapshot
+}
+
+export interface ChatFolderMetadataPatchSnapshot extends ChatFolderRowMetadataSnapshot {
+  characterId: string
+  attempted: ChatFolderSnapshot
+}
+
+export function captureChatFolderMetadataPatch(
+  folderId: string,
+  patch: ChatFolderSnapshot,
+  characterId?: string,
+): ChatFolderMetadataPatchSnapshot | null {
+  // Resolve stable ownership without inspecting or copying any chat bodies.
+  let match: { character: character; folder: ChatFolder } | undefined
+  for (const owner of charactersResourceState.characters) {
+    for (const folder of owner.chatFolders ?? []) {
+      if (folder.id !== folderId) continue
+      if (match || !owner.chaId || !getCharacterResourceOwner(owner.chaId)) return null
+      match = { character: owner, folder }
+    }
+  }
+  if (!match?.character.chaId || (characterId && match.character.chaId !== characterId)) return null
+  const snapshot = chatFolderMetadataRollbackFromPrevious(
+    folderId,
+    patch,
+    get(selectedCharID),
+    match.character.chaId,
+    match.folder,
+  )
+  return snapshot ? { ...snapshot, characterId: match.character.chaId, attempted: snapshot.attempted! } : null
 }
 
 export type ChatFolderRowMetadataRollback = (snapshot: ChatFolderRowMetadataSnapshot) => void
@@ -1848,7 +1901,23 @@ function chatFolderMetadataRollbackFromPatch(
   const location = locateChatFolderInState(previous, folderId)
   if (!location) return null
 
-  const previousRow = location.folder as unknown as Record<string, unknown>
+  return chatFolderMetadataRollbackFromPrevious(
+    folderId,
+    patch,
+    previous.selectedCharID,
+    location.character.chaId,
+    location.folder,
+  )
+}
+
+function chatFolderMetadataRollbackFromPrevious(
+  folderId: string,
+  patch: ChatFolderSnapshot,
+  selectedCharID: number,
+  characterId: string | undefined,
+  previousFolder: ChatFolder,
+): ChatFolderRowMetadataSnapshot | null {
+  const previousRow = previousFolder as unknown as Record<string, unknown>
   const metadata: ChatFolderSnapshot = {}
   const attempted: ChatFolderSnapshot = {}
   for (const key of CHAT_FOLDER_PATCH_ALLOWED_KEYS) {
@@ -1861,8 +1930,8 @@ function chatFolderMetadataRollbackFromPatch(
   if (Object.keys(attempted).length === 0) return null
 
   return {
-    selectedCharID: previous.selectedCharID,
-    characterId: location.character.chaId,
+    selectedCharID,
+    characterId,
     folderId,
     metadata,
     attempted,
@@ -2825,16 +2894,48 @@ export function dispatchUpdateChatWithOutcome(
   const commandPatch = sanitizeFrozenChatPatch(patch)
   if (Object.keys(commandPatch).length === 0 && !select) return
   const rollback = chatMetadataRollbackFromPatch(chatId, commandPatch, previous)
+  return dispatchChatMetadataWithOutcome(
+    chatId,
+    commandPatch,
+    rollback,
+    characterIdForChatInState(previous, chatId),
+    select,
+    rollbackRowMetadata,
+  )
+}
+
+/** Direct UI mutations capture affected fields before applying their optimistic patch. */
+export function dispatchChatMetadataPatchWithOutcome(
+  snapshot: ChatMetadataPatchSnapshot,
+  rollbackRowMetadata: ChatRowMetadataRollback = restoreChatRowMetadata,
+): Promise<ChatMutationOutcome> | undefined {
+  return dispatchChatMetadataWithOutcome(
+    snapshot.chatId,
+    sanitizeFrozenChatPatch(snapshot.attempted),
+    snapshot,
+    snapshot.characterId,
+    false,
+    rollbackRowMetadata,
+  )
+}
+
+function dispatchChatMetadataWithOutcome(
+  chatId: string,
+  commandPatch: ChatSnapshot,
+  rollback: ChatRowMetadataSnapshot | null,
+  characterId: string | undefined,
+  select: boolean,
+  rollbackRowMetadata: ChatRowMetadataRollback,
+): Promise<ChatMutationOutcome> | undefined {
+  if (Object.keys(commandPatch).length === 0 && !select) return
+  const projectionTargets = Object.prototype.hasOwnProperty.call(commandPatch, 'modules')
+    ? moduleEnabledProjectionTargets(rollback?.metadata.modules, commandPatch.modules)
+    : []
   if (reportWriterAccessLostMutation()) {
     if (rollback) rollbackRowMetadata(rollback)
     return writerAccessLostChatMutationOutcome()
   }
   if (!canUseServerCommands()) return
-  const characterId = characterIdForChatInState(previous, chatId)
-  const previousChat = locateChatInState(previous, chatId)?.chat as Chat | undefined
-  const projectionTargets = Object.prototype.hasOwnProperty.call(commandPatch, 'modules')
-    ? moduleEnabledProjectionTargets(previousChat?.modules, commandPatch.modules)
-    : []
   const body = freezeDurableChatRequestBody({ patch: commandPatch, select })
   const intent = durableChatMutationIntent('PATCH', `/chats/${encodeURIComponent(chatId)}`, body)
   const execute = (transport: ServerCommandTransportOptions, rollbackAttempt: () => void) =>
@@ -4624,6 +4725,35 @@ export function dispatchUpdateChatFolderWithOutcome(
   const attemptedPatch = freezeJsonValue(cloneJsonValue(patch))
   if (Object.keys(attemptedPatch).length === 0) return
   const characterId = rollback?.characterId ?? folderLocation.character.chaId
+  return dispatchChatFolderMetadataWithOutcome(folderId, attemptedPatch, rollback, characterId, rollbackFolderMetadata)
+}
+
+export function dispatchChatFolderMetadataPatchWithOutcome(
+  snapshot: ChatFolderMetadataPatchSnapshot,
+  rollbackFolderMetadata: ChatFolderRowMetadataRollback = restoreChatFolderRowMetadata,
+): Promise<ChatMutationOutcome> | undefined {
+  if (reportWriterAccessLostMutation()) {
+    rollbackFolderMetadata(snapshot)
+    return writerAccessLostChatMutationOutcome()
+  }
+  if (!canUseServerCommands()) return
+  return dispatchChatFolderMetadataWithOutcome(
+    snapshot.folderId,
+    freezeJsonValue(cloneJsonValue(snapshot.attempted)),
+    snapshot,
+    snapshot.characterId,
+    rollbackFolderMetadata,
+  )
+}
+
+function dispatchChatFolderMetadataWithOutcome(
+  folderId: string,
+  attemptedPatch: ChatFolderSnapshot,
+  rollback: ChatFolderRowMetadataSnapshot | null,
+  characterId: string | undefined,
+  rollbackFolderMetadata: ChatFolderRowMetadataRollback,
+): Promise<ChatMutationOutcome> | undefined {
+  if (Object.keys(attemptedPatch).length === 0) return
   const body = freezeDurableChatRequestBody({ patch: attemptedPatch })
   const intent = durableChatMutationIntent('PATCH', `/chat-folders/${encodeURIComponent(folderId)}`, body)
   const execute = (transport: ServerCommandTransportOptions, rollbackAttempt: () => void) =>

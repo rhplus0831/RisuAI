@@ -99,6 +99,13 @@ Mutation-facing UI must distinguish `accepted`, `queued`, and `failed` helper
 outcomes. `queued` means recoverable local intent was retained, not that the
 server accepted it; callers should keep newer drafts, surface the outcome, and
 must not close an editor or announce success merely because dispatch began.
+
+Direct chat/folder metadata UI operations capture only supplied fields before
+the optimistic write. Their stable owner IDs, previous values, and attempted
+values feed the same durable dispatch and per-owner pending-attempt rebase
+machinery as metadata watchers. Failed or terminally rejected queued attempts
+restore only still-owned fields; newer drafts, background message changes,
+and authoritative projection changes remain intact.
 The app-wide saving icon is the normal transient feedback channel: it stays
 active through command reconciliation and while the current writer still owns
 staged outbox work, then lingers for 500 ms to avoid flicker. Per-control status

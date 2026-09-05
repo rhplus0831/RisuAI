@@ -44,6 +44,8 @@
     applyOptimisticCreatedChatFolder,
     applyOptimisticDeletedChat,
     applyOptimisticResetChats,
+    captureChatMetadataPatch,
+    captureChatFolderMetadataPatch,
     currentChatSelectionSnapshot,
     currentChatStateSnapshot,
     dispatchCreateChatFolderWithOutcome,
@@ -56,8 +58,8 @@
     dispatchResetChatsWithOutcome,
     dispatchSaveChatGenerationSettingsWithOutcome,
     dispatchSelectChat,
-    dispatchUpdateChatFolderWithOutcome,
-    dispatchUpdateChatWithOutcome,
+    dispatchChatFolderMetadataPatchWithOutcome,
+    dispatchChatMetadataPatchWithOutcome,
     restoreChatFolderRowMetadata,
     restoreChatRowMetadata,
     type ChatFolderRowMetadataSnapshot,
@@ -395,16 +397,16 @@
     if (editMode || hasConflictingStructureMutation([folderConflictKey(folder.id)])) return
     const ownerFolder = uniqueSidebarFolder(folder.id)
     if (!ownerFolder) return
-    const previous = currentChatStateSnapshot()
     const folded = !ownerFolder.folded
-    if (!applyDirectOptimisticFolderMetadata(folder.id, { folded })) return
+    const previous = captureChatFolderMetadataPatch(folder.id, { folded }, chara.chaId)
+    if (!previous || !applyDirectOptimisticFolderMetadata(folder.id, { folded })) return
     await settleStructureMutation(
       structureMutationKey('fold-folder', folder.id),
       'folder',
       folder.id,
       `${language.edit}: ${folder.name}`,
       [folderConflictKey(folder.id)],
-      () => dispatchUpdateChatFolderWithOutcome(folder.id, { folded }, previous, rollbackOwnedChatFolderMetadata),
+      () => dispatchChatFolderMetadataPatchWithOutcome(previous, rollbackOwnedChatFolderMetadata),
     )
     reloadGuiDisplay()
   }
@@ -698,16 +700,17 @@
       const colorSelection = parseAlertSelection(colorSelectionValue, colors.length)
       if (colorSelection === null) return
       if (hasConflictingStructureMutation([folderConflictKey(folder.id)])) return
-      const previous = currentChatStateSnapshot()
       const color = colors[colorSelection]
-      if (!color || !applyDirectOptimisticFolderMetadata(folder.id, { color })) return
+      if (!color) return
+      const previous = captureChatFolderMetadataPatch(folder.id, { color }, chara.chaId)
+      if (!previous || !applyDirectOptimisticFolderMetadata(folder.id, { color })) return
       await settleStructureMutation(
         structureMutationKey('color-folder', folder.id),
         'folder',
         folder.id,
         `${language.changeFolderColor}: ${folder.name}`,
         [folderConflictKey(folder.id)],
-        () => dispatchUpdateChatFolderWithOutcome(folder.id, { color }, previous, rollbackOwnedChatFolderMetadata),
+        () => dispatchChatFolderMetadataPatchWithOutcome(previous, rollbackOwnedChatFolderMetadata),
       )
       return
     }
@@ -905,8 +908,8 @@
       if (!chatId || !liveChat || liveChat.name === name) return
       const key = structureMutationKey('rename-chat', chatId)
       if (hasConflictingStructureMutation([chatConflictKey(chatId)], key)) return
-      const previous = currentChatStateSnapshot()
-      if (!applyDirectOptimisticChatMetadata(chatId, { name })) return
+      const previous = captureChatMetadataPatch(chatId, { name }, chara.chaId)
+      if (!previous || !applyDirectOptimisticChatMetadata(chatId, { name })) return
       clearFailedStructureMutations(key)
       await settleStructureMutation(
         `${key}:${v4()}`,
@@ -914,7 +917,7 @@
         chatId,
         `${language.edit}: ${name}`,
         [chatConflictKey(chatId)],
-        () => dispatchUpdateChatWithOutcome(chatId, { name }, previous, false, rollbackOwnedChatMetadata),
+        () => dispatchChatMetadataPatchWithOutcome(previous, rollbackOwnedChatMetadata),
         undefined,
         undefined,
         key,
@@ -926,15 +929,15 @@
 
   async function updateFolderName(folder: ChatFolder, name: string): Promise<void> {
     const ownerFolder = uniqueSidebarFolder(folder.id)
-    if (!ownerFolder || ownerFolder.name === name) return
+    if (!ownerFolder || ownerFolder.name === name || reportWriterAccessLostMutation()) return
     if (canUseServerCommands()) {
       const folderId = folder.id
       const liveFolder = uniqueSidebarFolder(folderId)
       if (!folderId || !liveFolder || liveFolder.name === name) return
       const key = structureMutationKey('rename-folder', folderId)
       if (hasConflictingStructureMutation([folderConflictKey(folderId)], key)) return
-      const previous = currentChatStateSnapshot()
-      if (!applyDirectOptimisticFolderMetadata(folderId, { name })) return
+      const previous = captureChatFolderMetadataPatch(folderId, { name }, chara.chaId)
+      if (!previous || !applyDirectOptimisticFolderMetadata(folderId, { name })) return
       clearFailedStructureMutations(key)
       await settleStructureMutation(
         `${key}:${v4()}`,
@@ -942,7 +945,7 @@
         folderId,
         `${language.edit}: ${name}`,
         [folderConflictKey(folderId)],
-        () => dispatchUpdateChatFolderWithOutcome(folderId, { name }, previous, rollbackOwnedChatFolderMetadata),
+        () => dispatchChatFolderMetadataPatchWithOutcome(previous, rollbackOwnedChatFolderMetadata),
         undefined,
         undefined,
         key,

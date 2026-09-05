@@ -41,6 +41,8 @@ import { setChatVar } from './parser/chatVar.svelte'
 import { selectedCharID } from './stores.svelte'
 import {
   applyCharacterResource,
+  applyChatMetadataOwnerPatch,
+  applyChatFolderMetadataOwnerPatch,
   applyCharactersResource,
   replaceResourceDatabase as setDatabaseLite,
 } from './server/resourceState.svelte'
@@ -65,6 +67,10 @@ import {
   appendCurrentChatEmptyCharMessage,
   appendCurrentChatUserMessageForSend,
   changedChatMetadata,
+  captureChatMetadataPatch,
+  captureChatFolderMetadataPatch,
+  dispatchChatMetadataPatchWithOutcome,
+  dispatchChatFolderMetadataPatchWithOutcome,
   captureActiveChatTarget,
   CHAT_PATCH_ALLOWED_KEYS,
   currentChatScopedSnapshot,
@@ -4695,6 +4701,113 @@ describe('chat-selection snapshot', () => {
 })
 
 describe('chat metadata dispatch rollback', () => {
+  it.each(['chat', 'folder'] as const)(
+    'rebases overlapping narrow %s failures without losing newer names or background message identities',
+    async (kind) => {
+      const firstRequest = createDeferred<Response>()
+      const secondRequest = createDeferred<Response>()
+      const requests: Record<string, unknown>[] = []
+      const path = kind === 'chat' ? '/api/v1/commands/chats/chat-a' : '/api/v1/commands/chat-folders/folder-a'
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          if (String(input) === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+          if (String(input) === path) {
+            requests.push(JSON.parse(init.body as string))
+            return requests.length === 1 ? firstRequest.promise : secondRequest.promise
+          }
+          return jsonResponse({ error: `unexpected ${String(input)}` }, 404)
+        }),
+      )
+      const owner = getDatabase().characters[0]
+      const sibling = owner.chats[1]
+      sibling.message.push({ role: 'char', data: 'generating', chatId: 'background-message' })
+      const messages = sibling.message
+      const message = messages[0]
+      const row = kind === 'chat' ? owner.chats[0] : owner.chatFolders[0]
+      const originalName = row.name
+      const rename = (name: string) => {
+        if (kind === 'chat') {
+          const snapshot = captureChatMetadataPatch('chat-a', { name }, 'char-a')!
+          expect(applyChatMetadataOwnerPatch('char-a', 'chat-a', { name })).toBe(true)
+          return dispatchChatMetadataPatchWithOutcome(snapshot)
+        }
+        const snapshot = captureChatFolderMetadataPatch('folder-a', { name }, 'char-a')!
+        expect(applyChatFolderMetadataOwnerPatch('char-a', 'folder-a', { name })).toBe(true)
+        return dispatchChatFolderMetadataPatchWithOutcome(snapshot)
+      }
+      const first = rename('Older optimistic name')
+      await vi.waitFor(() => expect(requests).toHaveLength(1))
+      const second = rename('Newer optimistic name')
+      message.data = 'background generation continued'
+      firstRequest.resolve(jsonResponse({ error: 'older rename rejected' }, 400))
+      // Command promises wait for the shared reconciliation batch, so observe
+      // the second request to know the older command already rolled back.
+      await vi.waitFor(() => expect(requests).toHaveLength(2))
+      expect(row.name).toBe('Newer optimistic name')
+      expect(requests.map((request) => request.patch)).toEqual([
+        { name: 'Older optimistic name' },
+        { name: 'Newer optimistic name' },
+      ])
+      secondRequest.resolve(jsonResponse({ error: 'newer rename rejected' }, 400))
+      await expect(first).resolves.toMatchObject({ status: 'failed' })
+      await expect(second).resolves.toMatchObject({ status: 'failed' })
+      expect(row.name).toBe(originalName)
+      expect(getDatabase().characters[0]).toBe(owner)
+      expect(owner.chats[1]).toBe(sibling)
+      expect(sibling.message).toBe(messages)
+      expect(messages[0]).toBe(message)
+      expect(message.data).toBe('background generation continued')
+    },
+  )
+
+  it.each(['chat', 'folder'] as const)(
+    'rolls back a narrow %s patch if writer access is lost after capture',
+    async (kind) => {
+      const fetch = vi.fn()
+      vi.stubGlobal('fetch', fetch)
+      const owner = getDatabase().characters[0]
+      const row = kind === 'chat' ? owner.chats[0] : owner.chatFolders[0]
+      const originalName = row.name
+      let mutation: ReturnType<typeof dispatchChatMetadataPatchWithOutcome>
+      if (kind === 'chat') {
+        const snapshot = captureChatMetadataPatch('chat-a', { name: 'Attempted name' }, 'char-a')!
+        applyChatMetadataOwnerPatch('char-a', 'chat-a', snapshot.attempted)
+        writerAccessMocks.lost = true
+        mutation = dispatchChatMetadataPatchWithOutcome(snapshot)
+      } else {
+        const snapshot = captureChatFolderMetadataPatch('folder-a', { name: 'Attempted name' }, 'char-a')!
+        applyChatFolderMetadataOwnerPatch('char-a', 'folder-a', snapshot.attempted)
+        writerAccessMocks.lost = true
+        mutation = dispatchChatFolderMetadataPatchWithOutcome(snapshot)
+      }
+      await expect(mutation).resolves.toMatchObject({ status: 'failed' })
+      expect(row.name).toBe(originalName)
+      expect(fetch).not.toHaveBeenCalled()
+    },
+  )
+
+  it('captures only requested allowed fields and refuses missing, ambiguous, or mismatched metadata owners', () => {
+    const patch = { name: 'Captured name', message: [{ data: 'must not be captured' }] }
+    const snapshot = captureChatMetadataPatch('chat-a', patch, 'char-a')!
+    patch.name = 'Caller edited the patch'
+    expect(snapshot).toEqual({
+      selectedCharID: 0,
+      characterId: 'char-a',
+      chatId: 'chat-a',
+      metadata: { name: 'Chat A' },
+      attempted: { name: 'Captured name' },
+    })
+    expect(captureChatMetadataPatch('chat-a', { name: 'name' }, 'other-owner')).toBeNull()
+    expect(captureChatFolderMetadataPatch('folder-a', { name: 'name' }, 'other-owner')).toBeNull()
+    expect(captureChatMetadataPatch('missing', { name: 'name' })).toBeNull()
+    expect(captureChatFolderMetadataPatch('missing', { name: 'name' })).toBeNull()
+    getDatabase().characters[0].chats.push({ id: 'chat-a', name: 'Duplicate', message: [] } as Chat)
+    getDatabase().characters[0].chatFolders.push({ id: 'folder-a', name: 'Duplicate', folded: false })
+    expect(captureChatMetadataPatch('chat-a', { name: 'name' })).toBeNull()
+    expect(captureChatFolderMetadataPatch('folder-a', { name: 'name' })).toBeNull()
+  })
+
   it('restores the original folder name when overlapping broad folder updates both fail', async () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chat-folders/folder-a' && init.method === 'PATCH',
@@ -7373,11 +7486,11 @@ describe('durable chat and folder structure dispatch', () => {
     )
 
     try {
-      const previous = currentChatStateSnapshot()
+      const previous = captureChatMetadataPatch('chat-a', { name: 'Durable rename' }, 'char-a')!
       withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].name = 'Durable rename'
       })
-      const mutation = dispatchUpdateChatWithOutcome('chat-a', { name: 'Durable rename' }, previous)
+      const mutation = dispatchChatMetadataPatchWithOutcome(previous)
 
       await vi.waitFor(() => expect(liveBody).toBeDefined())
       await expect(mutation).resolves.toMatchObject({ status: 'queued' })
@@ -7495,6 +7608,69 @@ describe('durable chat and folder structure dispatch', () => {
       await clearDurableOutbox()
     }
   })
+
+  it.each(['accepted', 'failed'] as const)(
+    'settles a retained narrow folder patch as %s after authoritative refresh',
+    async (finalStatus) => {
+      await prepareDurableOutbox(`narrow-folder-${finalStatus}`)
+      let replay = false
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          if (url === '/api/v1/commands/chat-folders/folder-a' && init.method === 'PATCH') {
+            if (!replay) return jsonResponse({ error: 'temporarily unavailable' }, 503)
+            return finalStatus === 'failed'
+              ? jsonResponse({ error: 'folder rename rejected' }, 400)
+              : jsonResponse({
+                  revision: 12,
+                  event: {
+                    type: 'chatFolder.updated',
+                    revision: 12,
+                    resource: 'chatFolder',
+                    id: 'folder-a',
+                    parentId: 'char-a',
+                  },
+                })
+          }
+          return jsonResponse({ error: `unexpected ${url}` }, 404)
+        }),
+      )
+      try {
+        const snapshot = captureChatFolderMetadataPatch('folder-a', { name: 'Queued folder' }, 'char-a')!
+        applyChatFolderMetadataOwnerPatch('char-a', 'folder-a', snapshot.attempted)
+        const mutation = await dispatchChatFolderMetadataPatchWithOutcome(snapshot)
+        expect(mutation).toMatchObject({ status: 'queued' })
+        if (mutation?.status !== 'queued') throw new Error('Expected a queued folder patch')
+        getDatabase().characters[0].chats[1].message.push({
+          role: 'char',
+          data: 'background generation',
+          chatId: 'background',
+        })
+        const authoritativeCharacter = jsonClone(getDatabase().characters[0])
+        authoritativeCharacter.chatFolders[0].name = 'Folder'
+        authoritativeCharacter.chatFolders[0].color = 'blue'
+        expect(applyCharacterResource({ revision: 11, character: authoritativeCharacter })).toBe(true)
+        const owner = getDatabase().characters[0]
+        const sibling = owner.chats[1]
+        const message = sibling.message[0]
+        expect(owner.chatFolders[0].name).toBe('Queued folder')
+        expect(owner.chatFolders[0].color).toBe('blue')
+        replay = true
+        await replayPendingMutations()
+        await expect(mutation.settlement).resolves.toMatchObject({ status: finalStatus })
+        expect(owner.chatFolders[0].name).toBe(finalStatus === 'accepted' ? 'Queued folder' : 'Folder')
+        expect(owner.chatFolders[0].color).toBe('blue')
+        expect(getDatabase().characters[0]).toBe(owner)
+        expect(owner.chats[1]).toBe(sibling)
+        expect(sibling.message[0]).toBe(message)
+        expect(message.data).toBe('background generation')
+      } finally {
+        await clearDurableOutbox()
+      }
+    },
+  )
 
   it('retains optimistic chat selection and folder metadata edits on retryable failures', async () => {
     await prepareDurableOutbox('selection')

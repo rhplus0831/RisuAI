@@ -89,6 +89,14 @@ organization keys. The component surfaces pending, queued, and failed
 structural operations and blocks conflicting actions while an operation is
 pending.
 
+Folder folding/color/name and chat renaming capture only the affected previous
+and attempted metadata fields plus stable owner IDs through
+`captureChatFolderMetadataPatch()` / `captureChatMetadataPatch()` in
+`src/ts/chatCommands.ts`. The compact `src/lib/Others/ChatList.svelte` rename
+path uses the same contract. Direct outcome dispatchers reuse the existing
+pending-attempt, writer-loss, and projection-epoch rollback fences, preserving
+newer edits and authoritative refreshes without copying resident histories.
+
 Its derived grouping preserves source order and each chat's original array
 position. Selection normally navigates to the stable character/chat route. A
 provisional create/delete flow repairs the route only if the captured route and

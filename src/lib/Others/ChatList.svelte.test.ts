@@ -109,7 +109,7 @@ const chatListMocks = vi.hoisted(() => {
     }),
     deleteChatFolderCommand: unusedCommand,
     deleteMessageCommand: unusedCommand,
-    dispatchUpdateChatWithOutcome: vi.fn(async (..._args: any[]) => ({
+    dispatchChatMetadataPatchWithOutcome: vi.fn(async (..._args: any[]) => ({
       status: 'accepted',
       result: okCommandResult(),
     })),
@@ -215,9 +215,10 @@ vi.mock('src/ts/chatCommands', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/chatCommands')>()
   return {
     ...actual,
+    currentChatStateSnapshot: vi.fn(actual.currentChatStateSnapshot),
     dispatchCreateChatWithOutcome: (...args: Parameters<typeof actual.dispatchCreateChatWithOutcome>) =>
       chatListMocks.dispatchCreateChatWithOutcome(...args) ?? actual.dispatchCreateChatWithOutcome(...args),
-    dispatchUpdateChatWithOutcome: chatListMocks.dispatchUpdateChatWithOutcome,
+    dispatchChatMetadataPatchWithOutcome: chatListMocks.dispatchChatMetadataPatchWithOutcome,
   }
 })
 
@@ -270,7 +271,12 @@ vi.mock('src/ts/server/commands', () => ({
 
 import ChatList from './ChatList.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
-import { currentChatSelectionSnapshot, dispatchSelectChat, restoreChatRowMetadata } from 'src/ts/chatCommands'
+import {
+  currentChatSelectionSnapshot,
+  currentChatStateSnapshot,
+  dispatchSelectChat,
+  restoreChatRowMetadata,
+} from 'src/ts/chatCommands'
 import { charactersResourceState, replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
 
 import type { Chat, character } from 'src/ts/storage/database.svelte'
@@ -653,22 +659,19 @@ describe('ChatList DOM contract harness', () => {
 
     expect(chatListMocks.canUseServerCommands).toHaveBeenCalled()
     expect(chatListMocks.withTestDatabaseWrite).not.toHaveBeenCalled()
-    expect(chatListMocks.dispatchUpdateChatWithOutcome).toHaveBeenCalledOnce()
-    const [chatId, patch, previous] = chatListMocks.dispatchUpdateChatWithOutcome.mock.calls[0]
-    expect(chatId).toBe('chat-b')
-    expect(patch).toEqual({ name: 'Renamed Modal Chat B' })
-    expect(chatListMocks.dispatchUpdateChatWithOutcome.mock.calls[0][4]).toBe(restoreChatRowMetadata)
-    expect(previous).toMatchObject({
+    expect(chatListMocks.dispatchChatMetadataPatchWithOutcome).toHaveBeenCalledOnce()
+    const [previous, rollback] = chatListMocks.dispatchChatMetadataPatchWithOutcome.mock.calls[0]
+    expect(rollback).toBe(restoreChatRowMetadata)
+    expect(previous).toEqual({
       selectedCharID: 0,
-      characters: [
-        {
-          chaId: 'char-a',
-          chats: [{ name: 'Modal Chat A' }, { name: 'Modal Chat B' }, { name: 'Modal Chat C' }],
-        },
-      ],
+      characterId: 'char-a',
+      chatId: 'chat-b',
+      metadata: { name: 'Modal Chat B' },
+      attempted: { name: 'Renamed Modal Chat B' },
     })
     expect(selectedCharacter().chats[1].name).toBe('Renamed Modal Chat B')
     expect(input!.value).toBe('Renamed Modal Chat B')
+    expect(currentChatStateSnapshot).not.toHaveBeenCalled()
   })
 
   it('keeps a pending rename enabled and supersedes it without an older failure clobbering the draft', async () => {
@@ -676,18 +679,11 @@ describe('ChatList DOM contract harness', () => {
     chatListMocks.setServerCommandsEnabled(true)
     const firstRename = chatListMocks.createDeferredUpdateCommand()
     const finalRename = chatListMocks.createDeferredUpdateCommand()
-    chatListMocks.dispatchUpdateChatWithOutcome
-      .mockImplementationOnce(async (chatId, patch, previous, _select, rollback) => {
+    chatListMocks.dispatchChatMetadataPatchWithOutcome
+      .mockImplementationOnce(async (previous, rollback) => {
         const outcome = (await firstRename.promise) as any
         if (outcome.status === 'failed') {
-          const previousChat = previous.characters[0].chats.find((candidate) => candidate.id === chatId)
-          rollback({
-            selectedCharID: previous.selectedCharID,
-            characterId: previous.characters[0].chaId,
-            chatId,
-            metadata: { name: previousChat?.name },
-            attempted: patch,
-          })
+          rollback(previous)
         }
         return outcome
       })
@@ -713,8 +709,8 @@ describe('ChatList DOM contract harness', () => {
     input.dispatchEvent(new Event('change', { bubbles: true }))
     await flushCommandWork()
 
-    expect(chatListMocks.dispatchUpdateChatWithOutcome).toHaveBeenCalledTimes(2)
-    expect(chatListMocks.dispatchUpdateChatWithOutcome.mock.calls.map((call) => call[1])).toEqual([
+    expect(chatListMocks.dispatchChatMetadataPatchWithOutcome).toHaveBeenCalledTimes(2)
+    expect(chatListMocks.dispatchChatMetadataPatchWithOutcome.mock.calls.map((call) => call[0].attempted)).toEqual([
       { name: 'First Modal Rename' },
       { name: 'Final Modal Rename' },
     ])
@@ -747,7 +743,9 @@ describe('ChatList DOM contract harness', () => {
     seedModalDatabase()
     chatListMocks.setServerCommandsEnabled(true)
     const failedRename = chatListMocks.createDeferredUpdateCommand()
-    chatListMocks.dispatchUpdateChatWithOutcome.mockImplementationOnce(() => failedRename.promise as Promise<any>)
+    chatListMocks.dispatchChatMetadataPatchWithOutcome.mockImplementationOnce(
+      () => failedRename.promise as Promise<any>,
+    )
 
     component = mount(ChatList, { target, props: { close: vi.fn() } })
     await tick()
@@ -780,7 +778,7 @@ describe('ChatList DOM contract harness', () => {
     chatListMocks.setServerCommandsEnabled(true)
     const firstRename = chatListMocks.createDeferredUpdateCommand()
     const secondRename = chatListMocks.createDeferredUpdateCommand()
-    chatListMocks.dispatchUpdateChatWithOutcome
+    chatListMocks.dispatchChatMetadataPatchWithOutcome
       .mockImplementationOnce(() => firstRename.promise as Promise<any>)
       .mockImplementationOnce(() => secondRename.promise as Promise<any>)
 

@@ -8,8 +8,8 @@ Updated: 2026-09-05
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
 - Next phase: [2. Browser work](phases/phase-2-browser-work.md), slice 2a.
-- Next task: narrow sidebar folder/chat metadata capture, then organization
-  rollback; preserve newer edits and authoritative projection fences.
+- Next task: narrow create/delete/folder/reorder/fork/reset/import organization
+  capture; metadata-only capture is accepted and preserves newer edits/fences.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence are recorded below; Phase 2 implementation is next.
@@ -173,3 +173,31 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
   owner. The final combined `pnpm test:agent` remains pending until implementation
   is complete, as required by current project guidance. User/CI compatibility
   and `pnpm test:all` have not been run or implied by these passes.
+
+## Phase 2a: Metadata Capture Accepted; Organization Next
+
+- Implementation: accompanying metadata-capture commit; exact SHA is recorded by
+  the next slice. `captureChatMetadataPatch` / `captureChatFolderMetadataPatch`
+  capture only allowed supplied fields plus stable owner IDs. Direct outcome
+  dispatchers reuse durable pending-attempt/rebase and projection fencing.
+- Live callers migrated: sidebar fold/color/folder rename/chat rename and compact
+  chat-list rename. The folder-rename path also checks writer loss before
+  changing its local projection, preserving the unsaved draft.
+- [After counters](evidence/sidebar-metadata-after.json): exactly 126 snapshot
+  bytes at all three Phase 1 fixtures (before: 1,808 / 249,264 / 9,916,585).
+  Zero character rows or messages; two scalar copies, largest five bytes.
+  The existing one-scalar rollback cost and unrelated message identity survive.
+- Focused tests: `pnpm test -- src/ts/chatCommands.test.ts` (195 passed),
+  `pnpm test -- src/lib/SideBars/SideChatList.svelte.test.ts` (67),
+  `pnpm test -- src/lib/Others/ChatList.svelte.test.ts` (25), and
+  `pnpm test -- src/ts/chatCommands.workCosts.dom.test.ts` (3). Cases hold
+  overlapping requests, fail older/newer operations, preserve background message
+  identities, handle writer loss after capture, and settle queued work after
+  authoritative refresh as accepted or failed. UI tests assert no broad capture.
+- Current navigation/recovery guides updated; `pnpm check:docs`, Prettier and
+  whitespace checks pass. These structural measurements make no latency claim.
+- [Remaining caller inventory](evidence/sidebar-snapshot-inventory.md) covers
+  create/delete/reorder/folder organization, branch/fork, reset and import.
+  F03 stays open until their capture scopes are narrowed and verified. Required
+  removed/attempted transcript ownership must remain explicit and bounded by
+  the operation's affected rows.

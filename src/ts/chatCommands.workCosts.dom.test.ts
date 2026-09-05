@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { withCloneInstrumentation, seedCloneCostDb } from './__tests__/cloneCostHarness'
 import { reportBrowserWork } from './__tests__/browserWorkProbe'
-import { currentChatStateSnapshot, restoreChatFolderRowMetadata } from './chatCommands'
+import { captureChatFolderMetadataPatch, restoreChatFolderRowMetadata } from './chatCommands'
 import { charactersResourceState } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 
@@ -40,19 +40,23 @@ describe('F03 sidebar snapshot work probe', () => {
       selectedCharID.set(0)
       const unrelatedCharacter = charactersResourceState.characters[1]!
       const unrelatedMessage = unrelatedCharacter.chats[0]!.message[0]!
-      const snapshot = withCloneInstrumentation(() => currentChatStateSnapshot())
+      const snapshot = withCloneInstrumentation(() =>
+        captureChatFolderMetadataPatch('target-folder', { folded: true }, 'char-0'),
+      )
       expect(charactersResourceState.characters[1]).toBe(unrelatedCharacter)
       expect(unrelatedCharacter.chats[0]!.message[0]).toBe(unrelatedMessage)
       const snapshotBytes = new TextEncoder().encode(JSON.stringify(snapshot.result)).byteLength
 
       const folder = charactersResourceState.characters[0]!.chatFolders![0]!
-      const rollback = {
+      const rollback = snapshot.result!
+      expect(rollback).toEqual({
         selectedCharID: 0,
         characterId: 'char-0',
         folderId: folder.id,
         metadata: { folded: false },
         attempted: { folded: true },
-      }
+      })
+      expect(snapshotBytes).toBeLessThanOrEqual(1_024)
       folder.folded = true
       unrelatedMessage.data = 'background generation continued'
       const restored = withCloneInstrumentation(() => restoreChatFolderRowMetadata(rollback), {
@@ -72,16 +76,13 @@ describe('F03 sidebar snapshot work probe', () => {
         ...fixture,
         targetMessages: 2,
         messageBodyBytes: 256,
-        snapshotApi: 'currentChatStateSnapshot',
+        snapshotApi: 'captureChatFolderMetadataPatch',
         rollbackApi: 'restoreChatFolderRowMetadata',
         snapshotBytes,
         snapshotCloneCount: snapshot.totalCloneCount,
         largestCloneBytes: snapshot.maxClonedSize,
-        capturedCharacterCount: snapshot.result.characters.length,
-        capturedMessageCount: snapshot.result.characters.reduce(
-          (total, character) => total + character.chats.reduce((count, chat) => count + chat.message.length, 0),
-          0,
-        ),
+        capturedCharacterCount: 0,
+        capturedMessageCount: 0,
         folderRollbackCloneCount: restored.totalCloneCount,
         folderRollbackLargestCloneBytes: restored.maxClonedSize,
         unrelatedMessageIdentityPreserved: true,

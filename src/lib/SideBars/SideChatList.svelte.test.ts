@@ -1,6 +1,16 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const writerAccessMocks = vi.hoisted(() => ({
+  lost: false,
+  report: vi.fn(() => writerAccessMocks.lost),
+}))
+
+vi.mock('src/ts/server/activeWriterSession', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/server/activeWriterSession')>()
+  return { ...actual, reportWriterAccessLostMutation: writerAccessMocks.report }
+})
+
 const sidebarMocks = vi.hoisted(() => {
   type DeferredCommand = {
     input?: unknown
@@ -208,11 +218,11 @@ const sidebarMocks = vi.hoisted(() => {
         return { settlement }
       },
     ),
-    dispatchUpdateChatWithOutcome: vi.fn(async (..._args: any[]) => ({
+    dispatchChatMetadataPatchWithOutcome: vi.fn(async (..._args: any[]) => ({
       status: 'accepted',
       result: okCommandResult(),
     })),
-    dispatchUpdateChatFolderWithOutcome: vi.fn(
+    dispatchChatFolderMetadataPatchWithOutcome: vi.fn(
       async (..._args: any[]): Promise<any> => ({
         status: 'accepted',
         result: okCommandResult(),
@@ -410,6 +420,7 @@ vi.mock('src/ts/chatCommands', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/chatCommands')>()
   return {
     ...actual,
+    currentChatStateSnapshot: vi.fn(actual.currentChatStateSnapshot),
     dispatchCreateChatWithOutcome: (...args: Parameters<typeof actual.dispatchCreateChatWithOutcome>) =>
       sidebarMocks.dispatchCreateChatWithOutcome(...args) ?? actual.dispatchCreateChatWithOutcome(...args),
     dispatchDeleteChatFolderWithOutcome: sidebarMocks.dispatchDeleteChatFolderWithOutcome,
@@ -418,8 +429,8 @@ vi.mock('src/ts/chatCommands', async (importActual) => {
     dispatchReorderChatsByIdsWithOutcome: sidebarMocks.dispatchReorderChatsByIdsWithOutcome,
     dispatchResetChatsWithOutcome: sidebarMocks.dispatchResetChatsWithOutcome,
     dispatchSaveChatGenerationSettingsWithOutcome: sidebarMocks.dispatchSaveChatGenerationSettingsWithOutcome,
-    dispatchUpdateChatWithOutcome: sidebarMocks.dispatchUpdateChatWithOutcome,
-    dispatchUpdateChatFolderWithOutcome: sidebarMocks.dispatchUpdateChatFolderWithOutcome,
+    dispatchChatMetadataPatchWithOutcome: sidebarMocks.dispatchChatMetadataPatchWithOutcome,
+    dispatchChatFolderMetadataPatchWithOutcome: sidebarMocks.dispatchChatFolderMetadataPatchWithOutcome,
   }
 })
 
@@ -485,6 +496,7 @@ vi.mock('./Toggles.svelte', async () => {
   return { default: mock.default }
 })
 
+import { currentChatStateSnapshot } from 'src/ts/chatCommands'
 import SideChatListHarness from './SideChatList.testHarness.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
 
@@ -724,6 +736,7 @@ async function flushCommandWork(): Promise<void> {
 
 describe('SideChatList DOM contract harness', () => {
   beforeEach(() => {
+    writerAccessMocks.lost = false
     target = document.createElement('div')
     document.body.appendChild(target)
     sidebarMocks.resetCommandHarness()
@@ -1252,7 +1265,7 @@ describe('SideChatList DOM contract harness', () => {
 
     expect(original.chatFolders[0].color).toBeUndefined()
     expect(replacement.chatFolders[0].color).toBeUndefined()
-    expect(sidebarMocks.dispatchUpdateChatFolderWithOutcome).not.toHaveBeenCalled()
+    expect(sidebarMocks.dispatchChatFolderMetadataPatchWithOutcome).not.toHaveBeenCalled()
   })
 
   it('omits all reorder actions when a chat id is incomplete', async () => {
@@ -1790,19 +1803,45 @@ describe('SideChatList DOM contract harness', () => {
 
     expect(selectedCharacter().chats[1].name).toBe('hello')
     expect(selectedCharacter().chatFolders[0].name).toBe('folder')
-    expect(sidebarMocks.dispatchUpdateChatWithOutcome).toHaveBeenCalledWith(
-      'chat-foldered',
-      { name: 'hello' },
-      expect.anything(),
-      false,
+    expect(sidebarMocks.dispatchChatMetadataPatchWithOutcome).toHaveBeenCalledWith(
+      {
+        selectedCharID: 0,
+        characterId: 'char-a',
+        chatId: 'chat-foldered',
+        metadata: { name: 'Foldered Chat' },
+        attempted: { name: 'hello' },
+      },
       expect.any(Function),
     )
-    expect(sidebarMocks.dispatchUpdateChatFolderWithOutcome).toHaveBeenCalledWith(
-      'folder-a',
-      { name: 'folder' },
-      expect.anything(),
+    expect(sidebarMocks.dispatchChatFolderMetadataPatchWithOutcome).toHaveBeenCalledWith(
+      {
+        selectedCharID: 0,
+        characterId: 'char-a',
+        folderId: 'folder-a',
+        metadata: { name: 'Pinned Folder' },
+        attempted: { name: 'folder' },
+      },
       expect.any(Function),
     )
+    expect(currentChatStateSnapshot).not.toHaveBeenCalled()
+  })
+
+  it('keeps folder rename as a draft when writer loss revokes server commands', async () => {
+    seedSidebarDatabase()
+    component = mount(SideChatListHarness, { target })
+    await tick()
+    editButtonForRow(rowByChatId('chat-foldered')).click()
+    await tick()
+    writerAccessMocks.lost = true
+    const input = inputIn(folderElementById('folder-a'), 'folder name input')
+    await setTextInputValue(input, 'Unsaved folder draft')
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+    expect(selectedCharacter().chatFolders[0].name).toBe('Pinned Folder')
+    expect(input.value).toBe('Unsaved folder draft')
+    expect(writerAccessMocks.report).toHaveBeenCalled()
+    expect(sidebarMocks.dispatchChatFolderMetadataPatchWithOutcome).not.toHaveBeenCalled()
+    expect(currentChatStateSnapshot).not.toHaveBeenCalled()
   })
 
   it('keeps folder, foldered-chat, and unfiled-chat rename inputs enabled while saves are pending', async () => {
@@ -1811,10 +1850,12 @@ describe('SideChatList DOM contract harness', () => {
     const folderedRename = sidebarMocks.createDeferredUpdateCommand()
     const unfiledRename = sidebarMocks.createDeferredUpdateCommand()
     const folderRename = sidebarMocks.createDeferredUpdateCommand()
-    sidebarMocks.dispatchUpdateChatWithOutcome
+    sidebarMocks.dispatchChatMetadataPatchWithOutcome
       .mockImplementationOnce(() => folderedRename.promise as Promise<any>)
       .mockImplementationOnce(() => unfiledRename.promise as Promise<any>)
-    sidebarMocks.dispatchUpdateChatFolderWithOutcome.mockImplementationOnce(() => folderRename.promise as Promise<any>)
+    sidebarMocks.dispatchChatFolderMetadataPatchWithOutcome.mockImplementationOnce(
+      () => folderRename.promise as Promise<any>,
+    )
 
     component = mount(SideChatListHarness, { target })
     await tick()
@@ -1837,8 +1878,8 @@ describe('SideChatList DOM contract harness', () => {
       expect(document.activeElement).toBe(input)
     }
 
-    expect(sidebarMocks.dispatchUpdateChatWithOutcome).toHaveBeenCalledTimes(2)
-    expect(sidebarMocks.dispatchUpdateChatFolderWithOutcome).toHaveBeenCalledOnce()
+    expect(sidebarMocks.dispatchChatMetadataPatchWithOutcome).toHaveBeenCalledTimes(2)
+    expect(sidebarMocks.dispatchChatFolderMetadataPatchWithOutcome).toHaveBeenCalledOnce()
 
     folderedRename.resolve({ status: 'accepted', result: { revision: 1, status: 'ok' } })
     unfiledRename.resolve({ status: 'accepted', result: { revision: 2, status: 'ok' } })
@@ -1852,23 +1893,16 @@ describe('SideChatList DOM contract harness', () => {
     const firstChatRename = sidebarMocks.createDeferredUpdateCommand()
     const finalChatRename = sidebarMocks.createDeferredUpdateCommand()
     const firstFolderRename = sidebarMocks.createDeferredUpdateCommand()
-    sidebarMocks.dispatchUpdateChatWithOutcome
-      .mockImplementationOnce(async (chatId, patch, previous, _select, rollback) => {
+    sidebarMocks.dispatchChatMetadataPatchWithOutcome
+      .mockImplementationOnce(async (previous, rollback) => {
         const outcome = (await firstChatRename.promise) as any
         if (outcome.status === 'failed') {
-          const previousChat = previous.characters[0].chats.find((candidate) => candidate.id === chatId)
-          rollback({
-            selectedCharID: previous.selectedCharID,
-            characterId: previous.characters[0].chaId,
-            chatId,
-            metadata: { name: previousChat?.name },
-            attempted: patch,
-          })
+          rollback(previous)
         }
         return outcome
       })
       .mockImplementationOnce(() => finalChatRename.promise as Promise<any>)
-    sidebarMocks.dispatchUpdateChatFolderWithOutcome
+    sidebarMocks.dispatchChatFolderMetadataPatchWithOutcome
       .mockImplementationOnce(() => firstFolderRename.promise as Promise<any>)
       .mockResolvedValueOnce({ status: 'accepted', result: { revision: 4, status: 'ok' } })
 
@@ -1892,14 +1926,13 @@ describe('SideChatList DOM contract harness', () => {
     folderInput.dispatchEvent(new Event('change', { bubbles: true }))
     await flushCommandWork()
 
-    expect(sidebarMocks.dispatchUpdateChatWithOutcome.mock.calls.map((call) => call[1])).toEqual([
+    expect(sidebarMocks.dispatchChatMetadataPatchWithOutcome.mock.calls.map((call) => call[0].attempted)).toEqual([
       { name: 'First Sidebar Rename' },
       { name: 'Final Sidebar Rename' },
     ])
-    expect(sidebarMocks.dispatchUpdateChatFolderWithOutcome.mock.calls.map((call) => call[1])).toEqual([
-      { name: 'First Folder Rename' },
-      { name: 'Final Folder Rename' },
-    ])
+    expect(sidebarMocks.dispatchChatFolderMetadataPatchWithOutcome.mock.calls.map((call) => call[0].attempted)).toEqual(
+      [{ name: 'First Folder Rename' }, { name: 'Final Folder Rename' }],
+    )
 
     firstChatRename.resolve({ status: 'failed', result: { status: 'error', error: 'rename failed' } })
     firstFolderRename.resolve({ status: 'accepted', result: { revision: 3, status: 'ok' } })
@@ -1933,8 +1966,10 @@ describe('SideChatList DOM contract harness', () => {
     sidebarMocks.setServerCommandsEnabled(true)
     const failedChatRename = sidebarMocks.createDeferredUpdateCommand()
     const failedFolderRename = sidebarMocks.createDeferredUpdateCommand()
-    sidebarMocks.dispatchUpdateChatWithOutcome.mockImplementationOnce(() => failedChatRename.promise as Promise<any>)
-    sidebarMocks.dispatchUpdateChatFolderWithOutcome.mockImplementationOnce(
+    sidebarMocks.dispatchChatMetadataPatchWithOutcome.mockImplementationOnce(
+      () => failedChatRename.promise as Promise<any>,
+    )
+    sidebarMocks.dispatchChatFolderMetadataPatchWithOutcome.mockImplementationOnce(
       () => failedFolderRename.promise as Promise<any>,
     )
 
@@ -1974,7 +2009,7 @@ describe('SideChatList DOM contract harness', () => {
     sidebarMocks.setServerCommandsEnabled(true)
     const firstRename = sidebarMocks.createDeferredUpdateCommand()
     const secondRename = sidebarMocks.createDeferredUpdateCommand()
-    sidebarMocks.dispatchUpdateChatWithOutcome
+    sidebarMocks.dispatchChatMetadataPatchWithOutcome
       .mockImplementationOnce(() => firstRename.promise as Promise<any>)
       .mockImplementationOnce(() => secondRename.promise as Promise<any>)
 
@@ -2011,7 +2046,7 @@ describe('SideChatList DOM contract harness', () => {
     sidebarMocks.setServerCommandsEnabled(true)
     const rename = sidebarMocks.createDeferredUpdateCommand()
     const createFolder = sidebarMocks.createDeferredCreateFolderCommand()
-    sidebarMocks.dispatchUpdateChatWithOutcome.mockImplementationOnce(() => rename.promise as Promise<any>)
+    sidebarMocks.dispatchChatMetadataPatchWithOutcome.mockImplementationOnce(() => rename.promise as Promise<any>)
 
     component = mount(SideChatListHarness, { target })
     await tick()
@@ -2022,7 +2057,7 @@ describe('SideChatList DOM contract harness', () => {
     await setTextInputValue(renameInput, 'Pending rename A')
     renameInput.dispatchEvent(new Event('change', { bubbles: true }))
     await tick()
-    expect(sidebarMocks.dispatchUpdateChatWithOutcome).toHaveBeenCalledOnce()
+    expect(sidebarMocks.dispatchChatMetadataPatchWithOutcome).toHaveBeenCalledOnce()
 
     const organizeB = rowActionButton(rowByChatId('chat-root-b'), 'organize') as HTMLButtonElement
     expect(organizeB.disabled).toBe(false)
@@ -2043,7 +2078,7 @@ describe('SideChatList DOM contract harness', () => {
   it('paints folder folded toggles before dispatching with the folder stable id', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
-    sidebarMocks.dispatchUpdateChatFolderWithOutcome.mockImplementationOnce(async () => {
+    sidebarMocks.dispatchChatFolderMetadataPatchWithOutcome.mockImplementationOnce(async () => {
       expect(selectedCharacter().chatFolders[0].folded).toBe(true)
       return { status: 'accepted', result: { revision: 1, status: 'ok' } }
     })
@@ -2060,33 +2095,30 @@ describe('SideChatList DOM contract harness', () => {
     header.click()
     await tick()
 
-    expect(sidebarMocks.dispatchUpdateChatFolderWithOutcome).toHaveBeenCalledWith(
-      'folder-a',
-      { folded: true },
-      expect.any(Object),
+    expect(sidebarMocks.dispatchChatFolderMetadataPatchWithOutcome).toHaveBeenCalledWith(
+      {
+        selectedCharID: 0,
+        characterId: 'char-a',
+        folderId: 'folder-a',
+        metadata: { folded: false },
+        attempted: { folded: true },
+      },
       expect.any(Function),
     )
     expect(selectedCharacter().chatFolders[0].folded).toBe(true)
     expect(folder.dataset.risuChatFolderFolded).toBe('true')
     expect(header.getAttribute('aria-expanded')).toBe('false')
     expect(panel.hidden).toBe(true)
+    expect(currentChatStateSnapshot).not.toHaveBeenCalled()
   })
 
   it('routes a failed direct folder toggle through the owner-scoped rollback callback', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
-    sidebarMocks.dispatchUpdateChatFolderWithOutcome.mockImplementationOnce(
-      async (folderId, patch, _previous, rollback) => {
-        rollback({
-          selectedCharID: 0,
-          characterId: 'char-a',
-          folderId,
-          metadata: { folded: false },
-          attempted: patch,
-        })
-        return { status: 'failed', result: { error: 'failed', status: 'error' } }
-      },
-    )
+    sidebarMocks.dispatchChatFolderMetadataPatchWithOutcome.mockImplementationOnce(async (previous, rollback) => {
+      rollback(previous)
+      return { status: 'failed', result: { error: 'failed', status: 'error' } }
+    })
 
     component = mount(SideChatListHarness, { target })
     await tick()
@@ -2094,7 +2126,7 @@ describe('SideChatList DOM contract harness', () => {
     folderHeader(folderElementById('folder-a')).click()
     await tick()
 
-    expect(sidebarMocks.dispatchUpdateChatFolderWithOutcome).toHaveBeenCalledTimes(1)
+    expect(sidebarMocks.dispatchChatFolderMetadataPatchWithOutcome).toHaveBeenCalledTimes(1)
     expect(selectedCharacter().chatFolders[0].folded).toBe(false)
     expect(folderElementById('folder-a').dataset.risuChatFolderFolded).toBe('false')
   })
@@ -2103,7 +2135,7 @@ describe('SideChatList DOM contract harness', () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
     sidebarMocks.alertSelect.mockResolvedValueOnce('0').mockResolvedValueOnce('0')
-    sidebarMocks.dispatchUpdateChatFolderWithOutcome.mockImplementationOnce(async () => {
+    sidebarMocks.dispatchChatFolderMetadataPatchWithOutcome.mockImplementationOnce(async () => {
       expect(selectedCharacter().chatFolders[0].color).toBe('red')
       return { status: 'accepted', result: { revision: 1, status: 'ok' } }
     })
@@ -2114,14 +2146,19 @@ describe('SideChatList DOM contract harness', () => {
     rowActionButton(folderElementById('folder-a'), 'folder-options').click()
     await flushCommandWork()
 
-    expect(sidebarMocks.dispatchUpdateChatFolderWithOutcome).toHaveBeenCalledWith(
-      'folder-a',
-      { color: 'red' },
-      expect.any(Object),
+    expect(sidebarMocks.dispatchChatFolderMetadataPatchWithOutcome).toHaveBeenCalledWith(
+      {
+        selectedCharID: 0,
+        characterId: 'char-a',
+        folderId: 'folder-a',
+        metadata: {},
+        attempted: { color: 'red' },
+      },
       expect.any(Function),
     )
     expect(selectedCharacter().chatFolders[0].color).toBe('red')
     expect(folderHeaderContainer(folderElementById('folder-a')).classList.contains('bg-red-900')).toBe(true)
+    expect(currentChatStateSnapshot).not.toHaveBeenCalled()
   })
 
   it('does not change a folder color when the action selection is cancelled', async () => {
@@ -2139,7 +2176,7 @@ describe('SideChatList DOM contract harness', () => {
       [language.changeFolderColor],
       `${language.options}: Pinned Folder`,
     )
-    expect(sidebarMocks.dispatchUpdateChatFolderWithOutcome).not.toHaveBeenCalled()
+    expect(sidebarMocks.dispatchChatFolderMetadataPatchWithOutcome).not.toHaveBeenCalled()
     expect(selectedCharacter().chatFolders[0].color).toBeUndefined()
   })
 

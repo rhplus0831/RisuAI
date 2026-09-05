@@ -18,10 +18,11 @@
   import {
     applyOptimisticCreatedChat,
     applyOptimisticDeletedChat,
+    captureChatMetadataPatch,
     currentChatStateSnapshot,
     dispatchCreateChatWithOutcome,
     dispatchDeleteChatWithOutcome,
-    dispatchUpdateChatWithOutcome,
+    dispatchChatMetadataPatchWithOutcome,
     restoreChatRowMetadata,
   } from 'src/ts/chatCommands'
   import { reportWriterAccessLostMutation } from 'src/ts/server/activeWriterSession'
@@ -336,17 +337,8 @@
       return
     }
 
-    const previous = currentChatStateSnapshot()
-    const previousCharacter = ownerCharacterId
-      ? previous.characters.find((candidate) => candidate.chaId === ownerCharacterId)
-      : previous.characters[ownerSelectedCharIndex]
-    const previousChat = previousCharacter?.chats?.find((candidate) => candidate.id === liveTargetChat.id)
-    const liveCharacter = previousCharacter?.chaId
-      ? uniqueCharacterOwner(previousCharacter.chaId)
-      : resolveOriginCharacter(undefined, ownerSelectedCharIndex, ownerCharacterReference)
-    const liveChat = liveCharacter?.chats?.find((candidate) => candidate.id === liveTargetChat.id)
-    if (!liveCharacter?.chaId || !liveChat || liveChat.name !== previousChat?.name) return
-    if (!applyChatMetadataOwnerPatch(liveCharacter.chaId, liveTargetChat.id, { name })) return
+    const previous = captureChatMetadataPatch(liveTargetChat.id, { name }, character.chaId)
+    if (!previous || !applyChatMetadataOwnerPatch(previous.characterId, liveTargetChat.id, { name })) return
     clearFailedMutations(key)
     const action = `${language.edit}: ${name}`
     await settleMutation(
@@ -354,7 +346,7 @@
       liveTargetChat.id,
       action,
       [chatConflictKey(liveTargetChat.id)],
-      () => dispatchUpdateChatWithOutcome(liveTargetChat.id, { name }, previous, false, restoreChatRowMetadata),
+      () => dispatchChatMetadataPatchWithOutcome(previous, restoreChatRowMetadata),
       undefined,
       undefined,
       key,
