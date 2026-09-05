@@ -29,6 +29,8 @@ const unrelatedSizes = [0, 12, 48]
 const historySizes = [4, 40, 160]
 const payload = 'unrelated synthetic payload '.repeat(80)
 const reportRows: unknown[] = []
+const cpuProfileRequested = process.env.RISU_GENERATION_COST_CPU_PROFILE === '1'
+let cpuProfileCaptured = false
 const reportPath = fileURLToPath(
   new URL('../../../fast-bootstrap-results/maintainability/generation-costs.json', import.meta.url),
 )
@@ -48,6 +50,7 @@ afterAll(() => {
         architecture: process.arch,
         logicalCpus: cpus().length,
         cpu: cpus()[0]?.model,
+        ...(cpuProfileRequested ? { diagnosticOnly: true, diagnosticKind: 'cpu-profile' } : {}),
         samples: reportRows,
       },
       null,
@@ -244,17 +247,71 @@ async function timings(db: DatabaseSync, dataDir: string) {
   // Keep these runs separate from SQL/clone spies: their JSON serialization
   // deliberately adds work and would otherwise distort the timing comparison.
   const samples = { warmup: 1, repetitions: 3, preflightMs: [] as number[], assemblyMs: [] as number[] }
-  for (let repetition = -samples.warmup; repetition < samples.repetitions; repetition += 1) {
-    let started = performance.now()
-    preflightGenerationOperationSettings(input, dataDir, db)
-    const preflightMs = performance.now() - started
-    started = performance.now()
-    const result = await assemblePrompt(input, createGenerationAssemblyResources(db, dataDir, input))
-    const assemblyMs = performance.now() - started
-    expect(result.stopSending).toBe(false)
-    if (repetition >= 0) {
-      samples.preflightMs.push(preflightMs)
-      samples.assemblyMs.push(assemblyMs)
+  let profiler: import('node:inspector/promises').Session | undefined
+  let profileSetupMs = 0
+  if (cpuProfileRequested && !cpuProfileCaptured) {
+    // The first probe is the zero-unrelated/four-message fixture. Profiling is
+    // diagnostic only; it keeps the existing one warmup + three measured runs.
+    cpuProfileCaptured = true
+    const started = performance.now()
+    const { Session } = await import('node:inspector/promises')
+    profiler = new Session()
+    try {
+      profiler.connect()
+      await profiler.post('Profiler.enable')
+      await profiler.post('Profiler.setSamplingInterval', { interval: 100 })
+      await profiler.post('Profiler.start')
+      profileSetupMs = performance.now() - started
+    } catch (error) {
+      profiler.disconnect()
+      throw error
+    }
+  }
+  try {
+    for (let repetition = -samples.warmup; repetition < samples.repetitions; repetition += 1) {
+      let started = performance.now()
+      preflightGenerationOperationSettings(input, dataDir, db)
+      const preflightMs = performance.now() - started
+      started = performance.now()
+      const result = await assemblePrompt(input, createGenerationAssemblyResources(db, dataDir, input))
+      const assemblyMs = performance.now() - started
+      expect(result.stopSending).toBe(false)
+      if (repetition >= 0) {
+        samples.preflightMs.push(preflightMs)
+        samples.assemblyMs.push(assemblyMs)
+      }
+    }
+  } finally {
+    if (profiler) {
+      try {
+        const started = performance.now()
+        const { profile } = await profiler.post('Profiler.stop')
+        const profileStopMs = performance.now() - started
+        const profilePath =
+          process.env.RISU_GENERATION_COST_CPU_PROFILE_PATH ??
+          path.join(path.dirname(reportPath), 'generation-small.cpuprofile')
+        mkdirSync(path.dirname(profilePath), { recursive: true })
+        writeFileSync(profilePath, JSON.stringify(profile) + '\n')
+        writeFileSync(
+          profilePath + '.json',
+          JSON.stringify(
+            {
+              diagnosticOnly: true,
+              note: 'CPU sampling adds overhead; these timings are not acceptance evidence.',
+              samplingIntervalUs: 100,
+              profileSetupMs,
+              profileStopMs,
+              sampledDurationMs: (profile.endTime - profile.startTime) / 1000,
+              sampleCount: profile.samples?.length ?? 0,
+              timing: samples,
+            },
+            null,
+            2,
+          ) + '\n',
+        )
+      } finally {
+        profiler.disconnect()
+      }
     }
   }
   return samples
