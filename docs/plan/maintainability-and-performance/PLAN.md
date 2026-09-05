@@ -2,10 +2,11 @@
 
 Date: 2026-09-05
 
-This plan turns the current-code audit into sequential, independently verifiable
-changes. Start execution at [status.md](status.md), then read the selected
-[phase document](phases/README.md). Writing this plan does not implement or close
-any finding.
+Closed on 2026-09-06. All ten findings and Phases 0–6 are accepted; see the
+[final findings, measurements and residual owners](evidence/final-closeout.md)
+and [execution/verification history](status.md). The original scope, phase
+instructions and opening evidence below are retained as the historical plan;
+current architecture guides remain authoritative for shipped behavior.
 
 ## Goal and Authority
 

@@ -4,12 +4,12 @@ Updated: 2026-09-06
 
 ## Execution Cursor
 
-- State: Phases 0–5 accepted; Phase 6 aggregate and recovery pass; final small generation timing remains open.
+- State: Complete; all ten findings and Phases 0–6 accepted.
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
-- Next phase: [6. Shared policy and closeout](phases/phase-6-shared-policy-and-closeout.md).
-- Next task: profile and resolve the final small generation preparation timing miss
-  without changing its original budget, then finish evidence and archival.
+- Final verification source: `e91f2438b7464906544110df99e5a19ce507c4df`.
+- Next task: none; this workstream is closed.
+- Final dispositions and residual owners: [final closeout](evidence/final-closeout.md).
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence and completed Phase 2 slices are recorded below.
@@ -27,22 +27,22 @@ selected [phase](phases/README.md) for implementation detail.
 | [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md) | F02, F09 | Accepted | [Selected inputs, concrete contracts and final costs](evidence/generation-inputs.md) |
 | [4. Server maintenance](phases/phase-4-server-maintenance.md) | F07 | Accepted | [Bounded discovery/workers, guarded GC and original latency limits](evidence/maintenance-scheduling.md) |
 | [5. Transcript residency](phases/phase-5-transcript-residency.md) | F08 | Accepted | [Original budgets and final native checks](evidence/transcript-residency.md#accepted-working-window-costs-and-final-native-verification) |
-| [6. Shared policy and closeout](phases/phase-6-shared-policy-and-closeout.md) | F10; all closeout evidence | Implementation complete; verifying closeout | Shared owner and seven focused invocations pass |
+| [6. Shared policy and closeout](phases/phase-6-shared-policy-and-closeout.md) | F10; all closeout evidence | Accepted | [Shared owner, final costs, aggregate/recovery and residuals](evidence/final-closeout.md) |
 
 ## Finding Dispositions
 
-| Finding | Disposition | Missing completion evidence |
+| Finding | Disposition | Completion evidence |
 | --- | --- | --- |
-| F01 | Fixed; targeted creation and Agent Preset deletion cleanup preserve dependent rows | Final combined aggregate pending |
-| F02 | Selected reads and bounded query programs implemented within recorded exceptions | Final small preparation timing miss under investigation |
-| F03 | Fixed; scoped metadata and organization captures | Final combined aggregate pending |
-| F04 | Fixed; bounded background writes/pruning and lifecycle fences | Final combined aggregate pending |
-| F05 | Fixed; one owned normalization per staged/replaced intent | Final combined aggregate pending |
-| F06 | Fixed; selected loading, readiness and real-browser chunk retry | Final combined aggregate pending |
-| F07 | Fixed; bounded native backup workers and cooperative fenced GC meet original latency budgets | Final combined aggregate pending |
-| F08 | Fixed; bounded adaptive residency meets original costs and native interaction gates | Final combined aggregate pending |
-| F09 | Fixed; finite checked views and explicit mutable ownership | Final combined aggregate pending |
-| F10 | Fixed; one neutral shared owner and forwarding runtime facades | Final combined aggregate pending |
+| F01 | Fixed; targeted creation and Agent Preset deletion cleanup preserve dependent rows | [Final verification](evidence/final-closeout.md#combined-verification-and-limitations) |
+| F02 | Selected reads and bounded query programs implemented within recorded exceptions | [Original final timing limits pass](evidence/closeout-generation-final.json) |
+| F03 | Fixed; scoped metadata and organization captures | [Final verification](evidence/final-closeout.md#combined-verification-and-limitations) |
+| F04 | Fixed; bounded background writes/pruning and lifecycle fences | [Final verification](evidence/final-closeout.md#combined-verification-and-limitations) |
+| F05 | Fixed; one owned normalization per staged/replaced intent | [Final verification](evidence/final-closeout.md#combined-verification-and-limitations) |
+| F06 | Fixed; selected loading, readiness and real-browser chunk retry | [Final verification](evidence/final-closeout.md#combined-verification-and-limitations) |
+| F07 | Fixed; bounded native backup workers and cooperative fenced GC meet original latency budgets | [Final verification](evidence/final-closeout.md#combined-verification-and-limitations) |
+| F08 | Fixed; bounded adaptive residency meets original costs and native interaction gates | [Final verification](evidence/final-closeout.md#combined-verification-and-limitations) |
+| F09 | Fixed; finite checked views and explicit mutable ownership | [Final verification](evidence/final-closeout.md#combined-verification-and-limitations) |
+| F10 | Fixed; one neutral shared owner and forwarding runtime facades | [Final verification](evidence/final-closeout.md#combined-verification-and-limitations) |
 
 ## Verification Ledger
 
@@ -65,10 +65,11 @@ needed to reproduce them here or in the owning phase's bounded slice record.
 
 ## Decisions and Exceptions
 
-- The ten audited findings remain the scope. F02–F06 and F09 are fixed with the
-  explicit F02 configuration/legacy exceptions below. F01 creation is fixed and
-  its confirmed deletion follow-up and F07 are fixed; F08 and F10 retain their
-  implementation/decision gates. No finding is silently deferred or added.
+- All ten audited findings are fixed within the explicit configuration/legacy
+  and product exceptions below. F01 includes the confirmed Agent Preset deletion
+  follow-up; F08's measured decision required residency implementation. No
+  required finding is deferred. Final retained costs, owners and revisit triggers
+  are collected in the [closeout](evidence/final-closeout.md).
 - Phase 0 precedes broad benchmarking because F01 is a reproduced correctness
   failure. Performance measurement must not delay its repair.
 - F08 retains an implementation decision gate. A measured decision to keep
@@ -1051,3 +1052,35 @@ fixtures are much faster, indicating process warmup sensitivity. This explains
 why another blind retry is insufficient. A separate opt-in profile of the first
 small timing journey will guide a bounded correction; original absolute budgets
 remain the acceptance gate.
+
+## Phase 6 Accepted and Workstream Closed
+
+The [diagnostic profile](evidence/closeout-generation-profile.json) attributes
+34.1% of non-infrastructure samples to token encoding. The bounded correction
+in `9650d422c` uses the ordinary cl100k/o200k encoder only when no special-token
+prefix can occur; exact IDs/counts and all special-token errors retain parity.
+Focused tokenizer 25, golden counts 12, assembly 142 and final-budget 10 pass.
+The independent final retokenization and all original workload/budget choices
+remain unchanged.
+
+At clean `e91f2438b7464906544110df99e5a19ce507c4df`, all three isolated unprofiled
+generation processes pass structural checks. [All 216 measured timing values](evidence/closeout-generation-final.json)
+are retained; pooled small preflight/assembly is 0.366937/1.366220 ms against
+0.453/2.409 ms, and large is 0.233674/0.902917 against 1.066/2.812 ms. Required
+history, configuration-row parsing and embedded legacy costs remain explicit.
+Earlier misses and controls are preserved; no sample or original gate is dropped.
+
+The [final aggregate](evidence/closeout-final-verification.json) passes in
+143.904 seconds: all seven lanes, 8,207 frontend and 4,000 server tests, five
+existing skips, complete core/browser/server types and smoke build. After the
+encoder correction, all eleven accepted-send/recovery native cases also pass.
+Prior combined cache/writer/lineage/locale journeys and unchanged maintenance,
+bundle and transcript cost evidence retain their exact source anchors.
+
+The [final finding-by-finding record](evidence/final-closeout.md) records all
+implemented remedies, measured outcomes, retained costs, owners, revisit
+conditions and current-guide links. Current docs and the complete workstream
+are validated explicitly before and after archival. The intact plan, phases,
+status and every retained failed/accepted artifact move into the existing
+performance-and-stability archive; its index is updated and the active-plan
+entry is removed. Full quality and compatibility lanes remain user/CI-owned.
