@@ -100,6 +100,18 @@ action do so. Empty chats retain their ordinary greeting/composer layout.
 ### Row Ownership And Parse Dependencies
 
 `Chat.svelte` owns each persisted row's controls and display state.
+Its optional `transcriptInteraction.ts` context reserves a row before creating
+an editor, confirmation or asynchronous action that must survive display
+eviction. `transcriptReservations.ts` admits at most eight distinct message
+rows; overlapping work on one row shares its slot. When full, a new manual
+operation leaves existing drafts untouched and reports localized feedback;
+automatic translation retries on availability without consuming its eligibility.
+Partial editors use the same reservation lifetime, including save/confirmation
+work. Non-transcript `Chat` uses retain their existing unrestricted behavior.
+`transcriptMessageView.ts` retains only two translation-display flags across
+eviction, with 2,048 entries and 2,048-character keys; chat reset fences late
+writes. It never stores message bodies or editor drafts. Preferences outside
+that finite cache return to their ordinary defaults when remounted.
 Its module shares the character/chat and active-message identity indexes from
 `chatReadOwners.svelte.ts` across mounted rows. Svelte tracks array structure and
 stable IDs so hydration, optimistic structural edits, rollback, and selection

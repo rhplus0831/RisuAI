@@ -2,11 +2,14 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const partialEditSettingsMocks = vi.hoisted(() => ({
+  alertNormal: vi.fn(),
   settingsResourceState: {
     value: { lineHeight: 1.5, zoomsize: 200 },
     groupStatuses: { display: 'ready' },
   },
 }))
+
+vi.mock('src/ts/alert', () => ({ alertNormal: partialEditSettingsMocks.alertNormal }))
 
 vi.mock('src/ts/server/resourceState.svelte', () => ({
   settingsResourceState: partialEditSettingsMocks.settingsResourceState,
@@ -14,6 +17,7 @@ vi.mock('src/ts/server/resourceState.svelte', () => ({
 
 import PartialEditController from './PartialEditController.svelte'
 import type { PartialEditSaveDetail } from './partialEditFreshness'
+import { TRANSCRIPT_INTERACTION_CONTEXT, type TranscriptInteractionProvider } from './transcriptInteraction'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -140,6 +144,7 @@ function mountController(
   bodyRoot: HTMLElement,
   options: {
     messageData?: string
+    interactions?: TranscriptInteractionProvider
     chatIndex?: number
     chatId?: string
     messageId?: string
@@ -152,6 +157,7 @@ function mountController(
   document.body.appendChild(target)
   const component = mount(PartialEditController, {
     target,
+    context: options.interactions ? new Map([[TRANSCRIPT_INTERACTION_CONTEXT, options.interactions]]) : undefined,
     props: {
       messageData: options.messageData ?? 'partial edit shared hover body',
       chatIndex: options.chatIndex ?? 0,
@@ -389,6 +395,58 @@ describe('PartialEditController shared hover handler', () => {
       chatId: 'chat-a',
       messageId: 'message-a',
     })
+  })
+
+  it('leaves partial editor and confirmation state closed when interaction admission is full', async () => {
+    const fixture = createHoverFixture({ text: 'target block', left: 40, top: 100, width: 180, height: 48 })
+    stubElementFromPoint([fixture])
+    const reserve = vi.fn<TranscriptInteractionProvider['reserve']>(() => null)
+    mountController(fixture.bodyRoot, {
+      messageData: 'alpha target block omega',
+      messageId: 'message-a',
+      interactions: { reserve, subscribeAvailable: () => () => {} },
+    })
+    await settleEffects()
+    movePointer(60, 112)
+    await flushHoverFrame()
+    getBlockButtonWrapper().querySelector<HTMLButtonElement>('.partial-edit-btn-edit')?.click()
+    await tick()
+    expect(reserve).toHaveBeenCalledWith('message-a', expect.any(Object))
+    expect(document.querySelector('.partial-edit-overlay')).toBeNull()
+    expect(document.querySelector('.partial-edit-textarea')).toBeNull()
+    expect(partialEditSettingsMocks.alertNormal).toHaveBeenCalledOnce()
+  })
+
+  it('holds a partial editor through its draft and releases on cancellation or row destruction', async () => {
+    const fixture = createHoverFixture({ text: 'target block', left: 40, top: 100, width: 180, height: 48 })
+    stubElementFromPoint([fixture])
+    const release = vi.fn()
+    const reserve = vi.fn<TranscriptInteractionProvider['reserve']>(() => release)
+    const mounted = mountController(fixture.bodyRoot, {
+      messageData: 'alpha target block omega',
+      messageId: 'message-a',
+      interactions: { reserve, subscribeAvailable: () => () => {} },
+    })
+    await settleEffects()
+    movePointer(60, 112)
+    await flushHoverFrame()
+    getBlockButtonWrapper().querySelector<HTMLButtonElement>('.partial-edit-btn-edit')?.click()
+    await tick()
+    expect(reserve).toHaveBeenCalledWith('message-a', expect.any(Object))
+    expect(document.querySelector('.partial-edit-textarea')).not.toBeNull()
+    expect(release).not.toHaveBeenCalled()
+    document.querySelector<HTMLButtonElement>('.partial-edit-cancel-btn')?.click()
+    await tick()
+    expect(release).toHaveBeenCalledOnce()
+
+    movePointer(60, 112)
+    await flushHoverFrame()
+    getBlockButtonWrapper().querySelector<HTMLButtonElement>('.partial-edit-btn-edit')?.click()
+    await tick()
+    expect(document.querySelector('.partial-edit-textarea')).not.toBeNull()
+    unmountController(mounted)
+    await tick()
+    expect(release).toHaveBeenCalledTimes(2)
   })
 
   it('cancels delayed edit-modal scrolling when the editor closes', async () => {

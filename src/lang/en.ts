@@ -19,6 +19,9 @@ export const languageEnglish = {
     report: 'Debug report text',
   },
   unknownInteractionTime: 'Unknown',
+  transcriptShowMessages: (from: number, to: number) => `Show messages ${from}–${to}`,
+  transcriptInteractionLimit:
+    'Finish an edit or wait for a message action to complete before starting another. Up to eight messages can have active actions at once.',
   generationReattachFailure: {
     message: 'This reply may still be running, but this device could not reconnect.',
     lastError: (error: string) => `Last connection error: ${error}`,

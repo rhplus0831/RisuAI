@@ -4,7 +4,7 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte'
+  import { getContext, onDestroy, untrack } from 'svelte'
   import {
     ArrowLeft,
     ArrowLeftRightIcon,
@@ -93,6 +93,12 @@
   import PopupButton from '../UI/PopupButton.svelte'
   import RerollList from './RerollList.svelte'
   import PartialEditController from './PartialEditController.svelte'
+  import {
+    createTranscriptInteractionScope,
+    TRANSCRIPT_INTERACTION_CONTEXT,
+    type TranscriptInteractionProvider,
+  } from './transcriptInteraction'
+  import { TRANSCRIPT_MESSAGE_VIEW_CONTEXT, type TranscriptMessageViewOwner } from './transcriptMessageView'
   import { resolveFreshPartialEditSave, type PartialEditSaveDetail } from './partialEditFreshness'
   import {
     chatGenerationLoadingPhaseFromStage,
@@ -371,6 +377,20 @@
     displayChatId = null,
     displayMessageId = null,
   }: Props = $props()
+  const interactionProvider = getContext<TranscriptInteractionProvider | undefined>(TRANSCRIPT_INTERACTION_CONTEXT)
+  const interactions = createTranscriptInteractionScope(
+    interactionProvider,
+    () => displayMessageId ?? currentLiveMessage()?.chatId,
+    () => alertNormal(language.transcriptInteractionLimit),
+  )
+  let interactionAvailability = $state(0)
+  const unsubscribeInteractionAvailability = interactionProvider?.subscribeAvailable(() => {
+    interactionAvailability += 1
+  })
+  let messageEditorReservation: (() => void) | null = null
+  let translationEditorReservation: (() => void) | null = null
+  let pendingMessageEdits = $state(0)
+  let pendingTranslationEdits = $state(0)
   let autoPopupMessageEditorOpen = $state(false)
   let autoPopupTranslationEditorOpen = $state(false)
   let activeAutoPopupMessageSessionId: number | null = null
@@ -408,9 +428,15 @@
     }),
   )
 
+  const messageViewOwner = getContext<TranscriptMessageViewOwner | undefined>(TRANSCRIPT_MESSAGE_VIEW_CONTEXT)
+  const messageView = $derived(messageViewOwner?.capture(displayMessageId ?? currentLiveMessage()?.chatId))
+  const restoredMessageView = untrack(() => messageView?.read())
   let msgDisplay = $state('')
-  let translated = $state(false)
-  let suppressAutomaticTranslationDisplay = $state(false)
+  let translated = $state(restoredMessageView?.translated ?? false)
+  let suppressAutomaticTranslationDisplay = $state(restoredMessageView?.suppressAutomaticTranslationDisplay ?? false)
+  $effect(() => {
+    messageView?.write({ translated, suppressAutomaticTranslationDisplay })
+  })
   let automaticTranslationEligibilityConsumed = $state(false)
   let partialEditEnabled = $state(true)
   let lastDisplayParseKey = ''
@@ -492,6 +518,10 @@
     if (editMode) return
     const target = captureMessageEditorTarget()
     if (!target) return
+    if (!messageEditorReservation) {
+      messageEditorReservation = interactions.acquire()
+      if (!messageEditorReservation) return
+    }
     messageEditTarget = target
     messageEditOriginalText = message
     editMode = true
@@ -521,8 +551,13 @@
       cancelMessageEdit()
       return
     }
+    pendingMessageEdits += 1
     editMode = false
-    await edit(target)
+    try {
+      await edit(target)
+    } finally {
+      pendingMessageEdits -= 1
+    }
   }
 
   function openRerollMenu(e: MouseEvent, children: import('svelte').Snippet): void {
@@ -635,6 +670,8 @@
   }
 
   onDestroy(() => {
+    unsubscribeInteractionAvailability?.()
+    interactions.dispose()
     if (activeAutoPopupMessageSessionId !== null) {
       closePopupEditorSession(activeAutoPopupMessageSessionId)
       activeAutoPopupMessageSessionId = null
@@ -642,6 +679,17 @@
     if (activeAutoPopupTranslationSessionId !== null) {
       closePopupEditorSession(activeAutoPopupTranslationSessionId)
       activeAutoPopupTranslationSessionId = null
+    }
+  })
+
+  $effect(() => {
+    if (!editMode && !autoPopupMessageEditorOpen && pendingMessageEdits === 0) {
+      untrack(() => messageEditorReservation?.())
+      messageEditorReservation = null
+    }
+    if (!editTranslationMode && !autoPopupTranslationEditorOpen && pendingTranslationEdits === 0) {
+      untrack(() => translationEditorReservation?.())
+      translationEditorReservation = null
     }
   })
 
@@ -821,38 +869,40 @@
   }
 
   async function openBranchSource(branchReference: ReturnType<typeof parseBranchComment>): Promise<void> {
-    if (!branchReference) return
-    const originTarget = captureMessageEditorTarget()
-    if (!originTarget) return
+    return interactions.run(async () => {
+      if (!branchReference) return
+      const originTarget = captureMessageEditorTarget()
+      if (!originTarget) return
 
-    if (canUseServerCommands()) {
-      try {
-        await hydrateChatMessages(branchReference.sourceChatId, { strict: true })
-      } catch {
-        if (isCurrentMessageEditorTarget(originTarget)) alertError(language.chatDataLoadFailed)
+      if (canUseServerCommands()) {
+        try {
+          await hydrateChatMessages(branchReference.sourceChatId, { strict: true })
+        } catch {
+          if (isCurrentMessageEditorTarget(originTarget)) alertError(language.chatDataLoadFailed)
+          return
+        }
+      }
+
+      if (!isCurrentMessageEditorTarget(originTarget)) return
+      const currentOwner = mutableActiveChatOwner()
+      const currentCharacter = currentOwner?.character
+      const sourceOwner = currentCharacter?.chaId
+        ? mutableChatOwnerById(currentCharacter.chaId, branchReference.sourceChatId)
+        : undefined
+      const sourceChat = sourceOwner?.chat
+      const sourceMessages =
+        sourceChat?.message?.filter((candidate) => candidate.chatId === branchReference.sourceMessageId) ?? []
+      if (!currentCharacter || !sourceChat || sourceMessages.length !== 1) {
+        alertError(language.chatDataLoadFailed)
         return
       }
-    }
 
-    if (!isCurrentMessageEditorTarget(originTarget)) return
-    const currentOwner = mutableActiveChatOwner()
-    const currentCharacter = currentOwner?.character
-    const sourceOwner = currentCharacter?.chaId
-      ? mutableChatOwnerById(currentCharacter.chaId, branchReference.sourceChatId)
-      : undefined
-    const sourceChat = sourceOwner?.chat
-    const sourceMessages =
-      sourceChat?.message?.filter((candidate) => candidate.chatId === branchReference.sourceMessageId) ?? []
-    if (!currentCharacter || !sourceChat || sourceMessages.length !== 1) {
-      alertError(language.chatDataLoadFailed)
-      return
-    }
-
-    changeChatTo(branchReference.sourceChatId)
-    foldChatToMessage(branchReference.sourceMessageId)
-    if (currentCharacter.chaId) {
-      navigate(characterRoutePath(currentCharacter.chaId, branchReference.sourceChatId))
-    }
+      changeChatTo(branchReference.sourceChatId)
+      foldChatToMessage(branchReference.sourceMessageId)
+      if (currentCharacter.chaId) {
+        navigate(characterRoutePath(currentCharacter.chaId, branchReference.sourceChatId))
+      }
+    })
   }
 
   function resolveActiveMessageTarget(target: MessageEditorTarget): { chat: Chat; messageIndex: number } | null {
@@ -1179,69 +1229,129 @@
       : null
   }
 
-  async function requestServerRawTranslation(target: RawTranslationTarget | null = captureRawTranslationTarget()) {
-    if (translationInProgress) return
-    if (!target) {
-      setStatusMessage('Translation target is not ready yet.', 2500)
-      return
-    }
-    const jobId = uuidv4()
-    let greetingSettingsHash: string | null = null
-    if (target.kind === 'message') {
-      if (
-        !beginActiveMessageTranslation({
-          chatId: target.chatId,
-          messageId: target.messageId,
-          jobId,
-          status: 'running',
-        })
-      ) {
+  async function requestServerRawTranslation(
+    target: RawTranslationTarget | null = captureRawTranslationTarget(),
+    reserved?: () => void,
+  ) {
+    const release = reserved ?? interactions.acquire()
+    if (!release) return
+    try {
+      if (translationInProgress) return
+      if (!target) {
+        setStatusMessage('Translation target is not ready yet.', 2500)
         return
       }
-    } else {
-      const projection = getGreetingTranslationProjection(target.characterId, target.chatId)
-      greetingSettingsHash =
-        projection?.clientSettingsSignature === target.clientSettingsSignature ? projection.settingsHash : null
-      if (!greetingSettingsHash) {
-        setStatusMessage('Greeting translation settings are not ready yet.', 2500)
-        return
+      const jobId = uuidv4()
+      let greetingSettingsHash: string | null = null
+      if (target.kind === 'message') {
+        if (
+          !beginActiveMessageTranslation({
+            chatId: target.chatId,
+            messageId: target.messageId,
+            jobId,
+            status: 'running',
+          })
+        ) {
+          return
+        }
+      } else {
+        const projection = getGreetingTranslationProjection(target.characterId, target.chatId)
+        greetingSettingsHash =
+          projection?.clientSettingsSignature === target.clientSettingsSignature ? projection.settingsHash : null
+        if (!greetingSettingsHash) {
+          setStatusMessage('Greeting translation settings are not ready yet.', 2500)
+          return
+        }
+        if (
+          !beginActiveGreetingTranslation({
+            characterId: target.characterId,
+            chatId: target.chatId,
+            greetingIndex: target.greetingIndex,
+            settingsHash: greetingSettingsHash,
+            jobId,
+            status: 'running',
+          })
+        ) {
+          return
+        }
       }
-      if (
-        !beginActiveGreetingTranslation({
+      translationEditOperation += 1
+      activeRawTranslationRequestTarget = target
+      translating = true
+      editTranslationMode = false
+      editTranslationTarget = null
+      try {
+        // Raw translation may wait on an external provider. Its server endpoint
+        // uses the captured message text as the commit precondition, so keep it
+        // outside the global revisioned-mutation queue and let unrelated edits
+        // continue while the provider is running.
+        const baseRevision = await getServerCommandBaseRevision()
+        if (baseRevision === null) {
+          if (isRenderingRawTranslationTarget(target)) translated = false
+          setStatusMessage('Unable to read server command revision.', 3000)
+          return
+        }
+        if (target.kind === 'message') {
+          const result = await translateMessageCommand({ baseRevision, messageId: target.messageId, jobId })
+          if (!isCurrentMessageTranslationJob(target.messageId, jobId)) return
+          if (result.status === 'ok') {
+            if (result.jobId !== jobId) return
+            const resultTarget = resultTranslationMessageTarget(target, result)
+            if (resultTarget) applyLocalTranslation(resultTarget, result.translation)
+            if (isRenderingRawTranslationTarget(target)) {
+              translated = true
+              editTranslationMode = false
+            }
+            return
+          }
+          if (isRenderingRawTranslationTarget(target)) translated = false
+          if (result.status === 'conflict') {
+            setStatusMessage(`Translation conflict (${result.currentRevision}).`, 3000)
+          } else if (result.status === 'unavailable') {
+            setStatusMessage('Server commands are unavailable.', 3000)
+          } else {
+            setStatusMessage(result.error, 3000)
+          }
+          return
+        }
+
+        const result = await translateGreetingCommand({
+          baseRevision,
           characterId: target.characterId,
           chatId: target.chatId,
           greetingIndex: target.greetingIndex,
-          settingsHash: greetingSettingsHash,
           jobId,
-          status: 'running',
         })
-      ) {
-        return
-      }
-    }
-    translationEditOperation += 1
-    activeRawTranslationRequestTarget = target
-    translating = true
-    editTranslationMode = false
-    editTranslationTarget = null
-    try {
-      // Raw translation may wait on an external provider. Its server endpoint
-      // uses the captured message text as the commit precondition, so keep it
-      // outside the global revisioned-mutation queue and let unrelated edits
-      // continue while the provider is running.
-      const baseRevision = await getServerCommandBaseRevision()
-      if (baseRevision === null) {
-        if (isRenderingRawTranslationTarget(target)) translated = false
-        setStatusMessage('Unable to read server command revision.', 3000)
-        return
-      }
-      if (target.kind === 'message') {
-        const result = await translateMessageCommand({ baseRevision, messageId: target.messageId, jobId })
-        if (!isCurrentMessageTranslationJob(target.messageId, jobId)) return
+        if (
+          !isCurrentGreetingTranslationJob(
+            target.characterId,
+            target.chatId,
+            target.greetingIndex,
+            greetingSettingsHash!,
+            jobId,
+          )
+        ) {
+          return
+        }
         if (result.status === 'ok') {
-          if (result.jobId !== jobId) return
-          const resultTarget = resultTranslationMessageTarget(target, result)
-          if (resultTarget) applyLocalTranslation(resultTarget, result.translation)
+          if (
+            result.jobId !== jobId ||
+            result.characterId !== target.characterId ||
+            result.chatId !== target.chatId ||
+            result.greetingIndex !== target.greetingIndex ||
+            result.settingsHash !== greetingSettingsHash
+          ) {
+            return
+          }
+          applyGreetingTranslationCommandReceipt({
+            revision: result.revision,
+            characterId: target.characterId,
+            chatId: target.chatId,
+            greetingIndex: target.greetingIndex,
+            settingsHash: result.settingsHash,
+            clientSettingsSignature: target.clientSettingsSignature,
+            translation: result.translation,
+          })
           if (isRenderingRawTranslationTarget(target)) {
             translated = true
             editTranslationMode = false
@@ -1256,97 +1366,50 @@
         } else {
           setStatusMessage(result.error, 3000)
         }
-        return
-      }
-
-      const result = await translateGreetingCommand({
-        baseRevision,
-        characterId: target.characterId,
-        chatId: target.chatId,
-        greetingIndex: target.greetingIndex,
-        jobId,
-      })
-      if (
-        !isCurrentGreetingTranslationJob(
-          target.characterId,
-          target.chatId,
-          target.greetingIndex,
-          greetingSettingsHash!,
-          jobId,
-        )
-      ) {
-        return
-      }
-      if (result.status === 'ok') {
-        if (
-          result.jobId !== jobId ||
-          result.characterId !== target.characterId ||
-          result.chatId !== target.chatId ||
-          result.greetingIndex !== target.greetingIndex ||
-          result.settingsHash !== greetingSettingsHash
-        ) {
-          return
+      } catch (error) {
+        if (isRenderingRawTranslationTarget(target)) translated = false
+        const detail = error instanceof Error ? error.message : String(error)
+        setStatusMessage(language.playground.translationRunFailed(detail), 5000)
+      } finally {
+        if (target.kind === 'message') clearMessageTranslationJob(jobId)
+        else clearGreetingTranslationJob(jobId)
+        if (activeRawTranslationRequestTarget && sameRawTranslationTarget(activeRawTranslationRequestTarget, target)) {
+          activeRawTranslationRequestTarget = null
+          translating = false
         }
-        applyGreetingTranslationCommandReceipt({
-          revision: result.revision,
-          characterId: target.characterId,
-          chatId: target.chatId,
-          greetingIndex: target.greetingIndex,
-          settingsHash: result.settingsHash,
-          clientSettingsSignature: target.clientSettingsSignature,
-          translation: result.translation,
-        })
-        if (isRenderingRawTranslationTarget(target)) {
-          translated = true
-          editTranslationMode = false
-        }
-        return
       }
-      if (isRenderingRawTranslationTarget(target)) translated = false
-      if (result.status === 'conflict') {
-        setStatusMessage(`Translation conflict (${result.currentRevision}).`, 3000)
-      } else if (result.status === 'unavailable') {
-        setStatusMessage('Server commands are unavailable.', 3000)
-      } else {
-        setStatusMessage(result.error, 3000)
-      }
-    } catch (error) {
-      if (isRenderingRawTranslationTarget(target)) translated = false
-      const detail = error instanceof Error ? error.message : String(error)
-      setStatusMessage(language.playground.translationRunFailed(detail), 5000)
     } finally {
-      if (target.kind === 'message') clearMessageTranslationJob(jobId)
-      else clearGreetingTranslationJob(jobId)
-      if (activeRawTranslationRequestTarget && sameRawTranslationTarget(activeRawTranslationRequestTarget, target)) {
-        activeRawTranslationRequestTarget = null
-        translating = false
-      }
+      release()
     }
   }
 
   async function confirmServerRawRetranslation() {
-    const target = captureRawTranslationTarget()
-    if (!target || translationInProgress) return
-    if (!(await alertConfirm(language.retranslateConfirm))) return
-    if (!isRenderingRawTranslationTarget(target) || translationInProgress || !canTranslateRawTarget()) return
-    await requestServerRawTranslation(target)
+    return interactions.run(async () => {
+      const target = captureRawTranslationTarget()
+      if (!target || translationInProgress) return
+      if (!(await alertConfirm(language.retranslateConfirm))) return
+      if (!isRenderingRawTranslationTarget(target) || translationInProgress || !canTranslateRawTarget()) return
+      await requestServerRawTranslation(target)
+    })
   }
 
   async function confirmClientRetranslation() {
-    const sourceMessage = message
-    const sourceIndex = idx
-    if (!(await alertConfirm(language.retranslateConfirm))) return
-    if (
-      translationInProgress ||
-      !translated ||
-      message !== sourceMessage ||
-      idx !== sourceIndex ||
-      hasServerRawTranslationTarget() ||
-      languageSettings.translatorType !== 'llm'
-    ) {
-      return
-    }
-    retranslate = true
+    return interactions.run(async () => {
+      const sourceMessage = message
+      const sourceIndex = idx
+      if (!(await alertConfirm(language.retranslateConfirm))) return
+      if (
+        translationInProgress ||
+        !translated ||
+        message !== sourceMessage ||
+        idx !== sourceIndex ||
+        hasServerRawTranslationTarget() ||
+        languageSettings.translatorType !== 'llm'
+      ) {
+        return
+      }
+      retranslate = true
+    })
   }
 
   // Returns null only when no scoped snapshot exists for the target; a null
@@ -1420,27 +1483,29 @@
   }
 
   async function rm(e: MouseEvent, rec?: boolean) {
-    if (translationInProgress) return
-    const messageTarget = captureMessageEditorTarget()
-    if (!messageTarget) return
-    if (e.shiftKey) {
-      await truncateAtMessageTarget(messageTarget)
-      return
-    }
+    return interactions.run(async () => {
+      if (translationInProgress) return
+      const messageTarget = captureMessageEditorTarget()
+      if (!messageTarget) return
+      if (e.shiftKey) {
+        await truncateAtMessageTarget(messageTarget)
+        return
+      }
 
-    const rm = sidebarSettings.askRemoval ? await alertConfirm(language.removeChat) : true
-    if (rm) {
-      if (sidebarSettings.instantRemove || rec) {
-        const r = await alertConfirm(language.instantRemoveConfirm)
-        if (!r) {
-          await truncateAtMessageTarget(messageTarget)
+      const rm = sidebarSettings.askRemoval ? await alertConfirm(language.removeChat) : true
+      if (rm) {
+        if (sidebarSettings.instantRemove || rec) {
+          const r = await alertConfirm(language.instantRemoveConfirm)
+          if (!r) {
+            await truncateAtMessageTarget(messageTarget)
+          } else {
+            deleteMessageAtTarget(messageTarget)
+          }
         } else {
           deleteMessageAtTarget(messageTarget)
         }
-      } else {
-        deleteMessageAtTarget(messageTarget)
       }
-    }
+    })
   }
 
   async function edit(target: MessageEditorTarget) {
@@ -1552,8 +1617,13 @@
   }
 
   async function loadTranslationForEdit() {
+    if (editTranslationMode) return
     const target = captureTranslationMessageTarget()
     if (!target) return
+    if (!translationEditorReservation) {
+      translationEditorReservation = interactions.acquire()
+      if (!translationEditorReservation) return
+    }
     translationEditOperation += 1
     suppressAutoPopupTranslationEditor = false
     editTranslationTarget = target
@@ -1562,7 +1632,12 @@
   }
 
   async function saveTranslationEdit() {
-    await saveServerTranslationEdit()
+    pendingTranslationEdits += 1
+    try {
+      await saveServerTranslationEdit()
+    } finally {
+      pendingTranslationEdits -= 1
+    }
   }
 
   function displaya(message: string) {
@@ -1859,6 +1934,7 @@
   })
 
   $effect(() => {
+    void interactionAvailability
     if (!autoTranslateOnReady || automaticTranslationEligibilityConsumed) return
     if (!automaticTranslationRequestEnabled()) {
       consumeAutomaticTranslationEligibility()
@@ -1887,8 +1963,10 @@
       return
     }
 
+    const release = untrack(() => interactions.acquire(false))
+    if (!release) return
     consumeAutomaticTranslationEligibility()
-    void requestServerRawTranslation()
+    void requestServerRawTranslation(undefined, release)
   })
 
   $effect(() => {
@@ -2072,91 +2150,92 @@
   async function handleButtonTriggerWithin(event: UIEvent) {
     const target = event.target as HTMLElement
     const origin = target.closest('[risu-trigger], [risu-btn]')
-    if (!origin) {
-      return
-    }
+    if (!origin) return
+    return interactions.run(async () => {
+      const triggerName = origin.getAttribute('risu-trigger')
+      const triggerId = origin.getAttribute('risu-id')
+      const btnEvent = origin.getAttribute('risu-btn')
+      const identity = {
+        triggerName,
+        triggerId,
+        btnEvent,
+      }
+      const hydrationTarget = captureChatButtonTriggerTarget(identity)
+      if (!hydrationTarget) {
+        return
+      }
+      const triggerDisplayGeneration = triggerName ? ++manualTriggerDisplayGeneration : null
 
-    const triggerName = origin.getAttribute('risu-trigger')
-    const triggerId = origin.getAttribute('risu-id')
-    const btnEvent = origin.getAttribute('risu-btn')
-    const identity = {
-      triggerName,
-      triggerId,
-      btnEvent,
-    }
-    const hydrationTarget = captureChatButtonTriggerTarget(identity)
-    if (!hydrationTarget) {
-      return
-    }
-    const triggerDisplayGeneration = triggerName ? ++manualTriggerDisplayGeneration : null
-
-    try {
-      if (canUseServerCommands()) {
-        if (!hydrationTarget.snapshot.chatId) {
-          alertError(language.chatDataLoadFailed)
-          return
-        }
-        try {
-          await hydrateChatMessages(hydrationTarget.snapshot.chatId, { strict: true })
-        } catch {
-          if (isChatButtonTriggerTargetCurrentAfterHydration(hydrationTarget)) {
+      try {
+        if (canUseServerCommands()) {
+          if (!hydrationTarget.snapshot.chatId) {
             alertError(language.chatDataLoadFailed)
+            return
           }
+          try {
+            await hydrateChatMessages(hydrationTarget.snapshot.chatId, { strict: true })
+          } catch {
+            if (isChatButtonTriggerTargetCurrentAfterHydration(hydrationTarget)) {
+              alertError(language.chatDataLoadFailed)
+            }
+            return
+          }
+        }
+
+        if (!isChatButtonTriggerTargetCurrentAfterHydration(hydrationTarget)) {
           return
         }
-      }
+        const triggerTarget = captureChatButtonTriggerTarget(identity)
+        if (!triggerTarget?.snapshot.characterId || !triggerTarget.snapshot.chatId) {
+          return
+        }
+        const triggerOwner = mutableChatOwnerById(triggerTarget.snapshot.characterId, triggerTarget.snapshot.chatId)
+        if (!triggerOwner) return
+        const currentChar = triggerOwner.character
 
-      if (!isChatButtonTriggerTargetCurrentAfterHydration(hydrationTarget)) {
-        return
-      }
-      const triggerTarget = captureChatButtonTriggerTarget(identity)
-      if (!triggerTarget?.snapshot.characterId || !triggerTarget.snapshot.chatId) {
-        return
-      }
-      const triggerOwner = mutableChatOwnerById(triggerTarget.snapshot.characterId, triggerTarget.snapshot.chatId)
-      if (!triggerOwner) return
-      const currentChar = triggerOwner.character
-
-      let triggerResult = null
-      if (triggerName) {
-        const triggerController = createManualTriggerAbortController()
-        try {
-          triggerResult = await runTrigger(currentChar, 'manual', {
-            chat: triggerTarget.previous.chat ?? triggerOwner.chat,
-            manualName: triggerName,
-            triggerId: triggerId || undefined,
-            signal: triggerController.signal,
+        let triggerResult = null
+        if (triggerName) {
+          const triggerController = createManualTriggerAbortController()
+          try {
+            triggerResult = await runTrigger(currentChar, 'manual', {
+              chat: triggerTarget.previous.chat ?? triggerOwner.chat,
+              manualName: triggerName,
+              triggerId: triggerId || undefined,
+              signal: triggerController.signal,
+              isFresh: () => isChatButtonTriggerTargetFresh(triggerTarget),
+              deferLiveChatSideEffects: true,
+            })
+          } finally {
+            clearManualTriggerAbortController(triggerController)
+          }
+        } else if (btnEvent) {
+          triggerResult = await runLuaButtonTrigger(currentChar, btnEvent, {
+            chat: triggerTarget.previous.chat,
             isFresh: () => isChatButtonTriggerTargetFresh(triggerTarget),
             deferLiveChatSideEffects: true,
           })
-        } finally {
-          clearManualTriggerAbortController(triggerController)
         }
-      } else if (btnEvent) {
-        triggerResult = await runLuaButtonTrigger(currentChar, btnEvent, {
-          chat: triggerTarget.previous.chat,
-          isFresh: () => isChatButtonTriggerTargetFresh(triggerTarget),
-          deferLiveChatSideEffects: true,
-        })
-      }
 
-      if (triggerResult?.chat && applyFreshChatButtonTriggerResult(triggerTarget, triggerResult.chat)) {
-        if (chatScriptstateSignature(triggerTarget.previous.chat) !== chatScriptstateSignature(triggerResult.chat)) {
-          refreshVariableOnlyGui()
+        if (triggerResult?.chat && applyFreshChatButtonTriggerResult(triggerTarget, triggerResult.chat)) {
+          if (chatScriptstateSignature(triggerTarget.previous.chat) !== chatScriptstateSignature(triggerResult.chat)) {
+            refreshVariableOnlyGui()
+          }
+          ReloadChatPointer.update((v) => {
+            v[idx] = (v[idx] ?? 0) + 1
+            return v
+          })
         }
-        ReloadChatPointer.update((v) => {
-          v[idx] = (v[idx] ?? 0) + 1
-          return v
-        })
+      } finally {
+        if (triggerName && triggerId) {
+          setTimeout(() => {
+            if (manualTriggerDisplayGeneration !== triggerDisplayGeneration) return
+            CurrentTriggerIdStore.update((currentTriggerId) =>
+              currentTriggerId === triggerId ? null : currentTriggerId,
+            )
+          }, 100) // Small delay to allow display mode to complete
+        }
       }
-    } finally {
-      if (triggerName && triggerId) {
-        setTimeout(() => {
-          if (manualTriggerDisplayGeneration !== triggerDisplayGeneration) return
-          CurrentTriggerIdStore.update((currentTriggerId) => (currentTriggerId === triggerId ? null : currentTriggerId))
-        }, 100) // Small delay to allow display mode to complete
-      }
-    }
+    })
   }
 
   let isBookmarked = $derived(
@@ -2164,118 +2243,120 @@
   )
 
   async function toggleBookmark() {
-    const previous = currentChatScopedSnapshot()
-    const chat = mutableActiveChatOwner()?.chat
+    return interactions.run(async () => {
+      const previous = currentChatScopedSnapshot()
+      const chat = mutableActiveChatOwner()?.chat
 
-    const readMessage = currentLiveMessage()
-    if (!chat?.message[idx]?.chatId || readMessage?.chatId !== chat.message[idx].chatId) return
-    if (reportWriterAccessLostMutation()) return
+      const readMessage = currentLiveMessage()
+      if (!chat?.message[idx]?.chatId || readMessage?.chatId !== chat.message[idx].chatId) return
+      if (reportWriterAccessLostMutation()) return
 
-    const useServerCommands = canUseServerCommands()
-    const nextMessages = useServerCommands ? cloneMessagesWithIds(chat) : null
-    let messageId = useServerCommands ? nextMessages?.[idx]?.chatId : chat.message[idx]?.chatId
-    const messageContent = chat.message[idx]?.data ?? ''
-    const hadMessageId = Boolean(chat.message[idx]?.chatId)
+      const useServerCommands = canUseServerCommands()
+      const nextMessages = useServerCommands ? cloneMessagesWithIds(chat) : null
+      let messageId = useServerCommands ? nextMessages?.[idx]?.chatId : chat.message[idx]?.chatId
+      const messageContent = chat.message[idx]?.data ?? ''
+      const hadMessageId = Boolean(chat.message[idx]?.chatId)
 
-    if (!messageId) {
-      messageId = uuidv4()
-      if (!useServerCommands) {
-        chat.message[idx].chatId = messageId
+      if (!messageId) {
+        messageId = uuidv4()
+        if (!useServerCommands) {
+          chat.message[idx].chatId = messageId
+        }
       }
-    }
 
-    const bookmarks = [...(chat.bookmarks ?? [])]
-    const bookmarkNames = { ...(chat.bookmarkNames ?? {}) }
+      const bookmarks = [...(chat.bookmarks ?? [])]
+      const bookmarkNames = { ...(chat.bookmarkNames ?? {}) }
 
-    const bookmarkIndex = bookmarks.indexOf(messageId)
+      const bookmarkIndex = bookmarks.indexOf(messageId)
 
-    if (bookmarkIndex > -1) {
-      bookmarks.splice(bookmarkIndex, 1)
-      delete bookmarkNames[messageId]
-    } else {
-      bookmarks.push(messageId)
-
-      const msgSender = chat.message[idx]?.role === 'user' ? name || getUserDisplayName() : name
-      const newName = await alertInput(language.bookmarkAskNameOrDefault, [], bookmarkNames[messageId] || '')
-
-      if (newName && newName.trim() !== '') {
-        bookmarkNames[messageId] = newName
+      if (bookmarkIndex > -1) {
+        bookmarks.splice(bookmarkIndex, 1)
+        delete bookmarkNames[messageId]
       } else {
-        let defaultName
+        bookmarks.push(messageId)
 
-        const blacklist = [
-          '!',
-          '@',
-          '#',
-          '$',
-          '%',
-          '^',
-          '&',
-          '*',
-          '(',
-          ')',
-          '_',
-          '+',
-          '-',
-          '=',
-          '[',
-          ']',
-          '{',
-          '}',
-          '|',
-          ';',
-          ':',
-          '"',
-          "'",
-          ',',
-          '.',
-          '<',
-          '>',
-          '/',
-          '?',
-        ]
-        let lines = messageContent.split('\n')
-        lines = lines.splice(Math.floor(lines.length * 0.5))
-        for (const line of lines) {
-          if (line && !blacklist.some((char) => line.startsWith(char))) {
-            defaultName = line.trim().slice(0, 50) + '...'
-            break
+        const msgSender = chat.message[idx]?.role === 'user' ? name || getUserDisplayName() : name
+        const newName = await alertInput(language.bookmarkAskNameOrDefault, [], bookmarkNames[messageId] || '')
+
+        if (newName && newName.trim() !== '') {
+          bookmarkNames[messageId] = newName
+        } else {
+          let defaultName
+
+          const blacklist = [
+            '!',
+            '@',
+            '#',
+            '$',
+            '%',
+            '^',
+            '&',
+            '*',
+            '(',
+            ')',
+            '_',
+            '+',
+            '-',
+            '=',
+            '[',
+            ']',
+            '{',
+            '}',
+            '|',
+            ';',
+            ':',
+            '"',
+            "'",
+            ',',
+            '.',
+            '<',
+            '>',
+            '/',
+            '?',
+          ]
+          let lines = messageContent.split('\n')
+          lines = lines.splice(Math.floor(lines.length * 0.5))
+          for (const line of lines) {
+            if (line && !blacklist.some((char) => line.startsWith(char))) {
+              defaultName = line.trim().slice(0, 50) + '...'
+              break
+            }
           }
+          if (!defaultName) {
+            defaultName = messageContent.slice(0, 50) + '...'
+          }
+          bookmarkNames[messageId] = msgSender + '| ' + defaultName
         }
-        if (!defaultName) {
-          defaultName = messageContent.slice(0, 50) + '...'
-        }
-        bookmarkNames[messageId] = msgSender + '| ' + defaultName
       }
-    }
 
-    if (!useServerCommands) {
-      if (!hadMessageId) {
-        chat.message[idx].chatId = messageId
+      if (!useServerCommands) {
+        if (!hadMessageId) {
+          chat.message[idx].chatId = messageId
+        }
+        chat.bookmarks = [...bookmarks]
+        chat.bookmarkNames = bookmarkNames
       }
-      chat.bookmarks = [...bookmarks]
-      chat.bookmarkNames = bookmarkNames
-    }
-    if (!hadMessageId && chat.id) {
-      dispatchReplaceMessagesForChat(chat, useServerCommands && nextMessages ? nextMessages : chat.message, previous)
-    }
-    if (useServerCommands && !applyOptimisticBookmarkMetadata(previous, messageId, bookmarks, bookmarkNames)) {
-      reportStaleMessageMutation()
-      return
-    }
-    if (chat.id) {
-      observeMessageMutation(
-        dispatchUpdateChatScopedWithOutcome(
-          chat.id,
-          {
-            bookmarks,
-            bookmarkNames,
-          },
-          previous,
-          restoreChatRowMetadata,
-        ),
-      )
-    }
+      if (!hadMessageId && chat.id) {
+        dispatchReplaceMessagesForChat(chat, useServerCommands && nextMessages ? nextMessages : chat.message, previous)
+      }
+      if (useServerCommands && !applyOptimisticBookmarkMetadata(previous, messageId, bookmarks, bookmarkNames)) {
+        reportStaleMessageMutation()
+        return
+      }
+      if (chat.id) {
+        observeMessageMutation(
+          dispatchUpdateChatScopedWithOutcome(
+            chat.id,
+            {
+              bookmarks,
+              bookmarkNames,
+            },
+            previous,
+            restoreChatRowMetadata,
+          ),
+        )
+      }
+    })
   }
 </script>
 
@@ -2554,66 +2635,67 @@
       aria-label={language.copy}
       class="flex items-center hover:text-blue-500 transition-colors button-icon-copy"
       onclick={async () => {
-        if (window.navigator.clipboard.write) {
-          try {
-            alertWait(language.loading)
-            const root = document.querySelector(':root') as HTMLElement
+        return interactions.run(async () => {
+          if (window.navigator.clipboard.write) {
+            try {
+              alertWait(language.loading)
+              const root = document.querySelector(':root') as HTMLElement
 
-            const parser = new DOMParser()
-            const doc = parser.parseFromString(
-              await ParseMarkdown(msgDisplay, renderCharacter, 'normal', idx, getCbsCondition(), {
-                chatId: currentDisplayChatId || undefined,
-                messageId: (displayMessageId ?? messageRowId) || undefined,
-              }),
-              'text/html',
-            )
+              const parser = new DOMParser()
+              const doc = parser.parseFromString(
+                await ParseMarkdown(msgDisplay, renderCharacter, 'normal', idx, getCbsCondition(), {
+                  chatId: currentDisplayChatId || undefined,
+                  messageId: (displayMessageId ?? messageRowId) || undefined,
+                }),
+                'text/html',
+              )
 
-            doc.querySelectorAll('mark').forEach((el) => {
-              const d = el.getAttribute('risu-mark')
-              if (d === 'quote1' || d === 'quote2') {
-                const newEle = document.createElement('div')
-                newEle.textContent = el.textContent
-                newEle.setAttribute(
+              doc.querySelectorAll('mark').forEach((el) => {
+                const d = el.getAttribute('risu-mark')
+                if (d === 'quote1' || d === 'quote2') {
+                  const newEle = document.createElement('div')
+                  newEle.textContent = el.textContent
+                  newEle.setAttribute(
+                    'style',
+                    `background: transparent; color: ${root.style.getPropertyValue('--FontColorQuote' + d.slice(-1))};`,
+                  )
+                  el.replaceWith(newEle)
+                  return
+                }
+              })
+              doc.querySelectorAll('p').forEach((el) => {
+                el.setAttribute('style', `color: ${root.style.getPropertyValue('--FontColorStandard')};`)
+              })
+              doc.querySelectorAll('em').forEach((el) => {
+                el.setAttribute(
                   'style',
-                  `background: transparent; color: ${root.style.getPropertyValue('--FontColorQuote' + d.slice(-1))};`,
+                  `font-style: italic; color: ${root.style.getPropertyValue('--FontColorItalic')};`,
                 )
-                el.replaceWith(newEle)
-                return
-              }
-            })
-            doc.querySelectorAll('p').forEach((el) => {
-              el.setAttribute('style', `color: ${root.style.getPropertyValue('--FontColorStandard')};`)
-            })
-            doc.querySelectorAll('em').forEach((el) => {
-              el.setAttribute(
-                'style',
-                `font-style: italic; color: ${root.style.getPropertyValue('--FontColorItalic')};`,
-              )
-            })
-            doc.querySelectorAll('strong').forEach((el) => {
-              el.setAttribute('style', `font-weight: bold; color: ${root.style.getPropertyValue('--FontColorBold')};`)
-            })
-            doc.querySelectorAll('em strong').forEach((el) => {
-              el.setAttribute(
-                'style',
-                `font-weight: bold; font-style: italic; color: ${root.style.getPropertyValue('--FontColorItalicBold')};`,
-              )
-            })
-            doc.querySelectorAll('strong em').forEach((el) => {
-              el.setAttribute(
-                'style',
-                `font-weight: bold; font-style: italic; color: ${root.style.getPropertyValue('--FontColorItalicBold')};`,
-              )
-            })
+              })
+              doc.querySelectorAll('strong').forEach((el) => {
+                el.setAttribute('style', `font-weight: bold; color: ${root.style.getPropertyValue('--FontColorBold')};`)
+              })
+              doc.querySelectorAll('em strong').forEach((el) => {
+                el.setAttribute(
+                  'style',
+                  `font-weight: bold; font-style: italic; color: ${root.style.getPropertyValue('--FontColorItalicBold')};`,
+                )
+              })
+              doc.querySelectorAll('strong em').forEach((el) => {
+                el.setAttribute(
+                  'style',
+                  `font-weight: bold; font-style: italic; color: ${root.style.getPropertyValue('--FontColorItalicBold')};`,
+                )
+              })
 
-            const imgs = doc.querySelectorAll('img')
-            for (const img of imgs) {
-              img.setAttribute('alt', 'from Risuai')
-              const url = img.getAttribute('src')
+              const imgs = doc.querySelectorAll('img')
+              for (const img of imgs) {
+                img.setAttribute('alt', 'from Risuai')
+                const url = img.getAttribute('src')
 
-              img.setAttribute(
-                'style',
-                `
+                img.setAttribute(
+                  'style',
+                  `
                         max-width: 100%;
                         margin: 10px 0;
                         border-radius: 8px;
@@ -2622,204 +2704,204 @@
                         margin-left: auto;
                         margin-right: auto;
                     `,
-              )
+                )
 
-              if (
-                url &&
-                (url.startsWith('http://asset.localhost') ||
-                  url.startsWith('https://asset.localhost') ||
-                  url.startsWith('https://sv.risuai') ||
-                  url.startsWith('data:') ||
-                  url.startsWith('http') ||
-                  url.startsWith('/'))
-              ) {
-                try {
-                  let fetchUrl = url
-                  if (url.startsWith('/')) {
-                    fetchUrl = window.location.origin + url
-                  }
+                if (
+                  url &&
+                  (url.startsWith('http://asset.localhost') ||
+                    url.startsWith('https://asset.localhost') ||
+                    url.startsWith('https://sv.risuai') ||
+                    url.startsWith('data:') ||
+                    url.startsWith('http') ||
+                    url.startsWith('/'))
+                ) {
+                  try {
+                    let fetchUrl = url
+                    if (url.startsWith('/')) {
+                      fetchUrl = window.location.origin + url
+                    }
 
-                  const data = await fetch(fetchUrl)
-                  if (data.ok) {
-                    const canvas = document.createElement('canvas')
-                    const ctx = canvas.getContext('2d')
-                    const imgElement = new Image()
-                    imgElement.crossOrigin = 'anonymous'
-                    const imageDataUrl = await data.blob().then(
-                      (b) =>
-                        new Promise<string>((resolve, reject) => {
-                          const reader = new FileReader()
-                          reader.onload = () => resolve(reader.result as string)
-                          reader.onerror = reject
-                          reader.readAsDataURL(b)
-                        }),
-                    )
-                    const decoded = await new Promise<boolean>((resolve) => {
-                      imgElement.onload = () => resolve(true)
-                      imgElement.onerror = () => resolve(false)
-                      imgElement.src = imageDataUrl
-                    })
-                    if (!decoded) continue
-                    canvas.width = imgElement.width
-                    canvas.height = imgElement.height
-                    ctx.drawImage(imgElement, 0, 0)
-                    const dataURL = canvas.toDataURL('image/jpeg', 0.6)
-                    img.setAttribute('src', dataURL)
+                    const data = await fetch(fetchUrl)
+                    if (data.ok) {
+                      const canvas = document.createElement('canvas')
+                      const ctx = canvas.getContext('2d')
+                      const imgElement = new Image()
+                      imgElement.crossOrigin = 'anonymous'
+                      const imageDataUrl = await data.blob().then(
+                        (b) =>
+                          new Promise<string>((resolve, reject) => {
+                            const reader = new FileReader()
+                            reader.onload = () => resolve(reader.result as string)
+                            reader.onerror = reject
+                            reader.readAsDataURL(b)
+                          }),
+                      )
+                      const decoded = await new Promise<boolean>((resolve) => {
+                        imgElement.onload = () => resolve(true)
+                        imgElement.onerror = () => resolve(false)
+                        imgElement.src = imageDataUrl
+                      })
+                      if (!decoded) continue
+                      canvas.width = imgElement.width
+                      canvas.height = imgElement.height
+                      ctx.drawImage(imgElement, 0, 0)
+                      const dataURL = canvas.toDataURL('image/jpeg', 0.6)
+                      img.setAttribute('src', dataURL)
+                    }
+                  } catch (error) {
+                    console.error('Image error:', error)
                   }
-                } catch (error) {
-                  console.error('Image error:', error)
                 }
               }
-            }
 
-            let iconDataUrl = ''
-            let hasValidImage = false
+              let iconDataUrl = ''
+              let hasValidImage = false
 
-            try {
-              const iconImage = (await getFileSrc(renderCharacter?.image ?? '')) ?? ''
+              try {
+                const iconImage = (await getFileSrc(renderCharacter?.image ?? '')) ?? ''
 
-              if (
-                iconImage &&
-                (iconImage.startsWith('http://asset.localhost') ||
-                  iconImage.startsWith('https://asset.localhost') ||
-                  iconImage.startsWith('https://sv.risuai') ||
-                  iconImage.startsWith('data:') ||
-                  iconImage.startsWith('http') ||
-                  iconImage.startsWith('/'))
-              ) {
-                if (iconImage.startsWith('data:')) {
-                  iconDataUrl = iconImage
-                  hasValidImage = true
-                } else {
-                  const data = await fetch(iconImage)
-                  if (data.ok) {
-                    const canvas = document.createElement('canvas')
-                    const ctx = canvas.getContext('2d')
-                    const img = new Image()
-                    img.crossOrigin = 'anonymous'
-                    const imageDataUrl = await data.blob().then(
-                      (b) =>
-                        new Promise<string>((resolve, reject) => {
-                          const reader = new FileReader()
-                          reader.onload = () => resolve(reader.result as string)
-                          reader.onerror = reject
-                          reader.readAsDataURL(b)
-                        }),
-                    )
-                    await new Promise<boolean>((resolve) => {
-                      img.onload = () => {
-                        try {
-                          if (!ctx) {
+                if (
+                  iconImage &&
+                  (iconImage.startsWith('http://asset.localhost') ||
+                    iconImage.startsWith('https://asset.localhost') ||
+                    iconImage.startsWith('https://sv.risuai') ||
+                    iconImage.startsWith('data:') ||
+                    iconImage.startsWith('http') ||
+                    iconImage.startsWith('/'))
+                ) {
+                  if (iconImage.startsWith('data:')) {
+                    iconDataUrl = iconImage
+                    hasValidImage = true
+                  } else {
+                    const data = await fetch(iconImage)
+                    if (data.ok) {
+                      const canvas = document.createElement('canvas')
+                      const ctx = canvas.getContext('2d')
+                      const img = new Image()
+                      img.crossOrigin = 'anonymous'
+                      const imageDataUrl = await data.blob().then(
+                        (b) =>
+                          new Promise<string>((resolve, reject) => {
+                            const reader = new FileReader()
+                            reader.onload = () => resolve(reader.result as string)
+                            reader.onerror = reject
+                            reader.readAsDataURL(b)
+                          }),
+                      )
+                      await new Promise<boolean>((resolve) => {
+                        img.onload = () => {
+                          try {
+                            if (!ctx) {
+                              hasValidImage = false
+                              resolve(false)
+                              return
+                            }
+                            canvas.width = img.width
+                            canvas.height = img.height
+                            ctx.drawImage(img, 0, 0)
+                            iconDataUrl = canvas.toDataURL('image/jpeg', 0.9)
+                            hasValidImage = true
+                            resolve(true)
+                          } catch {
                             hasValidImage = false
                             resolve(false)
-                            return
                           }
-                          canvas.width = img.width
-                          canvas.height = img.height
-                          ctx.drawImage(img, 0, 0)
-                          iconDataUrl = canvas.toDataURL('image/jpeg', 0.9)
-                          hasValidImage = true
-                          resolve(true)
-                        } catch {
+                        }
+                        img.onerror = () => {
                           hasValidImage = false
                           resolve(false)
                         }
-                      }
-                      img.onerror = () => {
-                        hasValidImage = false
-                        resolve(false)
-                      }
-                      img.src = imageDataUrl
-                    })
+                        img.src = imageDataUrl
+                      })
+                    }
                   }
                 }
+              } catch (error) {
+                console.error('Icon error:', error)
+                hasValidImage = false
               }
-            } catch (error) {
-              console.error('Icon error:', error)
-              hasValidImage = false
-            }
 
-            const isUserMessage = role === 'user'
-            const displayName = isUserMessage ? name || getUserDisplayName() : name
-            const modelInfo = messageGenerationInfo
-              ? capitalize(getModelInfo(messageGenerationInfo.model).shortName)
-              : isUserMessage
-                ? 'User'
-                : 'AI'
+              const isUserMessage = role === 'user'
+              const displayName = isUserMessage ? name || getUserDisplayName() : name
+              const modelInfo = messageGenerationInfo
+                ? capitalize(getModelInfo(messageGenerationInfo.model).shortName)
+                : isUserMessage
+                  ? 'User'
+                  : 'AI'
 
-            let finalIconDataUrl = iconDataUrl
-            let finalHasValidImage = hasValidImage
+              let finalIconDataUrl = iconDataUrl
+              let finalHasValidImage = hasValidImage
 
-            if (isUserMessage) {
-              finalHasValidImage = false
-              const userIcon = getUserIcon()
-              if (userIcon) {
-                try {
-                  const userIconSrc = await getFileSrc(userIcon)
-                  if (
-                    userIconSrc &&
-                    (userIconSrc.startsWith('http://asset.localhost') ||
-                      userIconSrc.startsWith('https://asset.localhost') ||
-                      userIconSrc.startsWith('https://sv.risuai') ||
-                      userIconSrc.startsWith('data:') ||
-                      userIconSrc.startsWith('http') ||
-                      userIconSrc.startsWith('/'))
-                  ) {
-                    if (userIconSrc.startsWith('data:')) {
-                      finalIconDataUrl = userIconSrc
-                      finalHasValidImage = true
-                    } else {
-                      const data = await fetch(userIconSrc)
-                      if (data.ok) {
-                        const canvas = document.createElement('canvas')
-                        const ctx = canvas.getContext('2d')
-                        const img = new Image()
-                        img.crossOrigin = 'anonymous'
-                        const imageDataUrl = await data.blob().then(
-                          (b) =>
-                            new Promise<string>((resolve, reject) => {
-                              const reader = new FileReader()
-                              reader.onload = () => resolve(reader.result as string)
-                              reader.onerror = reject
-                              reader.readAsDataURL(b)
-                            }),
-                        )
-                        await new Promise<boolean>((resolve) => {
-                          img.onload = () => {
-                            try {
-                              if (!ctx) {
+              if (isUserMessage) {
+                finalHasValidImage = false
+                const userIcon = getUserIcon()
+                if (userIcon) {
+                  try {
+                    const userIconSrc = await getFileSrc(userIcon)
+                    if (
+                      userIconSrc &&
+                      (userIconSrc.startsWith('http://asset.localhost') ||
+                        userIconSrc.startsWith('https://asset.localhost') ||
+                        userIconSrc.startsWith('https://sv.risuai') ||
+                        userIconSrc.startsWith('data:') ||
+                        userIconSrc.startsWith('http') ||
+                        userIconSrc.startsWith('/'))
+                    ) {
+                      if (userIconSrc.startsWith('data:')) {
+                        finalIconDataUrl = userIconSrc
+                        finalHasValidImage = true
+                      } else {
+                        const data = await fetch(userIconSrc)
+                        if (data.ok) {
+                          const canvas = document.createElement('canvas')
+                          const ctx = canvas.getContext('2d')
+                          const img = new Image()
+                          img.crossOrigin = 'anonymous'
+                          const imageDataUrl = await data.blob().then(
+                            (b) =>
+                              new Promise<string>((resolve, reject) => {
+                                const reader = new FileReader()
+                                reader.onload = () => resolve(reader.result as string)
+                                reader.onerror = reject
+                                reader.readAsDataURL(b)
+                              }),
+                          )
+                          await new Promise<boolean>((resolve) => {
+                            img.onload = () => {
+                              try {
+                                if (!ctx) {
+                                  finalHasValidImage = false
+                                  resolve(false)
+                                  return
+                                }
+                                canvas.width = img.width
+                                canvas.height = img.height
+                                ctx.drawImage(img, 0, 0)
+                                finalIconDataUrl = canvas.toDataURL('image/jpeg', 0.9)
+                                finalHasValidImage = true
+                                resolve(true)
+                              } catch {
                                 finalHasValidImage = false
                                 resolve(false)
-                                return
                               }
-                              canvas.width = img.width
-                              canvas.height = img.height
-                              ctx.drawImage(img, 0, 0)
-                              finalIconDataUrl = canvas.toDataURL('image/jpeg', 0.9)
-                              finalHasValidImage = true
-                              resolve(true)
-                            } catch {
+                            }
+                            img.onerror = () => {
                               finalHasValidImage = false
                               resolve(false)
                             }
-                          }
-                          img.onerror = () => {
-                            finalHasValidImage = false
-                            resolve(false)
-                          }
-                          img.src = imageDataUrl
-                        })
+                            img.src = imageDataUrl
+                          })
+                        }
                       }
                     }
+                  } catch (error) {
+                    console.error('User icon error:', error)
+                    finalHasValidImage = false
                   }
-                } catch (error) {
-                  console.error('User icon error:', error)
-                  finalHasValidImage = false
                 }
               }
-            }
 
-            const html = `<div style="font-family: 'Segoe UI', Roboto, Arial, sans-serif; color: ${root.style.getPropertyValue('--risu-theme-textcolor')}; line-height: 1.6; max-width: 600px; margin: 1rem auto; background: ${root.style.getPropertyValue('--risu-theme-bgcolor')}; border-radius: 12px; box-shadow: 0px 4px 12px rgba(0,0,0,0.15); overflow: hidden;">
+              const html = `<div style="font-family: 'Segoe UI', Roboto, Arial, sans-serif; color: ${root.style.getPropertyValue('--risu-theme-textcolor')}; line-height: 1.6; max-width: 600px; margin: 1rem auto; background: ${root.style.getPropertyValue('--risu-theme-bgcolor')}; border-radius: 12px; box-shadow: 0px 4px 12px rgba(0,0,0,0.15); overflow: hidden;">
 <div style="padding: 20px;">
 <div style="display: flex; flex-direction: column; align-items: center; margin-bottom: 1rem; text-align: center;">
     ${finalHasValidImage ? `<img style="width: 80px; height: 80px; border-radius: 50%; border: 3px solid ${root.style.getPropertyValue('--risu-theme-darkborderc')}; margin-bottom: 0.75rem; object-fit: cover;" src="${finalIconDataUrl}" alt="profile">` : ''}
@@ -2835,22 +2917,23 @@
 </div>
 </div>`
 
-            await window.navigator.clipboard.write([
-              new ClipboardItem({
-                'text/plain': new Blob([msgDisplay], { type: 'text/plain' }),
-                'text/html': new Blob([html], { type: 'text/html' }),
-              }),
-            ])
-            alertNormal(language.copied)
-            return
-          } catch {
-            alertClear()
+              await window.navigator.clipboard.write([
+                new ClipboardItem({
+                  'text/plain': new Blob([msgDisplay], { type: 'text/plain' }),
+                  'text/html': new Blob([html], { type: 'text/html' }),
+                }),
+              ])
+              alertNormal(language.copied)
+              return
+            } catch {
+              alertClear()
+            }
           }
-        }
-        try {
-          await window.navigator.clipboard.writeText(msgDisplay)
-          setStatusMessage(language.copied)
-        } catch {}
+          try {
+            await window.navigator.clipboard.writeText(msgDisplay)
+            setStatusMessage(language.copied)
+          } catch {}
+        })
       }}>
       <CopyIcon size={20} />
       {#if showNames}
@@ -3061,10 +3144,12 @@
     aria-label={language.branch}
     class="flex items-center hover:text-blue-500 transition-colors"
     onclick={async () => {
-      const target = captureMessageEditorTarget()
-      if (!target) return
-      if (!(await alertConfirm(language.branchConfirm))) return
-      void branchFromCurrentMessage(target)
+      return interactions.run(async () => {
+        const target = captureMessageEditorTarget()
+        if (!target) return
+        if (!(await alertConfirm(language.branchConfirm))) return
+        await branchFromCurrentMessage(target)
+      })
     }}>
     <SplitIcon size={20} />
     {#if showNames}

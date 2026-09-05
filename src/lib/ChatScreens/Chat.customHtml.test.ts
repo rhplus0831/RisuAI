@@ -3,6 +3,12 @@ import { get } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from '../../ts/storage/database.svelte'
 import { parseBranchComment } from './branchComment'
+import { TRANSCRIPT_INTERACTION_CONTEXT, type TranscriptInteractionProvider } from './transcriptInteraction'
+import {
+  createTranscriptMessageViewOwner,
+  TRANSCRIPT_MESSAGE_VIEW_CONTEXT,
+  type TranscriptMessageViewOwner,
+} from './transcriptMessageView'
 
 const customHtmlMocks = vi.hoisted(() => {
   const templates = {
@@ -596,12 +602,18 @@ function mountCustomHtmlRows(
     generationPersistenceState: 'queued' | 'stalled' | 'terminal' | 'stalled_legacy' | null
   }> = {},
   startIndex = 0,
+  interactions?: TranscriptInteractionProvider,
+  messageViews?: TranscriptMessageViewOwner,
 ) {
   for (let offset = 0; offset < count; offset += 1) {
     const index = startIndex + offset
     components.push(
       mount(Chat, {
         target,
+        context: new Map<symbol, unknown>([
+          ...(interactions ? [[TRANSCRIPT_INTERACTION_CONTEXT, interactions] as const] : []),
+          ...(messageViews ? [[TRANSCRIPT_MESSAGE_VIEW_CONTEXT, messageViews] as const] : []),
+        ]),
         props: {
           message: `visible message ${index}`,
           name: 'Template Bot',
@@ -1159,6 +1171,136 @@ describe('customHTML rendered button trigger freshness', () => {
     expect(testDatabaseState.db.characters[0].chats[0].scriptstate?.$choice).toBe('applied')
     expect(get(VariableReloadGUIPointer)).toBe(previousVariableEpoch + 1)
     expect(dispatchCompatibleChatUpdateScoped).toHaveBeenCalled()
+  })
+})
+
+describe('transcript interaction reservations', () => {
+  it('rejects an additional editor before changing its draft and releases accepted edits on save', async () => {
+    seedDatabase(1, null as unknown as string)
+    const release = vi.fn()
+    const reserve = vi.fn<TranscriptInteractionProvider['reserve']>(() => null)
+    mountCustomHtmlRows(1, 'char', {}, 0, { reserve, subscribeAvailable: () => () => {} })
+    await settle()
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+    expect(target.querySelector('.message-edit-area')).toBeNull()
+    expect(customHtmlMocks.alertNormal).toHaveBeenCalledWith('transcriptInteractionLimit')
+    expect(dispatchUpdateMessageScoped).not.toHaveBeenCalled()
+
+    reserve.mockReturnValue(release)
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+    expect(reserve).toHaveBeenLastCalledWith('message-0', expect.any(Object))
+    expect(target.querySelector('.message-edit-area')).not.toBeNull()
+    expect(release).not.toHaveBeenCalled()
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+    expect(release).toHaveBeenCalledOnce()
+  })
+
+  it('restores a manual return to the original after the translated row is evicted and remounted', async () => {
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(1, null as unknown as string)
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'google'
+    const chat = testDatabaseState.db.characters[0].chats[0]
+    chat.autoTranslate = true
+    chat.message[0].translation = {
+      source: 'raw',
+      text: 'saved translation',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'google',
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 123,
+    }
+    const views = createTranscriptMessageViewOwner()
+    mountCustomHtmlRows(1, 'char', {}, 0, undefined, views)
+    await settle()
+    expect(target.textContent).toContain('saved translation')
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+    expect(target.textContent).not.toContain('saved translation')
+    for (const mounted of components) unmount(mounted)
+    components = []
+    await settle()
+    mountCustomHtmlRows(1, 'char', {}, 0, undefined, views)
+    await settle()
+    expect(target.textContent).toContain('visible message 0')
+    expect(target.textContent).not.toContain('saved translation')
+    expect(customHtmlMocks.translateMessageCommand).not.toHaveBeenCalled()
+  })
+
+  it('keeps automatic translation eligible while full, then holds the row until its provider request settles', async () => {
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(1, null as unknown as string)
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'google'
+    testDatabaseState.db.characters[0].chats[0].autoTranslate = true
+    const release = vi.fn()
+    const reserve = vi.fn<TranscriptInteractionProvider['reserve']>(() => null)
+    const unsubscribe = vi.fn()
+    let available!: () => void
+    const consumed = vi.fn()
+    const pending = deferred<Awaited<ReturnType<typeof customHtmlMocks.translateMessageCommand>>>()
+    customHtmlMocks.translateMessageCommand.mockReturnValueOnce(pending.promise)
+    mountCustomHtmlRows(
+      1,
+      'char',
+      {
+        autoTranslateOnReady: true,
+        onAutoTranslationEligibilityConsumed: consumed,
+      },
+      0,
+      {
+        reserve,
+        subscribeAvailable: (listener) => {
+          available = listener
+          return unsubscribe
+        },
+      },
+    )
+    await settle()
+    expect(customHtmlMocks.translateMessageCommand).not.toHaveBeenCalled()
+    expect(consumed).not.toHaveBeenCalled()
+    expect(customHtmlMocks.alertNormal).not.toHaveBeenCalled()
+
+    reserve.mockReturnValue(release)
+    available()
+    await settle()
+    expect(consumed).toHaveBeenCalledOnce()
+    expect(customHtmlMocks.translateMessageCommand).toHaveBeenCalledOnce()
+    expect(release).not.toHaveBeenCalled()
+    const request = customHtmlMocks.translateMessageCommand.mock.calls[0][0]
+    pending.resolve({
+      status: 'ok',
+      revision: 2,
+      event: { type: 'message.updated', revision: 2, resource: 'message', id: 'message-0' },
+      chatId: 'custom-html-chat',
+      messageId: 'message-0',
+      jobId: request.jobId,
+      translation: {
+        source: 'raw',
+        text: 'completed automatic translation',
+        sourceHash: 'a'.repeat(64),
+        targetLanguage: 'ko',
+        inputLanguage: 'en',
+        translatorType: 'google',
+        settingsHash: 'b'.repeat(64),
+        updatedAt: 123,
+      },
+    })
+    await settle()
+    expect(release).toHaveBeenCalledOnce()
+    expect(target.textContent).toContain('completed automatic translation')
+    available()
+    await settle()
+    expect(consumed).toHaveBeenCalledOnce()
+    for (const mounted of components) unmount(mounted)
+    components = []
+    await settle()
+    expect(unsubscribe).toHaveBeenCalledOnce()
   })
 })
 

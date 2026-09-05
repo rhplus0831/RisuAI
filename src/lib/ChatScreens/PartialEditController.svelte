@@ -188,8 +188,14 @@
 
 <script lang="ts">
   import { CheckIcon, XIcon } from '@lucide/svelte'
-  import { createEventDispatcher, onDestroy } from 'svelte'
+  import { createEventDispatcher, getContext, onDestroy, untrack } from 'svelte'
   import { language } from 'src/lang'
+  import { alertNormal } from 'src/ts/alert'
+  import {
+    createTranscriptInteractionScope,
+    TRANSCRIPT_INTERACTION_CONTEXT,
+    type TranscriptInteractionProvider,
+  } from './transcriptInteraction'
   import { displaySettingForPaint } from 'src/ts/gui/displaySettings'
   import {
     findAllOriginalRangesFromHtml,
@@ -232,6 +238,13 @@
     translationText = null,
     bilingualActive = false,
   }: Props = $props()
+
+  const interactions = createTranscriptInteractionScope(
+    getContext<TranscriptInteractionProvider | undefined>(TRANSCRIPT_INTERACTION_CONTEXT),
+    () => messageId,
+    () => alertNormal(language.transcriptInteractionLimit),
+  )
+  let interactionReservation: (() => void) | null = null
 
   let displayMode: PartialEditDisplayMode = $derived(
     typeof translationText !== 'string' ? 'original' : bilingualActive ? 'bilingual' : 'translation',
@@ -329,6 +342,12 @@
   }
 
   let showMatchFailedModal = $state(false)
+  $effect(() => {
+    if (!isEditing && !isConfirmingDelete && !matchingState.mode && !showMatchFailedModal) {
+      untrack(() => interactionReservation?.())
+      interactionReservation = null
+    }
+  })
 
   let blockButtonWrapper: HTMLDivElement | null = null
   let currentHoveredBlock: HTMLElement | null = null
@@ -570,6 +589,10 @@
   ) {
     const sourceData = layerSourceData(layer)
     if (!elementOrText || !sourceData) return
+    if (!interactionReservation) {
+      interactionReservation = interactions.acquire()
+      if (!interactionReservation) return
+    }
 
     matchingState.mode = mode
     matchingState.layer = layer
@@ -974,6 +997,7 @@
   })
 
   onDestroy(() => {
+    interactions.dispose()
     clearEditSetupTimers()
     removeTouchDismissal()
     if (blockButtonWrapper) {
