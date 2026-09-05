@@ -152,7 +152,12 @@ export async function ensureTokenizerLoaded(encoding: TokenEncoding): Promise<vo
 }
 
 function encodeWithLoadedTokenizer(text: string, encoding: TokenEncoding): ArrayLike<number> {
-  if (isTiktokenEncoding(encoding)) return getTiktokenEncoder(encoding).encode(text)
+  if (isTiktokenEncoding(encoding)) {
+    const encoder = getTiktokenEncoder(encoding)
+    // Every special token in these encodings starts with "<|". Keep encode's
+    // rejection behavior whenever one could occur; otherwise skip that scan.
+    return text.includes('<|') ? encoder.encode(text) : encoder.encode_ordinary(text)
+  }
   const tokenizer = loadedTokenizers.get(encoding)
   if (!tokenizer) {
     throw new Error(

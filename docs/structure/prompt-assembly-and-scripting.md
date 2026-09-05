@@ -393,6 +393,13 @@ the complete selection contract.
 
 ## Final Budget And Confirmation Gate
 
+`server/fastify/src/prompt/tokens.ts` uses tiktoken's ordinary encoder for
+cl100k/o200k text without `<|`, the prefix shared by every special token in the
+installed encoder manifests. Text containing that prefix retains the standard
+encoder and its special-token rejection behavior. Exact token IDs/counts,
+special-token errors and the manifest-prefix invariant have focused coverage;
+no token-result cache or budget check is skipped.
+
 `server/fastify/src/prompt/budgetFinalize.ts` independently retokenizes the
 fully rendered `OpenAIChat[]`; it does not trust template preflight totals.
 When the prompt exceeds the input target (`maxContext - maxResponse`), it removes
