@@ -15,7 +15,7 @@ one warmup per size and three measured repetitions in fresh temporary stores;
 OS page cache is not flushed. Each file is one KiB with a real SHA-256 identity.
 Half of assets are referenced, half are old orphans. Fixtures have 2/20/200
 characters, two chats per character and ten inlay-bearing messages per chat,
-plus one 896-byte compatibility save. Providers and real user data are absent.
+plus one 928-byte compatibility save. Providers and real user data are absent.
 
 The real SQLite backup is timed independently through a test-only wrapper.
 Post-snapshot time includes copies/manifest. Recursive-copy call timing is a

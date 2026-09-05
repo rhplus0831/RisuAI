@@ -16,6 +16,7 @@ import {
 import { DEFAULT_AUTOMATIC_BACKUP_RETENTION } from './config.js'
 import { getMaintenanceCoordinator, MaintenanceBusyError, type MaintenanceLease } from './maintenanceCoordinator.js'
 import { BackupAssetError, copyBackupAssets, copyBackupDirectory } from './backupFiles.js'
+import { BackupCopyPool } from './backupCopyPool.js'
 import { scanAssetReferences, type AssetReferenceMarks } from './assetReferenceScan.js'
 import { setImmediate as yieldMaintenanceTurn } from 'node:timers/promises'
 import { getSchemaState } from './db.js'
@@ -4083,6 +4084,7 @@ async function createBackupUnderLease(
     let assetCount = 0
     const snapshotDb = new DatabaseSync(backupSqlite, { readOnly: true })
     let references: AssetReferenceMarks | undefined
+    let copyPool: BackupCopyPool | undefined
     try {
       revision = getSchemaState(snapshotDb).revision
       references = await scanAssetReferences(snapshotDb, {
@@ -4118,22 +4120,31 @@ async function createBackupUnderLease(
           await yieldMaintenanceTurn()
         }
       }
+      copyPool = new BackupCopyPool(lease.signal)
       await copyBackupAssets({
         from: assetsDir(dataDir),
         to: path.join(dir, 'assets'),
         assets: metadata(),
         requiredIds: references,
         signal: lease.signal,
+        pool: copyPool,
         restoreFallbackDir: options.restoreFallbackDir,
       })
+      await copyBackupDirectory(saveDir(dataDir), path.join(dir, 'save'), lease.signal, copyPool)
     } finally {
       try {
-        await references?.close()
+        // Native copies cannot be interrupted mid-call. Every batch and both
+        // workers must finish before scratch cleanup, publication or release.
+        await copyPool?.close()
       } finally {
-        snapshotDb.close()
+        try {
+          await references?.close()
+        } finally {
+          snapshotDb.close()
+        }
       }
     }
-    await copyBackupDirectory(saveDir(dataDir), path.join(dir, 'save'), lease.signal)
+    copyPool?.throwIfFailed()
     const manifest: BackupManifest = {
       _version: BACKUP_MANIFEST_VERSION,
       id,

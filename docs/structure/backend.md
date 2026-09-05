@@ -1,7 +1,7 @@
 # Backend Map
 
 Last audited: 2026-08-30.
-Targeted source check: 2026-09-05 (maintenance cancellation/drain and client diagnostics lifecycle).
+Targeted source check: 2026-09-06 (maintenance workers, cancellation/drain and client diagnostics lifecycle).
 
 The backend is the Fastify server under `server/fastify`. This guide owns its
 composition root, route policy, request-path boundaries, process-local jobs,
@@ -370,7 +370,7 @@ Shutdown first closes maintenance admission and signals cooperative cancellation
 in `preClose`, while active HTTP requests can still clean up. `onClose` drains
 maintenance leases before stopping workers/timers, removing registry jobs,
 settling generation runners, and closing SQLite. An aborted copy keeps ownership
-until every started filesystem operation and cleanup finishes; GC also retains
+until every started filesystem operation, native copy-worker exit and cleanup finishes; GC also retains
 its lease until scratch cleanup completes. Overlapping sweeps are skipped and
 timer promise failures are logged. Cancelled backup
 HTTP responses close their connection so keep-alive does not hold server drain

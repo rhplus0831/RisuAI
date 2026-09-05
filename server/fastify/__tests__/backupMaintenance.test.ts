@@ -9,6 +9,7 @@ import { openDatabase, getSchemaState } from '../src/db.js'
 import { getDatabaseLineage } from '../src/databaseLineage.js'
 import { runAssetGc } from '../src/assetGc.js'
 import { BackupAssetError } from '../src/backupFiles.js'
+import { BackupCopyPool } from '../src/backupCopyPool.js'
 import { getMaintenanceCoordinator, MaintenanceBusyError } from '../src/maintenanceCoordinator.js'
 import {
   addAsset,
@@ -84,15 +85,15 @@ function pauseCopy() {
   const entered = deferred()
   const resumed = deferred()
   releases.push(resumed.resolve)
-  const original = fs.promises.copyFile.bind(fs.promises)
+  const original = BackupCopyPool.prototype.runBatch
   let paused = false
-  vi.spyOn(fs.promises, 'copyFile').mockImplementation(async (...args) => {
-    if (!paused && String(args[0]).startsWith(`${assetsDir(dataDir)}${path.sep}`)) {
+  vi.spyOn(BackupCopyPool.prototype, 'runBatch').mockImplementation(async function (this: BackupCopyPool, entries) {
+    if (!paused && entries.some((entry) => entry.from.startsWith(`${assetsDir(dataDir)}${path.sep}`))) {
       paused = true
       entered.resolve()
       await resumed.promise
     }
-    return original(...args)
+    return original.call(this, entries)
   })
   return { entered: entered.promise, resume: resumed.resolve }
 }

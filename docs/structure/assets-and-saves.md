@@ -1,7 +1,7 @@
 # Assets And Saves
 
 Last audited: 2026-08-30.
-Targeted source check: 2026-09-05 (bounded backup/GC discovery, maintenance ownership and restore publication).
+Targeted source check: 2026-09-06 (bounded backup workers, GC discovery and maintenance ownership).
 
 Fastify owns binary persistence, save import/export, Realm import, and backup
 snapshots. Browser code should use server asset URLs and server save routes
@@ -388,6 +388,7 @@ store.
 | `server/fastify/src/routes/backups.ts` | Create/list/restore/delete backup routes. |
 | `server/fastify/src/repository.ts` | Snapshot creation, manifest writing, SQLite table restore, file swaps. |
 | `server/fastify/src/backupFiles.ts`, `maintenanceCoordinator.ts`, `maintenanceRequest.ts` | Bounded copy/verification, maintenance and live-staging leases, request cancellation. |
+| `server/fastify/src/backupCopyPool.ts`, `backupCopyProtocol.ts`, `backupCopyWorker.ts` | Two private native copy/hash workers, bounded descriptor batches and acknowledged cancellation/drain. |
 | `src/ts/server/backups.ts` | Browser adapter for backup/import/export routes and progress headers. |
 | `src/ts/server/replacementDatabaseOwnership.ts` | Adopts replacement lineage/writer ownership before refreshing state. |
 | `src/ts/storage/backup.ts`, `src/ts/globalApi.svelte.ts`, `src/lib/Setting/Pages/UserSettings.svelte` | UI-facing backup/import/export wrappers and settings flows. |
@@ -406,17 +407,26 @@ guarded by `server/fastify/__tests__/backups.test.ts`.
 
 Backup creation holds a data-directory maintenance lease from before the SQLite
 backup await through file verification and publication or failure cleanup.
-Two asynchronous file workers copy captured asset metadata and legacy directory
-extras; required references include operational pending-finalization, catalog
+Two private Node worker threads copy captured asset metadata and legacy directory
+extras. Each processes one batch of at most 16 file descriptors sequentially;
+there is no queued batch or transferred file payload. The pool spans assets,
+extras and compatibility saves. Required references include pending-finalization, catalog
 and plugin-storage owners. Missing required metadata/bytes, wrong size or wrong
 hash prevents publication. A temporary manifest is renamed only after completion.
 The captured SQLite database uses the same bounded reference scanner as GC;
 metadata is streamed in 64-row pages while scratch membership remains open.
-Directory traversal buffers 64 entries at each of at most 32 levels, and hash
-streams use 64 KiB buffers. Deeper legacy extras fail closed. Existing optional
+Directory traversal buffers 64 entries at each of at most 32 levels, and each
+worker hashes with a reusable 64 KiB buffer. Deeper legacy extras fail closed. Existing optional
 orphan bytes are copied when present; missing orphan files retain their missing
 state. Concurrent synchronous uploads may add harmless unindexed extras, which
 are not claimed to share the SQLite snapshot's precise instant.
+
+The worker entry uses native Node 24 type stripping with no app or SQLite imports.
+Shared cancellation is checked between files and hash reads. A native copy may
+finish before observing cancellation; the pool waits for every active batch
+acknowledgement and both worker exits before scratch cleanup, publication or
+lease release. Snapshot authority, directory traversal, manifest publication
+and retention remain in the main process.
 
 The coordinator admits one exclusive backup/import/restore/delete operation and
 no queued operations. Up to four compatibility-save mutations or four operations

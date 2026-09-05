@@ -709,3 +709,25 @@ local source confirms `api:start` executes TS source through `tsx` and the
 existing bounded-regex worker already runs plain Node worker code. The new
 worker entry must execute in native Node without importing app/SQLite state,
 and exact tests must exercise that entry rather than only a fake executor.
+
+## Phase 4 Backup Workers Implemented; Final Timing Pending
+
+- `backupCopyPool.ts` owns two native Node workers across assets, extras and
+  compatibility saves. Each accepts one batch of at most 16 descriptors, with
+  no waiting queue or file payload transfer. The native erasable-TS entry has
+  only Node runtime imports and reuses one 64 KiB hash buffer per worker.
+- Shared cancellation does not release ownership early. Both consumer batches,
+  acknowledgements and actual worker exits complete before reference scratch
+  cleanup, manifest publication or lease release. Native file copies remain
+  uncancellable mid-call; shutdown waits for completion. Required size/hash,
+  ENOENT-only verified restore fallback, optional orphan and symlink behavior
+  remain unchanged. Independent read-only lifecycle review found no defect.
+- Exact native-worker tests 17, backup maintenance 22 and backups 53 pass. Native
+  tests exercise the real entry, batch/queue limits, byte verification, iterator
+  failure, worker exit, held acknowledgements and cancellation during a 64 MiB
+  copy/hash. Existing copy fault barriers now intercept the typed pool method
+  and delegate actual worker execution; retention/restore fault seams stay local.
+- The probe now labels heap samples as API-isolate-only and process RSS as
+  including worker memory. The old baseline prose's 896-byte save size was a
+  transcription error: its raw artifact and unchanged fixture both use 928 bytes.
+  All original latency budgets and nine-sample matrix remain the acceptance gate.

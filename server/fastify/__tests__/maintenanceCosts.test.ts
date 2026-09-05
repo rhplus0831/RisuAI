@@ -421,7 +421,7 @@ describe('maintenance cost probe', () => {
           cacheState: 'Fresh temporary files each repetition; OS page cache is not flushed',
           concurrency: 'One injected authenticated GET plus one setImmediate heartbeat',
           memoryMethod:
-            'Samples at operation boundaries, recursive-copy completion, and heartbeat; process maxRSS is lifetime high-water, not per-operation peak',
+            'Samples at operation boundaries, recursive-copy completion, and heartbeat; heapUsed covers the API isolate, RSS includes native copy workers, and process maxRSS is lifetime high-water rather than per-operation peak',
           phaseMethod:
             'Real node:sqlite backup marks; post-snapshot includes reference scanning, all file copying, cleanup, and manifest; directoryCopy timings/counts cover recursive cp calls only, so bounded copyFile work is included in post-snapshot time even when directoryCopy is zero; createBackup does not run retention',
         }

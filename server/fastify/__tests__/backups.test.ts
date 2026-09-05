@@ -9,6 +9,7 @@ import { createCommandEventSink, type CommandEventSink } from '../src/commands/e
 import { CURRENT_SCHEMA_VERSION } from '../src/db.js'
 import { getDatabaseLineage } from '../src/databaseLineage.js'
 import { createBardWikiDocument, updateBardWikiChatSettings } from '../src/bardWikiRepository.js'
+import { BackupCopyPool } from '../src/backupCopyPool.js'
 import { GENERATION_FINALIZATION_LEGACY_SNAPSHOT_ERROR } from '../src/generationFinalizationRetry.js'
 import { MessageTranslationJobRegistry } from '../src/messageTranslationJobs.js'
 import { retryQueuedGenerationFinalizations } from '../src/routes/generationChat.js'
@@ -2441,12 +2442,17 @@ describe('backups', () => {
     let concurrentAssetId = ''
     let injected = false
     const liveAssets = assetsDir(harness.dataDir)
-    const originalCopyFile = fs.promises.copyFile.bind(fs.promises)
-    const copySpy = vi.spyOn(fs.promises, 'copyFile').mockImplementation(async (source, destination, options) => {
+    const originalCopyBatch = BackupCopyPool.prototype.runBatch
+    const copySpy = vi.spyOn(BackupCopyPool.prototype, 'runBatch').mockImplementation(async function (
+      this: BackupCopyPool,
+      entries,
+    ) {
       if (
         !injected &&
-        String(source).startsWith(`${liveAssets}${path.sep}`) &&
-        String(destination).includes(`${path.sep}backups${path.sep}`)
+        entries.some(
+          (entry) =>
+            entry.from.startsWith(`${liveAssets}${path.sep}`) && entry.to.includes(`${path.sep}backups${path.sep}`),
+        )
       ) {
         injected = true
         const concurrentDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
@@ -2459,7 +2465,7 @@ describe('backups', () => {
           concurrentDb.close()
         }
       }
-      return originalCopyFile(source, destination, options)
+      return originalCopyBatch.call(this, entries)
     })
 
     const backup = await harness.app.inject({
