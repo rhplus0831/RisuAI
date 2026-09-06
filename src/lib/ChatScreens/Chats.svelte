@@ -1260,6 +1260,7 @@
   let wasAtBottomBeforeUpdate = true
   let pendingEntryChatRoomId: string | null = null
   let visibleChatRoomId: string | null = null
+  let activatedDisplaySourceChatId: string | null = null
   let previousIsGenerationActive = false
 
   $effect.pre(() => {
@@ -1355,7 +1356,9 @@
     for (const key of returningRowHeights.keys()) restoreReturningRowHeight(key)
     pendingRowParses.clear()
     displayScheduler.destroy()
-    releaseDisplaySourceChat(getCurrentChatRoomId())
+    // Reading live chat props during teardown can reconnect parent deriveds
+    // to the previous selection. Release the scope captured while mounted.
+    releaseDisplaySourceChat(activatedDisplaySourceChatId)
     initialDisplayReadiness.destroy()
     latestMessageAlignmentVersion += 1
     latestMessageAlignmentRun += 1
@@ -1365,7 +1368,8 @@
   })
 
   $effect.pre(() => {
-    activateDisplaySourceChat(getCurrentChatRoomId())
+    activatedDisplaySourceChatId = getCurrentChatRoomId()
+    activateDisplaySourceChat(activatedDisplaySourceChatId)
     chatRows
     wasAtBottomBeforeUpdate = checkIfAtBottom()
   })

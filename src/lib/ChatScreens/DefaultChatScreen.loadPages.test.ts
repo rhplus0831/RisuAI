@@ -2551,6 +2551,48 @@ describe('DefaultChatScreen transcript window state', () => {
     })
   })
 
+  it('keeps chat selection reactive after the previous transcript unmounts during navigation', async () => {
+    seedDatabase([2, 2])
+    const nextCharacter = charactersResourceState.characters[1]
+    nextCharacter.chats.push({
+      ...nextCharacter.chats[0],
+      id: 'chat-1-next',
+      name: 'Next chat',
+      message: makeMessages('chat-1-next', 3),
+    })
+    mountScreen()
+    await waitFor(() => expect(target.textContent).toContain('chat-0 message 1'))
+
+    // Route application selects the character before committing its rendered
+    // route. This mismatch unmounts the previous transcript during teardown.
+    selectedCharID.set(1)
+    charactersResourceState.currentChar = 1
+    await settle()
+    expect(target.querySelector('[data-risu-chat-empty-state]')).not.toBeNull()
+
+    nextCharacter.chatPage = 1
+    loadPageMocks.setCurrentRoute({
+      kind: 'character',
+      path: '/character/character-1/chat-1-next',
+      chaId: 'character-1',
+      chatId: 'chat-1-next',
+    })
+    await waitFor(() => {
+      expect(target.querySelector('[data-risu-chat-empty-state]')).toBeNull()
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).not.toBeNull()
+      expect(target.textContent).toContain('chat-1-next message 2')
+      expect(target.textContent).not.toContain('chat-0 message 1')
+    })
+
+    nextCharacter.chatPage = 0
+    switchToCharacterChat(1)
+    await waitFor(() => {
+      expect(target.querySelector('[data-risu-chat-empty-state]')).toBeNull()
+      expect(target.textContent).toContain('chat-1 message 1')
+      expect(target.textContent).not.toContain('chat-1-next message 2')
+    })
+  })
+
   it('shows a choose-chat empty state when a character route has no chat id', async () => {
     seedDatabase([12])
     loadPageMocks.setCurrentRoute({
