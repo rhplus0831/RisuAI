@@ -1734,11 +1734,12 @@ function resolveProfileBoundRuntimeSource(
   database: ModelProfileResolverDatabase,
   profileRuntimeOptions?: ModelProfileRecordRuntimeOptions,
 ): ModelProfileRecordRuntimeOptions {
-  return mergeRuntimeOptionRecords(
-    HARD_RUNTIME_DEFAULTS,
-    normalizeModelRuntimeDefaults(database.modelRuntimeDefaults),
-    profileRuntimeOptions,
-  )
+  return mergeRuntimeOptionRecords(resolveModelRuntimeDefaults(database.modelRuntimeDefaults), profileRuntimeOptions)
+}
+
+/** Profile defaults in stored units, independent of legacy flat generation settings. */
+export function resolveModelRuntimeDefaults(runtimeDefaults?: unknown): ModelProfileRecordRuntimeOptions {
+  return mergeRuntimeOptionRecords(HARD_RUNTIME_DEFAULTS, normalizeModelRuntimeDefaults(runtimeDefaults))
 }
 
 function mergeRuntimeOptionRecords(

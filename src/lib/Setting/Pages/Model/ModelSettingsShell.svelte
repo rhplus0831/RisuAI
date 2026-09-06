@@ -11,7 +11,6 @@
     MODEL_ROLES,
   } from '@risuai/shared-core/model-roles'
   import { normalizeModelRoleProfiles, type ModelProfileRecord } from 'src/ts/model/modelProfileRecords'
-  import type { ProviderCredentialType } from 'src/ts/model/providerCredentialRecords'
   import { resolveModelProfileUiState } from 'src/ts/model/modelProfileUiState'
   import {
     beginPendingModelMutation,
@@ -33,14 +32,12 @@
 
   type ModelSettingsTab = 'roles' | 'profiles' | 'credentials'
 
-  let activeTab = $state<ModelSettingsTab>('roles')
+  let activeTab = $state<ModelSettingsTab>('profiles')
   let conversionPromptDeclined = $state(false)
   let converting = $state(false)
   let pendingMutations = $state(getPendingModelMutations('model-profiles'))
   let pendingRuntimeMutations = $state(getPendingModelMutations('model-runtime-defaults'))
   let commandError = $state('')
-  let initialCredentialType = $state<ProviderCredentialType | null>(null)
-  let credentialTabKey = $state(0)
 
   let modelProfileOwnersValid = $derived(hasUniqueModelProfileOwners(settingsResourceState.value.modelProfiles))
   let modelProfiles = $derived(readModelProfileOwners(settingsResourceState.value.modelProfiles))
@@ -84,10 +81,6 @@
     return subscribePendingModelMutations('model-runtime-defaults', (pending) => {
       pendingRuntimeMutations = pending
     })
-  })
-
-  $effect(() => {
-    if (activeTab !== 'credentials') initialCredentialType = null
   })
 
   $effect(() => {
@@ -179,12 +172,6 @@
     }
   }
 
-  function manageCredentials(type: ProviderCredentialType): void {
-    initialCredentialType = type
-    credentialTabKey += 1
-    activeTab = 'credentials'
-  }
-
   function readModelProfileOwners(value: unknown): ModelProfileRecord[] {
     if (!hasUniqueModelProfileOwners(value)) return []
     return value as ModelProfileRecord[]
@@ -237,13 +224,15 @@
     </div>
   {/if}
 
-  <SegmentedControl
-    bind:value={activeTab}
-    options={[
-      { value: 'roles', label: language.modelProfiles.rolesTab },
-      { value: 'profiles', label: language.modelProfiles.profilesTab },
-      { value: 'credentials', label: language.modelProfiles.credentialsTab },
-    ]} />
+  <div class="model-settings-tabs">
+    <SegmentedControl
+      bind:value={activeTab}
+      options={[
+        { value: 'profiles', label: language.modelProfiles.profilesTab },
+        { value: 'roles', label: language.modelProfiles.rolesTab },
+        { value: 'credentials', label: language.modelProfiles.credentialsTab },
+      ]} />
+  </div>
 
   {#if activeTab === 'roles'}
     <div class="w-full">
@@ -260,11 +249,9 @@
     </div>
     <ModelProfileRoleList />
   {:else if activeTab === 'profiles'}
-    <ModelProfileList onManageCredentials={manageCredentials} />
+    <ModelProfileList />
   {:else}
-    {#key credentialTabKey}
-      <ProviderCredentialList initialCreateType={initialCredentialType} />
-    {/key}
+    <ProviderCredentialList />
   {/if}
 
   {#if showAdvancedLegacySettings}
@@ -291,3 +278,19 @@
     </Accordion>
   {/if}
 </section>
+
+<style>
+  @media (max-width: 640px) {
+    .model-settings-tabs :global(.segmented-control-container) {
+      width: 100%;
+      align-items: stretch;
+    }
+    .model-settings-tabs :global(.segmented-btn) {
+      min-width: 0;
+      flex: 1;
+      white-space: normal;
+      padding-inline: 8px;
+      font-size: 12px;
+    }
+  }
+</style>

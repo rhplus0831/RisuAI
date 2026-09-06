@@ -1,34 +1,26 @@
 <script lang="ts">
-  import { PencilIcon, PlusIcon, SaveIcon, TrashIcon, XIcon } from '@lucide/svelte'
+  import { PencilIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
-  import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import {
     beginPendingModelMutation,
-    createProviderCredentialDurably,
     deleteProviderCredentialDurably,
     finishPendingModelMutation,
     getPendingModelMutations,
     isPendingModelMutationProjectionApplied,
-    providerCredentialProjectionFingerprint,
     retainPendingModelMutation,
     subscribePendingModelMutations,
-    updateProviderCredentialDurably,
   } from 'src/ts/model/modelProfileMutations'
-  import {
-    createModelProfileSecretDraft,
-    modelProfileSecretValueForSave,
-    type ModelProfileSecretDraft,
-  } from 'src/ts/model/modelProfileSecrets'
   import {
     readProviderCredentials,
     type ProviderCredentialRecord,
     type ProviderCredentialType,
   } from 'src/ts/model/providerCredentialRecords'
-  import type { ProviderCredentialSnapshot, ServerCommandResult } from 'src/ts/server/commands'
+  import type { ServerCommandResult } from 'src/ts/server/commands'
   import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import type { ModelProfileRecord } from 'src/ts/model/modelProfileRecords'
-  import SecretField from './SecretField.svelte'
+  import ProviderCredentialEditor from './ProviderCredentialEditor.svelte'
+  import ModelItemActions from './ModelItemActions.svelte'
 
   interface Props {
     initialCreateType?: ProviderCredentialType | null
@@ -40,10 +32,6 @@
   let editingBaseline = $state<ProviderCredentialRecord | null>(null)
   let creating = $state(false)
   let credentialType = $state<ProviderCredentialType>('apiKey')
-  let name = $state('')
-  let apiKeyDraft = $state<ModelProfileSecretDraft>(createModelProfileSecretDraft(undefined))
-  let clientEmail = $state('')
-  let privateKeyDraft = $state<ModelProfileSecretDraft>(createModelProfileSecretDraft(undefined))
   let busy = $state(false)
   let commandError = $state('')
   let pendingMutations = $state(getPendingModelMutations('provider-credentials'))
@@ -54,13 +42,6 @@
   let profiles = $derived(readModelProfileOwners(settingsResourceState.value.modelProfiles))
   let mutationPending = $derived(pendingMutations.length > 0)
   let editorOpen = $derived(creating || editingId !== null)
-  let secretReady = $derived(
-    credentialType === 'apiKey'
-      ? modelProfileSecretValueForSave(apiKeyDraft) !== undefined
-      : clientEmail.trim() !== '' && modelProfileSecretValueForSave(privateKeyDraft) !== undefined,
-  )
-  let canSave = $derived(!busy && !mutationPending && name.trim() !== '' && secretReady)
-
   $effect(() => {
     return subscribePendingModelMutations('provider-credentials', (pending) => {
       pendingMutations = pending
@@ -68,6 +49,7 @@
   })
 
   $effect(() => {
+    if (editorOpen) return
     for (const pending of pendingMutations) {
       if (pending.phase === 'discarded') {
         commandError = language.modelProfiles.commandReplayDiscarded
@@ -98,11 +80,6 @@
     editingId = null
     editingBaseline = null
     credentialType = type
-    name =
-      type === 'apiKey' ? language.modelProfiles.newApiCredentialName : language.modelProfiles.newVertexCredentialName
-    apiKeyDraft = createModelProfileSecretDraft(undefined)
-    clientEmail = ''
-    privateKeyDraft = createModelProfileSecretDraft(undefined)
     commandError = ''
   }
 
@@ -112,10 +89,6 @@
     editingId = credential.id
     editingBaseline = cloneJsonValue(credential)
     credentialType = credential.type
-    name = credential.name
-    apiKeyDraft = createModelProfileSecretDraft(credential.apiKey)
-    clientEmail = credential.vertex?.clientEmail ?? ''
-    privateKeyDraft = createModelProfileSecretDraft(credential.vertex?.privateKey)
     commandError = ''
   }
 
@@ -148,71 +121,6 @@
       ids.add(id)
     }
     return true
-  }
-
-  function credentialForSave(): ProviderCredentialSnapshot | null {
-    const trimmedName = name.trim()
-    if (!trimmedName) return null
-    if (credentialType === 'apiKey') {
-      const apiKey = modelProfileSecretValueForSave(apiKeyDraft)
-      return apiKey ? { name: trimmedName, type: 'apiKey', apiKey } : null
-    }
-
-    const privateKey = modelProfileSecretValueForSave(privateKeyDraft)
-    const trimmedEmail = clientEmail.trim()
-    return privateKey && trimmedEmail
-      ? {
-          name: trimmedName,
-          type: 'vertexServiceAccount',
-          vertex: { clientEmail: trimmedEmail, privateKey },
-        }
-      : null
-  }
-
-  async function saveCredential(): Promise<void> {
-    const credential = credentialForSave()
-    if (!credential || !canSave) return
-    busy = true
-    commandError = ''
-    const pendingToken = beginPendingModelMutation(
-      'provider-credentials',
-      creating
-        ? {
-            kind: 'credential-create',
-            baselineIds: credentials.map((candidate) => candidate.id),
-            attemptedFingerprint: providerCredentialProjectionFingerprint(credential, true),
-          }
-        : {
-            kind: 'credential-update',
-            credentialId: editingId ?? '',
-            attemptedFingerprint: providerCredentialProjectionFingerprint({ ...credential, id: editingId ?? '' }),
-          },
-    )
-    if (!pendingToken) {
-      busy = false
-      return
-    }
-
-    try {
-      const outcome = creating
-        ? await createProviderCredentialDurably(credential)
-        : await updateProviderCredentialDurably(editingId ?? '', credential, editingBaseline ?? credential)
-      if (outcome.status === 'accepted') {
-        finishPendingModelMutation(pendingToken)
-        closeEditor()
-      } else if (outcome.status === 'queued') {
-        retainPendingModelMutation(pendingToken, outcome.mutationId)
-        closeEditor()
-      } else {
-        finishPendingModelMutation(pendingToken)
-        commandError = commandErrorMessage(outcome.result)
-      }
-    } catch {
-      finishPendingModelMutation(pendingToken)
-      commandError = language.modelProfiles.commandUnavailable
-    } finally {
-      busy = false
-    }
   }
 
   function referencingProfiles(credentialId: string): ProviderCredentialReference[] {
@@ -285,14 +193,14 @@
       <p class="text-sm text-textcolor2">{language.modelProfiles.credentialsTabDescription}</p>
     </div>
     <div class="flex flex-wrap gap-2">
-      <Button size="sm" disabled={busy || mutationPending} onclick={() => openCreate('apiKey')}>
+      <Button size="sm" disabled={busy || mutationPending || editorOpen} onclick={() => openCreate('apiKey')}>
         <span class="inline-flex items-center gap-1"
           ><PlusIcon size={14} />{language.modelProfiles.createApiCredential}</span>
       </Button>
       <Button
         size="sm"
         styled="outlined"
-        disabled={busy || mutationPending}
+        disabled={busy || mutationPending || editorOpen}
         onclick={() => openCreate('vertexServiceAccount')}>
         <span class="inline-flex items-center gap-1"
           ><PlusIcon size={14} />{language.modelProfiles.createVertexCredential}</span>
@@ -305,43 +213,15 @@
   {/if}
 
   {#if editorOpen}
-    <div class="flex flex-col gap-3 rounded-md border border-darkborderc p-3" data-provider-credential-editor>
-      <div class="flex items-center justify-between gap-2">
-        <h4 class="font-semibold">
-          {creating ? language.modelProfiles.createCredential : language.modelProfiles.editCredential}
-        </h4>
-        <button type="button" aria-label={language.modelProfiles.cancel} disabled={busy} onclick={closeEditor}>
-          <XIcon size={18} />
-        </button>
-      </div>
-      <label class="flex flex-col gap-1">
-        <span class="text-sm text-textcolor2">{language.modelProfiles.credentialName}</span>
-        <TextInput size="sm" fullwidth bind:value={name} />
-      </label>
-      {#if credentialType === 'apiKey'}
-        <SecretField
-          label={language.modelProfiles.apiKeyLabel}
-          bind:value={apiKeyDraft}
-          placeholder={language.modelProfiles.savedSecretPlaceholder} />
-      {:else}
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.vertexClientEmail}</span>
-          <TextInput size="sm" fullwidth bind:value={clientEmail} />
-        </label>
-        <SecretField
-          label={language.modelProfiles.vertexPrivateKey}
-          bind:value={privateKeyDraft}
-          placeholder={language.modelProfiles.savedSecretPlaceholder} />
-      {/if}
-      <div class="flex justify-end gap-2">
-        <Button size="sm" styled="outlined" disabled={busy} onclick={closeEditor}>
-          <span class="inline-flex items-center gap-1"><XIcon size={14} />{language.modelProfiles.cancel}</span>
-        </Button>
-        <Button size="sm" disabled={!canSave} onclick={saveCredential}>
-          <span class="inline-flex items-center gap-1"><SaveIcon size={14} />{language.modelProfiles.save}</span>
-        </Button>
-      </div>
-    </div>
+    {#key editingId ?? credentialType}
+      <ProviderCredentialEditor
+        type={credentialType}
+        credential={editingBaseline ?? undefined}
+        {credentials}
+        bind:saving={busy}
+        onComplete={closeEditor}
+        onCancel={closeEditor} />
+    {/key}
   {/if}
 
   {#if credentials.length === 0}
@@ -352,42 +232,48 @@
     <div class="flex flex-col gap-2">
       {#each credentials as credential (credential.id)}
         {@const references = referencingProfiles(credential.id)}
-        <article class="risu-card flex flex-col gap-2 text-sm">
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="font-medium">{credential.name}</span>
-            <span class="rounded-sm bg-white/10 px-2 py-1 text-xs text-textcolor2">
-              {credential.type === 'apiKey'
-                ? language.modelProfiles.apiKeyCredentialType
-                : language.modelProfiles.vertexCredentialType}
-            </span>
-            <div class="ml-auto flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                styled="outlined"
-                disabled={busy || mutationPending}
-                onclick={() => openEdit(credential)}>
-                <span class="inline-flex items-center gap-1"
-                  ><PencilIcon size={14} />{language.modelProfiles.edit}</span>
-              </Button>
-              <Button
-                size="sm"
-                styled="danger"
-                disabled={busy || mutationPending || !modelProfileOwnersValid || references.length > 0}
-                onclick={() => deleteCredential(credential)}>
-                <span
-                  class="inline-flex items-center gap-1"
-                  title={references.length > 0 ? language.modelProfiles.credentialInUseShort : ''}
-                  ><TrashIcon size={14} />{language.modelProfiles.delete}</span>
-              </Button>
-            </div>
+        <article class="rounded-md border border-darkborderc px-3 text-sm">
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="flex min-w-0 flex-1 flex-col gap-1 py-3 text-left"
+              disabled={busy || mutationPending || editorOpen}
+              onclick={() => openEdit(credential)}
+              aria-label={`${language.modelProfiles.edit}: ${credential.name}`}>
+              <span class="break-words font-medium">{credential.name}</span>
+              <span class="text-xs text-textcolor2">
+                {credential.type === 'apiKey'
+                  ? language.modelProfiles.apiKeyCredentialType
+                  : language.modelProfiles.vertexCredentialType}
+              </span>
+            </button>
+            <span class="pointer-events-none text-textcolor2" aria-hidden="true"><PencilIcon size={16} /></span>
+            <ModelItemActions
+              label={language.modelProfiles.itemActions(credential.name)}
+              disabled={busy || mutationPending || editorOpen}>
+              {#snippet children(close)}
+                <button
+                  type="button"
+                  class="flex min-h-11 items-center gap-2 rounded-md px-3 py-2 text-left text-draculared hover:bg-darkbg disabled:opacity-50"
+                  disabled={!modelProfileOwnersValid || references.length > 0}
+                  onclick={() => {
+                    close()
+                    void deleteCredential(credential)
+                  }}><TrashIcon size={14} />{language.modelProfiles.delete}</button>
+                {#if references.length > 0}
+                  <span class="px-3 py-2 text-xs text-textcolor2">{language.modelProfiles.credentialInUseShort}</span>
+                {/if}
+              {/snippet}
+            </ModelItemActions>
           </div>
-          <span class="break-all text-xs text-textcolor2">{credential.id}</span>
-          <span class="break-all text-xs text-textcolor2">
-            {language.modelProfiles.usedByColumn}:
-            {references.length === 0
-              ? language.modelProfiles.notUsedByProfiles
-              : references.map((profile) => profile.name).join(', ')}
-          </span>
+          {#if references.length === 0}
+            <p class="pb-3 text-xs text-textcolor2">{language.modelProfiles.notUsedByProfiles}</p>
+          {:else}
+            <details class="pb-3 text-xs text-textcolor2">
+              <summary class="cursor-pointer">{language.modelProfiles.credentialUsageCount(references.length)}</summary>
+              <p class="mt-2 break-words">{references.map((profile) => profile.name).join(', ')}</p>
+            </details>
+          {/if}
         </article>
       {/each}
     </div>

@@ -144,6 +144,11 @@ describe('ModelSettingsShell legacy conversion', () => {
     component = mount(ModelSettingsShell, { target })
     await tick()
 
+    expect(target.querySelector('[data-segment-btn][aria-pressed="true"]')?.textContent?.trim()).toBe(
+      language.modelProfiles.profilesTab,
+    )
+    expect(target.textContent).toContain(language.modelProfiles.createProfile)
+
     const credentialsTab = Array.from(target.querySelectorAll('button')).find((button) =>
       button.textContent?.includes(language.modelProfiles.credentialsTab),
     )

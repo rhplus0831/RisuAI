@@ -1,5 +1,6 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { language } from 'src/lang'
 import type { ModelProfileRecordRuntimeOptions } from 'src/ts/model/modelProfileRecords'
 import ModelRuntimeOptionsEditor from './ModelRuntimeOptionsEditor.svelte'
 
@@ -22,6 +23,39 @@ afterEach(() => {
 })
 
 describe('ModelRuntimeOptionsEditor tokenizer selection', () => {
+  it('shows effective defaults without storing overrides and displays scaled sampler values correctly', async () => {
+    let value: ModelProfileRecordRuntimeOptions = {}
+    component = mount(ModelRuntimeOptionsEditor, {
+      target,
+      props: {
+        get value() {
+          return value
+        },
+        set value(next) {
+          value = next
+        },
+        defaults: { temperature: 70, frequencyPenalty: -1000, stripCoT: true },
+        advancedOnly: true,
+      },
+    })
+    await tick()
+    const number = (label: string) =>
+      Array.from(target.querySelectorAll('label'))
+        .find((entry) => entry.querySelector('span')?.textContent === label)
+        ?.querySelector('input')
+    expect(number(language.modelProfiles.runtimeFields.temperature)?.placeholder).toBe(
+      language.modelProfiles.runtimeDefaultValue('0.7'),
+    )
+    expect(number(language.modelProfiles.runtimeFields.frequencyPenalty)?.placeholder).toBe(
+      language.modelProfiles.runtimeDefaultValue(language.modelProfiles.runtimeNotSent),
+    )
+    expect(
+      target.querySelector<HTMLSelectElement>('[data-runtime-field="stripCoT"]')?.options[0].textContent,
+    ).toContain(language.modelProfiles.runtimeOn)
+    expect(value).toEqual({})
+    expect(target.textContent).not.toContain(language.modelProfiles.runtimeFields.maxResponse)
+  })
+
   it('offers supported tokenizers and commits selection and clearing', async () => {
     let value: ModelProfileRecordRuntimeOptions = { temperature: 0.7 }
     component = mount(ModelRuntimeOptionsEditor, {

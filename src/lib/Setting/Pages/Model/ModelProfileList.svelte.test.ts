@@ -72,6 +72,24 @@ function buttonsByText(label: string): HTMLButtonElement[] {
   )
 }
 
+function profileEditTrigger(): HTMLButtonElement {
+  const trigger = target.querySelector<HTMLButtonElement>('[data-model-profile-row] > button')
+  if (!trigger) throw new Error('Model edit trigger not found')
+  return trigger
+}
+
+function profileActionsTrigger(): HTMLButtonElement {
+  const trigger = target.querySelector<HTMLButtonElement>('[data-model-profile-row] button[aria-expanded]')
+  if (!trigger) throw new Error('Model actions trigger not found')
+  return trigger
+}
+
+async function clickProfileAction(label: string): Promise<void> {
+  profileActionsTrigger().click()
+  await tick()
+  buttonByText(label).click()
+}
+
 function runtimeNumberInput(label: string): HTMLInputElement {
   const input = Array.from(target.querySelectorAll<HTMLLabelElement>('label'))
     .find((candidate) => candidate.querySelector('span')?.textContent === label)
@@ -148,6 +166,27 @@ afterEach(() => {
 })
 
 describe('ModelProfileList', () => {
+  it('discloses secondary actions and returns keyboard focus after Escape', async () => {
+    component = mount(ModelProfileList, { target })
+    await tick()
+    expect(buttonsByText(language.modelProfiles.delete)).toHaveLength(0)
+    expect(buttonsByText(language.modelProfiles.duplicate)).toHaveLength(0)
+    const actions = profileActionsTrigger()
+    actions.focus()
+    actions.click()
+    await flushAsync()
+    const duplicate = buttonByText(language.modelProfiles.duplicate)
+    expect(actions.getAttribute('aria-expanded')).toBe('true')
+    expect(document.activeElement).toBe(duplicate)
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    duplicate.dispatchEvent(escape)
+    await tick()
+    expect(escape.defaultPrevented).toBe(true)
+    expect(actions.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(actions)
+    expect(buttonsByText(language.modelProfiles.delete)).toHaveLength(0)
+  })
+
   it.each([
     ['a missing stable ID', [{ name: 'Missing ID', providerId: 'debug-echo', modelId: 'debug-echo' }]],
     [
@@ -169,7 +208,7 @@ describe('ModelProfileList', () => {
     expect(buttonsByText(language.modelProfiles.createProfile)[0]?.disabled).toBe(true)
   })
 
-  it('shows a profile with a masked linked API credential as ready', async () => {
+  it('keeps a configured profile quiet while retaining actionable errors', async () => {
     getDatabase().providerCredentials = [
       {
         id: 'credential-api',
@@ -192,12 +231,12 @@ describe('ModelProfileList', () => {
     await tick()
 
     const row = target.querySelector<HTMLElement>('[data-model-profile-row]')
-    expect(row?.textContent).toContain(language.modelProfiles.statusBuckets.ready)
+    expect(row?.textContent).not.toContain(language.modelProfiles.statusBuckets.ready)
     expect(row?.textContent).not.toContain(language.modelProfiles.statusReasons['credential-missing'])
     expect(row?.textContent).not.toContain(language.modelProfiles.statusReasons['api-key-missing'])
   })
 
-  it('hides generated profile IDs and removes Used By from cards and the editor', async () => {
+  it('hides internal profile IDs and removes Used By from rows and the editor', async () => {
     getDatabase().modelProfiles = [
       { id: 'mp_1234567890', name: 'Generated', providerId: 'debug-echo', modelId: 'debug-echo' },
       { id: 'custom-profile', name: 'Custom', providerId: 'debug-echo', modelId: 'debug-echo' },
@@ -206,10 +245,10 @@ describe('ModelProfileList', () => {
     await tick()
 
     expect(target.textContent).not.toContain('mp_1234567890')
-    expect(target.textContent).toContain('custom-profile')
+    expect(target.textContent).not.toContain('custom-profile')
     expect(target.textContent).not.toContain(language.modelProfiles.usedByColumn)
 
-    buttonsByText(language.modelProfiles.edit).at(-1)?.click()
+    profileEditTrigger()?.click()
     await tick()
 
     expect(target.querySelector('[role="dialog"]')?.textContent).not.toContain(language.modelProfiles.usedByColumn)
@@ -333,7 +372,7 @@ describe('ModelProfileList', () => {
     component = mount(ModelProfileList, { target })
     await tick()
 
-    buttonByText(language.modelProfiles.delete).click()
+    await clickProfileAction(language.modelProfiles.delete)
     await flushAsync()
 
     expect(target.textContent).toContain(language.modelProfiles.profileUsedByModelPresets('Profile 1', 'Uses Profile'))
@@ -355,9 +394,12 @@ describe('ModelProfileList', () => {
     expect(target.querySelector('table')).toBeNull()
     expect(target.querySelectorAll('article')).toHaveLength(1)
 
-    const editTrigger = buttonsByText(language.modelProfiles.edit).at(-1)
+    const editTrigger = profileEditTrigger()
     if (!editTrigger) throw new Error('Profile edit button not found')
     editTrigger.click()
+    await tick()
+
+    buttonByText(language.modelProfiles.runtimeOverridesTitle).click()
     await tick()
 
     const flags = target.querySelector<HTMLElement>('[data-model-custom-api-flags]')
@@ -373,7 +415,7 @@ describe('ModelProfileList', () => {
     component = mount(ModelProfileList, { target })
     await tick()
 
-    const profileEditButton = buttonsByText(language.modelProfiles.edit).at(-1)
+    const profileEditButton = profileEditTrigger()
     if (!profileEditButton) throw new Error('Profile edit button not found')
     profileEditButton.click()
     await tick()
@@ -399,7 +441,7 @@ describe('ModelProfileList', () => {
     component = mount(ModelProfileList, { target })
     await tick()
 
-    const profileEditButton = buttonsByText(language.modelProfiles.edit).at(-1)
+    const profileEditButton = profileEditTrigger()
     if (!profileEditButton) throw new Error('Profile edit button not found')
     profileEditButton.click()
     await tick()
@@ -441,7 +483,7 @@ describe('ModelProfileList', () => {
       component = mount(ModelProfileList, { target })
       await tick()
 
-      const profileEditButton = buttonsByText(language.modelProfiles.edit).at(-1)
+      const profileEditButton = profileEditTrigger()
       if (!profileEditButton) throw new Error('Profile edit button not found')
       profileEditButton.click()
       await tick()
@@ -491,7 +533,7 @@ describe('ModelProfileList', () => {
     component = mount(ModelProfileList, { target })
     await tick()
 
-    const profileEditButton = buttonsByText(language.modelProfiles.edit).at(-1)
+    const profileEditButton = profileEditTrigger()
     if (!profileEditButton) throw new Error('Profile edit button not found')
     profileEditButton.click()
     await tick()
@@ -545,7 +587,7 @@ describe('ModelProfileList', () => {
     component = mount(ModelProfileList, { target })
     await tick()
 
-    const profileEditButton = buttonsByText(language.modelProfiles.edit).at(-1)
+    const profileEditButton = profileEditTrigger()
     if (!profileEditButton) throw new Error('Profile edit button not found')
     profileEditButton.click()
     await tick()
@@ -577,7 +619,7 @@ describe('ModelProfileList', () => {
     component = mount(ModelProfileList, { target })
     await tick()
 
-    const profileEditButton = buttonsByText(language.modelProfiles.edit).at(-1)
+    const profileEditButton = profileEditTrigger()
     if (!profileEditButton) throw new Error('Profile edit button not found')
     profileEditButton.click()
     await tick()
@@ -645,7 +687,7 @@ describe('ModelProfileList', () => {
     component = mount(ModelProfileList, { target })
     await tick()
 
-    buttonByText(language.modelProfiles.duplicate).click()
+    await clickProfileAction(language.modelProfiles.duplicate)
     await flushAsync()
 
     expect(commandSpies.duplicateModelProfileDurably).toHaveBeenCalledWith(
@@ -659,11 +701,11 @@ describe('ModelProfileList', () => {
     component = mount(ModelProfileList, { target })
     await tick()
 
-    buttonByText(language.modelProfiles.duplicate).click()
+    await clickProfileAction(language.modelProfiles.duplicate)
     await flushAsync()
 
     expect(target.textContent).toContain(language.modelProfiles.commandUnavailable)
-    expect(buttonByText(language.modelProfiles.duplicate).disabled).toBe(false)
+    expect(profileActionsTrigger().disabled).toBe(false)
     expect(buttonByText(language.modelProfiles.createProfile).disabled).toBe(false)
     expect(getPendingModelMutations('model-profiles')).toEqual([])
   })
@@ -677,8 +719,8 @@ describe('ModelProfileList', () => {
     component = mount(ModelProfileList, { target })
     await tick()
 
-    const duplicate = buttonByText(language.modelProfiles.duplicate)
-    duplicate.click()
+    const duplicate = profileActionsTrigger()
+    await clickProfileAction(language.modelProfiles.duplicate)
     await flushAsync()
 
     expect(target.querySelector('[data-model-profile-command-notice]')).toBeNull()
@@ -723,7 +765,7 @@ describe('ModelProfileList', () => {
     component = mount(ModelProfileList, { target })
     await tick()
 
-    buttonByText(language.modelProfiles.duplicate).click()
+    await clickProfileAction(language.modelProfiles.duplicate)
     await flushAsync()
     unmount(component)
     component = undefined
@@ -731,7 +773,7 @@ describe('ModelProfileList', () => {
 
     component = mount(ModelProfileList, { target })
     await tick()
-    const duplicate = buttonByText(language.modelProfiles.duplicate)
+    const duplicate = profileActionsTrigger()
     expect(duplicate.disabled).toBe(true)
     duplicate.click()
     await flushAsync()
@@ -746,7 +788,7 @@ describe('ModelProfileList', () => {
       },
     ]
     await flushAsync()
-    expect(buttonByText(language.modelProfiles.duplicate).disabled).toBe(false)
+    expect(profileActionsTrigger().disabled).toBe(false)
   })
 
   it('keeps a dirty profile draft when Escape dismissal is rejected', async () => {
@@ -755,7 +797,7 @@ describe('ModelProfileList', () => {
     component = mount(ModelProfileList, { target })
     await tick()
 
-    const profileEditButton = buttonsByText(language.modelProfiles.edit).at(-1)
+    const profileEditButton = profileEditTrigger()
     if (!profileEditButton) throw new Error('Profile edit button not found')
     profileEditButton.click()
     await tick()
@@ -812,7 +854,7 @@ describe('ModelProfileList', () => {
     component = mount(ModelProfileList, { target })
     await tick()
 
-    const editTrigger = buttonsByText(language.modelProfiles.edit).at(-1)
+    const editTrigger = profileEditTrigger()
     if (!editTrigger) throw new Error('Profile edit button not found')
     editTrigger.focus()
     editTrigger.click()

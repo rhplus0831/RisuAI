@@ -38,12 +38,18 @@ let target: HTMLElement
 let component: MountedComponent | undefined
 
 function button(label: string, index = 0): HTMLButtonElement {
-  const matches = Array.from(target.querySelectorAll('button')).filter((candidate) =>
-    candidate.textContent?.includes(label),
+  const matches = Array.from(target.querySelectorAll('button')).filter(
+    (candidate) =>
+      candidate.textContent?.includes(label) || candidate.getAttribute('aria-label')?.startsWith(`${label}:`),
   )
   const found = matches[index]
   if (!(found instanceof HTMLButtonElement)) throw new Error(`Button not found: ${label}`)
   return found
+}
+
+async function openActions(): Promise<void> {
+  target.querySelector<HTMLButtonElement>('article button[aria-expanded]')?.click()
+  await tick()
 }
 
 async function flushAsync(): Promise<void> {
@@ -120,6 +126,7 @@ describe('ProviderCredentialList', () => {
     component = mount(ProviderCredentialList, { target })
     await tick()
 
+    await openActions()
     expect(button(language.modelProfiles.delete).disabled).toBe(true)
     expect(mutationSpies.deleteProviderCredentialDurably).not.toHaveBeenCalled()
   })
@@ -131,6 +138,7 @@ describe('ProviderCredentialList', () => {
     expect(target.querySelector('table')).toBeNull()
     expect(target.querySelectorAll('article')).toHaveLength(1)
 
+    await openActions()
     const deleteButton = button(language.modelProfiles.delete)
     expect(deleteButton.disabled).toBe(true)
 
@@ -189,6 +197,7 @@ describe('ProviderCredentialList', () => {
     await tick()
     const confirm = vi.fn(() => true)
     vi.stubGlobal('confirm', confirm)
+    await openActions()
     button(language.modelProfiles.delete).click()
     await flushAsync()
 

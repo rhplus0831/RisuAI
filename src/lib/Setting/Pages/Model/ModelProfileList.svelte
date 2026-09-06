@@ -13,6 +13,7 @@
     modelProfileOrderEntryKey,
     normalizeModelProfileOrder,
     normalizeModelRoleProfiles,
+    normalizeModelRuntimeDefaults,
     type ModelProfileOrderEntry,
     type ModelProfileRecord,
     type ModelRoleProfileBinding,
@@ -35,7 +36,7 @@
     type PendingModelMutationProjection,
   } from 'src/ts/model/modelProfileMutations'
   import type { ModelProfileSnapshot, ServerCommandResult } from 'src/ts/server/commands'
-  import type { ProviderCredentialRecord, ProviderCredentialType } from 'src/ts/model/providerCredentialRecords'
+  import type { ProviderCredentialRecord } from 'src/ts/model/providerCredentialRecords'
   import { collectionsResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import type { Database, ModelPreset } from 'src/ts/storage/database.svelte'
   import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
@@ -43,12 +44,7 @@
   import Sortable, { type SortableEvent } from 'sortablejs'
   import ModelProfileEditorDrawer from './ModelProfileEditorDrawer.svelte'
   import ModelRuntimeDefaultsEditor from './ModelRuntimeDefaultsEditor.svelte'
-
-  interface Props {
-    onManageCredentials?: (type: ProviderCredentialType) => void
-  }
-
-  let { onManageCredentials = () => {} }: Props = $props()
+  import ModelItemActions from './ModelItemActions.svelte'
 
   type EditorMode = 'create' | 'edit' | null
   type ProfileListPendingProjection = Extract<
@@ -491,12 +487,10 @@
 </script>
 
 <section class="flex flex-col gap-4">
-  <ModelRuntimeDefaultsEditor />
-
   {#if commandError}
     <div class="rounded-md border border-draculared p-3 text-sm text-draculared">{commandError}</div>
   {/if}
-  <div class="mt-4 flex flex-wrap items-center justify-between gap-2">
+  <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
     <div>
       <h3 class="text-lg font-semibold">{language.modelProfiles.profilesTabTitle}</h3>
       <span class="text-sm text-textcolor2">{language.modelProfiles.profilesTabDescription}</span>
@@ -511,70 +505,74 @@
     </div>
   </div>
 
+  <ModelRuntimeDefaultsEditor compact />
+
   {#if profileItems.length === 0}
     <div class="rounded-md border border-darkborderc p-4 text-sm text-textcolor2">
       {language.modelProfiles.noProfiles}
     </div>
   {:else}
-    <div class="flex flex-col" role="list" bind:this={profileListElement}>
+    <div class="flex flex-col gap-1" role="list" bind:this={profileListElement}>
       {#each profileItems as item (modelProfileListItemKey(item))}
         {@const orderKey = modelProfileListItemKey(item)}
         <div role="presentation" data-model-profile-drop-key={orderKey} class="contents"></div>
         {#if item.kind === 'profile'}
           {@const profile = item.profile}
           <article
-            class="risu-card flex flex-col gap-2 text-sm"
+            class="flex items-center gap-1 rounded-md border border-darkborderc px-2 text-sm hover:bg-darkbg"
             role="listitem"
             data-model-profile-row
             data-model-profile-sortable-item
             data-model-profile-order-key={orderKey}
             data-profile-id={profile.id}>
-            <div class="flex flex-wrap items-center gap-2">
-              <span
-                class="flex h-11 w-11 shrink-0 touch-none cursor-grab items-center justify-center text-textcolor2 active:cursor-grabbing"
-                title={language.modelProfiles.dragProfile}
-                data-model-profile-drag-handle
-                aria-hidden="true">
-                <GripVerticalIcon size={16} />
-              </span>
-              <span class="font-medium">{profile.name}</span>
-              <span class="rounded-sm bg-white/10 px-2 py-1 text-xs">
-                {statusLabel(profile)}
-              </span>
-              <div class="ml-auto flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  styled="outlined"
-                  disabled={busy || mutationQueued}
-                  onclick={() => openEditEditor(profile)}>
-                  <span class="inline-flex items-center gap-1"
-                    ><PencilIcon size={14} />{language.modelProfiles.edit}</span>
-                </Button>
-                <Button
-                  size="sm"
-                  styled="outlined"
-                  disabled={busy || mutationQueued}
-                  onclick={() => duplicateProfile(profile)}>
-                  <span class="inline-flex items-center gap-1"
-                    ><CopyIcon size={14} />{language.modelProfiles.duplicate}</span>
-                </Button>
-                <Button
-                  size="sm"
-                  styled="danger"
-                  disabled={busy || mutationQueued}
-                  onclick={() => deleteProfile(profile)}>
-                  <span class="inline-flex items-center gap-1"
-                    ><TrashIcon size={14} />{language.modelProfiles.delete}</span>
-                </Button>
-              </div>
-            </div>
-            {#if !profile.id.startsWith('mp_')}
-              <span class="break-all text-xs text-textcolor2">{profile.id}</span>
-            {/if}
-            <span class="break-all text-xs text-textcolor2">
-              {providerLabel(profile.providerId)} · {modelLabel(profile)} · {requestModelLabel(profile)} ·
-              {fallbackCount(profile)}
+            <span
+              class="flex h-11 w-11 shrink-0 touch-none cursor-grab items-center justify-center text-textcolor2 active:cursor-grabbing"
+              title={language.modelProfiles.dragProfile}
+              data-model-profile-drag-handle
+              aria-hidden="true">
+              <GripVerticalIcon size={16} />
             </span>
+            <button
+              type="button"
+              class="flex min-w-0 flex-1 flex-col gap-1 py-3 text-left"
+              disabled={busy || mutationQueued}
+              onclick={() => openEditEditor(profile)}
+              aria-label={`${language.modelProfiles.edit}: ${profile.name}`}>
+              <span class="font-medium break-words">{profile.name}</span>
+              <span class="break-words text-xs text-textcolor2">
+                {providerLabel(profile.providerId)} · {modelLabel(profile)}
+                {#if profile.providerOptions?.requestModel?.trim() && profile.providerOptions.requestModel.trim() !== profile.modelId}
+                  · {requestModelLabel(profile)}
+                {/if}
+                {#if profile.fallbacks?.length}
+                  · {fallbackCount(profile)}{/if}
+              </span>
+              {#if statusLabel(profile) !== language.modelProfiles.statusBuckets.ready}
+                <span class="text-xs text-yellow-300">{statusLabel(profile)}</span>
+              {/if}
+            </button>
+            <span class="pointer-events-none shrink-0 text-textcolor2" aria-hidden="true"
+              ><PencilIcon size={16} /></span>
+            <ModelItemActions
+              label={language.modelProfiles.itemActions(profile.name)}
+              disabled={busy || mutationQueued}>
+              {#snippet children(close)}
+                <button
+                  type="button"
+                  class="flex min-h-11 items-center gap-2 rounded-md px-3 py-2 text-left hover:bg-darkbg"
+                  onclick={() => {
+                    close()
+                    void duplicateProfile(profile)
+                  }}><CopyIcon size={14} />{language.modelProfiles.duplicate}</button>
+                <button
+                  type="button"
+                  class="flex min-h-11 items-center gap-2 rounded-md px-3 py-2 text-left text-draculared hover:bg-darkbg"
+                  onclick={() => {
+                    close()
+                    void deleteProfile(profile)
+                  }}><TrashIcon size={14} />{language.modelProfiles.delete}</button>
+              {/snippet}
+            </ModelItemActions>
           </article>
         {:else}
           <div
@@ -615,12 +613,12 @@
         {profiles}
         {profileOrder}
         {credentials}
+        runtimeDefaults={normalizeModelRuntimeDefaults(settingsResourceState.value.modelRuntimeDefaults)}
         statusText={editingProfile ? statusLabel(editingProfile) : language.modelProfiles.statusBuckets.incomplete}
         {busy}
         {commandError}
         onSave={saveEditor}
-        onCancel={closeEditor}
-        {onManageCredentials} />
+        onCancel={closeEditor} />
     {/key}
   {/if}
 </section>

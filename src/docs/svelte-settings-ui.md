@@ -309,17 +309,22 @@ Chat selection and review controls are in
 
 ## Model Profiles And Provider Panels
 
-`src/lib/Setting/Pages/Model/ModelSettingsShell.svelte` owns conversion, Roles,
-Profiles, API Credentials, and Advanced Legacy Settings. The Roles tab uses
+`src/lib/Setting/Pages/Model/ModelSettingsShell.svelte` opens on Models and owns
+conversion, Model assignments, API keys & accounts, and Advanced Legacy Settings.
+The Model assignments tab uses
 `src/lib/Setting/Pages/Model/ModelProfileRoleList.svelte` to edit
 `Database.modelRoleProfiles`. Valid changes apply automatically, and each role
-shows binding mode, inherited source, effective profile, provider/model/request
-model, status, and fallback count.
+shows binding mode, inherited source, effective model, and provider. Internal
+IDs, Ready status, and zero fallback counts are hidden; actionable status reasons
+and configured fallbacks remain visible.
 
-The Profiles tab uses
+The Models tab uses
 `src/lib/Setting/Pages/Model/ModelProfileList.svelte` to present
 `Database.modelProfiles` and profile create/edit/duplicate/delete actions.
-Generated `mp_` IDs and role-usage summaries stay hidden. Before dispatching a
+Compact rows open the editor directly and hide internal IDs and routine Ready
+status. `ModelItemActions.svelte` discloses duplicate/delete actions, closes on
+outside pointer or focus movement, and returns focus to its trigger on Escape.
+Before dispatching a
 delete, the UI checks every Model Preset role-binding snapshot and blocks a
 referenced profile; role bindings are explicitly reassigned on an allowed
 delete. The server's authoritative deletion guard remains provider/runtime
@@ -338,11 +343,21 @@ mutations disable sorting.
 credential, model, request-model, and visible provider-option controls. The
 first-class panels are OpenAI, LLM Gateway, Neuralwatt, Anthropic, Google,
 Vertex, Ollama, Custom API, and Debug Echo. Neuralwatt uses the catalog-backed
-model grid.
+model grid. Connection setup is expanded for creation and collapsed for editing;
+the provider panel separates setup fields from advanced provider options.
+`ModelGenerationSettings.svelte` keeps maximum response, context limit, streaming,
+and half streaming visible, showing effective inherited values and explicit
+per-model overrides. Other runtime options and fallbacks are under Advanced.
+The model editor states that edits affect every use of the saved model.
 
-`src/lib/Setting/Pages/Model/ProviderCredentialList.svelte` owns credential
-create/edit/delete presentation, masked-secret rotation, and profile-reference
-deletion checks. `packages/shared-core/src/providerCredentialRecords.ts` owns
+`src/lib/Setting/Pages/Model/ProviderCredentialList.svelte` owns credential list
+presentation and profile-reference deletion checks. `ProviderCredentialEditor.svelte`
+shares credential creation/editing and masked-secret rotation between that list
+and inline model setup. Inline creation preserves the model draft and selects a
+new key only once its server-generated ID appears in the credential projection.
+Queued creation stays pending until the matching projection arrives or replay is
+discarded; it never adds a raw secret to the model profile.
+`packages/shared-core/src/providerCredentialRecords.ts` owns
 credential schema/projection normalization; durable credential and profile
 mutation helpers live in `src/ts/model/modelProfileMutations.ts`.
 
@@ -353,10 +368,12 @@ treated as a raw credential import. The server-side credential contract is in
 [Providers And Models](../../docs/structure/providers-and-models.md#provider-credentials).
 
 `src/lib/Setting/Pages/Model/ModelRuntimeDefaultsEditor.svelte` edits
-`Database.modelRuntimeDefaults` with explicit Edit/Save/Cancel/Reset and a
-count summary. `ModelRuntimeOptionsEditor.svelte` exposes half-streaming and
-normal streaming plus Strip CoT as a default checkbox or an
-inherit/enable/disable profile override. Legacy `BotSettings.svelte` shows
+`Database.modelRuntimeDefaults` with explicit Edit/Save/Cancel/Reset from a
+compact control above the saved model list. It uses the same common generation controls and an Advanced
+section. `resolveModelRuntimeDefaults()` in the shared resolver supplies the
+canonical built-in/global defaults in stored units without reading legacy flat
+settings. `ModelRuntimeOptionsEditor.svelte` keeps Strip CoT as a default checkbox
+or an inherit/enable/disable profile override. Legacy `BotSettings.svelte` shows
 half-streaming only where its compatibility model supports streaming.
 
 `src/lib/Setting/Pages/Model/ModelPresetList.svelte`, embedded by
@@ -410,6 +427,7 @@ Model UI guards include
 `src/lib/Setting/Pages/Model/ModelProfileList.svelte.test.ts`,
 `src/lib/Setting/Pages/Model/ProviderCredentialList.svelte.test.ts`,
 `src/lib/Setting/Pages/Model/ModelProfileEditorDrawer.svelte.test.ts`,
+`src/lib/Setting/Pages/Model/ModelGenerationSettings.svelte.test.ts`,
 `src/lib/Setting/Pages/Model/ModelProviderPanel.svelte.test.ts`, and
 `src/lib/Setting/Pages/Model/ModelRuntimeDefaultsEditor.svelte.test.ts`.
 

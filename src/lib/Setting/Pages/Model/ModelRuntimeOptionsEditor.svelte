@@ -1,5 +1,6 @@
 <script lang="ts">
   import { language } from 'src/lang'
+  import { resolveModelRuntimeDefaults } from 'src/ts/model/modelProfileResolver'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import {
     normalizeModelProfileRuntimeOptions,
@@ -33,9 +34,26 @@
   interface Props {
     value: ModelProfileRecordRuntimeOptions
     scope?: 'defaults' | 'overrides'
+    advancedOnly?: boolean
+    defaults?: ModelProfileRecordRuntimeOptions
   }
 
-  let { value = $bindable({}), scope = 'overrides' }: Props = $props()
+  let { value = $bindable({}), scope = 'overrides', advancedOnly = false, defaults = {} }: Props = $props()
+  let inherited = $derived(resolveModelRuntimeDefaults(scope === 'defaults' ? undefined : defaults))
+
+  function defaultValueLabel(key: RuntimeKey, storageScale?: number): string {
+    const current = inherited[key]
+    let label = language.none
+    if (typeof current === 'boolean')
+      label = current ? language.modelProfiles.runtimeOn : language.modelProfiles.runtimeOff
+    else if (typeof current === 'number') {
+      label =
+        current === -1000
+          ? language.modelProfiles.runtimeNotSent
+          : String(storageScale ? current / storageScale : current)
+    } else if (typeof current === 'string' && current) label = current
+    return language.modelProfiles.runtimeDefaultValue(label)
+  }
 
   const numberFields: RuntimeNumberField[] = [
     { key: 'maxContext', label: language.modelProfiles.runtimeFields.maxContext, step: '1' },
@@ -224,10 +242,15 @@
 </script>
 
 <div class="flex flex-col gap-4">
+  <p class="text-sm text-textcolor2">
+    {scope === 'defaults'
+      ? language.modelProfiles.advancedGlobalDefaultsDescription
+      : language.modelProfiles.advancedDefaultsDescription}
+  </p>
   <div>
     <h4 class="mb-2 text-sm font-semibold">{language.modelProfiles.runtimeNumberSection}</h4>
     <div class="grid gap-3 md:grid-cols-2">
-      {#each numberFields as field (field.key)}
+      {#each numberFields.filter((field) => !advancedOnly || (field.key !== 'maxResponse' && field.key !== 'maxContext')) as field (field.key)}
         <label class="flex flex-col gap-1">
           <span class="text-sm text-textcolor2">{field.label}</span>
           <input
@@ -237,7 +260,7 @@
             min={field.min}
             max={field.max}
             value={numberValue(field)}
-            placeholder={language.modelProfiles.runtimeUnset}
+            placeholder={defaultValueLabel(field.key, field.storageScale)}
             oninput={(event) => {
               setNumber(field, event.currentTarget.value)
             }} />
@@ -249,7 +272,7 @@
   <div>
     <h4 class="mb-2 text-sm font-semibold">{language.modelProfiles.runtimeBooleanSection}</h4>
     <div class="grid gap-3 md:grid-cols-2">
-      {#each booleanFields as field (field.key)}
+      {#each booleanFields.filter((field) => !advancedOnly || (field.key !== 'useStreaming' && field.key !== 'halfStreaming')) as field (field.key)}
         {#if scope === 'defaults' && field.key === 'stripCoT'}
           <label class="flex items-center gap-2 text-sm text-textcolor2">
             <input
@@ -272,9 +295,9 @@
               onchange={(event) => {
                 setBoolean(field.key, event.currentTarget.value)
               }}>
-              <option value="" class="bg-darkbg">{language.modelProfiles.runtimeUnset}</option>
-              <option value="true" class="bg-darkbg">{language.modelProfiles.runtimeTrue}</option>
-              <option value="false" class="bg-darkbg">{language.modelProfiles.runtimeFalse}</option>
+              <option value="" class="bg-darkbg">{defaultValueLabel(field.key)}</option>
+              <option value="true" class="bg-darkbg">{language.modelProfiles.runtimeOn}</option>
+              <option value="false" class="bg-darkbg">{language.modelProfiles.runtimeOff}</option>
             </select>
           </label>
         {/if}
@@ -292,7 +315,7 @@
             <textarea
               class="min-h-24 w-full rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
               value={stringValue(field.key)}
-              placeholder={language.modelProfiles.runtimeUnset}
+              placeholder={defaultValueLabel(field.key)}
               oninput={(event) => {
                 setString(field.key, event.currentTarget.value)
               }}></textarea>
@@ -301,7 +324,7 @@
               size="sm"
               fullwidth
               value={stringValue(field.key)}
-              placeholder={language.modelProfiles.runtimeUnset}
+              placeholder={defaultValueLabel(field.key)}
               oninput={(event) => {
                 setString(field.key, event.currentTarget.value)
               }} />

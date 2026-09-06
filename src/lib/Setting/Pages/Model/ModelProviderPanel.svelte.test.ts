@@ -1,4 +1,5 @@
 import { mount, tick, unmount } from 'svelte'
+import { SvelteMap } from 'svelte/reactivity'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { language } from 'src/lang'
 import ModelProviderPanel from './ModelProviderPanel.svelte'
@@ -100,6 +101,46 @@ afterEach(() => {
 })
 
 describe('ModelProviderPanel credential selection', () => {
+  it('keeps manual model editing available when an entered ID also exists in the catalog', async () => {
+    const state = new SvelteMap([['modelId', 'gpt-5']])
+    component = mount(ModelProviderPanel, {
+      target,
+      props: {
+        ...props('openai'),
+        section: 'setup',
+        get modelId() {
+          return state.get('modelId')!
+        },
+        set modelId(value) {
+          state.set('modelId', value)
+        },
+      },
+    })
+    await tick()
+    const picker = target.querySelector<HTMLSelectElement>(`select[aria-label="${language.modelProfiles.knownModel}"]`)!
+    expect(picker.value).toBe('gpt-5')
+    expect(target.querySelector('input')).toBeNull()
+    picker.value = '__manual__'
+    picker.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+    const manual = target.querySelector<HTMLInputElement>('input')!
+    expect(manual.value).toBe('gpt-5')
+    manual.value = 'gpt-5-mini'
+    manual.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    expect(state.get('modelId')).toBe('gpt-5-mini')
+    expect(target.querySelector('input')).toBe(manual)
+    expect(picker.value).toBe('__manual__')
+  })
+
+  it('renders advanced provider options without fetching another model catalog or showing setup controls', async () => {
+    component = mount(ModelProviderPanel, { target, props: { ...props('llmgateway'), section: 'advanced' } })
+    await tick()
+    expect(llmGatewayCatalog.getModels).not.toHaveBeenCalled()
+    expect(target.querySelector('[data-provider-credential-picker]')).toBeNull()
+    expect(target.querySelector('[data-llm-gateway-reasoning-effort]')).not.toBeNull()
+  })
+
   it('shows only API-key credentials for API-key providers and exposes the create affordance', async () => {
     const input = props('openai')
     component = mount(ModelProviderPanel, { target, props: input })

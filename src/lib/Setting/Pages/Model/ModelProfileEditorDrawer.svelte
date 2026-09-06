@@ -34,6 +34,8 @@
   import ModelFallbackEditor from './ModelFallbackEditor.svelte'
   import ModelProviderPanel from './ModelProviderPanel.svelte'
   import ModelRuntimeOptionsEditor from './ModelRuntimeOptionsEditor.svelte'
+  import ModelGenerationSettings from './ModelGenerationSettings.svelte'
+  import ProviderCredentialEditor from './ProviderCredentialEditor.svelte'
 
   interface KeyValueRow {
     key: string
@@ -46,12 +48,12 @@
     profiles: ModelProfileRecord[]
     profileOrder?: ModelProfileOrderEntry[]
     credentials: ProviderCredentialRecord[]
+    runtimeDefaults?: ModelProfileRecordRuntimeOptions
     statusText: string
     busy?: boolean
     commandError?: string
     onSave: (profile: ModelProfileSnapshot) => void | Promise<void>
     onCancel: () => void
-    onManageCredentials: (type: ProviderCredentialType) => void
   }
 
   let {
@@ -60,12 +62,12 @@
     profiles = [],
     profileOrder = [],
     credentials = [],
+    runtimeDefaults = {},
     statusText,
     busy = false,
     commandError = '',
     onSave,
     onCancel,
-    onManageCredentials,
   }: Props = $props()
 
   const firstClassProviderIds = new Set<string>(FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS)
@@ -73,7 +75,7 @@
   // svelte-ignore state_referenced_locally
   const initialProfile = profile
 
-  let draftName = $state(initialProfile?.name ?? language.modelProfiles.newProfileDefaultName)
+  let draftName = $state(initialProfile?.name ?? '')
   let providerId = $state(initialProviderId())
   let modelId = $state(initialModelId())
   let requestModel = $state(initialProfile?.providerOptions?.requestModel ?? '')
@@ -110,6 +112,20 @@
   let fallbacks = $state<ModelProfileRecordFallbackRef[]>(cloneJsonValue(initialProfile?.fallbacks ?? []))
   let initialSnapshot = $state('')
   let providerCredentialReset = $state(false)
+  // svelte-ignore state_referenced_locally
+  let connectionOpen = $state(mode === 'create')
+  let credentialEditorType = $state<ProviderCredentialType | null>(null)
+  let credentialHasChanges = $state(false)
+  let credentialSaving = $state(false)
+  let connectionSummary = $derived(
+    [
+      language.modelProfiles.providerNames[providerId as FirstClassModelProfileProviderId] || providerId,
+      requestModel.trim() || modelId || language.none,
+      credentials.find((candidate) => candidate.id === credentialId)?.name,
+    ]
+      .filter(Boolean)
+      .join(' · '),
+  )
 
   let canEditProviderFields = $derived(
     mode === 'create' || (!!initialProfile?.providerId && firstClassProviderIds.has(initialProfile.providerId)),
@@ -119,7 +135,7 @@
     mode === 'create' ? language.modelProfiles.createProfile : language.modelProfiles.editProfile,
   )
   let isDirty = $derived(initialSnapshot !== '' && initialSnapshot !== snapshot(snapshotForSave()))
-  let canSave = $derived(!busy && (mode === 'create' || isDirty))
+  let canSave = $derived(!busy && !credentialEditorType && !credentialSaving && (mode === 'create' || isDirty))
 
   $effect(() => {
     if (!initialSnapshot) initialSnapshot = snapshot(snapshotForSave())
@@ -311,7 +327,12 @@
 
   function snapshotForSave(): ModelProfileSnapshot {
     const next: ModelProfileSnapshot = initialProfile ? cloneJsonValue(initialProfile) : { name: '' }
-    next.name = draftName.trim() || initialProfile?.name || language.modelProfiles.newProfileDefaultName
+    next.name =
+      draftName.trim() ||
+      initialProfile?.name ||
+      requestModel.trim() ||
+      modelId.trim() ||
+      language.modelProfiles.newProfileDefaultName
 
     if (!canEditProviderFields || !providerIsFirstClass) {
       return next
@@ -347,16 +368,16 @@
   }
 
   function requestClose(): void {
-    if (busy) return
-    if (isDirty && !window.confirm(language.modelProfiles.discardProfileChangesConfirm)) return
+    if (busy || credentialSaving) return
+    if ((isDirty || credentialHasChanges) && !window.confirm(language.modelProfiles.discardProfileChangesConfirm))
+      return
     onCancel()
   }
 
   function manageCredentials(type: ProviderCredentialType): void {
-    if (busy) return
-    if (isDirty && !window.confirm(language.modelProfiles.discardProfileChangesConfirm)) return
-    onCancel()
-    onManageCredentials(type)
+    if (busy || credentialSaving) return
+    credentialEditorType = type
+    connectionOpen = true
   }
 
   function handleDialogKeydown(event: KeyboardEvent): void {
@@ -371,6 +392,52 @@
     await onSave(snapshotForSave())
   }
 </script>
+
+{#snippet providerPanel(section: 'setup' | 'advanced')}
+  <ModelProviderPanel
+    {section}
+    bind:providerId
+    bind:modelId
+    bind:requestModel
+    bind:credentialId
+    {credentials}
+    onCreateCredential={manageCredentials}
+    bind:baseUrl
+    bind:extraHeadersRows
+    bind:additionalParamRows
+    bind:llmGatewayReasoningEffort
+    bind:llmGatewayVerbosity
+    bind:llmGatewayServiceTier
+    bind:llmGatewayRouting
+    bind:ollamaRequestFormat
+    bind:ollamaModelSource
+    bind:ollamaThinkingMode
+    bind:vertexProjectId
+    bind:vertexRegion
+    bind:customTokenizer
+    bind:customFlags>
+    {#snippet credentialEditor()}
+      {#if credentialEditorType}
+        <ProviderCredentialEditor
+          type={credentialEditorType}
+          {credentials}
+          waitForProjection
+          bind:hasChanges={credentialHasChanges}
+          bind:saving={credentialSaving}
+          onComplete={(result) => {
+            if (result.status !== 'accepted') return
+            credentialId = result.credentialId
+            credentialEditorType = null
+            credentialHasChanges = false
+          }}
+          onCancel={() => {
+            credentialEditorType = null
+            credentialHasChanges = false
+          }} />
+      {/if}
+    {/snippet}
+  </ModelProviderPanel>
+{/snippet}
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -390,6 +457,9 @@
     <div class="flex items-start justify-between gap-3 border-b border-darkborderc p-4">
       <div class="min-w-0">
         <h3 class="truncate text-xl font-semibold">{drawerTitle}</h3>
+        {#if mode === 'edit' && statusText !== language.modelProfiles.statusBuckets.ready}
+          <p class="mt-1 text-xs text-textcolor2">{statusText}</p>
+        {/if}
       </div>
       <button
         type="button"
@@ -398,7 +468,7 @@
         class:cursor-not-allowed={busy}
         class:opacity-50={busy}
         aria-label={language.modelRoles.close}
-        disabled={busy}
+        disabled={busy || credentialSaving}
         onclick={requestClose}>
         <XIcon size={20} />
       </button>
@@ -413,101 +483,83 @@
         <div class="rounded-md border border-draculared p-3 text-sm text-draculared">{commandError}</div>
       {/if}
 
-      <section class="rounded-md border border-darkborderc p-3">
-        <div class="grid gap-3 md:grid-cols-2">
-          <label class="flex flex-col gap-1">
-            <span class="text-sm text-textcolor2">{language.modelProfiles.profileNameColumn}</span>
-            <TextInput size="sm" fullwidth bind:value={draftName} />
-          </label>
+      <label class="flex flex-col gap-1 text-sm">
+        <span
+          >{mode === 'create'
+            ? language.modelProfiles.optionalModelName
+            : language.modelProfiles.profileNameColumn}</span>
+        <TextInput
+          size="sm"
+          fullwidth
+          bind:value={draftName}
+          placeholder={requestModel.trim() || modelId || language.modelProfiles.newProfileDefaultName} />
+      </label>
 
+      <details bind:open={connectionOpen} class="rounded-md border border-darkborderc" data-model-connection>
+        <summary class="cursor-pointer px-4 py-3 text-sm font-medium">
+          {language.modelProfiles.modelConnectionTitle}
+          <span class="mt-1 block break-words font-normal text-textcolor2">{connectionSummary}</span>
+        </summary>
+        <div class="flex min-w-0 flex-col gap-4 border-t border-darkborderc p-4">
           {#if canEditProviderFields}
-            <label class="flex flex-col gap-1">
-              <span class="text-sm text-textcolor2">{language.modelProfiles.providerColumn}</span>
+            <label class="flex flex-col gap-1 text-sm">
+              <span>{language.modelProfiles.providerColumn}</span>
               <SelectInput
                 size="sm"
                 className="w-full"
+                ariaLabel={language.modelProfiles.providerColumn}
                 value={providerId}
+                disabled={credentialEditorType !== null}
                 onchange={(event) => {
                   setProviderId(String(event.currentTarget.value))
                 }}>
                 {#each FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS as optionProviderId (optionProviderId)}
-                  <OptionInput value={optionProviderId}>
-                    {language.modelProfiles.providerNames[optionProviderId]}
-                  </OptionInput>
+                  <OptionInput value={optionProviderId}
+                    >{language.modelProfiles.providerNames[optionProviderId]}</OptionInput>
                 {/each}
               </SelectInput>
             </label>
           {:else}
-            <div class="flex flex-col gap-1">
-              <span class="text-sm text-textcolor2">{language.modelProfiles.providerColumn}</span>
-              <span class="rounded-md border border-darkborderc px-2 py-1 text-sm text-textcolor2">
-                {initialProfile?.providerId
-                  ? language.modelProfiles.unsupportedProviderLabel(initialProfile.providerId)
-                  : language.modelProfiles.compatibilityProvider}
-              </span>
-            </div>
+            <p class="text-sm text-textcolor2">
+              {initialProfile?.providerId
+                ? language.modelProfiles.unsupportedProviderLabel(initialProfile.providerId)
+                : language.modelProfiles.compatibilityProvider}
+            </p>
           {/if}
+          {#if providerCredentialReset}
+            <p class="text-sm text-yellow-300" role="status" data-model-profile-provider-secret-reset>
+              {language.modelProfiles.providerChangeClearedCredential}
+            </p>
+          {/if}
+          {@render providerPanel('setup')}
         </div>
-
-        {#if mode === 'edit'}
-          <div class="mt-3 rounded-md bg-darkbg px-3 py-2 text-sm text-textcolor2">
-            {language.modelProfiles.statusColumn}: {statusText}
-          </div>
-        {/if}
-      </section>
-
-      <section class="rounded-md border border-darkborderc p-3">
-        <div class="mb-3 flex flex-col gap-1">
-          <h4 class="text-base font-semibold">{language.modelProfiles.providerConfiguration}</h4>
-        </div>
-        {#if providerCredentialReset}
-          <div
-            class="mb-3 rounded-md border border-yellow-600 p-2 text-sm text-yellow-300"
-            role="status"
-            data-model-profile-provider-secret-reset>
-            {language.modelProfiles.providerChangeClearedCredential}
-          </div>
-        {/if}
-        <ModelProviderPanel
-          bind:providerId
-          bind:modelId
-          bind:requestModel
-          bind:credentialId
-          {credentials}
-          onCreateCredential={manageCredentials}
-          bind:baseUrl
-          bind:extraHeadersRows
-          bind:additionalParamRows
-          bind:llmGatewayReasoningEffort
-          bind:llmGatewayVerbosity
-          bind:llmGatewayServiceTier
-          bind:llmGatewayRouting
-          bind:ollamaRequestFormat
-          bind:ollamaModelSource
-          bind:ollamaThinkingMode
-          bind:vertexProjectId
-          bind:vertexRegion
-          bind:customTokenizer
-          bind:customFlags />
-      </section>
+      </details>
 
       {#if canEditProviderFields && providerIsFirstClass}
+        <ModelGenerationSettings bind:value={runtimeOptions} defaults={runtimeDefaults} />
         <Accordion styled name={language.modelProfiles.runtimeOverridesTitle}>
-          <ModelRuntimeOptionsEditor bind:value={runtimeOptions} />
-        </Accordion>
-
-        <Accordion styled name={language.modelProfiles.fallbacksTitle}>
-          <ModelFallbackEditor profileId={initialProfile?.id} {profiles} {profileOrder} bind:value={fallbacks} />
+          <div class="flex min-w-0 flex-col gap-5 p-2">
+            <section class="flex flex-col gap-3">
+              <h4 class="text-sm font-semibold">{language.modelProfiles.advancedProviderOptions}</h4>
+              {@render providerPanel('advanced')}
+            </section>
+            <ModelRuntimeOptionsEditor bind:value={runtimeOptions} defaults={runtimeDefaults} advancedOnly />
+            <section class="flex flex-col gap-3 border-t border-darkborderc pt-4">
+              <h4 class="text-sm font-semibold">{language.modelProfiles.fallbacksTitle}</h4>
+              <ModelFallbackEditor profileId={initialProfile?.id} {profiles} {profileOrder} bind:value={fallbacks} />
+            </section>
+          </div>
         </Accordion>
       {:else}
-        <div class="rounded-md border border-darkborderc p-3 text-sm text-textcolor2">
-          {language.modelProfiles.compatibilityRuntimeNotice}
-        </div>
+        <p class="text-sm text-textcolor2">{language.modelProfiles.compatibilityRuntimeNotice}</p>
       {/if}
     </fieldset>
 
     <div class="flex flex-wrap items-center justify-end gap-2 border-t border-darkborderc p-4">
-      <Button size="sm" styled="outlined" disabled={busy} onclick={requestClose}>
+      <p class="mr-auto basis-full text-xs text-textcolor2 sm:basis-auto sm:flex-1">
+        {language.modelProfiles.modelScopeDescription}
+      </p>
+      <Button size="sm" styled="outlined" disabled={busy || credentialSaving} onclick={requestClose}>
         <span class="inline-flex items-center gap-1"><XIcon size={14} />{language.modelProfiles.cancel}</span>
       </Button>
       <Button size="sm" disabled={!canSave} onclick={saveProfile}>

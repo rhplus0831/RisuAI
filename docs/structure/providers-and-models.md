@@ -154,6 +154,8 @@ exports can still contain raw credentials and must be handled as secrets.
 schema. Effective precedence is hard defaults, global runtime defaults, then
 the resolved profile override. Legacy flat parameters remain conversion data;
 profile-bound generation does not silently borrow them.
+`resolveModelRuntimeDefaults()` exposes the canonical built-in/global merge in
+stored units for settings displays; profile overrides remain a separate record.
 
 Important runtime contracts include:
 

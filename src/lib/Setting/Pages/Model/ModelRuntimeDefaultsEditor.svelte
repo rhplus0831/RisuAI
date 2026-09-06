@@ -2,6 +2,7 @@
   import { PencilIcon, RotateCcwIcon, SaveIcon, XIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
+  import Accordion from 'src/lib/UI/Accordion.svelte'
   import {
     normalizeModelRuntimeDefaults,
     type ModelProfileRecordRuntimeOptions,
@@ -18,6 +19,9 @@
   import type { ServerCommandResult } from 'src/ts/server/commands'
   import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import ModelRuntimeOptionsEditor from './ModelRuntimeOptionsEditor.svelte'
+  import ModelGenerationSettings from './ModelGenerationSettings.svelte'
+
+  let { compact = false }: { compact?: boolean } = $props()
 
   let editing = $state(false)
   let saving = $state(false)
@@ -29,7 +33,6 @@
 
   let runtimeDefaults = $derived(normalizeModelRuntimeDefaults(settingsResourceState.value.modelRuntimeDefaults))
   let saveQueued = $derived(pendingMutations.length > 0)
-  let runtimeDefaultCount = $derived(Object.keys(runtimeDefaults).length)
   let draftRuntimeDefaultCount = $derived(Object.keys(normalizeModelRuntimeDefaults(draft)).length)
   let draftChanged = $derived(snapshot(draft) !== snapshot(runtimeDefaults))
 
@@ -178,42 +181,54 @@
 
 <section aria-busy={saving}>
   <fieldset data-model-runtime-defaults-form class="m-0 min-w-0 border-0 p-0" disabled={saving} aria-busy={saving}>
-    <div class="flex flex-wrap items-start justify-between gap-3">
-      <div class="flex flex-col gap-1">
-        <h3 class="text-lg font-semibold">{language.modelProfiles.runtimeDefaultsTitle}</h3>
-        <span class="text-sm text-textcolor2">
-          {runtimeDefaultCount === 0
-            ? language.modelProfiles.runtimeDefaultsEmpty
-            : language.modelProfiles.runtimeDefaultsSummary(runtimeDefaultCount)}
-        </span>
-      </div>
-      {#if editing}
-        <div class="flex gap-2">
-          <Button size="sm" styled="outlined" disabled={saving || draftRuntimeDefaultCount === 0} onclick={resetDraft}>
-            <span class="inline-flex items-center gap-1"
-              ><RotateCcwIcon size={14} />{language.modelProfiles.reset}</span>
-          </Button>
-          <Button size="sm" styled="outlined" disabled={saving} onclick={cancelEditing}>
-            <span class="inline-flex items-center gap-1"><XIcon size={14} />{language.modelProfiles.cancel}</span>
-          </Button>
-          <Button size="sm" disabled={saving || !draftChanged} onclick={saveDefaults}>
-            <span class="inline-flex items-center gap-2"
-              ><SaveIcon size={16} />{saving ? language.modelProfiles.saving : language.modelProfiles.save}</span>
-          </Button>
+    {#if compact && !editing}
+      <Button size="sm" styled="outlined" disabled={saveQueued} onclick={startEditing}>
+        <span class="inline-flex items-center gap-2"
+          ><PencilIcon size={14} />{language.modelProfiles.runtimeDefaultsTitle}</span>
+      </Button>
+    {:else}
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-base font-semibold">{language.modelProfiles.runtimeDefaultsTitle}</h3>
+          <span class="text-sm text-textcolor2">
+            {language.modelProfiles.globalDefaultsDescription}
+          </span>
         </div>
-      {:else}
-        <Button size="sm" styled="outlined" disabled={saveQueued} onclick={startEditing}>
-          <span class="inline-flex items-center gap-2"><PencilIcon size={16} />{language.modelProfiles.edit}</span>
-        </Button>
-      {/if}
-    </div>
+        {#if editing}
+          <div class="flex gap-2">
+            <Button
+              size="sm"
+              styled="outlined"
+              disabled={saving || draftRuntimeDefaultCount === 0}
+              onclick={resetDraft}>
+              <span class="inline-flex items-center gap-1"
+                ><RotateCcwIcon size={14} />{language.modelProfiles.reset}</span>
+            </Button>
+            <Button size="sm" styled="outlined" disabled={saving} onclick={cancelEditing}>
+              <span class="inline-flex items-center gap-1"><XIcon size={14} />{language.modelProfiles.cancel}</span>
+            </Button>
+            <Button size="sm" disabled={saving || !draftChanged} onclick={saveDefaults}>
+              <span class="inline-flex items-center gap-2"
+                ><SaveIcon size={16} />{saving ? language.modelProfiles.saving : language.modelProfiles.save}</span>
+            </Button>
+          </div>
+        {:else}
+          <Button size="sm" styled="outlined" disabled={saveQueued} onclick={startEditing}>
+            <span class="inline-flex items-center gap-2"><PencilIcon size={16} />{language.modelProfiles.edit}</span>
+          </Button>
+        {/if}
+      </div>
+    {/if}
 
     {#if commandError}
       <div class="mt-3 rounded-md border border-draculared p-2 text-sm text-draculared">{commandError}</div>
     {/if}
     {#if editing}
-      <div class="mt-4">
-        <ModelRuntimeOptionsEditor bind:value={draft} scope="defaults" />
+      <div class="mt-4 flex flex-col gap-4">
+        <ModelGenerationSettings bind:value={draft} scope="defaults" />
+        <Accordion styled name={language.modelProfiles.runtimeOverridesTitle}>
+          <ModelRuntimeOptionsEditor bind:value={draft} scope="defaults" advancedOnly />
+        </Accordion>
       </div>
     {/if}
   </fieldset>

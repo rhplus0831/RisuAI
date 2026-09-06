@@ -104,6 +104,9 @@ describe('ModelRuntimeDefaultsEditor', () => {
     buttonByText(language.modelProfiles.edit).click()
     await tick()
 
+    buttonByText(language.modelProfiles.runtimeOverridesTitle).click()
+    await tick()
+
     const stripCoT = target.querySelector<HTMLInputElement>('[data-runtime-strip-cot]')
     if (!stripCoT) throw new Error('Strip CoT checkbox not found')
     expect(stripCoT.checked).toBe(false)
@@ -139,6 +142,9 @@ describe('ModelRuntimeDefaultsEditor', () => {
     component = mount(ModelRuntimeDefaultsEditor, { target })
 
     buttonByText(language.modelProfiles.edit).click()
+    await tick()
+
+    buttonByText(language.modelProfiles.runtimeOverridesTitle).click()
     await tick()
 
     const temperature = runtimeNumberInput(language.modelProfiles.runtimeFields.temperature)
@@ -181,6 +187,9 @@ describe('ModelRuntimeDefaultsEditor', () => {
     component = mount(ModelRuntimeDefaultsEditor, { target })
 
     buttonByText(language.modelProfiles.edit).click()
+    await tick()
+
+    buttonByText(language.modelProfiles.runtimeOverridesTitle).click()
     await tick()
 
     const temperature = runtimeNumberInput(language.modelProfiles.runtimeFields.temperature)

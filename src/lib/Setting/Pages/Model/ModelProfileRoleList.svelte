@@ -182,8 +182,10 @@
 
   function providerModelSummary(role: ModelRole): string {
     const resolved = uiState.resolvedProfiles[role]
-    const requestModel = resolved.requestModel.trim() || language.none
-    return `${providerName(role)} / ${modelName(resolved.modelId)} / ${requestModel}`
+    const parts = [providerName(role), modelName(resolved.modelId)]
+    const requestModel = resolved.providerOptions.requestModel?.trim()
+    if (requestModel && requestModel !== resolved.modelId) parts.push(requestModel)
+    return parts.join(' · ')
   }
 
   function statusLabel(role: ModelRole): string {
@@ -345,13 +347,15 @@
     {#each MODEL_ROLES as role (role)}
       {@const binding = bindingFor(role)}
       {@const inheritedSource = modelRoleProfileInheritSource(role)}
-      <article class="risu-card flex flex-col gap-2 text-sm">
+      <article class="flex flex-col gap-2 rounded-md border border-darkborderc p-3 text-sm">
         <div class="flex flex-wrap items-center gap-2">
           <span class="font-medium">{roleLabel(role)}</span>
-          <span class="rounded-sm bg-white/10 px-2 py-1 text-xs">
-            {statusLabel(role)}
-          </span>
-          <span class="ml-auto text-xs text-textcolor2">{fallbackCount(role)}</span>
+          {#if uiState.roleStatuses[role].bucket !== 'ready'}
+            <span class="text-xs text-yellow-300">{statusLabel(role)}</span>
+          {/if}
+          {#if uiState.resolvedProfiles[role].fallbacks.length > 0}
+            <span class="ml-auto text-xs text-textcolor2">{fallbackCount(role)}</span>
+          {/if}
         </div>
         <span class="text-xs text-textcolor2">{roleDescription(role)}</span>
         <div class="flex flex-wrap gap-2">
@@ -396,8 +400,8 @@
             </div>
           {/if}
         </div>
-        <span class="break-all text-xs text-textcolor2">
-          {effectiveProfileName(role)} ({uiState.resolvedProfiles[role].profileId}) · {providerModelSummary(role)}
+        <span class="break-words text-xs text-textcolor2">
+          {effectiveProfileName(role)} · {providerModelSummary(role)}
           {#if binding.mode === 'inherit'}
             · {inheritedSourceLabel(role)}{/if}
         </span>

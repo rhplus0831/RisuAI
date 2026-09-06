@@ -1,7 +1,27 @@
 import { mount, tick, unmount } from 'svelte'
+import { SvelteMap } from 'svelte/reactivity'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { language } from 'src/lang'
 import ModelProfileEditorDrawer from './ModelProfileEditorDrawer.svelte'
+import { finishPendingModelMutation, getPendingModelMutations } from 'src/ts/model/modelProfileMutations'
+import type { ProviderCredentialRecord } from 'src/ts/model/providerCredentialRecords'
+import { MASKED_PROVIDER_SECRET } from 'src/ts/providerSecretMask'
+
+const credentialMocks = vi.hoisted(() => ({ create: vi.fn() }))
+const settlements = vi.hoisted(() => new Map<string, (result: 'accepted' | 'discarded') => void>())
+vi.mock('src/ts/server/durableMutationDispatch', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/ts/server/durableMutationDispatch')>()),
+  registerDurableMutationSettlementListener: vi.fn(
+    (id: string, listener: (result: 'accepted' | 'discarded') => void) => {
+      settlements.set(id, listener)
+      return () => settlements.delete(id)
+    },
+  ),
+}))
+vi.mock('src/ts/model/modelProfileMutations', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/ts/model/modelProfileMutations')>()),
+  createProviderCredentialDurably: credentialMocks.create,
+}))
 
 vi.mock('src/ts/model/llmgateway', () => ({
   getLLMGatewayModels: vi.fn().mockResolvedValue([]),
@@ -35,6 +55,13 @@ let target: HTMLElement
 let component: MountedComponent | undefined
 
 beforeEach(() => {
+  credentialMocks.create.mockReset()
+  credentialMocks.create.mockResolvedValue({
+    status: 'accepted',
+    result: { status: 'ok', credentialId: 'new-credential' },
+  })
+  for (const pending of getPendingModelMutations('provider-credentials')) finishPendingModelMutation(pending.token)
+  settlements.clear()
   target = document.createElement('div')
   document.body.appendChild(target)
 })
@@ -45,6 +72,8 @@ afterEach(() => {
     component = undefined
   }
   target.remove()
+  for (const pending of getPendingModelMutations('provider-credentials')) finishPendingModelMutation(pending.token)
+  vi.restoreAllMocks()
 })
 
 describe('ModelProfileEditorDrawer credentials', () => {
@@ -66,7 +95,6 @@ describe('ModelProfileEditorDrawer credentials', () => {
         statusText: 'Ready',
         onSave,
         onCancel: vi.fn(),
-        onManageCredentials: vi.fn(),
       },
     })
     await tick()
@@ -120,7 +148,6 @@ describe('ModelProfileEditorDrawer credentials', () => {
         statusText: 'Ready',
         onSave,
         onCancel: vi.fn(),
-        onManageCredentials: vi.fn(),
       },
     })
     await tick()
@@ -182,9 +209,13 @@ describe('ModelProfileEditorDrawer credentials', () => {
         statusText: 'Ready',
         onSave,
         onCancel: vi.fn(),
-        onManageCredentials: vi.fn(),
       },
     })
+    await tick()
+
+    Array.from(target.querySelectorAll('button'))
+      .find((button) => button.textContent?.includes(language.modelProfiles.runtimeOverridesTitle))
+      ?.click()
     await tick()
 
     expect(target.querySelector<HTMLSelectElement>('[data-llm-gateway-reasoning-effort]')?.value).toBe('max')
@@ -208,5 +239,192 @@ describe('ModelProfileEditorDrawer credentials', () => {
       ...profile,
       name: 'Gateway Profile renamed',
     })
+  })
+})
+
+async function flush(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+  await tick()
+}
+
+function clickText(label: string, within: ParentNode = target): void {
+  const button = Array.from(within.querySelectorAll('button')).find((entry) => entry.textContent?.trim() === label)
+  if (!button) throw new Error(`Button not found: ${label}`)
+  button.click()
+}
+
+async function input(element: HTMLInputElement, value: string): Promise<void> {
+  element.value = value
+  element.dispatchEvent(new Event('input', { bubbles: true }))
+  await tick()
+}
+
+async function openInlineCredential(providerId = 'openai') {
+  const credentials = new SvelteMap<string, ProviderCredentialRecord[]>([['rows', []]])
+  const onSave = vi.fn()
+  const onCancel = vi.fn()
+  const profile = {
+    id: 'inline-profile',
+    name: 'Original name',
+    providerId,
+    modelId: providerId === 'vertex' ? 'gemini-2.5-pro-vertex' : 'gpt-5',
+  }
+  component = mount(ModelProfileEditorDrawer, {
+    target,
+    props: {
+      mode: 'edit',
+      profile,
+      profiles: [profile],
+      get credentials() {
+        return credentials.get('rows')!
+      },
+      runtimeDefaults: { maxResponse: 4096 },
+      statusText: 'Incomplete',
+      onSave,
+      onCancel,
+    },
+  })
+  await tick()
+  const name = target.querySelector<HTMLInputElement>('[data-model-profile-editable-form] > label input')!
+  await input(name, 'My edited model')
+  target.querySelector<HTMLInputElement>('[data-runtime-default="maxResponse"]')!.click()
+  await tick()
+  await input(target.querySelector<HTMLInputElement>('[data-runtime-field="maxResponse"]')!, '8192')
+  const connection = target.querySelector<HTMLDetailsElement>('[data-model-connection]')!
+  connection.open = true
+  connection.dispatchEvent(new Event('toggle'))
+  clickText(language.modelProfiles.createNewCredential)
+  await tick()
+  const editor = target.querySelector<HTMLElement>('[data-provider-credential-editor]')!
+  const fields = editor.querySelectorAll<HTMLInputElement>('input:not([type="password"])')
+  await input(fields[0], 'Inline key')
+  if (providerId === 'vertex') await input(fields[1], 'vertex@example.com')
+  await input(editor.querySelector<HTMLInputElement>('input[type="password"]')!, 'test-secret-material')
+  return { credentials, onSave, onCancel, name, editor }
+}
+
+describe('inline credential creation', () => {
+  it.each(['openai', 'vertex'])(
+    'keeps the %s model draft and selects a new credential after resource confirmation',
+    async (provider) => {
+      const confirm = vi.fn(() => false)
+      vi.stubGlobal('confirm', confirm)
+      const state = await openInlineCredential(provider)
+      clickText(language.modelProfiles.credentialSaveAndUse, state.editor)
+      await flush()
+      expect(state.onCancel).not.toHaveBeenCalled()
+      expect(confirm).not.toHaveBeenCalled()
+      expect(state.name.value).toBe('My edited model')
+      expect(state.editor.textContent).toContain(language.modelProfiles.credentialAwaitingProjection)
+      expect(target.querySelector<HTMLSelectElement>('[data-provider-credential-picker] select')?.value).toBe('')
+      expect(credentialMocks.create).toHaveBeenCalledWith(
+        provider === 'vertex'
+          ? {
+              name: 'Inline key',
+              type: 'vertexServiceAccount',
+              vertex: { clientEmail: 'vertex@example.com', privateKey: 'test-secret-material' },
+            }
+          : { name: 'Inline key', type: 'apiKey', apiKey: 'test-secret-material' },
+      )
+
+      state.credentials.set('rows', [
+        provider === 'vertex'
+          ? {
+              id: 'new-credential',
+              name: 'Inline key',
+              type: 'vertexServiceAccount',
+              vertex: { clientEmail: 'vertex@example.com', privateKey: MASKED_PROVIDER_SECRET },
+            }
+          : { id: 'new-credential', name: 'Inline key', type: 'apiKey', apiKey: MASKED_PROVIDER_SECRET },
+      ])
+      await flush()
+      expect(target.querySelector('[data-provider-credential-editor]')).toBeNull()
+      expect(target.querySelector<HTMLSelectElement>('[data-provider-credential-picker] select')?.value).toBe(
+        'new-credential',
+      )
+      expect(target.querySelector<HTMLInputElement>('[data-runtime-field="maxResponse"]')?.value).toBe('8192')
+      clickText(language.modelProfiles.save)
+      await flush()
+      expect(state.onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'My edited model',
+          runtimeOptions: { maxResponse: 8192 },
+          providerOptions: expect.objectContaining({ credentialId: 'new-credential' }),
+        }),
+      )
+      expect(JSON.stringify(state.onSave.mock.calls)).not.toContain('test-secret-material')
+      expect(JSON.stringify(state.onSave.mock.calls)).not.toContain(MASKED_PROVIDER_SECRET)
+    },
+  )
+
+  it('waits for a queued credential to appear and ignores unrelated new credentials', async () => {
+    credentialMocks.create.mockResolvedValue({
+      status: 'queued',
+      result: { status: 'unavailable' },
+      mutationId: 'inline-queued',
+    })
+    const state = await openInlineCredential()
+    clickText(language.modelProfiles.credentialSaveAndUse, state.editor)
+    await flush()
+    expect(state.editor.textContent).toContain(language.modelProfiles.commandQueued)
+    const cancel = Array.from(state.editor.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === language.modelProfiles.cancel,
+    )!
+    expect(cancel.disabled).toBe(true)
+    cancel.click()
+    await tick()
+    expect(target.querySelector('[data-provider-credential-editor]')).toBe(state.editor)
+    state.credentials.set('rows', [
+      { id: 'unrelated', name: 'Another key', type: 'apiKey', apiKey: MASKED_PROVIDER_SECRET },
+    ])
+    await flush()
+    expect(target.querySelector('[data-provider-credential-editor]')).not.toBeNull()
+    expect(target.querySelector<HTMLSelectElement>('[data-provider-credential-picker] select')?.value).toBe('')
+    settlements.get('inline-queued')?.('accepted')
+    state.credentials.set('rows', [
+      ...state.credentials.get('rows')!,
+      { id: 'replayed-key', name: 'Inline key', type: 'apiKey', apiKey: MASKED_PROVIDER_SECRET },
+    ])
+    await flush()
+    expect(target.querySelector('[data-provider-credential-editor]')).toBeNull()
+    expect(target.querySelector<HTMLSelectElement>('[data-provider-credential-picker] select')?.value).toBe(
+      'replayed-key',
+    )
+    expect(state.name.value).toBe('My edited model')
+    expect(getPendingModelMutations('provider-credentials')).toEqual([])
+  })
+
+  it('keeps both drafts editable after a credential save fails', async () => {
+    credentialMocks.create.mockResolvedValue({
+      status: 'failed',
+      result: { status: 'error', error: 'Could not save key' },
+    })
+    const state = await openInlineCredential()
+    clickText(language.modelProfiles.credentialSaveAndUse, state.editor)
+    await flush()
+    expect(state.editor.textContent).toContain('Could not save key')
+    expect(state.name.value).toBe('My edited model')
+    expect(state.onCancel).not.toHaveBeenCalled()
+    expect(state.editor.querySelector<HTMLFieldSetElement>('fieldset')?.disabled).toBe(false)
+    expect(getPendingModelMutations('provider-credentials')).toEqual([])
+  })
+
+  it('releases a discarded queued key without losing the model draft', async () => {
+    credentialMocks.create.mockResolvedValue({
+      status: 'queued',
+      result: { status: 'unavailable' },
+      mutationId: 'inline-discarded',
+    })
+    const state = await openInlineCredential()
+    clickText(language.modelProfiles.credentialSaveAndUse, state.editor)
+    await flush()
+    settlements.get('inline-discarded')?.('discarded')
+    await flush()
+    expect(state.editor.textContent).toContain(language.modelProfiles.commandReplayDiscarded)
+    expect(state.editor.querySelector<HTMLFieldSetElement>('fieldset')?.disabled).toBe(false)
+    expect(state.name.value).toBe('My edited model')
+    expect(state.onCancel).not.toHaveBeenCalled()
+    expect(getPendingModelMutations('provider-credentials')).toEqual([])
   })
 })
