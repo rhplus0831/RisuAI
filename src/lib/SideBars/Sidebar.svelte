@@ -522,6 +522,9 @@
     markChatRead(item.chatId)
     reseter()
     navigate(characterRoutePath(item.characterId, item.chatId))
+    if ($DynamicGUI) {
+      sideBarClosing.set(true)
+    }
   }
 
   function openNarrowPinnedChat(item: PinnedChatItem): void {
