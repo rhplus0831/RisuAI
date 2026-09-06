@@ -13,6 +13,9 @@ import {
 } from './realmImport/characterCard.js'
 import { CONTENT_TYPE_EXTENSIONS, ValidationError, addAsset, type AddAssetResult } from './repository.js'
 
+import type { LocalCharacterImportProgress } from '@risuai/protocol/local-file-import'
+import { setImmediate as yieldToIo } from 'node:timers/promises'
+
 type JsonRecord = Record<string, unknown>
 
 const CHARACTER_CARD_MAX_ENTRY_BYTES = 50 * 1024 * 1024
@@ -77,7 +80,16 @@ export async function importLocalCharacterFile(args: {
   allowLowLevelAccess?: boolean
   password?: string
   maxExpandedBytes?: number
+  reportProgress?: (progress: LocalCharacterImportProgress) => void
+  signal?: AbortSignal
 }): Promise<LocalCharacterFileImportResult> {
+  const reportStage = async (phase: LocalCharacterImportProgress['phase']) => {
+    args.signal?.throwIfAborted()
+    args.reportProgress?.({ phase })
+    if (args.reportProgress) await yieldToIo()
+    args.signal?.throwIfAborted()
+  }
+  await reportStage('read')
   const extension = fileExtension(args.fileName)
   const report: LocalFileImportReport = { droppedArchiveEntries: [], droppedInlineAssets: [] }
 
@@ -91,7 +103,11 @@ export async function importLocalCharacterFile(args: {
   }
 
   if (extension === 'charx' || extension === 'jpg' || extension === 'jpeg') {
-    const metadata = await readCharxMetadata(args.filePath, args.maxExpandedBytes)
+    const totalBytes = fs.statSync(args.filePath).size
+    const metadata = await readCharxMetadata(args.filePath, args.maxExpandedBytes, (completedBytes) => {
+      args.signal?.throwIfAborted()
+      args.reportProgress?.({ phase: 'read', completedBytes, totalBytes })
+    })
     report.droppedArchiveEntries.push(...metadata.droppedEntries)
     const card = metadata.card
     removeDroppedCardAssets(card, metadata.droppedEntries)
@@ -113,11 +129,15 @@ export async function importLocalCharacterFile(args: {
 
     // Check the confirmation boundary before writing any packaged assets.
     assertLowLevelAccessAllowed(card, args.allowLowLevelAccess)
+    await reportStage('assets')
     const assetDict = await persistCharxAssets(args.filePath, {
       db: args.db,
       dataDir: args.dataDir,
       maxExpandedBytes: args.maxExpandedBytes,
       droppedEntries: report.droppedArchiveEntries,
+      reportProgress: args.reportProgress,
+      signal: args.signal,
+      totalBytes,
     })
     if (metadata.moduleBytes) {
       parseRisum(metadata.moduleBytes, {
@@ -138,11 +158,18 @@ export async function importLocalCharacterFile(args: {
     const parsed = await parsePngCharacterCard(bytes, args.password)
     dropOversizedInlineAssets(parsed.card, report)
     assertLowLevelAccessAllowed(parsed.card, args.allowLowLevelAccess)
+    await reportStage('assets')
     const assetDict: Record<string, string> = {}
+    let completedAssets = 0
     for (const asset of parsed.embeddedAssets) {
+      args.signal?.throwIfAborted()
       assetDict[asset.key] = persistAsset(args.db, args.dataDir, asset.bytes, 'asset.png').entry.id
+      args.reportProgress?.({ phase: 'assets', completedAssets: ++completedAssets })
+      if (args.reportProgress) await yieldToIo()
     }
+    args.signal?.throwIfAborted()
     const mainImageId = persistAsset(args.db, args.dataDir, parsed.imageBytes, 'character.png').entry.id
+    args.reportProgress?.({ phase: 'assets', completedAssets: ++completedAssets })
     return {
       character: await convertLocalCard(parsed.card, args, assetDict, mainImageId, true),
       report,
@@ -243,11 +270,16 @@ async function convertLocalCard(
     db: DatabaseSync
     dataDir: string
     allowLowLevelAccess?: boolean
+    reportProgress?: (progress: LocalCharacterImportProgress) => void
+    signal?: AbortSignal
   },
   assetDict: Record<string, string>,
   mainImageId?: string,
   allowLooseOffSpec = false,
 ): Promise<JsonRecord> {
+  args.signal?.throwIfAborted()
+  args.reportProgress?.({ phase: 'convert' })
+  if (args.reportProgress) await yieldToIo()
   const card = readRecord(rawCard, 'card')
   if (card.spec !== 'chara_card_v2' && card.spec !== 'chara_card_v3') {
     if (!allowLooseOffSpec && !isImportableOffSpecCard(card)) {
@@ -260,7 +292,12 @@ async function convertLocalCard(
     mainImageId,
     allowLowLevelAccess: args.allowLowLevelAccess,
     assetDict,
-    storeAsset: async (source) => storeLocalCardAsset(args.db, args.dataDir, source),
+    storeAsset: async (source) => {
+      args.signal?.throwIfAborted()
+      const id = await storeLocalCardAsset(args.db, args.dataDir, source)
+      if (args.reportProgress) await yieldToIo()
+      return id
+    },
   })
 }
 
@@ -397,43 +434,51 @@ function normalizeModuleAssets(value: unknown): [string, string, string][] {
   })
 }
 
-async function readCharxMetadata(filePath: string, maxExpandedBytes: number | undefined): Promise<ParsedCharxMetadata> {
+async function readCharxMetadata(
+  filePath: string,
+  maxExpandedBytes: number | undefined,
+  onBytes?: (bytes: number) => void,
+): Promise<ParsedCharxMetadata> {
   let cardBytes: Buffer | null = null
   let moduleBytes: Buffer | null = null
   const droppedEntries: string[] = []
   let totalExpandedBytes = 0
 
-  await streamZip(filePath, (file, fail) => {
-    const collectCard = file.name === 'card.json'
-    const collectModule = file.name === 'module.risum'
-    if (!collectCard && !collectModule) {
-      file.terminate()
-      return
-    }
-    if ((file.originalSize ?? 0) > CHARACTER_CARD_MAX_ENTRY_BYTES) {
-      droppedEntries.push(file.name)
-      return
-    }
-    const chunks: Buffer[] = []
-    let entryBytes = 0
-    file.ondata = (error, data, final) => {
-      if (error) return fail(error)
-      entryBytes += data.byteLength
-      totalExpandedBytes += data.byteLength
-      if (entryBytes > CHARACTER_CARD_MAX_ENTRY_BYTES || exceedsFiniteLimit(totalExpandedBytes, maxExpandedBytes)) {
-        if (!droppedEntries.includes(file.name)) droppedEntries.push(file.name)
+  await streamZip(
+    filePath,
+    (file, fail) => {
+      const collectCard = file.name === 'card.json'
+      const collectModule = file.name === 'module.risum'
+      if (!collectCard && !collectModule) {
         file.terminate()
         return
       }
-      if (data.byteLength > 0) chunks.push(Buffer.from(data))
-      if (final) {
-        const bytes = Buffer.concat(chunks, entryBytes)
-        if (collectCard) cardBytes = bytes
-        else moduleBytes = bytes
+      if ((file.originalSize ?? 0) > CHARACTER_CARD_MAX_ENTRY_BYTES) {
+        droppedEntries.push(file.name)
+        return
       }
-    }
-    file.start()
-  })
+      const chunks: Buffer[] = []
+      let entryBytes = 0
+      file.ondata = (error, data, final) => {
+        if (error) return fail(error)
+        entryBytes += data.byteLength
+        totalExpandedBytes += data.byteLength
+        if (entryBytes > CHARACTER_CARD_MAX_ENTRY_BYTES || exceedsFiniteLimit(totalExpandedBytes, maxExpandedBytes)) {
+          if (!droppedEntries.includes(file.name)) droppedEntries.push(file.name)
+          file.terminate()
+          return
+        }
+        if (data.byteLength > 0) chunks.push(Buffer.from(data))
+        if (final) {
+          const bytes = Buffer.concat(chunks, entryBytes)
+          if (collectCard) cardBytes = bytes
+          else moduleBytes = bytes
+        }
+      }
+      file.start()
+    },
+    onBytes,
+  )
 
   if (!cardBytes) throw new ValidationError('Character archive must include card.json')
   const card = readRecord(parseJsonBytes(cardBytes, 'card.json'), 'card.json')
@@ -448,51 +493,65 @@ async function persistCharxAssets(
     dataDir: string
     maxExpandedBytes?: number
     droppedEntries: string[]
+    reportProgress?: (progress: LocalCharacterImportProgress) => void
+    signal?: AbortSignal
+    totalBytes: number
   },
 ): Promise<Record<string, string>> {
   const assetDict: Record<string, string> = {}
   let totalExpandedBytes = 0
-  await streamZip(filePath, (file, fail) => {
-    const shouldPersist = file.name !== 'card.json' && file.name !== 'module.risum' && !file.name.endsWith('.json')
-    if (!shouldPersist) {
-      file.terminate()
-      return
-    }
-    if ((file.originalSize ?? 0) > CHARACTER_CARD_MAX_ENTRY_BYTES) {
-      if (!options.droppedEntries.includes(file.name)) options.droppedEntries.push(file.name)
-      return
-    }
-    const chunks: Buffer[] = []
-    let entryBytes = 0
-    let dropped = false
-    file.ondata = (error, data, final) => {
-      if (error) return fail(error)
-      entryBytes += data.byteLength
-      totalExpandedBytes += data.byteLength
-      if (
-        entryBytes > CHARACTER_CARD_MAX_ENTRY_BYTES ||
-        exceedsFiniteLimit(totalExpandedBytes, options.maxExpandedBytes)
-      ) {
-        dropped = true
-        if (!options.droppedEntries.includes(file.name)) options.droppedEntries.push(file.name)
+  let completedAssets = 0
+  await streamZip(
+    filePath,
+    (file, fail) => {
+      const shouldPersist = file.name !== 'card.json' && file.name !== 'module.risum' && !file.name.endsWith('.json')
+      if (!shouldPersist) {
         file.terminate()
         return
       }
-      if (data.byteLength > 0) chunks.push(Buffer.from(data))
-      if (final && !dropped) {
-        const bytes = Buffer.concat(chunks, entryBytes)
-        if (bytes.length === 0) return fail(new ValidationError(`Character archive asset is empty: ${file.name}`))
-        assetDict[file.name] = persistAsset(options.db, options.dataDir, bytes, file.name).entry.id
+      if ((file.originalSize ?? 0) > CHARACTER_CARD_MAX_ENTRY_BYTES) {
+        if (!options.droppedEntries.includes(file.name)) options.droppedEntries.push(file.name)
+        return
       }
-    }
-    file.start()
-  })
+      const chunks: Buffer[] = []
+      let entryBytes = 0
+      let dropped = false
+      file.ondata = (error, data, final) => {
+        if (error) return fail(error)
+        entryBytes += data.byteLength
+        totalExpandedBytes += data.byteLength
+        if (
+          entryBytes > CHARACTER_CARD_MAX_ENTRY_BYTES ||
+          exceedsFiniteLimit(totalExpandedBytes, options.maxExpandedBytes)
+        ) {
+          dropped = true
+          if (!options.droppedEntries.includes(file.name)) options.droppedEntries.push(file.name)
+          file.terminate()
+          return
+        }
+        if (data.byteLength > 0) chunks.push(Buffer.from(data))
+        if (final && !dropped) {
+          const bytes = Buffer.concat(chunks, entryBytes)
+          if (bytes.length === 0) return fail(new ValidationError(`Character archive asset is empty: ${file.name}`))
+          options.signal?.throwIfAborted()
+          assetDict[file.name] = persistAsset(options.db, options.dataDir, bytes, file.name).entry.id
+          completedAssets += 1
+        }
+      }
+      file.start()
+    },
+    (completedBytes) => {
+      options.signal?.throwIfAborted()
+      options.reportProgress?.({ phase: 'assets', completedBytes, totalBytes: options.totalBytes, completedAssets })
+    },
+  )
   return assetDict
 }
 
 async function streamZip(
   filePath: string,
   onFile: (file: fflate.UnzipFile, fail: (error: Error) => void) => void,
+  onBytes?: (bytes: number) => void,
 ): Promise<void> {
   let parseError: Error | null = null
   const fail = (error: Error) => {
@@ -509,9 +568,13 @@ async function streamZip(
         fail(error instanceof Error ? error : new Error(String(error)))
       }
     }
+    let completedBytes = 0
     for await (const chunk of fs.createReadStream(filePath, { highWaterMark: CHARACTER_CARD_STREAM_CHUNK_BYTES })) {
       if (parseError) break
       unzip.push(chunk, false)
+      completedBytes += chunk.byteLength
+      onBytes?.(completedBytes)
+      if (onBytes) await yieldToIo()
     }
     if (!parseError) unzip.push(new Uint8Array(), true)
     if (parseError) throw parseError

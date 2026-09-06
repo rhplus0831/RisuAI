@@ -63,6 +63,31 @@ afterEach(async () => {
   setDatabaseLite({} as never)
 })
 
+describe('import progress display', () => {
+  it('shows measured progress and switches to an indeterminate server stage', async () => {
+    alertStore.set({
+      type: 'progress',
+      msg: language.characterImportProgress.upload,
+      progress: 50,
+      submsg: 'bot.charx\n1.00 MiB / 2.00 MiB',
+    })
+    await tick()
+    expect(document.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('50')
+    expect(document.querySelector('[role="status"]')?.textContent).toContain('50%')
+    expect(target.textContent).toContain('bot.charx')
+    alertStore.set({
+      type: 'progress',
+      msg: language.characterImportProgress.commit,
+      progress: null,
+      submsg: 'bot.charx',
+    })
+    await tick()
+    expect(document.querySelector('[role="progressbar"]')?.hasAttribute('aria-valuenow')).toBe(false)
+    expect(document.querySelector('[role="status"]')?.textContent).toContain(language.characterImportProgress.commit)
+    expect(document.querySelector('[role="status"]')?.textContent).toContain(language.characterImportProgress.working)
+  })
+})
+
 describe('AlertComp stack trace translation', () => {
   beforeEach(() => {
     translateStackTrace.mockReset()

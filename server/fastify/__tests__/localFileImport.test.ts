@@ -130,6 +130,16 @@ function characterArchive(mainImage: Uint8Array): Uint8Array {
   )
 }
 
+function readImportFrames(text: string) {
+  return text
+    .trim()
+    .split('\n\n')
+    .map((block) => {
+      const [event, data] = block.split('\n')
+      return { event: event.slice('event: '.length), data: JSON.parse(data.slice('data: '.length)) }
+    })
+}
+
 let harness: Harness
 let assertion: string
 
@@ -151,7 +161,7 @@ afterEach(async () => {
 })
 
 describe('local character and module file imports', () => {
-  it('uploads one CharX file, persists its assets, and creates the character server-side', async () => {
+  it.each([false, true])('uploads one CharX file and creates the character (progress: %s)', async (streaming) => {
     const mainImage = Buffer.from('server-side character image')
     const upload = multipartFile(characterArchive(mainImage), 'character.charx')
     const response = await harness.app.inject({
@@ -159,6 +169,7 @@ describe('local character and module file imports', () => {
       url: `/api/v1/import/character-card?baseRevision=${currentRevision(harness.dataDir)}`,
       headers: {
         'content-type': upload.contentType,
+        ...(streaming ? { accept: 'text/event-stream' } : {}),
         'risu-auth': assertion,
         'risu-writer-session': 'writer-a',
       },
@@ -166,7 +177,25 @@ describe('local character and module file imports', () => {
     })
 
     expect(response.statusCode, response.body).toBe(200)
-    expect(response.json()).toMatchObject({
+    let body = response.json.bind(response)
+    if (streaming) {
+      expect(response.headers['content-type']).toContain('text/event-stream')
+      expect(response.headers['x-accel-buffering']).toBe('no')
+      const frames = readImportFrames(response.body)
+      const progress = frames.filter((frame) => frame.event === 'progress').map((frame) => frame.data)
+      expect([...new Set(progress.map((frame) => frame.phase))]).toEqual(['read', 'assets', 'convert', 'commit'])
+      expect(progress).toContainEqual(
+        expect.objectContaining({
+          phase: 'assets',
+          completedAssets: 1,
+          completedBytes: characterArchive(mainImage).byteLength,
+          totalBytes: characterArchive(mainImage).byteLength,
+        }),
+      )
+      expect(frames.at(-1)).toMatchObject({ event: 'result', data: { statusCode: 200 } })
+      body = () => frames.at(-1)!.data.body
+    }
+    expect(body()).toMatchObject({
       event: { type: 'character.created', resource: 'character' },
       characterId: expect.any(String),
       importReport: { droppedArchiveEntries: [], droppedInlineAssets: [] },
@@ -179,6 +208,62 @@ describe('local character and module file imports', () => {
       image: createHash('sha256').update(mainImage).digest('hex'),
     })
     expect(state.assets).toHaveLength(1)
+  })
+
+  it('preserves streamed confirmation, validation and revision-conflict results', async () => {
+    const headers = { 'risu-auth': assertion, 'risu-writer-session': 'writer-a', accept: 'text/event-stream' }
+    const card = {
+      spec: 'chara_card_v3',
+      data: { name: 'Confirmed bot', extensions: { risuai: { lowLevelAccess: true } } },
+    }
+    const upload = multipartFile(Buffer.from(JSON.stringify(card)), 'character.json')
+    const baseRevision = currentRevision(harness.dataDir)
+    const challenge = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/import/character-card?baseRevision=${baseRevision}`,
+      headers: { ...headers, 'content-type': upload.contentType },
+      payload: upload.payload,
+    })
+    const challengeResult = readImportFrames(challenge.body).at(-1)!.data
+    expect(challengeResult).toMatchObject({
+      statusCode: 409,
+      body: { code: 'low_level_access_confirmation_required', pendingImportToken: expect.any(String) },
+    })
+    expect(persistedState(harness.dataDir).database.characters).toHaveLength(0)
+    const accepted = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/character-card',
+      headers,
+      payload: { baseRevision, pendingImportToken: challengeResult.body.pendingImportToken, allowLowLevelAccess: true },
+    })
+    expect(readImportFrames(accepted.body).at(-1)).toMatchObject({
+      event: 'result',
+      data: { statusCode: 200, body: { characterId: expect.any(String) } },
+    })
+
+    const malformed = multipartFile(Buffer.from('{bad json'), 'character.json')
+    const failed = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/import/character-card?baseRevision=${currentRevision(harness.dataDir)}`,
+      headers: { ...headers, 'content-type': malformed.contentType },
+      payload: malformed.payload,
+    })
+    expect(readImportFrames(failed.body).at(-1)).toMatchObject({
+      event: 'result',
+      data: { statusCode: 400, body: { error: expect.any(String) } },
+    })
+    const stale = multipartFile(characterArchive(Buffer.from('image')), 'character.charx')
+    const conflict = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/import/character-card?baseRevision=${baseRevision}`,
+      headers: { ...headers, 'content-type': stale.contentType },
+      payload: stale.payload,
+    })
+    expect(readImportFrames(conflict.body).at(-1)).toMatchObject({
+      event: 'result',
+      data: { statusCode: 409, body: { currentRevision: currentRevision(harness.dataDir) } },
+    })
+    expect(persistedState(harness.dataDir).database.characters).toHaveLength(1)
   })
 
   it('keeps a low-level .risum on the server, then creates it after token confirmation', async () => {

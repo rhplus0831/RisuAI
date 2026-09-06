@@ -260,6 +260,15 @@ confirmation retry sends JSON only and does not upload or unpack the file
 again. The older browser `CharXImporter` remains for non-picker compatibility
 callers and export-adjacent tests.
 
+Local character-card callers can opt into an SSE response with
+`Accept: text/event-stream`. The upload remains a single multipart request;
+XHR upload events drive byte progress, then server `progress` frames report
+reading, asset import, conversion, and saving. Archive passes report measured
+bytes and saved-asset counts. The terminal `result` frame carries the ordinary
+status code and JSON body, including confirmation tokens and conflicts; it is
+the acceptance boundary. Callers without SSE keep the JSON response. The
+browser refreshes command projections before closing its progress dialog.
+
 Local character-card asset writes and the character mutation now run in the
 same server request. Content-addressed assets written before a later validation
 or revision conflict are not deleted eagerly; unreferenced bytes remain eligible

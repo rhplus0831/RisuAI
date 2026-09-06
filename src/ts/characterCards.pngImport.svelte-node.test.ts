@@ -10,6 +10,7 @@ const dbState = vi.hoisted(() => ({
 
 const alertState = vi.hoisted(() => ({
   alertClear: vi.fn(),
+  alertProgress: vi.fn(),
   alertConfirm: vi.fn(async () => true),
   alertStoreSet: vi.fn(),
   alertError: vi.fn(),
@@ -62,7 +63,7 @@ vi.mock('./alert', () => ({
   alertInput: vi.fn(async () => ''),
   alertMd: vi.fn(),
   alertNormal: alertState.alertNormal,
-  alertProgress: vi.fn(),
+  alertProgress: alertState.alertProgress,
   alertStore: {
     set: alertState.alertStoreSet,
   },
@@ -156,6 +157,17 @@ vi.mock('src/lang', () => ({
     errors: {
       noData: 'No data',
       wrongPassword: 'Wrong password',
+    },
+    characterImportProgress: {
+      prepare: 'Preparing',
+      upload: 'Uploading',
+      processing: 'Processing',
+      read: 'Reading',
+      assets: 'Importing assets',
+      convert: 'Converting',
+      commit: 'Saving',
+      refresh: 'Refreshing',
+      assetsSaved: '{{count}} assets saved',
     },
     importedCharacter: 'Imported character',
     characterImportQueued: 'Imported character queued',
@@ -331,6 +343,7 @@ beforeEach(() => {
     },
   })
   alertState.alertStoreSet.mockClear()
+  alertState.alertProgress.mockClear()
   alertState.alertClear.mockClear()
   alertState.alertConfirm.mockClear()
   alertState.alertError.mockClear()
@@ -784,6 +797,46 @@ describe('PNG character card import', () => {
     expect(characterCommandState.dispatchCreateCharacter).toHaveBeenCalledWith(imported, expect.any(Object))
   })
 
+  it('shows upload bytes and server stages with the current filename', async () => {
+    filePickerState.selectFileByDom.mockResolvedValueOnce([
+      Object.assign(new Blob(['card']), { name: 'Progress.charx' }),
+    ])
+    localFileImportState.importLocalCharacterFileFromServer.mockImplementationOnce(async ({ onProgress }) => {
+      onProgress({ phase: 'upload', completedBytes: 1048576, totalBytes: 2097152 })
+      expect(alertState.alertProgress).toHaveBeenLastCalledWith('Uploading', 50, 'Progress.charx\n1.00 MiB / 2.00 MiB')
+      onProgress({ phase: 'assets', completedAssets: 3 })
+      expect(alertState.alertProgress).toHaveBeenLastCalledWith(
+        'Importing assets',
+        null,
+        'Progress.charx\n3 assets saved',
+      )
+      onProgress({ phase: 'commit' })
+      expect(alertState.alertProgress).toHaveBeenLastCalledWith('Saving', null, 'Progress.charx')
+      return { status: 'error', error: 'Server rejected card' }
+    })
+    await expect(importCharacter()).resolves.toMatchObject({ status: 'failed' })
+    expect(alertState.alertError).toHaveBeenCalledWith(expect.stringContaining('Server rejected card'))
+    expect(alertState.alertNormal).not.toHaveBeenCalled()
+  })
+
+  it('clears the progress dialog before confirmation and keeps progress on the JSON retry', async () => {
+    filePickerState.selectFileByDom.mockResolvedValueOnce([Object.assign(new Blob(['card']), { name: 'Confirm.json' })])
+    localFileImportState.importLocalCharacterFileFromServer.mockResolvedValueOnce({
+      status: 'low-level-access',
+      pendingImportToken: 'pending',
+    })
+    await expect(importCharacter()).resolves.toMatchObject({ status: 'accepted' })
+    expect(alertState.alertClear.mock.invocationCallOrder[0]).toBeLessThan(
+      alertState.alertConfirm.mock.invocationCallOrder[0],
+    )
+    expect(localFileImportState.importLocalCharacterFileFromServer.mock.calls[1][0]).toEqual({
+      pendingImportToken: 'pending',
+      password: undefined,
+      allowLowLevelAccess: true,
+      onProgress: expect.any(Function),
+    })
+  })
+
   it('surfaces the server CharX salvage report through the importCharacter alert boundary', async () => {
     const cardBytes = Buffer.from(JSON.stringify(characterCardFixture('Alert Boundary')))
     const archive = concatBytes([
@@ -805,6 +858,7 @@ describe('PNG character card import', () => {
     expect(localFileImportState.importLocalCharacterFileFromServer).toHaveBeenCalledWith({
       file: selectedFile,
       fileName: 'oversized-module.charx',
+      onProgress: expect.any(Function),
     })
     expect(alertState.alertError).toHaveBeenCalledOnce()
     const surfacedReport = String(alertState.alertError.mock.calls[0][0])

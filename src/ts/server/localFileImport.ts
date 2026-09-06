@@ -1,6 +1,12 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
 import {
+  sendLocalCharacterImport,
+  reportLocalFileImportProgress,
+  type LocalFileImportProgress,
+} from './localFileImportTransport'
+export type { LocalFileImportProgress } from './localFileImportTransport'
+import {
   getServerCommandBaseRevision,
   setCachedServerCommandRevision,
   withDirectServerCommandEventReconciliation,
@@ -48,6 +54,7 @@ interface LocalFileImportOptions {
   allowLowLevelAccess?: boolean
   password?: string
   signal?: AbortSignal | null
+  onProgress?: (progress: LocalFileImportProgress) => void
 }
 
 export function importLocalCharacterFileFromServer(
@@ -71,6 +78,7 @@ async function importLocalFileFromServer(
   return withDirectServerCommandEventReconciliation(
     (event) => event.type === expectedEventType && (confirmedId === null || event.id === confirmedId),
     async (reconcileResponseEvent) => {
+      reportLocalFileImportProgress(options.onProgress, { phase: 'prepare' })
       const baseRevision = await getServerCommandBaseRevision(options.signal)
       if (baseRevision === null) return { status: 'error', error: 'Unable to read server command revision' }
 
@@ -80,7 +88,7 @@ async function importLocalFileFromServer(
         'risu-auth': auth,
         ...activeWriterSessionHeader(),
       }
-      let body: BodyInit
+      let body: FormData | string
       let url = endpoint
       if (options.pendingImportToken) {
         headers['content-type'] = 'application/json'
@@ -100,12 +108,21 @@ async function importLocalFileFromServer(
 
       let response: Response
       try {
-        response = await fetch(url, {
-          method: 'POST',
-          signal: options.signal ?? undefined,
-          headers,
-          body,
-        })
+        response =
+          kind === 'character' && options.onProgress
+            ? await sendLocalCharacterImport({
+                url,
+                headers,
+                body,
+                signal: options.signal,
+                onProgress: options.onProgress,
+              })
+            : await fetch(url, {
+                method: 'POST',
+                signal: options.signal ?? undefined,
+                headers,
+                body,
+              })
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         return { status: 'error', error: `Network error: ${message}` }
@@ -114,6 +131,7 @@ async function importLocalFileFromServer(
       const result = await readLocalFileImportResponse(kind, response, options.pendingImportToken)
       if (result.status === 'ok') {
         confirmedId = 'characterId' in result ? result.characterId : result.moduleId
+        reportLocalFileImportProgress(options.onProgress, { phase: 'refresh' })
         await reconcileResponseEvent(result.event)
       }
       return result

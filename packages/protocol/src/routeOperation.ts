@@ -489,10 +489,10 @@ export const PROTOCOL_ROUTE_OPERATION_CATALOG = [
     methods: ['POST'],
     path: '/api/v1/import/character-card',
     match: 'exact',
-    streaming: 'none',
+    streaming: 'sse-optional',
     cache: 'unspecified',
     durability: 'none',
-    response: 'structured',
+    response: 'structured-or-sse',
   },
   {
     id: 'local-module-import',

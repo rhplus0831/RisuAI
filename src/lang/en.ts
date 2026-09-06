@@ -69,6 +69,18 @@ export const languageEnglish = {
   characterCreationQueued:
     'The new character is saved on this device and queued. It has not been accepted by the server and will retry automatically.',
   characterCreationFailed: 'The character could not be created. The provisional character was removed.',
+  characterImportProgress: {
+    prepare: 'Preparing bot import…',
+    upload: 'Uploading bot…',
+    processing: 'Waiting for the server to process the bot…',
+    read: 'Reading character card…',
+    assets: 'Importing card assets…',
+    convert: 'Converting character data…',
+    commit: 'Saving bot…',
+    refresh: 'Updating bot list…',
+    assetsSaved: '{{count}} assets saved',
+    working: 'Working…',
+  },
   characterImportQueued:
     'The imported character is saved on this device and queued. It has not been accepted by the server and will retry automatically.',
   characterImportFailed: 'The imported character could not be saved. The provisional character was removed.',

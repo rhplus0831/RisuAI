@@ -409,7 +409,7 @@
 
   function readProgressLabel(data: alertData, percent: number) {
     if (data.progress === null) {
-      return 'Working'
+      return language.characterImportProgress.working
     }
 
     const rounded = Math.round(percent * 100) / 100
@@ -597,7 +597,8 @@
           </div>
         </div>
         <div class="w-full flex justify-center mt-6">
-          <span class="text-gray-500 text-sm">{progressLabel}</span>
+          <span class="text-gray-500 text-sm" role="status" aria-live="polite"
+            ><span class="sr-only">{$alertStore.msg}: </span>{progressLabel}</span>
         </div>
         {#if progressDetail}
           <div class="w-full mt-2 text-center text-gray-500 text-sm whitespace-pre-wrap">

@@ -52,6 +52,18 @@ const languageKoreanBase = {
   characterCreationQueued:
     '새 캐릭터가 이 기기에 저장되어 대기열에 추가되었습니다. 서버에서 아직 승인되지 않았으며 자동으로 다시 시도합니다.',
   characterCreationFailed: '캐릭터를 생성할 수 없습니다. 임시 캐릭터를 제거했습니다.',
+  characterImportProgress: {
+    prepare: '봇 가져오기 준비 중…',
+    upload: '봇 업로드 중…',
+    processing: '서버의 봇 처리를 기다리는 중…',
+    read: '캐릭터 카드 읽는 중…',
+    assets: '카드 에셋 가져오는 중…',
+    convert: '캐릭터 데이터 변환 중…',
+    commit: '봇 저장 중…',
+    refresh: '봇 목록 갱신 중…',
+    assetsSaved: '에셋 {{count}}개 저장됨',
+    working: '처리 중…',
+  },
   characterImportQueued:
     '가져온 캐릭터가 이 기기에 저장되어 대기열에 추가되었습니다. 서버에서 아직 승인되지 않았으며 자동으로 다시 시도합니다.',
   characterImportFailed: '가져온 캐릭터를 저장할 수 없습니다. 임시 캐릭터를 제거했습니다.',

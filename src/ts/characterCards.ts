@@ -65,7 +65,11 @@ import {
   type ServerRealmImportProgress,
   type ServerRealmImportResult,
 } from './server/realmImport'
-import { importLocalCharacterFileFromServer, type ServerLocalCharacterImportResult } from './server/localFileImport'
+import {
+  importLocalCharacterFileFromServer,
+  type ServerLocalCharacterImportResult,
+  type LocalFileImportProgress,
+} from './server/localFileImport'
 import { refreshServerRealmImportResources } from './server/resourceRefresh'
 import { sanitizeHubAdditionalHtml } from './hubAdditionalHtml'
 import { ensureClientLorebookEntryIds } from './server/lorebookOwner.svelte'
@@ -252,14 +256,16 @@ export async function importCharacterFile(
   file: Blob,
   fileName = file instanceof File ? file.name : 'character.png',
 ): Promise<CharacterImportOutcome | null> {
-  alertStore.set({ type: 'wait', msg: 'Loading... (Uploading)' })
-  let result = await importLocalCharacterFileFromServer({ file, fileName })
+  const onProgress = (progress: LocalFileImportProgress) => showLocalCharacterImportProgress(progress, fileName)
+  onProgress({ phase: 'prepare' })
+  let result = await importLocalCharacterFileFromServer({ file, fileName, onProgress })
   let pendingImportToken: string | undefined
   let password: string | undefined
   let allowLowLevelAccess = false
 
   while (result.status === 'password-required' || result.status === 'low-level-access') {
     pendingImportToken = result.pendingImportToken
+    alertClear()
     if (result.status === 'password-required') {
       const entered = await alertInput(language.inputCardPassword)
       if (!entered) {
@@ -275,11 +281,12 @@ export async function importCharacterFile(
       }
       allowLowLevelAccess = true
     }
-    alertStore.set({ type: 'wait', msg: 'Loading... (Processing)' })
+    onProgress({ phase: 'processing' })
     result = await importLocalCharacterFileFromServer({
       pendingImportToken,
       password,
       allowLowLevelAccess,
+      onProgress,
     })
   }
 
@@ -297,6 +304,29 @@ export async function importCharacterFile(
         }
       : undefined,
   )
+}
+
+function showLocalCharacterImportProgress(progress: LocalFileImportProgress, fileName: string) {
+  const labels = language.characterImportProgress
+  const completedBytes = 'completedBytes' in progress ? progress.completedBytes : undefined
+  const totalBytes = 'totalBytes' in progress ? progress.totalBytes : undefined
+  const percent =
+    completedBytes !== undefined && totalBytes && totalBytes > 0
+      ? Math.min(100, (completedBytes / totalBytes) * 100)
+      : null
+  const detail = [fileName]
+  if (completedBytes !== undefined) {
+    const formatBytes = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(2)} MiB`
+    detail.push(
+      totalBytes === undefined
+        ? formatBytes(completedBytes)
+        : `${formatBytes(completedBytes)} / ${formatBytes(totalBytes)}`,
+    )
+  }
+  if ('completedAssets' in progress && progress.completedAssets !== undefined) {
+    detail.push(labels.assetsSaved.replace('{{count}}', String(progress.completedAssets)))
+  }
+  alertProgress(labels[progress.phase], percent, detail.join('\n'))
 }
 
 function localCharacterImportOutcome(result: ServerLocalCharacterImportResult): CharacterImportOutcome {

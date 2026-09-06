@@ -26,6 +26,9 @@ import { appendRealmCharacter } from './realmImport.js'
 import { importRateLimit } from '../routeRateLimits.js'
 import { getMaintenanceCoordinator, MaintenanceBusyError, type MaintenanceLease } from '../maintenanceCoordinator.js'
 import { attachMaintenanceAbort } from '../maintenanceRequest.js'
+import type { LocalCharacterImportProgress, LocalFileImportResultFrame } from '@risuai/protocol/local-file-import'
+import { getWritableBufferedBytes } from '../streamBackpressure.js'
+import { setImmediate as yieldToIo } from 'node:timers/promises'
 
 type ImportKind = 'character' | 'module'
 
@@ -87,7 +90,7 @@ export function registerLocalFileImportRoutes(
     '/api/v1/import/character-card',
     { config: { rateLimit: importRateLimit }, onRequest: requireImportAccess },
     async (req, reply) =>
-      handleLocalFileImport({
+      handleCharacterImportWithProgress({
         kind: 'character',
         req,
         reply,
@@ -118,6 +121,53 @@ export function registerLocalFileImportRoutes(
   )
 }
 
+async function handleCharacterImportWithProgress(args: Parameters<typeof handleLocalFileImport>[0]): Promise<unknown> {
+  if (!args.req.headers.accept?.includes('text/event-stream')) return handleLocalFileImport(args)
+
+  const { reply } = args
+  let streaming = false
+  let lastPhase: LocalCharacterImportProgress['phase'] | undefined
+  let lastSentAt = 0
+  const reportProgress = (progress: LocalCharacterImportProgress) => {
+    if (reply.raw.destroyed || reply.raw.writableEnded) return
+    if (!streaming) {
+      streaming = true
+      reply.hijack()
+      for (const [name, value] of Object.entries(reply.getHeaders())) {
+        if (value !== undefined) reply.raw.setHeader(name, value)
+      }
+      reply.raw.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-cache, no-transform',
+        'x-accel-buffering': 'no',
+      })
+    }
+    const now = Date.now()
+    const complete = progress.totalBytes !== undefined && progress.completedBytes === progress.totalBytes
+    if (progress.phase === lastPhase && !complete && now - lastSentAt < 100) return
+    // Progress is disposable: skip it for slow readers without delaying the import.
+    if (getWritableBufferedBytes(reply.raw) > 64 * 1024) return
+    reply.raw.write(`event: progress\ndata: ${JSON.stringify(progress)}\n\n`)
+    lastPhase = progress.phase
+    lastSentAt = now
+  }
+  const finish = (result: LocalFileImportResultFrame) => {
+    if (!reply.raw.destroyed && !reply.raw.writableEnded) {
+      reply.raw.end(`event: result\ndata: ${JSON.stringify(result)}\n\n`)
+    }
+  }
+  try {
+    const body = await handleLocalFileImport({ ...args, reportProgress })
+    if (!streaming) return body
+    finish({ statusCode: reply.statusCode, body })
+  } catch (error) {
+    if (!streaming) throw error
+    args.req.log.error({ err: error }, 'Local character import failed')
+    finish({ statusCode: 500, body: { error: 'Character import failed' } })
+  }
+  return reply
+}
+
 async function handleLocalFileImport(args: {
   kind: ImportKind
   req: FastifyRequest
@@ -128,6 +178,7 @@ async function handleLocalFileImport(args: {
   pendingImports: Map<string, PendingLocalFileImport>
   ttlMs: number
   options: { maxUploadBytes: number; maxExpandedBytes?: number }
+  reportProgress?: (progress: LocalCharacterImportProgress) => void
 }): Promise<unknown> {
   let pending: PendingLocalFileImport | null = null
   let ownsUpload = false
@@ -172,7 +223,11 @@ async function handleLocalFileImport(args: {
         allowLowLevelAccess,
         password,
         maxExpandedBytes: args.options.maxExpandedBytes,
+        reportProgress: args.reportProgress,
+        signal: lease.signal,
       })
+      args.reportProgress?.({ phase: 'commit' })
+      if (args.reportProgress) await yieldToIo()
       lease.signal.throwIfAborted()
       const result = appendRealmCharacter({
         db: args.db,
