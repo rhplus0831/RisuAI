@@ -32,6 +32,10 @@
   }
 
   function selectedBackgroundCharacterOwner(): character | undefined {
+    // Home clears the visible selection while retaining the last character in
+    // the resource cache. Its background must stay scoped to the character UI.
+    if (selIdState.selId < 0) return undefined
+
     const status = charactersResourceState.status
     if (status === 'ready') {
       const owner = getSelectedCharacterOwner()

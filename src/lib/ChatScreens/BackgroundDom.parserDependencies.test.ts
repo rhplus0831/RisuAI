@@ -158,6 +158,45 @@ afterEach(() => {
 })
 
 describe('BackgroundDom parser dependencies', () => {
+  it('does not render the retained character background when the home screen has no visible selection', async () => {
+    seedDatabase('Popup Editor\n\nMonaco editor\n\nMarkdown\nPreview\nX')
+    moduleBackgroundEmbedding.set('<section>Module background</section>')
+    selectedCharID.set(-1)
+    component = mount(BackgroundDom, { target })
+    await settle()
+
+    expect(charactersResourceState.currentChar).toBe(0)
+    expect(backgroundParserMocks.risuChatParser).not.toHaveBeenCalled()
+    expect(target.textContent).toBe('')
+  })
+
+  it('clears the background on deselection even when a reparse finishes later', async () => {
+    seedDatabase()
+    component = mount(BackgroundDom, { target })
+    await waitForParserCalls(1)
+    expect(target.textContent).toContain('background one')
+
+    let resolveReparse!: (value: string) => void
+    backgroundParserMocks.ParseMarkdown.mockImplementationOnce(
+      () => new Promise<string>((resolve) => (resolveReparse = resolve)),
+    )
+    ReloadGUIPointer.update((value) => value + 1)
+    await waitForParserCalls(2)
+
+    selectedCharID.set(-1)
+    await settle()
+    expect(target.textContent).toBe('')
+
+    resolveReparse('<section>Late character background</section>')
+    await settle()
+    expect(target.textContent).toBe('')
+
+    selectedCharID.set(0)
+    await waitForParserCalls(3)
+    expect(target.textContent).toContain('background one')
+    expect(target.textContent).not.toContain('Late character background')
+  })
+
   it('fails closed when a ready projection has no selected owner', async () => {
     seedDatabase()
     charactersResourceState.currentChar = 99
