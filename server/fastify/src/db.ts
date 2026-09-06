@@ -25,9 +25,10 @@ import {
   repairPersistedPersonaSelectionIdentityInSqlite,
   repairPersistedTranslatorPresetSelectionIdentityInSqlite,
   repairPersistedGlobalLorebookIdsInSqlite,
+  repairPersistedLegacyLocalStopStringsInSqlite,
 } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 37
+export const CURRENT_SCHEMA_VERSION = 38
 
 export const CURRENT_SCHEMA_TABLES = [
   'assets',
@@ -486,6 +487,15 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       createCollectionTables(db)
       createSettingsTable(db)
       repairPersistedTranslatorPresetSelectionIdentityInSqlite(db)
+    },
+  },
+  {
+    version: 38,
+    name: 'repair-legacy-local-stop-strings',
+    up: (db) => {
+      createCollectionTables(db)
+      createSettingsTable(db)
+      repairPersistedLegacyLocalStopStringsInSqlite(db)
     },
   },
 ]

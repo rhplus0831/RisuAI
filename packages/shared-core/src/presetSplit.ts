@@ -1,5 +1,6 @@
 import { normalizePromptTemplate } from './promptTemplateNormalization.js'
 import { normalizeModelRoleProfiles } from './modelProfileRecords.js'
+import { repairLegacyLocalStopStrings } from './localStopStrings.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -467,6 +468,7 @@ function pickPresetFields(source: unknown, fields: readonly string[]): JsonRecor
       picked[field] = cloneJsonValue(source[field])
     }
   }
+  repairLegacyLocalStopStrings(picked)
   return picked
 }
 

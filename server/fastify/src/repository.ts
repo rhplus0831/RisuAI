@@ -20,6 +20,7 @@ import { BackupCopyPool } from './backupCopyPool.js'
 import { scanAssetReferences, type AssetReferenceMarks } from './assetReferenceScan.js'
 import { setImmediate as yieldMaintenanceTurn } from 'node:timers/promises'
 import { getSchemaState } from './db.js'
+import { repairLegacyLocalStopStrings } from '@risuai/shared-core/local-stop-strings'
 import { assessDatabaseInitialization, InitializeConflictError } from './databaseInitialization.js'
 import { COMMAND_EVENT_CATALOG, persistRevisionedCommandEvent, type CommandEvent } from './commands/events.js'
 import { getDatabaseLineage, getDatabaseWriterMetadata, rotateDatabaseLineage } from './databaseLineage.js'
@@ -297,6 +298,45 @@ export function repairPersistedGlobalLorebookIdsInSqlite(db: DatabaseSync): bool
     const settings = JSON.parse(settingsRow.data_json)
     if (repairPersistedGlobalLorebookIds(settings)) {
       db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+      changed = true
+    }
+  }
+  return changed
+}
+
+/** Migration/recovery repair; callers own the transaction and revision/lineage boundary. */
+export function repairPersistedLegacyLocalStopStringsInSqlite(db: DatabaseSync): boolean {
+  let changed = false
+  const settingsRow = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as
+    | { data_json: string }
+    | undefined
+  if (settingsRow) {
+    const settings: unknown = JSON.parse(settingsRow.data_json)
+    let settingsChanged = repairLegacyLocalStopStrings(settings)
+    if (isRecord(settings)) {
+      // Older stores can still carry embedded preset collections.
+      for (const key of ['botPresets', 'modelPresets', 'promptPresets']) {
+        if (!Array.isArray(settings[key])) continue
+        for (const preset of settings[key]) {
+          if (repairLegacyLocalStopStrings(preset)) settingsChanged = true
+        }
+      }
+    }
+    if (settingsChanged) {
+      db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+      changed = true
+    }
+  }
+
+  for (const table of ['bot_presets', 'model_presets', 'prompt_presets']) {
+    const rows = db
+      .prepare(`SELECT position, data_json FROM ${table} WHERE json_type(data_json, '$.localStopStrings') = 'object'`)
+      .all() as Array<{ position: number; data_json: string }>
+    const update = db.prepare(`UPDATE ${table} SET data_json = ? WHERE position = ?`)
+    for (const row of rows) {
+      const preset: unknown = JSON.parse(row.data_json)
+      if (!repairLegacyLocalStopStrings(preset)) continue
+      update.run(JSON.stringify(preset), row.position)
       changed = true
     }
   }
@@ -4850,6 +4890,7 @@ function restoreSqliteFromBackup(
       repairPersistedPersonaSelectionIdentityInSqlite(db)
       repairPersistedHypaV3PresetSelectionIdentityInSqlite(db)
       repairPersistedTranslatorPresetSelectionIdentityInSqlite(db)
+      repairPersistedLegacyLocalStopStringsInSqlite(db)
       databaseLineage = rotateDatabaseLineage(db)
       rewriteRestoredGenerationOperationLineage(db, databaseLineage)
       hooks.beforeCommit?.(databaseLineage)

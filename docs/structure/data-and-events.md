@@ -39,6 +39,16 @@ uniqueness, retry safety, and current-version behavior are guarded by
 `server/fastify/__tests__/migrationFoundation.test.ts` and
 `server/fastify/__tests__/db.test.ts`.
 
+Migration 38 removes the two observed JSON encodings of MessagePack's undefined
+marker from `localStopStrings` in global settings and legacy/model/prompt
+presets, including embedded legacy collections. The repair runs transactionally
+without changing the domain revision. Import normalization and SQLite backup
+restore apply the same repair; deleting the field restores inheritance while
+preserving explicit `null` and string arrays. The narrow predicate lives in
+`packages/shared-core/src/localStopStrings.ts`. Preset and settings commands
+reject other malformed stop-string values before saving them; generation input
+validation remains strict and does not repair data on reads.
+
 SQLite includes settings; character, chat, message, and per-chat memory rows;
 split collections; assets; command events and mutation receipts; the inlay
 catalog; push subscriptions; Hypa V3 memory state; generation finalization

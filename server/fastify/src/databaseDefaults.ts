@@ -53,6 +53,7 @@ import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS, isBardWikiGlobalSettings } from '@ris
 import { repairPersonaSelectionIdentity } from '@risuai/shared-core/persona-selection-identity'
 import { repairHypaV3PresetSelectionIdentity } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 import { normalizeModuleFolders } from '@risuai/protocol/module-organization'
+import { repairLegacyLocalStopStrings } from '@risuai/shared-core/local-stop-strings'
 
 type JsonRecord = Record<string, unknown>
 
@@ -644,6 +645,7 @@ export function normalizeDatabaseDefaults(
   options: NormalizeDatabaseDefaultsOptions = {},
 ): JsonRecord {
   const providerDefaults = options.providerDefaults ?? true
+  repairLegacyLocalStopStrings(database)
 
   delete database.useServerPromptAssembly
   normalizeCharacters(database)
@@ -1069,6 +1071,7 @@ function normalizeBotPresets(database: JsonRecord): void {
   const seen = new Set<string>()
   for (const [index, rawPreset] of presets.entries()) {
     if (!isRecord(rawPreset)) continue
+    repairLegacyLocalStopStrings(rawPreset)
     const requestedId = typeof rawPreset.id === 'string' && rawPreset.id.trim() ? rawPreset.id : ''
     const fallbackId = index === 0 ? 'default-preset' : `preset-${index + 1}`
     const id = requestedId && !seen.has(requestedId) ? requestedId : fallbackId
@@ -1131,6 +1134,7 @@ function normalizePresetCollection(
   const seen = new Set<string>()
   for (const [index, rawPreset] of presets.entries()) {
     if (!isRecord(rawPreset)) continue
+    repairLegacyLocalStopStrings(rawPreset)
     const requestedId = typeof rawPreset.id === 'string' && rawPreset.id.trim() ? rawPreset.id : ''
     const fallbackId = index === 0 ? `default-${fallbackPrefix}` : `${fallbackPrefix}-${index + 1}`
     const id = requestedId && !seen.has(requestedId) ? requestedId : fallbackId

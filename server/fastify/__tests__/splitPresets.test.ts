@@ -18,6 +18,7 @@ import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
 import { LLMFlags } from '@risuai/shared-core/model-types'
 import { setupAuthedClient } from './helpers/auth.js'
+import { createPresetRecord, readPresetPatch } from '../src/commands/presets.js'
 
 const normalizedModelRoles = (overrides: Record<string, string> = {}) => ({
   chatMain: '',
@@ -69,6 +70,55 @@ const normalizedModelRoleProfiles = (overrides: Record<string, Record<string, un
 })
 
 describe('split preset command normalization', () => {
+  it.each([
+    { ext: 0, data: [0] },
+    { type: 0, data: { type: 'Buffer', data: [0] } },
+  ])('repairs wrapped undefined stop strings at every preset write boundary: %j', (marker) => {
+    const input = { id: 'preset', name: 'Preset', localStopStrings: marker }
+    for (const read of [
+      createModelPresetRecord,
+      createPromptPresetRecord,
+      readModelPresetPatch,
+      readPromptPresetPatch,
+      createPresetRecord,
+      readPresetPatch,
+    ]) {
+      expect(read(input)).not.toHaveProperty('localStopStrings')
+    }
+    expect(input.localStopStrings).toBe(marker)
+  })
+
+  it.each([null, [], ['STOP']])('preserves supported stop strings at preset write boundaries: %j', (value) => {
+    const input = { id: 'preset', localStopStrings: value }
+    for (const read of [
+      createModelPresetRecord,
+      createPromptPresetRecord,
+      readModelPresetPatch,
+      readPromptPresetPatch,
+      createPresetRecord,
+      readPresetPatch,
+    ]) {
+      expect(read(input).localStopStrings).toEqual(value)
+    }
+  })
+
+  it.each([{}, [null], [42], 'STOP', { ext: 1, data: [0] }])(
+    'rejects malformed stop strings before saving presets: %j',
+    (value) => {
+      const input = { id: 'preset', localStopStrings: value }
+      for (const read of [
+        createModelPresetRecord,
+        createPromptPresetRecord,
+        readModelPresetPatch,
+        readPromptPresetPatch,
+        createPresetRecord,
+        readPresetPatch,
+      ]) {
+        expect(() => read(input)).toThrow('localStopStrings must be an array of strings or null')
+      }
+    },
+  )
+
   it('normalizes model preset role-adjacent fields on create and apply', () => {
     const preset = createModelPresetRecord({
       id: 'model-a',

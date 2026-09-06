@@ -1356,6 +1356,87 @@ describe('Durable generation', () => {
     }
   })
 
+  it('repairs persisted undefined markers on startup and keeps model stops after reapplying prompt overrides', async () => {
+    const marker = { type: 0, data: { type: 'Buffer', data: [0] } }
+    const legacy = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      const settings = JSON.parse(
+        (legacy.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }).data_json,
+      )
+      settings.localStopStrings = marker
+      legacy.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+      const row = legacy.prepare('SELECT data_json FROM prompt_presets WHERE position = 0').get() as {
+        data_json: string
+      }
+      const preset = { ...JSON.parse(row.data_json), localStopStrings: marker, overrideModelParameters: true }
+      legacy.prepare('UPDATE prompt_presets SET data_json = ? WHERE position = 0').run(JSON.stringify(preset))
+      legacy.exec('UPDATE schema_version SET version = 37 WHERE id = 1')
+    } finally {
+      legacy.close()
+    }
+    await restartHarness()
+    const authority = await operationAuthority()
+    const create = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/model-presets',
+      headers: authHeaders({ 'risu-writer-session': 'writer-a' }),
+      payload: { baseRevision: authority.revision, preset: { id: 'new-model', localStopStrings: ['MODEL STOP'] } },
+    })
+    expect(create.statusCode, create.body).toBe(200)
+    const select = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/model-presets/select',
+      headers: authHeaders({ 'risu-writer-session': 'writer-a' }),
+      payload: { baseRevision: create.json<{ revision: number }>().revision, modelPresetId: 'new-model' },
+    })
+    expect(select.statusCode, select.body).toBe(200)
+    let dispatchedStopStrings: unknown
+    providerImpl = (context) => {
+      dispatchedStopStrings = context.database.localStopStrings
+      return (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'Reply after repair' }
+        yield { kind: 'done', finishReason: 'stop' }
+      })()
+    }
+    const operationId = randomUUID()
+    const acceptedMessageId = randomUUID()
+    const response = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({
+        operationId,
+        acceptedMessageId,
+        baseRevision: select.json<{ revision: number }>().revision,
+      }),
+    )
+    expect(response.status).toBe(201)
+    await response.json()
+    await waitFor(async () => {
+      const status = await operationStatus(operationId)
+      return status.operation.state === 'completed' ? status : undefined
+    })
+    expect(dispatchedStopStrings).toEqual(['MODEL STOP'])
+    expect((await chatHydration(await bootstrap())).message).toEqual([
+      expect.objectContaining({ role: 'user', chatId: acceptedMessageId }),
+      expect.objectContaining({ role: 'char', data: 'Reply after repair' }),
+    ])
+  })
+
+  it.each([{}, [null], [42], 'STOP', { ext: 0, data: [0] }])(
+    'rejects malformed runtime stop strings at save time: %j',
+    async (value) => {
+      const authority = await operationAuthority()
+      const response = await harness.app.inject({
+        method: 'PATCH',
+        url: '/api/v1/commands/settings/runtime',
+        headers: authHeaders({ 'risu-writer-session': 'writer-a' }),
+        payload: { baseRevision: authority.revision, patch: { localStopStrings: value } },
+      })
+      expect(response.statusCode).toBe(400)
+      expect(response.json()).toMatchObject({ error: 'localStopStrings must be an array of strings or null' })
+      expect((await operationAuthority()).revision).toBe(authority.revision)
+    },
+  )
+
   it('completes a send after custom stop strings are disabled through the settings API', async () => {
     const authority = await operationAuthority()
     const settingsResponse = await harness.app.inject({

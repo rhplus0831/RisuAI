@@ -28,6 +28,7 @@ import {
   normalizeModelRoleProfiles,
 } from '@risuai/shared-core/model-profile-records'
 import { normalizePromptTemplateValue } from './prompts.js'
+import { normalizePresetLocalStopStrings } from './localStopStrings.js'
 
 type JsonRecord = Record<string, unknown>
 type PresetKind = 'modelPreset' | 'promptPreset'
@@ -315,6 +316,7 @@ function createSplitPresetRecord(
   fallbackName: string,
 ): JsonRecord & { id: string } {
   const preset = cloneJson(input) as JsonRecord & { id: string; name?: unknown }
+  normalizePresetLocalStopStrings(preset, label)
   preset.id = readSplitPresetId(preset.id, `${label}.id`)
   if (preset.name !== undefined && typeof preset.name !== 'string') {
     throw new ValidationError(`${label}.name must be a string`)
@@ -332,6 +334,7 @@ function createSplitPresetRecord(
 
 function readSplitPresetPatch(input: JsonRecord, label: PresetKind): JsonRecord {
   const patch = cloneJson(input) as JsonRecord
+  normalizePresetLocalStopStrings(patch, label)
   normalizeSplitPresetRoleAdjacentFields(patch)
   normalizePromptPresetPromptTemplate(label, patch)
   validateJsonValue(label, patch)

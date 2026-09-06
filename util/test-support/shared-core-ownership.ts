@@ -14,6 +14,7 @@ export const requiredImports: Record<string, readonly string[]> = {
     'packages/shared-core/src/modelProfileResolver.ts',
     'packages/shared-core/src/presetSplit.ts',
   ],
+  './localStopStrings.js': ['packages/shared-core/src/presetSplit.ts'],
   './modelProfileResolver.js': ['packages/shared-core/src/agentPresetResolver.ts'],
   './modelRoles.js': [
     'packages/shared-core/src/modelProfileRecords.ts',
@@ -91,6 +92,13 @@ export const requiredImports: Record<string, readonly string[]> = {
   '@risuai/shared-core/cbs-registry': ['src/ts/cbs.ts'],
   '@risuai/shared-core/chat-display-tail-count': [
     'server/fastify/src/databaseDefaults.ts',
+    'src/ts/storage/database.svelte.ts',
+  ],
+  '@risuai/shared-core/local-stop-strings': [
+    'server/fastify/src/commands/localStopStrings.ts',
+    'server/fastify/src/databaseDefaults.ts',
+    'server/fastify/src/repository.ts',
+    'server/fastify/src/routes/commands.ts',
     'src/ts/storage/database.svelte.ts',
   ],
   '@risuai/shared-core/chat-generation-settings': [
@@ -390,6 +398,7 @@ export const forwardingFacades: Record<string, readonly [module: string, exports
 }
 
 export const packageExports: Record<string, string> = {
+  './local-stop-strings': './src/localStopStrings.ts',
   './agent-preset-resolver': './src/agentPresetResolver.ts',
   './anthropic-models': './src/anthropicModels.ts',
   './chat-generation-settings': './src/chatGenerationSettings.ts',

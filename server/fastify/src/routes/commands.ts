@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import { isDeepStrictEqual } from 'node:util'
+import { isLocalStopStrings } from '@risuai/shared-core/local-stop-strings'
 import { decompress as fflateDecompress } from 'fflate'
 import type { AuthState } from '../auth.js'
 import {
@@ -10655,6 +10656,9 @@ function readSettingsGroupPatch(group: SettingsGroup, patch: unknown): Record<st
 }
 
 function validateSettingValue(key: string, value: unknown): void {
+  if (key === 'localStopStrings' && !isLocalStopStrings(value)) {
+    throw new ValidationError('localStopStrings must be an array of strings or null')
+  }
   if (key === 'bardWiki' && !isBardWikiGlobalSettings(value)) {
     throw new ValidationError('bardWiki must match the BardWiki global settings contract')
   }

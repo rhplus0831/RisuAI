@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 import { validateOptionalServerAssetRef } from './assets.js'
+import { normalizePresetLocalStopStrings } from './localStopStrings.js'
 import {
   normalizeLegacyFallbackModels,
   normalizeLegacySeperateModels,
@@ -201,6 +202,7 @@ export function createPresetRecord(
   options: AssetValidationOptions = {},
 ): PresetRecord {
   const preset = cloneJson(input) as PresetRecord
+  normalizePresetLocalStopStrings(preset, 'preset')
   preset.id = readPresetId(preset.id, 'preset.id')
   if (preset.name !== undefined && typeof preset.name !== 'string') {
     throw new ValidationError('preset.name must be a string')
@@ -213,6 +215,7 @@ export function createPresetRecord(
 
 export function readPresetPatch(input: JsonRecord, options: AssetValidationOptions = {}): JsonRecord {
   const patch = cloneJson(input) as JsonRecord
+  normalizePresetLocalStopStrings(patch, 'patch')
   normalizePresetProfileFields(patch)
   validatePresetAssetRefs(patch, 'patch', options)
   return patch

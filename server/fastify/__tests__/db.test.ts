@@ -61,6 +61,117 @@ afterEach(() => {
 })
 
 describe('schema migrations', () => {
+  it('repairs wrapped undefined stop strings in settings and all preset owners without changing other data', () => {
+    const dataDir = makeDataDir()
+    const initial = openDatabase(dataDir)
+    const markers = [
+      { ext: 0, data: [0] },
+      { type: 0, data: { type: 'Buffer', data: [0] } },
+    ]
+    const settings = {
+      localStopStrings: markers[1],
+      unrelated: markers[0],
+      modelPresetsId: 2,
+      promptPresetsId: 12,
+      botPresets: [{ id: 'embedded-legacy', localStopStrings: markers[0] }],
+      modelPresets: [{ id: 'embedded-model', localStopStrings: markers[1] }],
+      promptPresets: [{ id: 'embedded-prompt', localStopStrings: markers[0], overrideModelParameters: true }],
+    }
+    initial.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(JSON.stringify(settings))
+    const rows = [...markers, null, [], ['STOP'], { ext: 1, data: [0] }].map((value, index) =>
+      JSON.stringify({ id: `preset-${index}`, localStopStrings: value, unrelated: markers[0] }, null, 2),
+    )
+    const tables = ['bot_presets', 'model_presets', 'prompt_presets']
+    for (const table of tables) {
+      const insert = initial.prepare(`INSERT INTO ${table} (position, data_json) VALUES (?, ?)`)
+      rows.forEach((row, index) => insert.run(index, row))
+    }
+    initial.exec('UPDATE schema_version SET version = 37, revision = 23 WHERE id = 1')
+    initial.close()
+
+    const migrated = openDatabase(dataDir)
+    let repairedSettings: string
+    const repairedRows = new Map<string, unknown>()
+    try {
+      expect(getSchemaState(migrated)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 23 })
+      repairedSettings = (
+        migrated.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      ).data_json
+      expect(JSON.parse(repairedSettings)).toEqual({
+        unrelated: markers[0],
+        modelPresetsId: 2,
+        promptPresetsId: 12,
+        botPresets: [{ id: 'embedded-legacy' }],
+        modelPresets: [{ id: 'embedded-model' }],
+        promptPresets: [{ id: 'embedded-prompt', overrideModelParameters: true }],
+      })
+      for (const table of tables) {
+        const actual = migrated.prepare(`SELECT position, data_json FROM ${table} ORDER BY position`).all()
+        expect(actual).toEqual(
+          rows.map((row, position) => ({
+            position,
+            data_json: position < 2 ? JSON.stringify({ id: `preset-${position}`, unrelated: markers[0] }) : row,
+          })),
+        )
+        repairedRows.set(table, actual)
+      }
+    } finally {
+      migrated.close()
+    }
+    const reopened = openDatabase(dataDir)
+    try {
+      expect(reopened.prepare('SELECT data_json FROM settings WHERE id = 1').get()).toEqual({
+        data_json: repairedSettings,
+      })
+      for (const table of tables) {
+        expect(reopened.prepare(`SELECT position, data_json FROM ${table} ORDER BY position`).all()).toEqual(
+          repairedRows.get(table),
+        )
+      }
+    } finally {
+      reopened.close()
+    }
+  })
+
+  it('rolls back the stop-string repair atomically and retries on the next startup', () => {
+    const dataDir = makeDataDir()
+    const initial = openDatabase(dataDir)
+    const body = JSON.stringify({ id: 'preset', localStopStrings: { ext: 0, data: [0] } })
+    initial.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(body)
+    initial.prepare('INSERT INTO prompt_presets (position, data_json) VALUES (0, ?)').run(body)
+    initial.exec(`
+      UPDATE schema_version SET version = 37, revision = 23 WHERE id = 1;
+      CREATE TRIGGER fail_stop_strings_version_bump
+      BEFORE UPDATE OF version ON schema_version WHEN NEW.version = 38
+      BEGIN SELECT RAISE(ABORT, 'injected stop-string repair failure'); END;
+    `)
+    initial.close()
+    expect(() => openDatabase(dataDir)).toThrow(/repair-legacy-local-stop-strings.*injected stop-string repair failure/)
+    const failed = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      expect(getSchemaState(failed)).toEqual({ version: 37, revision: 23 })
+      expect(failed.prepare('SELECT data_json FROM settings WHERE id = 1').get()).toEqual({ data_json: body })
+      expect(failed.prepare('SELECT data_json FROM prompt_presets WHERE position = 0').get()).toEqual({
+        data_json: body,
+      })
+      failed.exec('DROP TRIGGER fail_stop_strings_version_bump')
+    } finally {
+      failed.close()
+    }
+    const retried = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(retried)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 23 })
+      expect(retried.prepare('SELECT data_json FROM settings WHERE id = 1').get()).toEqual({
+        data_json: JSON.stringify({ id: 'preset' }),
+      })
+      expect(retried.prepare('SELECT data_json FROM prompt_presets WHERE position = 0').get()).toEqual({
+        data_json: JSON.stringify({ id: 'preset' }),
+      })
+    } finally {
+      retried.close()
+    }
+  })
+
   it('opens a fresh database at the current schema version', () => {
     const db = openDatabase(makeDataDir())
     try {

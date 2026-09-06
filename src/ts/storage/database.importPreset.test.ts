@@ -39,7 +39,7 @@ import {
   resetPendingMutationOutboxForTests,
 } from '../server/pendingMutationOutbox'
 import { replayPendingMutations } from '../server/pendingMutationReplay'
-import { replaceResourceDatabase } from '../server/resourceState.svelte'
+import { collectionsResourceState, replaceResourceDatabase } from '../server/resourceState.svelte'
 
 import { alertStore } from '../stores.svelte'
 import { resolveAlertSelection } from '../alert'
@@ -202,6 +202,31 @@ afterEach(async () => {
 })
 
 describe('importPreset warm-path logging', () => {
+  it.each([
+    { ext: 0, data: [0] },
+    { type: 0, data: { type: 'Buffer', data: [0] } },
+  ])('removes wrapped undefined stop strings before optimistic projection and import dispatch: %j', async (marker) => {
+    const calls = stubCommandFetch()
+    await expect(
+      importPreset({
+        name: 'converted.json',
+        data: new TextEncoder().encode(
+          JSON.stringify({
+            name: 'Converted',
+            mainPrompt: 'Prompt',
+            overrideModelParameters: true,
+            localStopStrings: marker,
+          }),
+        ),
+      }),
+    ).resolves.toBe('applied')
+    const imported = collectionsResourceState.values.promptPresets?.at(-1)
+    expect(imported).toMatchObject({ name: 'Converted', overrideModelParameters: true })
+    expect(imported).not.toHaveProperty('localStopStrings')
+    const call = await waitForImportCommand(calls)
+    expect(call.body.preset).not.toHaveProperty('localStopStrings')
+  })
+
   it('rejects malformed JSON without changing presets or escaping the event handler', async () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
 

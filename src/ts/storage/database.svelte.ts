@@ -58,6 +58,7 @@ import { type HypaV3Settings, type HypaV3Preset, createHypaV3Preset } from '../p
 import { repairHypaV3PresetSelectionIdentity } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 import { normalizeTranslatorPresetStateWithLegacyCompatibility, type TranslatorPreset } from '../translator/presets'
 import { safeStructuredClone } from '../polyfill'
+import { repairLegacyLocalStopStrings } from '@risuai/shared-core/local-stop-strings'
 import { SERVER_CHARACTER_SHELL_MARKER } from '@risuai/protocol/character-summary-resource'
 import { normalizeModuleFolders } from '@risuai/protocol/module-organization'
 import {
@@ -5875,6 +5876,7 @@ export function createModelPreset(preset: ModelPreset): Promise<PresetMutationOu
     normalizeSplitPresetOwners()
     flushPendingSplitPresetPatchesForKind('model')
     const newPreset = safeStructuredClone(preset)
+    repairLegacyLocalStopStrings(newPreset)
     newPreset.id ??= createClientPresetId()
     const attemptedPreset = safeStructuredClone(newPreset)
     modelPresetOwner().push(newPreset)
@@ -6162,6 +6164,7 @@ export function createPromptPreset(preset: PromptPreset): Promise<PresetMutation
     normalizeSplitPresetOwners()
     flushPendingSplitPresetPatchesForKind('prompt')
     const newPreset = safeStructuredClone(preset)
+    repairLegacyLocalStopStrings(newPreset)
     normalizePromptTemplateRecord(newPreset)
     newPreset.id ??= createClientPresetId()
     const attemptedPreset = safeStructuredClone(newPreset)

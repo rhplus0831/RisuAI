@@ -1889,6 +1889,55 @@ describe('backups', () => {
     })
   })
 
+  it('repairs wrapped undefined stop strings even when restoring a current-version SQLite backup', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, { tag: 'stop-string-backup' })
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'stop strings' },
+    })
+    expect(backup.statusCode).toBe(201)
+    const marker = { type: 0, data: { type: 'Buffer', data: [0] } }
+    const tables = ['bot_presets', 'model_presets', 'prompt_presets']
+    const backupDb = new DatabaseSync(path.join(harness.dataDir, 'backups', backup.json().id, 'risu.db'))
+    try {
+      const row = backupDb.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      const settings = { ...JSON.parse(row.data_json), localStopStrings: marker, unrelated: marker }
+      backupDb.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+      for (const table of tables) {
+        backupDb
+          .prepare(`INSERT OR REPLACE INTO ${table} (position, data_json) VALUES (0, ?)`)
+          .run(JSON.stringify({ id: `${table}-restored`, localStopStrings: { ext: 0, data: [0] }, unrelated: marker }))
+      }
+    } finally {
+      backupDb.close()
+    }
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode, restored.body).toBe(200)
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      const settings = JSON.parse(
+        (db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }).data_json,
+      )
+      expect(settings).not.toHaveProperty('localStopStrings')
+      expect(settings.unrelated).toEqual(marker)
+      for (const table of tables) {
+        const preset = JSON.parse(
+          (db.prepare(`SELECT data_json FROM ${table} WHERE position = 0`).get() as { data_json: string }).data_json,
+        )
+        expect(preset).toEqual({ id: `${table}-restored`, unrelated: marker })
+      }
+    } finally {
+      db.close()
+    }
+  })
+
   it('repairs a legacy numeric translator selection when restoring a SQLite backup', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDb(harness.app, assertion, {

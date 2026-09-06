@@ -48,6 +48,38 @@ import {
 
 const dataDirs: string[] = []
 
+describe('legacy stop-string import repair', () => {
+  it.each([
+    { ext: 0, data: [0] },
+    { type: 0, data: { type: 'Buffer', data: [0] } },
+  ])('removes wrapped undefined from every settings/preset owner in JSON and binary imports: %j', (marker) => {
+    const input = {
+      characters: [],
+      localStopStrings: marker,
+      botPresets: [{ id: 'legacy', localStopStrings: marker }],
+      modelPresets: [
+        { id: 'model', localStopStrings: marker },
+        { id: 'custom', localStopStrings: ['STOP'] },
+      ],
+      promptPresets: [
+        { id: 'prompt', localStopStrings: marker, overrideModelParameters: true },
+        { id: 'disabled', localStopStrings: null },
+      ],
+    }
+    for (const source of [input, decodeLegacyRisuSaveEnvelope(encodeLegacyRisuSaveEnvelope(input))]) {
+      const normalized = normalizeRisuSaveImportDatabase(source)
+      expect(normalized).not.toHaveProperty('localStopStrings')
+      for (const key of ['botPresets', 'modelPresets', 'promptPresets']) {
+        expect((normalized[key] as Record<string, unknown>[])[0]).not.toHaveProperty('localStopStrings')
+      }
+      expect((normalized.modelPresets as Record<string, unknown>[])[1].localStopStrings).toEqual(['STOP'])
+      expect((normalized.promptPresets as Record<string, unknown>[])[1].localStopStrings).toBeNull()
+      expect((normalized.promptPresets as Record<string, unknown>[])[0].overrideModelParameters).toBe(true)
+    }
+    expect(input.localStopStrings).toBe(marker)
+  })
+})
+
 describe('translator preset chat binding import normalization', () => {
   it('keeps bindings backed by the imported collection and clears missing ids', () => {
     const normalized = normalizeRisuSaveImportDatabase({
