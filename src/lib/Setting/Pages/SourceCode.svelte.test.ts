@@ -24,7 +24,7 @@ afterEach(() => {
 })
 
 describe('SourceCode repository links', () => {
-  it('distinguishes the original project from this fork and opens both repositories safely', () => {
+  it('distinguishes the original project from this fork and opens all repositories safely', () => {
     const links = Array.from(target.querySelectorAll<HTMLAnchorElement>('a'))
 
     expect(target.querySelector('[data-risu-source-code]')).toBeTruthy()
@@ -47,6 +47,18 @@ describe('SourceCode repository links', () => {
       {
         href: 'https://github.com/rhplus0831/risuai-fastify',
         label: language.openSourceCodeRepository(language.sourceCodeForkName),
+        target: '_blank',
+        rel: 'nofollow noopener noreferrer',
+      },
+      {
+        href: 'https://github.com/PocketRisu/PocketRisu',
+        label: language.openSourceCodeRepository(language.sourceCodePocketRisuName),
+        target: '_blank',
+        rel: 'nofollow noopener noreferrer',
+      },
+      {
+        href: 'https://github.com/rpaddict/RisuBard',
+        label: language.openSourceCodeRepository(language.sourceCodeRisuBardName),
         target: '_blank',
         rel: 'nofollow noopener noreferrer',
       },

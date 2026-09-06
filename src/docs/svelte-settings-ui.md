@@ -91,8 +91,9 @@ the previous measurement on refresh failure. The measurement scope and backend
 owners are documented in
 [Storage Usage](../../docs/structure/assets-and-saves.md#storage-usage).
 
-The Source Code page groups the upstream RisuAI repository and this Fastify
-fork behind one short Advanced & About navigation item. The repository cards
+The Source Code page groups the upstream RisuAI repository, this Fastify fork,
+and PocketRisu/RisuBard feature references behind one short Advanced & About
+navigation item. Dividers separate the three groups, and the repository cards
 identify their relationship explicitly and open protected external links.
 
 Lite mode removes Chat Setup, Capabilities, most Interface controls, and the
