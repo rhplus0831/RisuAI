@@ -26,7 +26,7 @@ import type { ServerTriggerScript } from './triggerDescriptors.js'
 import type { PromptTemplateCard } from './promptTemplate.js'
 import type { PromptMessage } from './promptMessage.js'
 
-/** Present persisted fields remain optional: downstream domains own their legacy defaults. */
+/** Optional fields and supported legacy null clears retain downstream defaults and preset precedence. */
 export type GenerationSettings = {
   adaptiveThinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   additionalParams?: [string, string][]
@@ -70,7 +70,7 @@ export type GenerationSettings = {
   descriptionPrefix?: string
   dynamicAssets?: boolean
   dynamicAssetsEditDisplay?: boolean
-  dynamicOutput?: ServerDynamicOutput
+  dynamicOutput?: ServerDynamicOutput | null
   echoDelay?: number
   echoMessage?: string
   enableCustomFlags?: boolean
@@ -190,7 +190,7 @@ export type GenerationSettings = {
   promptPreprocess?: boolean
   promptPresets?: ServerPromptPreset[]
   promptPresetsId?: number
-  promptSettings?: ServerPromptSettings
+  promptSettings?: ServerPromptSettings | null
   promptTemplate?: PromptTemplateCard[] | null
   promptTextInfoInsideChat?: boolean
   providerCredentials?: ProviderCredentialRecord[]
@@ -201,14 +201,14 @@ export type GenerationSettings = {
   repetition_penalty?: number
   requestHistoryLimit?: number
   requestRetrys?: number
-  reverseProxyOobaArgs?: ServerOobaChatCompletionRequestParams
+  reverseProxyOobaArgs?: ServerOobaChatCompletionRequestParams | null
   reverseProxyOobaMode?: boolean
   sdConfig?: ServerSdConfig
   sdProvider?: string
   selectedHypaV3PresetId?: string | null
   selectedPersona?: number
   selectedPersonaId?: string | null
-  seperateModels?: Partial<LegacySeperateModelMap>
+  seperateModels?: Partial<LegacySeperateModelMap> | null
   seperateModelsForAxModels?: boolean
   seperateParameters?: ServerSeparateParameterSettings
   seperateParametersByModel?: boolean
@@ -222,7 +222,7 @@ export type GenerationSettings = {
   temperature?: number
   templateDefaultVariables?: string
   textgenWebUIBlockingURL?: string
-  thinkingTokens?: number
+  thinkingTokens?: number | null
   thinkingType?: 'off' | 'budget' | 'adaptive'
   top_a?: number
   top_k?: number
@@ -344,7 +344,7 @@ export type FastifyCharacter = {
   removedQuotes?: boolean
   escapeOutput?: boolean
   doNotChangeSeperateModels?: boolean
-  prebuiltAssetCommand?: boolean
+  prebuiltAssetCommand?: boolean | string
   prebuiltAssetStyle?: string
   prebuiltAssetExclude?: string[]
   extentions?: Record<string, unknown>
@@ -699,13 +699,13 @@ export type MemoryGenerationSettings = WorkingGenerationSettings & {
 
 /** Concrete known provider/runtime fields replace the shared validation-input unknowns. */
 export type ServerModelRuntimeOptions = Omit<ModelProfileRecordRuntimeOptions, 'dynamicOutput'> & {
-  dynamicOutput?: ServerDynamicOutput
+  dynamicOutput?: ServerDynamicOutput | null
 }
 export type ServerModelProviderOptions = Omit<ModelProfileRecordProviderOptions, 'reverseProxy'> & {
   reverseProxy?: {
     autofillRequestUrl?: boolean
     oobaSystemHoist?: boolean
-    oobaArgs?: ServerOobaChatCompletionRequestParams
+    oobaArgs?: ServerOobaChatCompletionRequestParams | null
   }
 }
 export type ServerModelProfile = Omit<ModelProfileRecord, 'runtimeOptions' | 'providerOptions'> & {

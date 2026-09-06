@@ -383,7 +383,14 @@
           ]
         },
         "dynamicOutput": {
-          "$ref": "#/$defs/record16"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record16"
+            }
+          ]
         },
         "echoDelay": {
           "type": "number"
@@ -962,7 +969,14 @@
           "type": "number"
         },
         "promptSettings": {
-          "$ref": "#/$defs/record195"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record195"
+            }
+          ]
         },
         "promptTemplate": {
           "anyOf": [
@@ -1041,7 +1055,14 @@
           "type": "number"
         },
         "reverseProxyOobaArgs": {
-          "$ref": "#/$defs/record41"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record41"
+            }
+          ]
         },
         "reverseProxyOobaMode": {
           "anyOf": [
@@ -1083,7 +1104,14 @@
           ]
         },
         "seperateModels": {
-          "$ref": "#/$defs/record52"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record52"
+            }
+          ]
         },
         "seperateModelsForAxModels": {
           "anyOf": [
@@ -1167,7 +1195,14 @@
           "type": "string"
         },
         "thinkingTokens": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number"
+            }
+          ]
         },
         "thinkingType": {
           "anyOf": [
@@ -2549,7 +2584,14 @@
           "type": "string"
         },
         "reverseProxyOobaArgs": {
-          "$ref": "#/$defs/record41"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record41"
+            }
+          ]
         },
         "top_p": {
           "type": "number"
@@ -2802,7 +2844,14 @@
           ]
         },
         "thinkingTokens": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number"
+            }
+          ]
         },
         "thinkingType": {
           "anyOf": [
@@ -2877,7 +2926,14 @@
           ]
         },
         "seperateModels": {
-          "$ref": "#/$defs/record52"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record52"
+            }
+          ]
         },
         "modelTools": {
           "type": "array",
@@ -2902,7 +2958,14 @@
           "type": "number"
         },
         "dynamicOutput": {
-          "$ref": "#/$defs/record16"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record16"
+            }
+          ]
         },
         "id": {
           "type": "string"
@@ -3237,7 +3300,14 @@
           ]
         },
         "dynamicOutput": {
-          "$ref": "#/$defs/record16"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record16"
+            }
+          ]
         }
       }
     },
@@ -3722,7 +3792,14 @@
           ]
         },
         "oobaArgs": {
-          "$ref": "#/$defs/record41"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record41"
+            }
+          ]
         }
       }
     },
@@ -4529,10 +4606,24 @@
           ]
         },
         "activationPercent": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number"
+            }
+          ]
         },
         "loreCache": {
-          "$ref": "#/$defs/record56"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record56"
+            }
+          ]
         },
         "useRegex": {
           "anyOf": [
@@ -9103,7 +9194,14 @@
           ]
         },
         "thinkingTokens": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number"
+            }
+          ]
         },
         "thinkingType": {
           "anyOf": [
@@ -9178,7 +9276,14 @@
           ]
         },
         "seperateModels": {
-          "$ref": "#/$defs/record52"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record52"
+            }
+          ]
         },
         "modelTools": {
           "type": "array",
@@ -9203,7 +9308,14 @@
           "type": "number"
         },
         "dynamicOutput": {
-          "$ref": "#/$defs/record16"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record16"
+            }
+          ]
         },
         "bias": {
           "type": "array",
@@ -9287,7 +9399,14 @@
           ]
         },
         "promptSettings": {
-          "$ref": "#/$defs/record195"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record195"
+            }
+          ]
         },
         "promptTemplate": {
           "anyOf": [
@@ -9888,7 +10007,14 @@
           "type": "string"
         },
         "reverseProxyOobaArgs": {
-          "$ref": "#/$defs/record224"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record224"
+            }
+          ]
         },
         "top_p": {
           "type": "number"
@@ -10141,7 +10267,14 @@
           ]
         },
         "thinkingTokens": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number"
+            }
+          ]
         },
         "thinkingType": {
           "anyOf": [
@@ -10216,7 +10349,14 @@
           ]
         },
         "seperateModels": {
-          "$ref": "#/$defs/record235"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record235"
+            }
+          ]
         },
         "modelTools": {
           "type": "array",
@@ -10241,7 +10381,14 @@
           "type": "number"
         },
         "dynamicOutput": {
-          "$ref": "#/$defs/record213"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record213"
+            }
+          ]
         },
         "additionalPrompt": {
           "type": "string"
@@ -10839,7 +10986,14 @@
           "type": "number"
         },
         "promptSettings": {
-          "$ref": "#/$defs/record401"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record401"
+            }
+          ]
         },
         "promptTemplate": {
           "anyOf": [
@@ -11375,7 +11529,14 @@
           ]
         },
         "dynamicOutput": {
-          "$ref": "#/$defs/record213"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record213"
+            }
+          ]
         }
       }
     },
@@ -11935,7 +12096,14 @@
           ]
         },
         "oobaArgs": {
-          "$ref": "#/$defs/record224"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record224"
+            }
+          ]
         }
       }
     },
@@ -13800,7 +13968,14 @@
           "type": "string"
         },
         "reverseProxyOobaArgs": {
-          "$ref": "#/$defs/record224"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record224"
+            }
+          ]
         },
         "top_p": {
           "type": "number"
@@ -14053,7 +14228,14 @@
           ]
         },
         "thinkingTokens": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number"
+            }
+          ]
         },
         "thinkingType": {
           "anyOf": [
@@ -14128,7 +14310,14 @@
           ]
         },
         "seperateModels": {
-          "$ref": "#/$defs/record235"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record235"
+            }
+          ]
         },
         "modelTools": {
           "type": "array",
@@ -14153,7 +14342,14 @@
           "type": "number"
         },
         "dynamicOutput": {
-          "$ref": "#/$defs/record213"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record213"
+            }
+          ]
         },
         "id": {
           "type": "string"
@@ -14317,10 +14513,24 @@
           ]
         },
         "activationPercent": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number"
+            }
+          ]
         },
         "loreCache": {
-          "$ref": "#/$defs/record262"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record262"
+            }
+          ]
         },
         "useRegex": {
           "anyOf": [
@@ -18891,7 +19101,14 @@
           ]
         },
         "thinkingTokens": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number"
+            }
+          ]
         },
         "thinkingType": {
           "anyOf": [
@@ -18966,7 +19183,14 @@
           ]
         },
         "seperateModels": {
-          "$ref": "#/$defs/record235"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record235"
+            }
+          ]
         },
         "modelTools": {
           "type": "array",
@@ -18991,7 +19215,14 @@
           "type": "number"
         },
         "dynamicOutput": {
-          "$ref": "#/$defs/record213"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record213"
+            }
+          ]
         },
         "bias": {
           "type": "array",
@@ -19075,7 +19306,14 @@
           ]
         },
         "promptSettings": {
-          "$ref": "#/$defs/record401"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record401"
+            }
+          ]
         },
         "promptTemplate": {
           "anyOf": [
@@ -19857,6 +20095,9 @@
         },
         "prebuiltAssetCommand": {
           "anyOf": [
+            {
+              "type": "string"
+            },
             {
               "const": false
             },
@@ -20848,7 +21089,14 @@
           "type": "string"
         },
         "reverseProxyOobaArgs": {
-          "$ref": "#/$defs/record224"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record224"
+            }
+          ]
         },
         "top_p": {
           "type": "number"
@@ -21101,7 +21349,14 @@
           ]
         },
         "thinkingTokens": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number"
+            }
+          ]
         },
         "thinkingType": {
           "anyOf": [
@@ -21176,7 +21431,14 @@
           ]
         },
         "seperateModels": {
-          "$ref": "#/$defs/record235"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record235"
+            }
+          ]
         },
         "modelTools": {
           "type": "array",
@@ -21201,7 +21463,14 @@
           "type": "number"
         },
         "dynamicOutput": {
-          "$ref": "#/$defs/record213"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record213"
+            }
+          ]
         },
         "additionalPrompt": {
           "type": "string"
@@ -21796,7 +22065,14 @@
           "type": "number"
         },
         "promptSettings": {
-          "$ref": "#/$defs/record401"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record401"
+            }
+          ]
         },
         "promptTemplate": {
           "anyOf": [
@@ -22173,7 +22449,14 @@
           "type": "string"
         },
         "reverseProxyOobaArgs": {
-          "$ref": "#/$defs/record224"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record224"
+            }
+          ]
         },
         "top_p": {
           "type": "number"
@@ -22426,7 +22709,14 @@
           ]
         },
         "thinkingTokens": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number"
+            }
+          ]
         },
         "thinkingType": {
           "anyOf": [
@@ -22501,7 +22791,14 @@
           ]
         },
         "seperateModels": {
-          "$ref": "#/$defs/record235"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record235"
+            }
+          ]
         },
         "modelTools": {
           "type": "array",
@@ -22526,7 +22823,14 @@
           "type": "number"
         },
         "dynamicOutput": {
-          "$ref": "#/$defs/record213"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record213"
+            }
+          ]
         },
         "additionalPrompt": {
           "type": "string"
@@ -23124,7 +23428,14 @@
           "type": "number"
         },
         "promptSettings": {
-          "$ref": "#/$defs/record401"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record401"
+            }
+          ]
         },
         "promptTemplate": {
           "anyOf": [
@@ -23448,7 +23759,14 @@
           "type": "string"
         },
         "reverseProxyOobaArgs": {
-          "$ref": "#/$defs/record224"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record224"
+            }
+          ]
         },
         "top_p": {
           "type": "number"
@@ -23701,7 +24019,14 @@
           ]
         },
         "thinkingTokens": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number"
+            }
+          ]
         },
         "thinkingType": {
           "anyOf": [
@@ -23776,7 +24101,14 @@
           ]
         },
         "seperateModels": {
-          "$ref": "#/$defs/record235"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record235"
+            }
+          ]
         },
         "modelTools": {
           "type": "array",
@@ -23801,7 +24133,14 @@
           "type": "number"
         },
         "dynamicOutput": {
-          "$ref": "#/$defs/record213"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record213"
+            }
+          ]
         },
         "additionalPrompt": {
           "type": "string"
@@ -24399,7 +24738,14 @@
           "type": "number"
         },
         "promptSettings": {
-          "$ref": "#/$defs/record401"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/record401"
+            }
+          ]
         },
         "promptTemplate": {
           "anyOf": [

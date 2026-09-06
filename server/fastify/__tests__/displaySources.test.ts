@@ -93,6 +93,76 @@ afterEach(async () => {
 })
 
 describe('POST /api/v1/chats/:chatId/display-sources', () => {
+  it('renders imported messages when optional generation settings and lore metadata are null', async () => {
+    const assertion = await setupAuthedClient(harness.app)
+    const db = openDatabase(harness.dataDir)
+    let revision: number
+    try {
+      const seeded = await applyImport(
+        db,
+        harness.dataDir,
+        normalizeRisuSaveSnapshotDatabase({
+          dynamicOutput: null,
+          thinkingTokens: null,
+          characters: [
+            {
+              name: 'Imported',
+              chaId: 'char-1',
+              customscript: [{ in: 'hello', out: 'rendered', type: 'editdisplay' }],
+              globalLore: [
+                {
+                  key: '',
+                  secondkey: '',
+                  insertorder: 0,
+                  comment: '',
+                  content: '',
+                  mode: 'normal',
+                  alwaysActive: false,
+                  selective: false,
+                  activationPercent: null,
+                  loreCache: null,
+                },
+              ],
+              chats: [{ id: 'chat-1', message: [{ role: 'char', data: 'hello', chatId: 'message-1' }] }],
+            },
+          ],
+        }),
+      )
+      revision = seeded.revision
+    } finally {
+      db.close()
+    }
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/chats/chat-1/display-sources',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        protocolVersion: 1,
+        baseRevision: revision,
+        context: { pageSessionId: 'page-a', screenWidth: 800, screenHeight: 600, browserLanguage: 'en-US' },
+        targets: [
+          {
+            requestKey: 'nullable',
+            characterId: 'char-1',
+            messageId: 'message-1',
+            index: 0,
+            role: 'char',
+            firstMessage: false,
+            layer: 'original',
+            source: 'hello',
+            sourceHash: sourceHash('hello'),
+            projectionEpoch: 1,
+          },
+        ],
+      },
+    })
+    expect(response.statusCode, response.body).toBe(200)
+    expect(response.json()).toMatchObject({
+      revision,
+      entries: [{ requestKey: 'nullable', status: 'ok', displaySource: 'rendered' }],
+    })
+  })
+
   it('keeps Lua scriptstate ephemeral within each target and never persists display-time state', async () => {
     const assertion = await setupAuthedClient(harness.app)
     const db = openDatabase(harness.dataDir)

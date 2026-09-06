@@ -4144,7 +4144,7 @@ export interface Database {
   newOAIHandle: boolean
   gptVisionQuality: string
   reverseProxyOobaMode: boolean
-  reverseProxyOobaArgs: OobaChatCompletionRequestParams
+  reverseProxyOobaArgs: OobaChatCompletionRequestParams | null
   huggingfaceKey: string
   fishSpeechKey: string
   allowAllExtentionFiles?: boolean
@@ -4163,7 +4163,7 @@ export interface Database {
   mistralKey?: string
   chainOfThought?: boolean
   genTime: number
-  promptSettings: PromptSettings
+  promptSettings: PromptSettings | null
   keiServerURL: string
   top_k: number
   repetition_penalty: number
@@ -4315,7 +4315,7 @@ export interface Database {
   checkCorruption?: boolean
   toggleConfirmRecommendedPreset?: boolean
   useExperimentalGoogleTranslator: boolean
-  thinkingTokens: number
+  thinkingTokens: number | null
   thinkingType: 'off' | 'budget' | 'adaptive'
   deepseekThinkingType: 'off' | 'enabled'
   adaptiveThinkingEffort: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -4334,7 +4334,7 @@ export interface Database {
   outputImageModal: boolean
   playMessageOnTranslateEnd: boolean
   seperateModelsForAxModels: boolean
-  seperateModels: LegacySeperateModelMap
+  seperateModels: LegacySeperateModelMap | null
   doNotChangeSeperateModels: boolean
   modelTools: string[]
   hotkeys: Hotkey[]
@@ -4374,7 +4374,7 @@ export interface Database {
   showFirstMessagePages: boolean
   streamGeminiThoughts: boolean
   verbosity: number
-  dynamicOutput?: DynamicOutput
+  dynamicOutput?: DynamicOutput | null
   hubServerType?: string
   pluginCustomStorage: { [key: string]: any }
   ImagenModel: string
@@ -4513,11 +4513,11 @@ export interface loreBook {
   }
   /** Excludes this entry from normal prompt activation and reserves it for Agent input resolution. */
   agentOnly?: boolean
-  activationPercent?: number
+  activationPercent?: number | null
   loreCache?: {
     key: string
     data: string[]
-  }
+  } | null
   useRegex?: boolean
   bookVersion?: number
   id?: string
@@ -4742,9 +4742,9 @@ export interface botPreset {
   NAIappendName?: boolean
   localStopStrings?: string[] | null
   customProxyRequestModel?: string
-  reverseProxyOobaArgs?: OobaChatCompletionRequestParams
+  reverseProxyOobaArgs?: OobaChatCompletionRequestParams | null
   top_p?: number
-  promptSettings?: PromptSettings
+  promptSettings?: PromptSettings | null
   repetition_penalty?: number
   min_p?: number
   top_a?: number
@@ -4786,19 +4786,19 @@ export interface botPreset {
   image?: string
   regex?: customscript[]
   reasonEffort?: number
-  thinkingTokens?: number
+  thinkingTokens?: number | null
   thinkingType?: 'off' | 'budget' | 'adaptive'
   deepseekThinkingType?: 'off' | 'enabled'
   adaptiveThinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   deepseekReasoningEffort?: 'high' | 'max'
   outputImageModal?: boolean
   seperateModelsForAxModels?: boolean
-  seperateModels?: LegacySeperateModelMap
+  seperateModels?: LegacySeperateModelMap | null
   modelTools?: string[]
   fallbackModels?: LegacyFallbackModelMap
   fallbackWhenBlankResponse?: boolean
   verbosity?: number
-  dynamicOutput?: DynamicOutput
+  dynamicOutput?: DynamicOutput | null
 }
 
 export type ModelPreset = Partial<botPreset> & {

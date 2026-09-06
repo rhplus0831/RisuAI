@@ -113,6 +113,20 @@ chats retain `folderId: null`; plain prompt cards may omit `type2`, passing an
 undefined location through the existing position parser without a new default.
 Custom models may omit `params`, preserving the existing behavior of sending no
 extra request parameters.
+Legacy preset snapshots may explicitly store `null` for `dynamicOutput`,
+`thinkingTokens`, `promptSettings`, `reverseProxyOobaArgs`, and `seperateModels`.
+The generation contracts preserve those values in settings and selected presets,
+including nullable dynamic output and reverse-proxy arguments in durable profiles.
+Profile resolution preserves an explicit dynamic-output clear instead of dropping
+it and leaving a conflicting flat setting enabled. Other downstream consumers
+retain their existing absence/default behavior. Imported
+lorebooks likewise retain nullable `loreCache` and migrated `activationPercent`
+markers. Non-null values still receive finite member validation. Decoder and
+durable-generation regressions cover these values across import, preset
+composition, provider dispatch, display, and greeting translation reads.
+Character-card asset-prompt toggles retain both legacy strings and booleans;
+the importer preserves an enabled boolean rather than dropping it during string
+conversion, and generation keeps the established truthiness check.
 
 Resolved configuration is deeply readonly by type. Effective request settings
 use a writable scalar overlay and owned global variables; selected nested

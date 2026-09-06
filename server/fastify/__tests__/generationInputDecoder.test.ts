@@ -23,6 +23,8 @@ import {
   GenerationInputValidationError,
 } from '../src/prompt/generationInputDecoder.js'
 import { normalizeRisuSaveSnapshotDatabase } from '../src/risuSave/importSnapshot.js'
+import { createExtractedModelPreset, createExtractedPromptPreset } from '@risuai/shared-core/preset-split'
+import { convertRealmCharacterCard } from '../src/realmImport/characterCard.js'
 
 function selectedDatabaseWithMessage(message: unknown) {
   const base = decodeGenerationDatabase(
@@ -244,6 +246,178 @@ describe('selected generation persistence decoder', () => {
     expect(() =>
       decodeGenerationPreflightInputs({ database, currentChar: { chaId: 'character' }, currentChat: { id: 'chat' } }),
     ).toThrow(`Invalid preflight generation input at ${field}`)
+  })
+
+  it.each([undefined, null, {}, { dynamicMessages: true, showTypingEffect: false }])(
+    'preserves supported dynamic output %j in settings, presets and profile runtime owners',
+    (dynamicOutput) => {
+      const setting = dynamicOutput === undefined ? {} : { dynamicOutput }
+      const profile = { id: 'profile', name: 'Main', runtimeOptions: setting }
+      const input = {
+        ...setting,
+        modelPresets: [{ id: 'model', ...setting, modelProfiles: [profile], modelRuntimeDefaults: setting }],
+        promptPresets: [{ id: 'prompt', ...setting }],
+        modelProfiles: [profile],
+        modelRuntimeDefaults: setting,
+      }
+      const bytes = JSON.stringify(input)
+      const database = { ...input, characters: [] }
+      const preflight = { database: input, currentChar: { chaId: 'character' }, currentChat: { id: 'chat' } }
+
+      expect(decodeGenerationSettings(input)).toBe(input)
+      expect(decodeGenerationDatabase(database)).toBe(database)
+      expect(decodeGenerationPreflightInputs(preflight)).toBe(preflight)
+      expect(decodeProviderGenerationSettings(input)).toBe(input)
+      expect(decodeMemoryGenerationSettings(input)).toBe(input)
+      expect(JSON.stringify(input)).toBe(bytes)
+      expect(database.dynamicOutput).toBe(dynamicOutput)
+      expect(Object.hasOwn(input, 'dynamicOutput')).toBe(dynamicOutput !== undefined)
+    },
+  )
+
+  it.each([false, 'disabled', [], { dynamicMessages: 'yes' }, { showTypingEffect: null }])(
+    'rejects malformed dynamic output %j in every configuration owner',
+    (dynamicOutput) => {
+      const owners = [
+        [{ dynamicOutput }, '/database/dynamicOutput'],
+        [{ modelPresets: [{ id: 'model', dynamicOutput }] }, '/database/modelPresets/0/dynamicOutput'],
+        [{ promptPresets: [{ id: 'prompt', dynamicOutput }] }, '/database/promptPresets/0/dynamicOutput'],
+        [{ modelRuntimeDefaults: { dynamicOutput } }, '/database/modelRuntimeDefaults/dynamicOutput'],
+        [
+          { modelProfiles: [{ id: 'profile', name: 'Main', runtimeOptions: { dynamicOutput } }] },
+          '/database/modelProfiles/0/runtimeOptions/dynamicOutput',
+        ],
+      ] as const
+      for (const [database, field] of owners) {
+        expect(() =>
+          decodeGenerationPreflightInputs({
+            database,
+            currentChar: { chaId: 'character' },
+            currentChat: { id: 'chat' },
+          }),
+        ).toThrow(`Invalid preflight generation input at ${field}`)
+      }
+    },
+  )
+
+  it.each(['thinkingTokens', 'promptSettings', 'reverseProxyOobaArgs', 'seperateModels'])(
+    'preserves the legacy preset null for %s across generation boundaries and split extraction',
+    (field) => {
+      const setting = { [field]: null }
+      const input = {
+        ...setting,
+        modelPresets: [createExtractedModelPreset(setting, { id: 'model' })],
+        promptPresets: [createExtractedPromptPreset(setting, { id: 'prompt' })],
+      }
+      const bytes = JSON.stringify(input)
+      const database = { ...input, characters: [] }
+      const preflight = { database: input, currentChar: { chaId: 'character' }, currentChat: { id: 'chat' } }
+      expect(decodeGenerationSettings(input)).toBe(input)
+      expect(decodeGenerationDatabase(database)).toBe(database)
+      expect(decodeGenerationPreflightInputs(preflight)).toBe(preflight)
+      expect(decodeProviderGenerationSettings(input)).toBe(input)
+      expect(decodeMemoryGenerationSettings(input)).toBe(input)
+      expect(JSON.stringify(input)).toBe(bytes)
+
+      // Root defaults may replace null, but selected preset records retain it.
+      const imported = normalizeRisuSaveSnapshotDatabase(database)
+      expect(decodeGenerationDatabase(imported)).toBe(imported)
+    },
+  )
+
+  it('preserves null reverse-proxy arguments in durable profiles', () => {
+    const input = {
+      modelProfiles: [{ id: 'profile', name: 'Proxy', providerOptions: { reverseProxy: { oobaArgs: null } } }],
+    }
+    expect(decodeGenerationSettings(input)).toBe(input)
+    expect(decodeProviderGenerationSettings(input)).toBe(input)
+  })
+
+  it.each([
+    { thinkingTokens: '1000' },
+    { thinkingTokens: {} },
+    { promptSettings: false },
+    { promptSettings: { sendName: 'yes' } },
+    { reverseProxyOobaArgs: [] },
+    { reverseProxyOobaArgs: { top_k: 'hot' } },
+    { seperateModels: 'disabled' },
+    { seperateModels: { memory: 42 } },
+    { modelProfiles: [{ id: 'profile', name: 'Proxy', providerOptions: { reverseProxy: { oobaArgs: false } } }] },
+  ])('still rejects malformed non-null legacy settings %j', (input) => {
+    expect(() => decodeGenerationSettings(input)).toThrow(GenerationInputValidationError)
+  })
+
+  it.each(['chara_card_v2', 'chara_card_v3'])(
+    'preserves boolean and legacy string asset-prompt toggles from %s cards',
+    async (spec) => {
+      for (const prebuiltAssetCommand of [undefined, '', 'legacy-enabled', false, true]) {
+        const character = await convertRealmCharacterCard(
+          { spec, data: { name: 'Imported', extensions: { risuai: { prebuiltAssetCommand } } } },
+          {
+            storeAsset: async () => {
+              throw new Error('Fixture has no assets')
+            },
+          },
+        )
+        const input = normalizeRisuSaveSnapshotDatabase({ characters: [character] })
+        const decoded = decodeGenerationDatabase(input)
+        expect(decoded.characters[0].prebuiltAssetCommand).toBe(prebuiltAssetCommand ?? '')
+        expect(decoded).toBe(input)
+        expect(() =>
+          decodeGenerationDatabase({
+            ...input,
+            characters: [{ ...decoded.characters[0], prebuiltAssetCommand: 42 }],
+          }),
+        ).toThrow('/characters/0/prebuiltAssetCommand')
+      }
+    },
+  )
+
+  it('decodes imported character-card lore caches and migrated probability markers', async () => {
+    const character = await convertRealmCharacterCard(
+      {
+        spec: 'chara_card_v2',
+        data: {
+          name: 'Imported',
+          character_book: {
+            entries: [
+              { keys: ['key'], content: 'Imported lore', extensions: {} },
+              {
+                keys: ['key'],
+                content: '@@probability 50\nMigrated lore',
+                extensions: { risu_activationPercent: null, risu_loreCache: null },
+              },
+            ],
+          },
+        },
+      },
+      {
+        storeAsset: async () => {
+          throw new Error('Fixture has no assets')
+        },
+      },
+    )
+    const input = normalizeRisuSaveSnapshotDatabase({ characters: [character] })
+    const bytes = JSON.stringify(input)
+    const decoded = decodeGenerationDatabase(input)
+    expect(decoded).toBe(input)
+    expect(decoded.characters[0].globalLore[0].loreCache).toBeNull()
+    expect(decoded.characters[0].globalLore[1]).toMatchObject({ activationPercent: null, loreCache: null })
+    const lore = decoded.characters[0].globalLore
+    const moduleSettings = { modules: [{ id: 'module', name: 'Module', description: '', lorebook: lore }] }
+    expect(decodeGenerationSettings(moduleSettings)).toBe(moduleSettings)
+    decoded.characters[0].chats[0].localLore = lore
+    expect(decodeGenerationDatabase(input)).toBe(input)
+    decoded.characters[0].chats[0].localLore = []
+    expect(JSON.stringify(input)).toBe(bytes)
+
+    for (const invalid of [{ activationPercent: '50' }, { loreCache: [] }, { loreCache: { key: 'key', data: [42] } }]) {
+      expect(() =>
+        decodeGenerationSettings({
+          modules: [{ ...moduleSettings.modules[0], lorebook: [{ ...lore[0], ...invalid }] }],
+        }),
+      ).toThrow(GenerationInputValidationError)
+    }
   })
 
   it.each([null, 'folder'])('preserves supported chat folder ownership %j without copying', (folderId) => {

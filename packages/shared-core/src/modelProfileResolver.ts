@@ -104,7 +104,7 @@ export interface ModelProfileResolverDatabase {
   frequencyPenalty?: number
   PresensePenalty?: number
   reasoningEffort?: number
-  thinkingTokens?: number
+  thinkingTokens?: number | null
   thinkingType?: string
   deepseekThinkingType?: string
   adaptiveThinkingEffort?: string
@@ -2311,7 +2311,13 @@ function resolveRuntimeOptions(
     strictJsonSchema: value(durableRuntimeOptions?.strictJsonSchema, database.strictJsonSchema),
     outputImageModal: value(durableRuntimeOptions?.outputImageModal, database.outputImageModal),
     stripCoT: durableRuntimeOptions?.stripCoT === true,
-    dynamicOutput: value(durableRuntimeOptions?.dynamicOutput, database.dynamicOutput),
+    // Unlike optional scalar budgets, null is a persisted dynamic-output clear.
+    dynamicOutput:
+      durableRuntimeOptions?.dynamicOutput !== undefined
+        ? durableRuntimeOptions.dynamicOutput
+        : useLegacyFallback
+          ? database.dynamicOutput
+          : undefined,
     modelTools:
       durableRuntimeOptions?.modelTools !== undefined
         ? [...durableRuntimeOptions.modelTools]

@@ -228,6 +228,43 @@ function cachePayload(hashes: Record<string, string[]>): Record<string, unknown>
 }
 
 describe('authenticated resource read routes', () => {
+  it('loads greeting translations with nullable legacy generation settings without rewriting them', async () => {
+    const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      const row = sqlite.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      const settings = {
+        ...JSON.parse(row.data_json),
+        translatorPresetId: 'translator-a',
+        translatorType: 'google',
+        translator: 'en',
+        dynamicOutput: null,
+        thinkingTokens: null,
+        promptSettings: null,
+        reverseProxyOobaArgs: null,
+        seperateModels: null,
+        modelRuntimeDefaults: { dynamicOutput: null },
+      }
+      sqlite.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+    } finally {
+      sqlite.close()
+    }
+    const before = readAllDatabaseRows()
+    const response = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters/char-a/greeting-translations?chatId=chat-a',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(response.statusCode, response.body).toBe(200)
+    expect(response.json()).toMatchObject({
+      characterId: 'char-a',
+      chatId: 'chat-a',
+      revision,
+      settingsHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      translations: [],
+    })
+    expect(readAllDatabaseRows()).toEqual(before)
+  })
+
   it('loads greeting translations after migrating a legacy numeric translator selection', async () => {
     const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
     try {

@@ -26,11 +26,11 @@ export interface loreBook {
   }
   /** Excludes this entry from normal prompt activation and reserves it for Agent input resolution. */
   agentOnly?: boolean
-  activationPercent?: number
+  activationPercent?: number | null
   loreCache?: {
     key: string
     data: readonly string[]
-  }
+  } | null
   useRegex?: boolean
   bookVersion?: number
   id?: string

@@ -228,7 +228,10 @@ export async function convertRealmCharacterCard(
     lowLevelAccess: risuExt?.lowLevelAccess === true,
     defaultVariables: readString(risuExt?.defaultVariables),
     chatFolders: [],
-    prebuiltAssetCommand: readString(risuExt?.prebuiltAssetCommand),
+    prebuiltAssetCommand:
+      typeof risuExt?.prebuiltAssetCommand === 'boolean'
+        ? risuExt.prebuiltAssetCommand
+        : readString(risuExt?.prebuiltAssetCommand),
     prebuiltAssetExclude: normalizePrebuiltAssetExcludes(
       risuExt?.prebuiltAssetExclude,
       additionalAssets,

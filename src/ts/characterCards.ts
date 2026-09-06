@@ -1450,11 +1450,11 @@ function createBaseV2(char: character) {
   for (const lore of char.globalLore) {
     let ext: {
       risu_case_sensitive?: boolean
-      risu_activationPercent?: number
+      risu_activationPercent?: number | null
       risu_loreCache?: {
         key: string
         data: string[]
-      }
+      } | null
       risu_agent_only?: boolean
     } = structuredClone(lore.extentions ?? {})
 
@@ -1932,11 +1932,11 @@ export function createBaseV3(char: character) {
   for (const lore of char.globalLore) {
     let ext: {
       risu_case_sensitive?: boolean
-      risu_activationPercent?: number
+      risu_activationPercent?: number | null
       risu_loreCache?: {
         key: string
         data: string[]
-      }
+      } | null
       risu_agent_only?: boolean
     } = structuredClone(lore.extentions ?? {})
 

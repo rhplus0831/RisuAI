@@ -23,6 +23,7 @@ import {
 } from '../src/routes/generationChat.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import { readResourceDatabaseFromFetch, type RuntimeBootstrap } from './helpers/resourceDatabase.js'
+import { createExtractedModelPreset, createExtractedPromptPreset } from '@risuai/shared-core/preset-split'
 
 // Durable generation lives on a detached job whose lifecycle is not tied to the
 // request connection, so these use a real listening server + `fetch`. `app.inject`
@@ -1478,6 +1479,131 @@ describe('Durable generation', () => {
       expect.objectContaining({ role: 'char', data: 'Reply after disabling custom stops' }),
     ])
   })
+
+  it.each(['legacy presets', 'durable profile'])(
+    'completes a send with nullable settings from %s and imported lorebook metadata',
+    async (owner) => {
+      const legacyPreset = {
+        dynamicOutput: null,
+        thinkingTokens: null,
+        reverseProxyOobaArgs: null,
+        seperateModels: null,
+        promptSettings: null,
+      }
+      const modelPreset = createExtractedModelPreset(legacyPreset, {
+        id: DURABLE_MODEL_PRESET_ID,
+        name: 'Legacy model',
+      })
+      const promptPreset = createExtractedPromptPreset(legacyPreset, {
+        id: DURABLE_PROMPT_PRESET_ID,
+        name: 'Legacy prompt',
+      })
+      if (owner === 'durable profile') {
+        modelPreset.modelRoleProfiles = { chatMain: { mode: 'profile', profileId: 'null-profile' } }
+        modelPreset.dynamicOutput = { dynamicMessages: true }
+        modelPreset.reverseProxyOobaArgs = { mode: 'chat' }
+        // Leave this field to the profile; prompt overrides intentionally win after profile application.
+        delete promptPreset.dynamicOutput
+      }
+      await seedDatabase({
+        ...fixtureDatabase,
+        ...legacyPreset,
+        // The model preset explicitly clears previously enabled dynamic output.
+        ...(owner === 'legacy presets' ? { dynamicOutput: { dynamicMessages: true } } : {}),
+        modelPresets: [
+          {
+            ...fixtureDatabase.modelPresets[0],
+            ...modelPreset,
+          },
+        ],
+        promptPresets: [
+          {
+            ...fixtureDatabase.promptPresets[0],
+            ...promptPreset,
+            overrideModelParameters: true,
+          },
+        ],
+        ...(owner === 'durable profile'
+          ? {
+              modelProfiles: [
+                {
+                  id: 'null-profile',
+                  name: 'Nullable profile',
+                  modelId: 'echo_model',
+                  runtimeOptions: { dynamicOutput: null },
+                  providerOptions: { reverseProxy: { oobaArgs: null } },
+                },
+              ],
+              modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'null-profile' } },
+              modelRuntimeDefaults: { dynamicOutput: { dynamicMessages: true } },
+            }
+          : {}),
+        characters: [
+          {
+            ...fixtureDatabase.characters[0],
+            globalLore: [
+              {
+                key: '',
+                secondkey: '',
+                insertorder: 0,
+                comment: 'Imported lore',
+                content: 'Imported lore with no cache',
+                mode: 'constant',
+                alwaysActive: true,
+                selective: false,
+                loreCache: null,
+                activationPercent: null,
+              },
+            ],
+          },
+        ],
+      })
+      let dispatchedSettings: unknown
+      let dispatchedProfile: unknown
+      providerImpl = (context) => {
+        dispatchedProfile = context.profile
+        dispatchedSettings = {
+          dynamicOutput: context.database.dynamicOutput,
+          thinkingTokens: context.database.thinkingTokens,
+          reverseProxyOobaArgs: context.database.reverseProxyOobaArgs,
+          promptSettings: context.database.promptSettings,
+          seperateModels: context.database.seperateModels,
+        }
+        return (async function* (): AsyncGenerator<CompletionStreamFrame> {
+          yield { kind: 'token', content: 'Reply with nullable configuration' }
+          yield { kind: 'done', finishReason: 'stop' }
+        })()
+      }
+      const authority = await operationAuthority()
+      const operationId = randomUUID()
+      const acceptedMessageId = randomUUID()
+      const response = await postAtomicOperation(
+        authority.databaseLineage,
+        atomicSendRequest({ operationId, acceptedMessageId, baseRevision: authority.revision }),
+      )
+      expect(response.status, await response.clone().text()).toBe(201)
+      await response.json()
+      await waitFor(async () => {
+        const status = await operationStatus(operationId)
+        return status.operation.state === 'completed' ? status : undefined
+      })
+      expect(dispatchedSettings).toEqual({
+        ...legacyPreset,
+        reverseProxyOobaArgs: owner === 'durable profile' ? { mode: 'chat' } : null,
+      })
+      if (owner === 'durable profile') {
+        expect(dispatchedProfile).toMatchObject({
+          profileId: 'null-profile',
+          source: { kind: 'durable-profile' },
+          runtimeOptions: { dynamicOutput: null },
+        })
+      }
+      expect((await chatHydration(await bootstrap())).message).toEqual([
+        expect.objectContaining({ role: 'user', chatId: acceptedMessageId }),
+        expect.objectContaining({ role: 'char', data: 'Reply with nullable configuration' }),
+      ])
+    },
+  )
 
   it('rejects a malformed known configuration before accepting a user message or operation', async () => {
     const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))

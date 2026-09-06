@@ -70,6 +70,21 @@ describe('generation input concrete contracts', () => {
       database.globalChatVariables = {owned:'value'};
       database.globalChatVariables.owned = 'changed';
       database.temperature = 50;
+      database.dynamicOutput = null;
+      database.thinkingTokens = null;
+      database.promptSettings = null;
+      database.reverseProxyOobaArgs = null;
+      database.seperateModels = null;
+      database.modelProfiles = [{id:'m',name:'Main',runtimeOptions:{dynamicOutput:null},providerOptions:{reverseProxy:{oobaArgs:null}}}];
+      // @ts-expect-error null support must not erase the dynamic-output object shape
+      database.dynamicOutput = {dynamicMessages:'yes'};
+      // @ts-expect-error an unset budget does not permit numeric strings
+      database.thinkingTokens = '1000';
+      const importedLore:FastifyLoreBook = {...lore, activationPercent:null, loreCache:null};
+      character.prebuiltAssetCommand = '';
+      character.prebuiltAssetCommand = true;
+      // @ts-expect-error legacy asset toggles accept strings and booleans only
+      character.prebuiltAssetCommand = 42;
       chat.generationSettings = {modelPresetId:'model', sidebarToggles:{test:'1'}};
       chat.folderId = null;
       chat.folderId = 'folder';
@@ -93,6 +108,8 @@ describe('generation input concrete contracts', () => {
       message.data = 42;
       // @ts-expect-error unknown lorebook property
       lore.contents = 'x';
+      // @ts-expect-error imported lore caches retain their finite member types
+      const invalidCache:FastifyLoreBook = {...lore,loreCache:{key:'key',data:[42]}};
       // @ts-expect-error unknown regex property
       script.outputs = 'x';
       // @ts-expect-error unknown message preset property

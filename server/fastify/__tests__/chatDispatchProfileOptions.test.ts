@@ -1078,6 +1078,35 @@ describe('dispatchChatProvider profile providerOptions', () => {
     ])
   })
 
+  it('preserves a profile null that clears conflicting legacy reverse-proxy arguments', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'reverse_proxy',
+        forceReplaceUrl: 'https://proxy.example.com/v1',
+        customProxyRequestModel: 'profile-proxy-model',
+        customAPIFormat: LLMFormat.OpenAICompatible,
+        proxyKey: 'fixture-proxy-key',
+        autofillRequestUrl: true,
+        reverseProxyOobaMode: true,
+        reverseProxyOobaArgs: null,
+      }),
+    })
+    expect(profile.providerOptions.reverseProxy?.oobaArgs).toBeNull()
+    const flatConflict = db({
+      aiModel: 'reverse_proxy',
+      customProxyRequestModel: 'flat-proxy-model',
+      customAPIFormat: LLMFormat.OpenAICompatible,
+      forceReplaceUrl: 'https://flat-proxy.example.com/v1',
+      reverseProxyOobaMode: true,
+      reverseProxyOobaArgs: { mode: 'chat', grammar_string: 'legacy-only' },
+    })
+    const captured = captureOpenAIRequests()
+    await dispatchWithProfile(profile, flatConflict)
+    expect(captured).toHaveLength(1)
+    expect(captured[0].body.mode).toBeUndefined()
+    expect(captured[0].body.grammar_string).toBeUndefined()
+  })
+
   it.each([
     {
       label: 'autofill off custom operation',
@@ -1923,6 +1952,26 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].headers.Authorization).toContain('/eu-central-1/bedrock/aws4_request')
     expect(captured[0].body.messages).toEqual([{ role: 'user', content: [{ type: 'text', text: 'hello' }] }])
   })
+
+  it.each([undefined, null])(
+    'does not enable a Bedrock thinking budget for the unset value %j',
+    async (thinkingTokens) => {
+      const database = db({
+        aiModel: 'anthropic.claude-3-7-sonnet-20250219-v1:0',
+        claudeAPIKey: 'PROFILEAKIA:profile-secret:us-east-1',
+        thinkingType: 'budget',
+        thinkingTokens,
+        temperature: 25,
+      })
+      const profile = resolveModelProfile({ database })
+      expect(profile.runtimeOptions.thinkingTokens).toBeUndefined()
+      const captured = captureDispatchRequests(okBedrockResponse())
+      await dispatchWithProfile(profile, database, undefined, { stop_reason: 'end_turn' })
+      expect(captured).toHaveLength(1)
+      expect(captured[0].body.thinking).toBeUndefined()
+      expect(captured[0].body.temperature).toBe(0.25)
+    },
+  )
 
   it('maps Bedrock thinking budget and restores the Bedrock sampler constraints', async () => {
     const database = db({
