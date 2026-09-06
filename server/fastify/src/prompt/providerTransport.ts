@@ -200,18 +200,24 @@ export async function emitProviderChunks(
         const content = frame.content ?? ''
         result += content
         const tokenProgress = normalizedOptions.tokenProgress
-        if (content.length > 0 && tokenProgress) {
-          let deltaTokens = 1
-          try {
-            const counted = tokenProgress.countTokens(content)
-            if (Number.isFinite(counted)) deltaTokens = Math.max(1, Math.floor(counted))
-          } catch {
-            // Throughput telemetry must never interrupt the provider stream.
+        if (tokenProgress) {
+          let deltaTokens = 0
+          if (typeof frame.tokenCount === 'number' && Number.isFinite(frame.tokenCount) && frame.tokenCount >= 0) {
+            deltaTokens = Math.floor(frame.tokenCount)
+          } else if (content.length > 0) {
+            deltaTokens = 1
+            try {
+              const counted = tokenProgress.countTokens(content)
+              if (Number.isFinite(counted)) deltaTokens = Math.max(1, Math.floor(counted))
+            } catch {
+              // Throughput telemetry must never interrupt the provider stream.
+            }
           }
+          if (content.length === 0 && deltaTokens === 0) continue
           generatedTokens += deltaTokens
           const elapsedMs = Math.max(1, Math.round((tokenProgress.now?.() ?? Date.now()) - tokenProgress.startedAt))
           emit({ type: 'token', content, generatedTokens, elapsedMs })
-        } else {
+        } else if (content.length > 0) {
           emit({ type: 'token', content })
         }
         continue

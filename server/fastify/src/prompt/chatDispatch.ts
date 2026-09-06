@@ -41,7 +41,7 @@ import {
 import { emitProtocolMetric } from '../protocolMetrics.js'
 import { promptSummaryMetricFields, summarizePromptRows } from './promptSummary.js'
 import type { GenerationTraceContext } from '../generation/generationTraceSidecar.js'
-import { encodeTokens, encodingForModel } from './tokens.js'
+import { encodeTokens, encodingForModel, tokenize } from './tokens.js'
 import { ensureTokenizerLoadedForDb, tokenizerEncodingFromDb } from './tokenizerConfig.js'
 import type { TokenEncoding } from './tokens.js'
 import type { ServerToolDefinition, ServerToolRound } from '@risuai/protocol/server-tool'
@@ -1146,7 +1146,14 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
     : null
   try {
     const frames = await dispatchChatProviderCore({ ...args, profile, finalizedMessages })
-    const processedFrames = profile.runtimeOptions.stripCoT ? stripCoTFromCompletionFrames(frames) : frames
+    const processedFrames = profile.runtimeOptions.stripCoT
+      ? stripCoTFromCompletionFrames(frames, {
+          buffered: args.database.useStreaming !== true && args.database.halfStreaming !== true,
+          ...(args.database.halfStreaming === true
+            ? { countTokens: (content: string) => tokenize(content, tokenizerEncodingFromDb(args.database)) }
+            : {}),
+        })
+      : frames
     return wrapRequestHistoryFrames(processedFrames, handle, args.signal)
   } catch (error) {
     completeRequestHistory(handle, {

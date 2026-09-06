@@ -159,18 +159,27 @@ stored units for settings displays; profile overrides remain a separate record.
 
 Important runtime contracts include:
 
-- `stripCoT` buffers one provider completion and removes recognized
-  `<Thoughts>`/`<think>` blocks before downstream consumers and request-history
-  capture. `server/fastify/__tests__/stripCoTFrames.test.ts` pins chunk-split
-  handling; the Strip CoT cases in
+- `stripCoT` incrementally removes recognized `<Thoughts>`/`<think>` blocks
+  before downstream consumers and request-history capture. It retains possible
+  split tags and pending whitespace while suppressing nested reasoning bodies.
+  Buffered requests retain whole-string trimming; streaming preserves any
+  leading whitespace already emitted before a later reasoning block.
+  Half-streaming counts upstream text before stripping, including reasoning,
+  and sends progress-only token events while visible content is unavailable.
+  Empty progress events do not cross the visible-answer retry boundary.
+  `server/fastify/__tests__/stripCoTFrames.test.ts` pins chunk-split handling and
+  interrupted output; `server/fastify/__tests__/llmgatewayStreaming.test.ts`
+  verifies incremental delivery, half-streaming counts, and filtered history.
+  The Strip CoT cases in
   `server/fastify/__tests__/chatDispatchProfileOptions.test.ts` pin dispatch
   inheritance and override behavior.
 - `halfStreaming` is a profile/runtime option alongside `useStreaming`.
   `server/fastify/src/routes/generationChat.ts` advertises it in the initial
   `info` frame. `server/fastify/src/prompt/sseEvents.ts` declares the
   `TokenEvent` fields, while
-  `server/fastify/src/prompt/providerTransport.ts` performs cumulative token
-  counting and emits `generatedTokens`/`elapsedMs`. Browser
+  `server/fastify/src/prompt/providerTransport.ts` accumulates per-delta token
+  counts and emits `generatedTokens`/`elapsedMs`, including on empty-content
+  progress events for stripped reasoning. Browser
   `src/ts/process/request/serverChat.ts` buffers visible text while
   `src/ts/process/halfStreamingProgress.ts` computes throughput. Agent Preset
   steps deliberately disable both streaming modes; see

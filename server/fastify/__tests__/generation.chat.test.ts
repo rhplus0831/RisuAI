@@ -4419,12 +4419,13 @@ describe('POST /api/v1/generate/chat', () => {
     expect(typeof events.at(-1)?.data.generationId).toBe('string')
   })
 
-  it('marks half-streaming generations and includes tokenizer-aware provider progress', async () => {
+  it.each([false, true])('reports half-streaming progress for stripped reasoning with durable=%s', async (durable) => {
     await restartHarness({
       dispatchProvider: () => {
         async function* source(): AsyncGenerator<CompletionStreamFrame> {
-          yield { kind: 'token', content: 'half' }
-          yield { kind: 'token', content: ' streamed' }
+          yield { kind: 'token', content: '', tokenCount: 5 }
+          yield { kind: 'token', content: 'half', tokenCount: 2 }
+          yield { kind: 'token', content: ' streamed', tokenCount: 3 }
           yield { kind: 'done', finishReason: 'stop' }
         }
         return source()
@@ -4441,18 +4442,19 @@ describe('POST /api/v1/generate/chat', () => {
       method: 'POST',
       url: '/api/v1/generate/chat',
       headers: { 'risu-auth': assertion },
-      payload: basePayload,
+      payload: { ...basePayload, durable },
     })
     expect(res.statusCode).toBe(200)
 
     const events = parseEvents(res.body)
     expect(events.find((event) => event.type === 'info')?.data).toMatchObject({ halfStreaming: true })
     expect(events.filter((event) => event.type === 'token').map((event) => event.data.content)).toEqual([
+      '',
       'half',
       ' streamed',
     ])
     const tokenEvents = events.filter((event) => event.type === 'token')
-    expect(tokenEvents[0]?.data.generatedTokens).toBeGreaterThan(0)
+    expect(tokenEvents.map((event) => event.data.generatedTokens)).toEqual([5, 7, 10])
     expect(tokenEvents[0]?.data.elapsedMs).toBeGreaterThan(0)
     expect(tokenEvents[1]?.data.generatedTokens).toBeGreaterThan(tokenEvents[0]?.data.generatedTokens as number)
     expect(events.at(-1)?.data).toMatchObject({ result: 'half streamed' })
@@ -9374,6 +9376,85 @@ describe('POST /api/v1/generate/preview-prompt', () => {
     ])
     expect(events.some((event) => event.type === 'error')).toBe(false)
     expect((await readPersistedMessages(assertion)).at(-1)?.data).toBe('retry succeeded')
+  })
+
+  it.each([false, true])(
+    'preserves retries after progress-only frames with output inspection=%s',
+    async (inspectOutput) => {
+      let call = 0
+      const dispatchProvider = vi.fn(() =>
+        (async function* (): AsyncGenerator<CompletionStreamFrame> {
+          call += 1
+          if (call === 1) {
+            yield { kind: 'token', content: '', tokenCount: 6 }
+            yield { kind: 'error', error: 'Overloaded' }
+            return
+          }
+          yield { kind: 'token', content: 'retry succeeded', tokenCount: 3 }
+          yield { kind: 'done', finishReason: 'stop' }
+        })(),
+      )
+      await restartHarness({ dispatchProvider })
+      const { assertion } = await setupAuthedClient(harness.app)
+      await seedDatabase(harness.app, assertion, {
+        ...fixtureDatabase,
+        requestRetrys: 1,
+        halfStreaming: true,
+        banCharacterset: inspectOutput ? ['Hangul'] : [],
+      })
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: basePayload,
+      })
+      expect(res.statusCode).toBe(200)
+      expect(dispatchProvider).toHaveBeenCalledTimes(2)
+      const events = parseEvents(res.body)
+      const tokens = events.filter((event) => event.type === 'token')
+      expect(tokens[0]?.data).toMatchObject({ content: '', generatedTokens: 6 })
+      expect(tokens.at(-1)?.data).toMatchObject({ content: 'retry succeeded', generatedTokens: 9 })
+      expect(events.some((event) => event.type === 'error')).toBe(false)
+      expect((await readPersistedMessages(assertion)).at(-1)?.data).toBe('retry succeeded')
+    },
+  )
+
+  it('falls back after a reasoning-only completion while retaining scalar progress', async () => {
+    const seenModels: Array<string | undefined> = []
+    const dispatchProvider = vi.fn((context: ChatProviderDispatchContext) =>
+      (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        seenModels.push(context.profile?.modelId)
+        if (seenModels.length === 1) {
+          yield { kind: 'token', content: '', tokenCount: 6 }
+        } else {
+          yield { kind: 'token', content: 'fallback answer', tokenCount: 3 }
+        }
+        yield { kind: 'done', finishReason: 'stop' }
+      })(),
+    )
+    await restartHarness({ dispatchProvider })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      aiModel: 'gpt-5',
+      halfStreaming: true,
+      fallbackWhenBlankResponse: true,
+      fallbackModels: { model: ['echo_model'] },
+    })
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    expect(seenModels).toEqual(['gpt-5', 'echo_model'])
+    const events = parseEvents(res.body)
+    const tokens = events.filter((event) => event.type === 'token')
+    expect(tokens[0]?.data).toMatchObject({ content: '', generatedTokens: 6 })
+    expect(tokens.at(-1)?.data).toMatchObject({ content: 'fallback answer', generatedTokens: 9 })
+    expect(events.at(-1)?.data).toMatchObject({ result: 'fallback answer' })
+    expect((await readPersistedMessages(assertion)).at(-1)?.data).toBe('fallback answer')
   })
 
   it('clamps request retries to the UI maximum of 20', async () => {

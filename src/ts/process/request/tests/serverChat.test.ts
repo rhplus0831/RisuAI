@@ -704,6 +704,59 @@ describe('requestServerChat', () => {
     await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
   })
 
+  it.each([false, true])('handles progress-only Strip CoT frames with halfStreaming=%s', async (halfStreaming) => {
+    const controlled = controlledGenerationStream()
+    vi.stubGlobal('fetch', async () => controlled.response)
+    const pending = requestServerChatGeneration(baseInput, null)
+    controlled.send('prompt', { messages: [{ role: 'user', content: 'hi' }] })
+    controlled.send('info', {
+      halfStreaming,
+      generationId: 'stripped-generation',
+      generationInfo: { generationId: 'stripped-generation', model: 'llmgateway/test' },
+    })
+    const res = await pending
+    expect(res.status).toBe('ok')
+    if (res.status !== 'ok' || res.req.type !== 'streaming') return
+    const reader = res.req.result.getReader()
+    let readResolved = false
+    const firstRead = reader.read().then((value) => {
+      readResolved = true
+      return value
+    })
+
+    controlled.send('token', { content: '', generatedTokens: 12, elapsedMs: 2_000 })
+    if (halfStreaming) {
+      await vi.waitFor(() =>
+        expect(findHalfStreamingProgress('stripped-generation')).toMatchObject({
+          generatedTokens: 12,
+          tokensPerSecond: 6,
+        }),
+      )
+    } else {
+      // Drain event handling without permitting an empty text update.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    }
+    expect(readResolved).toBe(false)
+
+    controlled.send('token', { content: 'Visible answer', generatedTokens: 15, elapsedMs: 3_000 })
+    if (halfStreaming) {
+      await vi.waitFor(() =>
+        expect(findHalfStreamingProgress('stripped-generation')).toMatchObject({
+          generatedTokens: 15,
+          tokensPerSecond: 5,
+        }),
+      )
+      expect(readResolved).toBe(false)
+    } else {
+      await expect(firstRead).resolves.toEqual({ done: false, value: { 'stripped-generation': 'Visible answer' } })
+    }
+    controlled.send('done', { result: 'Visible answer', generationId: 'stripped-generation' })
+    controlled.close()
+    await expect(firstRead).resolves.toEqual({ done: false, value: { 'stripped-generation': 'Visible answer' } })
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
+    await expect(res.terminal).resolves.toMatchObject({ status: 'done' })
+  })
+
   it('reattaches a durable stream after a mobile-style transport drop without duplicating replayed tokens', async () => {
     const first = controlledGenerationStream()
     const calls: Array<{ url: string; method: string }> = []

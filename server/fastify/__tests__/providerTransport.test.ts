@@ -77,6 +77,48 @@ describe('emitProviderChunks', () => {
     expect(JSON.stringify(events.at(-1))!.length).toBeLessThan(JSON.stringify({ type: 'done', result: 'Hello' }).length)
   })
 
+  it('reports filtered upstream counts without recounting visible text or pending flushes', async () => {
+    const events: PromptChatEvent[] = []
+    const countTokens = vi.fn(() => 99)
+    await emitProviderChunks(
+      frames([
+        { kind: 'token', content: '', tokenCount: 8 },
+        { kind: 'token', content: 'Visible', tokenCount: 2 },
+        { kind: 'token', content: ' <', tokenCount: 0 },
+        { kind: 'token', content: '', tokenCount: 0 },
+        { kind: 'done' },
+      ]),
+      (event) => events.push(event),
+      undefined,
+      {
+        tokenProgress: { startedAt: 1_000, now: () => 3_000, countTokens },
+      },
+    )
+    expect(events).toEqual([
+      { type: 'token', content: '', generatedTokens: 8, elapsedMs: 2_000 },
+      { type: 'token', content: 'Visible', generatedTokens: 10, elapsedMs: 2_000 },
+      { type: 'token', content: ' <', generatedTokens: 10, elapsedMs: 2_000 },
+      { type: 'done', result: 'Visible <' },
+    ])
+    expect(countTokens).not.toHaveBeenCalled()
+  })
+
+  it('omits progress-only frames when progress is not enabled', async () => {
+    const events: PromptChatEvent[] = []
+    await emitProviderChunks(
+      frames([
+        { kind: 'token', content: '', tokenCount: 8 },
+        { kind: 'token', content: 'Visible', tokenCount: 2 },
+        { kind: 'done' },
+      ]),
+      (event) => events.push(event),
+    )
+    expect(events).toEqual([
+      { type: 'token', content: 'Visible' },
+      { type: 'done', result: 'Visible' },
+    ])
+  })
+
   it('retains the done result when no non-empty token text was delivered', async () => {
     const events: PromptChatEvent[] = []
 

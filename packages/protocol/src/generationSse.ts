@@ -321,6 +321,7 @@ export const InfoEventSchema = Type.Object({
 
 export const TokenEventSchema = Type.Object({
   type: Type.Literal('token'),
+  // Empty content with progress metadata reports generation of filtered reasoning.
   content: Type.String(),
   generatedTokens: Type.Optional(Type.Number()),
   elapsedMs: Type.Optional(Type.Number()),

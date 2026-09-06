@@ -1219,13 +1219,18 @@ export async function requestServerChatGeneration(
                   const content = event.content
                   tokenResult += content
                   if (halfStreaming) {
-                    if (content.length > 0 && halfStreamingTarget) {
+                    const hasProgress =
+                      Number.isFinite(event.generatedTokens) &&
+                      (event.generatedTokens ?? 0) > 0 &&
+                      Number.isFinite(event.elapsedMs) &&
+                      (event.elapsedMs ?? 0) > 0
+                    if ((content.length > 0 || hasProgress) && halfStreamingTarget) {
                       recordHalfStreamingToken(halfStreamingTarget, Date.now(), {
                         generatedTokens: event.generatedTokens,
                         elapsedMs: event.elapsedMs,
                       })
                     }
-                  } else if (!replayGapPending) {
+                  } else if (content.length > 0 && !replayGapPending) {
                     enqueueToken({ [streamKey]: tokenResult })
                   }
                   break

@@ -3,6 +3,8 @@ import type { ServerToolCall } from '@risuai/protocol/server-tool'
 export interface CompletionStreamFrame {
   kind: 'token' | 'done' | 'error'
   content?: string
+  /** Upstream delta token estimate before filtering; zero marks an already-counted text flush. */
+  tokenCount?: number
   finishReason?: 'stop' | 'length' | 'content_filter' | 'tool_calls' | string
   error?: string
   status?: number

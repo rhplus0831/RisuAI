@@ -476,8 +476,12 @@ function dispatchProviderWithPolicies(
           try {
             for await (const frame of iterable) {
               if (frame.kind === 'token') {
-                emittedToken = true
-                markPolicyProfileSuccess(attemptContext, database, profile)
+                // Hidden reasoning can report progress without delivering an
+                // answer. Preserve pre-visible-token retry/blank policy.
+                if ((frame.content?.length ?? 0) > 0) {
+                  emittedToken = true
+                  markPolicyProfileSuccess(attemptContext, database, profile)
+                }
                 yield frame
                 continue
               }
@@ -525,7 +529,14 @@ function dispatchProviderWithPolicies(
         let failed = false
         try {
           for await (const frame of iterable) {
-            buffered.push(frame)
+            // Output inspection can withhold text, but scalar progress is safe
+            // to forward even while an attempt is awaiting acceptance.
+            if (frame.kind === 'token' && frame.tokenCount !== undefined) {
+              yield { kind: 'token', content: '', tokenCount: frame.tokenCount }
+              if ((frame.content?.length ?? 0) > 0) buffered.push({ ...frame, tokenCount: 0 })
+            } else {
+              buffered.push(frame)
+            }
             if (frame.kind === 'token') text += frame.content ?? ''
             if (frame.kind === 'error') {
               lastFailure = frame

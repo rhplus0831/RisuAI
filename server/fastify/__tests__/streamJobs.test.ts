@@ -325,51 +325,56 @@ describe('JobRegistry buffering and lifecycle', () => {
     )
   })
 
-  it('compacts consecutive token deltas without changing observable replay text', () => {
-    const reg = replayRegistry()
-    const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
-    reg.enableReplay(job)
-    reg.pushRaw(job, 'event: prompt\ndata: {"promptInfo":{}}\n\n')
-    reg.pushRaw(job, 'event: info\ndata: {"generationId":"event-cap"}\n\n')
+  it.each([false, true])(
+    'compacts token deltas without changing replay text or progress (hidden reasoning=%s)',
+    (hiddenReasoning) => {
+      const reg = replayRegistry()
+      const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
+      reg.enableReplay(job)
+      reg.pushRaw(job, 'event: prompt\ndata: {"promptInfo":{}}\n\n')
+      reg.pushRaw(job, 'event: info\ndata: {"generationId":"event-cap"}\n\n')
 
-    const tokens = Array.from({ length: 600 }, (_, index) => `[${index}]`)
-    for (let index = 0; index < tokens.length; index += 1) {
-      reg.pushRaw(
-        job,
-        `event: token\ndata: ${JSON.stringify({ content: tokens[index], generatedTokens: index + 1 })}\n\n`,
-      )
-    }
-    const fullResult = tokens.join('')
-    reg.pushRaw(job, `event: done\ndata: ${JSON.stringify({ result: fullResult })}\n\n`)
+      const tokens = Array.from({ length: 600 }, (_, index) => (hiddenReasoning && index % 3 !== 0 ? '' : `[${index}]`))
+      for (let index = 0; index < tokens.length; index += 1) {
+        reg.pushRaw(
+          job,
+          `event: token\ndata: ${JSON.stringify({ content: tokens[index], generatedTokens: index + 1, elapsedMs: (index + 1) * 10 })}\n\n`,
+        )
+      }
+      const fullResult = tokens.join('')
+      reg.pushRaw(job, `event: done\ndata: ${JSON.stringify({ result: fullResult })}\n\n`)
 
-    const replay = job.replayEvents ?? []
-    const retainedTokens = replay
-      .filter((frame) => frame.startsWith('event: token'))
-      .map(
-        (frame) =>
-          JSON.parse(frame.split('\n')[1]!.slice('data: '.length)) as {
-            content: string
-            generatedTokens: number
-          },
-      )
-    const done = replay.find((frame) => frame.startsWith('event: done'))
+      const replay = job.replayEvents ?? []
+      const retainedTokens = replay
+        .filter((frame) => frame.startsWith('event: token'))
+        .map(
+          (frame) =>
+            JSON.parse(frame.split('\n')[1]!.slice('data: '.length)) as {
+              content: string
+              generatedTokens: number
+              elapsedMs: number
+            },
+        )
+      const done = replay.find((frame) => frame.startsWith('event: done'))
 
-    expect(replay.length).toBeLessThan(PROXY_STREAM_MAX_PENDING_EVENTS)
-    expect(retainedTokens.length).toBeLessThan(tokens.length)
-    expect(retainedTokens.map((token) => token.content).join('')).toBe(fullResult)
-    expect(retainedTokens.at(-1)?.generatedTokens).toBe(tokens.length)
-    expect(job.replayTruncated).toBe(false)
-    expect(done).toBeDefined()
-    expect((JSON.parse(done!.split('\n')[1]!.slice('data: '.length)) as { result: string }).result).toBe(fullResult)
+      expect(replay.length).toBeLessThan(PROXY_STREAM_MAX_PENDING_EVENTS)
+      expect(retainedTokens.length).toBeLessThan(tokens.length)
+      expect(retainedTokens.map((token) => token.content).join('')).toBe(fullResult)
+      expect(retainedTokens.at(-1)?.generatedTokens).toBe(tokens.length)
+      expect(retainedTokens.at(-1)?.elapsedMs).toBe(tokens.length * 10)
+      expect(job.replayTruncated).toBe(false)
+      expect(done).toBeDefined()
+      expect((JSON.parse(done!.split('\n')[1]!.slice('data: '.length)) as { result: string }).result).toBe(fullResult)
 
-    const client = fakeClient()
-    reg.attach(job.id, client)
-    const replayedText = client.messages
-      .filter((frame): frame is string => typeof frame === 'string' && frame.startsWith('event: token'))
-      .map((frame) => (JSON.parse(frame.split('\n')[1]!.slice('data: '.length)) as { content: string }).content)
-      .join('')
-    expect(replayedText).toBe(fullResult)
-  })
+      const client = fakeClient()
+      reg.attach(job.id, client)
+      const replayedText = client.messages
+        .filter((frame): frame is string => typeof frame === 'string' && frame.startsWith('event: token'))
+        .map((frame) => (JSON.parse(frame.split('\n')[1]!.slice('data: '.length)) as { content: string }).content)
+        .join('')
+      expect(replayedText).toBe(fullResult)
+    },
+  )
 
   it('uses UTF-8 byte accounting and spills the duplicate terminal while retaining compacted tokens', () => {
     const reg = replayRegistry()
