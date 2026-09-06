@@ -1,6 +1,10 @@
 <script lang="ts">
   import { language } from 'src/lang'
   import {
+    pushNotificationWarningDismissed,
+    setPushNotificationWarningDismissed,
+  } from 'src/ts/gui/pushNotificationWarningPreference'
+  import {
     isRetryablePushNotificationFailure,
     retryChatCompletionPushNotificationSetup,
   } from 'src/ts/server/pushNotificationSetting'
@@ -34,7 +38,7 @@
   }
 </script>
 
-{#if state.desiredEnabled && (state.setupFailure || state.operationError)}
+{#if (!banner || !$pushNotificationWarningDismissed) && state.desiredEnabled && (state.setupFailure || state.operationError)}
   <div
     class={banner
       ? 'pointer-events-auto w-full rounded-md border border-yellow-600 bg-bgcolor px-4 py-3 text-sm text-textcolor shadow-lg'
@@ -52,15 +56,28 @@
     {:else if state.operationError || (state.setupFailure && isRetryablePushNotificationFailure(state.setupFailure))}
       <p>{language.pushNotifications.automaticRetry}</p>
     {/if}
-    <button
-      type="button"
-      class="mt-2 rounded bg-yellow-700 px-3 py-1.5 text-white disabled:cursor-wait disabled:opacity-60"
-      disabled={state.phase !== 'idle'}
-      onclick={(event) => {
-        event.stopPropagation()
-        void retryChatCompletionPushNotificationSetup()
-      }}>
-      {state.phase === 'idle' ? language.pushNotifications.retrySetup : language.pushNotifications.retryingSetup}
-    </button>
+    <div class="mt-2 flex flex-wrap gap-2">
+      <button
+        type="button"
+        class="rounded bg-yellow-700 px-3 py-1.5 text-white disabled:cursor-wait disabled:opacity-60"
+        disabled={state.phase !== 'idle'}
+        onclick={(event) => {
+          event.stopPropagation()
+          void retryChatCompletionPushNotificationSetup()
+        }}>
+        {state.phase === 'idle' ? language.pushNotifications.retrySetup : language.pushNotifications.retryingSetup}
+      </button>
+      {#if banner}
+        <button
+          type="button"
+          class="rounded border border-darkborderc bg-darkbutton px-3 py-1.5 text-textcolor"
+          onclick={(event) => {
+            event.stopPropagation()
+            setPushNotificationWarningDismissed(true)
+          }}>
+          {language.pushNotifications.hideBannerForBrowser}
+        </button>
+      {/if}
+    </div>
   </div>
 {/if}

@@ -2230,6 +2230,8 @@ export const languageEnglish = {
     automaticRetry: 'We will retry automatically. You can also retry now.',
     retrySetup: 'Retry notifications',
     retryingSetup: 'Retrying notifications…',
+    hideBannerForBrowser: 'Hide on this browser',
+    showBannerOnBrowser: 'Show notification banners on this browser',
     permissionBlockedHelp: 'Allow notifications in this site’s browser settings, then retry.',
     retryStorage: 'Retry device storage',
     retryCleanup: 'Retry cleanup',

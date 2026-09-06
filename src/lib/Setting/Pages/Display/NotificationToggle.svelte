@@ -1,6 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { language } from 'src/lang'
+  import {
+    pushNotificationWarningDismissed,
+    setPushNotificationWarningDismissed,
+  } from 'src/ts/gui/pushNotificationWarningPreference'
   import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
   import { applyServerBackedSetting } from 'src/ts/server/settingsOwner.svelte'
@@ -83,6 +87,15 @@
       applyServerBackedSetting('notification', nextValue)
       void reconcileChatCompletionPushNotificationSetting(nextValue, { requestPermission: nextValue })
     }} />
+
+  {#if notificationChecked || $pushNotificationWarningDismissed}
+    <div class="mt-2">
+      <Check
+        check={!$pushNotificationWarningDismissed}
+        name={language.pushNotifications.showBannerOnBrowser}
+        onChange={(show) => setPushNotificationWarningDismissed(!show)} />
+    </div>
+  {/if}
 
   {#if $pushNotificationCoordinatorState.phase !== 'idle'}
     <p class="mt-1 text-sm text-textcolor2" role="status" aria-live="polite">

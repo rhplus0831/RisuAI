@@ -66,6 +66,7 @@
   import { consumeObserverRouteIntent, peekObserverRouteIntent } from './ts/observerRouteIntent'
   import { loadGrid, loadSettings } from './ts/routeComponentPreload'
   import { pushNotificationCoordinatorState } from './ts/server/pushNotificationState'
+  import { pushNotificationWarningDismissed } from './ts/gui/pushNotificationWarningPreference'
 
   const loadAlert = () => import('./lib/Others/AlertComp.svelte')
   const loadPushNotificationWarning = () => import('./lib/Others/PushNotificationWarning.svelte')
@@ -422,7 +423,7 @@
         </div>
       </div>
     {/if}
-    {#if $startupCoordinatorStore.capabilities.canRenderShell && $pushNotificationCoordinatorState.desiredEnabled && ($pushNotificationCoordinatorState.setupFailure || $pushNotificationCoordinatorState.operationError)}
+    {#if $startupCoordinatorStore.capabilities.canRenderShell && !$pushNotificationWarningDismissed && $pushNotificationCoordinatorState.desiredEnabled && ($pushNotificationCoordinatorState.setupFailure || $pushNotificationCoordinatorState.operationError)}
       <div class="pointer-events-auto">
         <LazyComponent loader={loadPushNotificationWarning} componentProps={{ banner: true }} />
       </div>

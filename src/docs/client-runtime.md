@@ -313,7 +313,13 @@ disposal, and writer loss prevent further automatic enablement.
 App lazily mounts `PushNotificationWarning.svelte` above route content, and the
 notification setting uses the same warning and retry action. The warning stays
 visible during retries and clears on successful setup or intentional disable.
-Reload revalidates the preserved preference and recreates any unresolved warning.
+The banner also offers **Hide on this browser**, persisted in localStorage by
+`src/ts/gui/pushNotificationWarningPreference.ts`. Dismissal survives reloads and
+is shared across tabs of the same origin/browser profile. Display settings can
+restore the banner and always retain the inline warning and Retry action.
+This presentation preference does not change shared notification enablement or
+automatic setup retries. Reload revalidates the preserved notification preference
+and recreates unresolved warnings unless the browser has dismissed the banner.
 Unresolved cleanup endpoints
 and local-subscription-inspection state persist in IndexedDB through
 `src/ts/server/pushNotificationRetryStorage.ts`, then hydrate and retry after

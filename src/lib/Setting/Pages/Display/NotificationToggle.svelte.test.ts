@@ -37,9 +37,13 @@ vi.mock('src/ts/server/pushNotificationSetting', async () => {
 })
 
 import { language } from 'src/lang'
+import {
+  PUSH_NOTIFICATION_WARNING_DISMISSED_KEY,
+  setPushNotificationWarningDismissed,
+} from 'src/ts/gui/pushNotificationWarningPreference'
 import NotificationToggle from './NotificationToggle.svelte'
 import { initialNotificationCoordinatorState, notificationCoordinatorState } from './NotificationToggle.testState'
-import { replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
+import { replaceResourceDatabase as setDatabaseLite, settingsResourceState } from 'src/ts/server/resourceState.svelte'
 import type { EnablePushNotificationsResult } from 'src/ts/server/pushNotifications'
 import { getResourceDatabase as getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
@@ -63,6 +67,7 @@ function buttonNamed(name: string): HTMLButtonElement {
 }
 
 beforeEach(() => {
+  setPushNotificationWarningDismissed(false)
   target = document.createElement('div')
   document.body.appendChild(target)
   setDatabaseLite({ notification: false } as any)
@@ -88,6 +93,7 @@ afterEach(() => {
     component = undefined
   }
   target.remove()
+  setPushNotificationWarningDismissed(false)
   setDatabaseLite({} as any)
   notificationCoordinatorState.set(initialNotificationCoordinatorState())
 })
@@ -199,6 +205,38 @@ describe('NotificationToggle shared push acknowledgement', () => {
     checkbox().click()
     expect(notificationMocks.applyServerBackedSetting).toHaveBeenCalledWith('notification', false)
     expect(notificationMocks.reconcile).toHaveBeenCalledWith(false, { requestPermission: false })
+  })
+
+  it('restores dismissed banners locally while retaining notification diagnostics and the shared preference', async () => {
+    setPushNotificationWarningDismissed(true)
+    withTestDatabaseWrite((database) => {
+      database.notification = true
+    })
+    notificationCoordinatorState.set({
+      ...initialNotificationCoordinatorState(),
+      desiredEnabled: true,
+      setupFailure: { status: 'permission-denied' },
+    })
+    component = mount(NotificationToggle, { target })
+    await tick()
+    expect(target.querySelector('[data-push-notification-warning]')).not.toBeNull()
+    const bannerCheckbox = Array.from(target.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).find(
+      (input) => input.getAttribute('aria-label') === language.pushNotifications.showBannerOnBrowser,
+    )!
+    expect(bannerCheckbox.checked).toBe(false)
+    bannerCheckbox.click()
+    await tick()
+    expect(localStorage.getItem(PUSH_NOTIFICATION_WARNING_DISMISSED_KEY)).toBeNull()
+    expect(bannerCheckbox.checked).toBe(true)
+    bannerCheckbox.click()
+    await tick()
+    expect(localStorage.getItem(PUSH_NOTIFICATION_WARNING_DISMISSED_KEY)).toBe('true')
+    expect(settingsResourceState.value?.notification).toBe(true)
+    expect(checkbox().checked).toBe(true)
+    expect(notificationMocks.applyServerBackedSetting).not.toHaveBeenCalled()
+    expect(notificationMocks.reconcile).not.toHaveBeenCalled()
+    buttonNamed(language.pushNotifications.retrySetup).click()
+    expect(notificationMocks.retrySetup).toHaveBeenCalledOnce()
   })
 
   it('keeps partial cleanup visible and retryable across unmount and remount', async () => {

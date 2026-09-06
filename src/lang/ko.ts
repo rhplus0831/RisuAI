@@ -2573,6 +2573,8 @@ export const languageKorean = {
     automaticRetry: '자동으로 다시 시도합니다. 지금 다시 시도할 수도 있습니다.',
     retrySetup: '알림 다시 시도',
     retryingSetup: '알림 다시 시도 중…',
+    hideBannerForBrowser: '이 브라우저에서 숨기기',
+    showBannerOnBrowser: '이 브라우저에서 알림 배너 표시',
     permissionBlockedHelp: '브라우저의 이 사이트 설정에서 알림을 허용한 뒤 다시 시도해 주세요.',
     retryStorage: '기기 저장 다시 시도',
     retryCleanup: '정리 다시 시도',

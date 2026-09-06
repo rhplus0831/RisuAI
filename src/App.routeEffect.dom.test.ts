@@ -6,6 +6,10 @@ import type { AppRoute } from './ts/router'
 import type { Database, character } from './ts/storage/database.svelte'
 import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes'
 import {
+  PUSH_NOTIFICATION_WARNING_DISMISSED_KEY,
+  setPushNotificationWarningDismissed,
+} from './ts/gui/pushNotificationWarningPreference'
+import {
   beginStartupAttempt,
   configureStartupObserverShell,
   recordStartupCapabilityFailure,
@@ -125,6 +129,7 @@ vi.mock('./lang', () => ({
       automaticRetry: 'We will retry automatically.',
       retrySetup: 'Retry notifications',
       retryingSetup: 'Retrying notifications…',
+      hideBannerForBrowser: 'Hide on this browser',
       setupFailures: { vapidUnavailable: 'The server’s notification configuration could not be loaded.' },
     },
     pluginRuntime: {
@@ -161,6 +166,7 @@ vi.mock('src/lang', () => ({
       automaticRetry: 'We will retry automatically.',
       retrySetup: 'Retry notifications',
       retryingSetup: 'Retrying notifications…',
+      hideBannerForBrowser: 'Hide on this browser',
       setupFailures: { vapidUnavailable: 'The server’s notification configuration could not be loaded.' },
     },
     pluginRuntime: {
@@ -513,6 +519,7 @@ describe('App route/refreeze mounted DOM behavior', () => {
     appRouteDomMocks.discardGenerationRecoveryStartup.mockReset().mockResolvedValue(true)
     appRouteDomMocks.retryGenerationRecoveryStartup.mockReset().mockResolvedValue(true)
     seedStores()
+    setPushNotificationWarningDismissed(false)
     pushNotificationStateWriter.set(initialPushNotificationCoordinatorState())
     await mountApp()
   })
@@ -524,6 +531,7 @@ describe('App route/refreeze mounted DOM behavior', () => {
     }
     replaceResourceDatabase({} as Database)
     resetStartupReadinessForTests()
+    setPushNotificationWarningDismissed(false)
     pushNotificationStateWriter.set(initialPushNotificationCoordinatorState())
     resetObserverRouteIntentForTests()
     target.remove()
@@ -553,6 +561,46 @@ describe('App route/refreeze mounted DOM behavior', () => {
     pushNotificationStateWriter.update((state) => ({ ...state, phase: 'idle', setupFailure: null }))
     await tick()
     expect(target.querySelector('[data-push-notification-warning]')).toBeNull()
+  })
+
+  it('dismisses the notification banner during retry and keeps it hidden across failures and remounts', async () => {
+    pushNotificationStateWriter.set({
+      ...initialPushNotificationCoordinatorState(),
+      desiredEnabled: true,
+      phase: 'enabling',
+      setupFailure: { status: 'fallback', reason: 'vapid-unavailable' },
+    })
+    await vi.waitFor(() => expect(target.querySelector('[data-push-notification-warning]')).not.toBeNull())
+    const hideButton = Array.from(
+      target.querySelectorAll<HTMLButtonElement>('[data-push-notification-warning] button'),
+    ).find((button) => button.textContent?.trim() === 'Hide on this browser')!
+    expect(hideButton.disabled).toBe(false)
+    hideButton.click()
+    await tick()
+    expect(target.querySelector('[data-push-notification-warning]')).toBeNull()
+    expect(localStorage.getItem(PUSH_NOTIFICATION_WARNING_DISMISSED_KEY)).toBe('true')
+    expect(get(pushNotificationStateWriter).desiredEnabled).toBe(true)
+    expect(appRouteDomMocks.retryNotifications).not.toHaveBeenCalled()
+
+    pushNotificationStateWriter.update((state) => ({ ...state, phase: 'idle', setupFailure: null }))
+    await tick()
+    pushNotificationStateWriter.update((state) => ({ ...state, operationError: new Error('another setup failure') }))
+    await tick()
+    expect(target.querySelector('[data-push-notification-warning]')).toBeNull()
+    await unmount(component!)
+    component = undefined
+    await mountApp()
+    expect(target.querySelector('[data-push-notification-warning]')).toBeNull()
+
+    // Restoring the preference in another tab also restores the current banner.
+    localStorage.removeItem(PUSH_NOTIFICATION_WARNING_DISMISSED_KEY)
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key: PUSH_NOTIFICATION_WARNING_DISMISSED_KEY,
+        storageArea: localStorage,
+      }),
+    )
+    await vi.waitFor(() => expect(target.querySelector('[data-push-notification-warning]')).not.toBeNull())
   })
 
   it('keeps the Character sidebar tab visible across a server resource refresh', async () => {
