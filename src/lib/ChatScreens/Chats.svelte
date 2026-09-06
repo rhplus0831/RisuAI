@@ -468,6 +468,11 @@
   // Hydration owns chatRows. Only this layer decides which of those rows mount.
   const heights = new TranscriptHeightCache()
   const rowElements = new Map<string, HTMLElement>()
+  const pendingRowParses = new Map<string, Set<symbol>>()
+  const returningRowHeights = new Map<
+    string,
+    { element: HTMLElement; height: string; overflow: string; ready: boolean }
+  >()
   let residencyScope = untrack(() => chatId)
   let heightRevision = $state(0)
   let reservationRevision = $state(0)
@@ -647,6 +652,33 @@
     })
   }
 
+  function beginRowParse(key: string, registration: symbol): void {
+    let pending = pendingRowParses.get(key)
+    if (!pending) pendingRowParses.set(key, (pending = new Set()))
+    pending.add(registration)
+    const held = returningRowHeights.get(key)
+    if (held) held.ready = false
+  }
+
+  function settleRowParse(key: string, registration: symbol): void {
+    const pending = pendingRowParses.get(key)
+    if (!pending?.delete(registration) || pending.size > 0) return
+    pendingRowParses.delete(key)
+    const held = returningRowHeights.get(key)
+    if (held) held.ready = true
+    // The parser's promise commits its HTML before this animation frame. Release
+    // the held height in the same pass that measures and corrects the viewport.
+    scheduleResidency()
+  }
+
+  function restoreReturningRowHeight(key: string): void {
+    const held = returningRowHeights.get(key)
+    if (!held) return
+    held.element.style.height = held.height
+    held.element.style.overflow = held.overflow
+    returningRowHeights.delete(key)
+  }
+
   async function reconcileResidency(): Promise<void> {
     if (!chatBody || !scrollContainer || chatsComponentDestroyed || pressedLogicalEnd !== null) return
     residencyUpdating = true
@@ -661,6 +693,9 @@
       : null
     try {
       collectSingletonPins()
+      for (const [key, held] of returningRowHeights) {
+        if (held.ready || fullResidency) restoreReturningRowHeight(key)
+      }
       let changed = false
       const width = chatBody.clientWidth
       if (measuredWidth && Math.abs(width - measuredWidth) >= 1) {
@@ -740,23 +775,49 @@
     }
   }
 
-  function measureTranscriptRow(element: HTMLElement, id: string) {
+  function measureTranscriptRow(element: HTMLElement, entry: { id: string; key: string }) {
+    let { id, key } = entry
     rowElements.set(id, element)
+    const measuredHeight = heights.measured(id)
+    if (!fullResidency && measuredHeight !== undefined) {
+      // A remounted ChatBody starts empty. Substituting that shell for a tall
+      // spacer would discard its known height and can repeatedly move the
+      // working window before the asynchronous body gets a chance to render.
+      returningRowHeights.set(key, {
+        element,
+        height: element.style.height,
+        overflow: element.style.overflow,
+        ready: false,
+      })
+      element.style.height = `${measuredHeight}px`
+      element.style.overflow = 'clip'
+      void tick().then(() => {
+        const held = returningRowHeights.get(key)
+        // Custom layouts without a ChatBody have no parse registration to await.
+        if (held?.element === element && !pendingRowParses.has(key)) {
+          held.ready = true
+          scheduleResidency()
+        }
+      })
+    }
     const observer =
       legacyPaging || typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(scheduleResidency)
     observer?.observe(element)
     scheduleResidency()
     return {
-      update(nextId: string) {
-        if (nextId === id) return
+      update(next: { id: string; key: string }) {
+        if (next.id === id && next.key === key) return
         if (rowElements.get(id) === element) rowElements.delete(id)
-        id = nextId
+        id = next.id
+        key = next.key
         rowElements.set(id, element)
         scheduleResidency()
       },
       destroy() {
         observer?.disconnect()
         if (rowElements.get(id) === element) rowElements.delete(id)
+        if (returningRowHeights.get(key)?.element === element) restoreReturningRowHeight(key)
+        pendingRowParses.delete(key)
       },
     }
   }
@@ -825,6 +886,9 @@
       reservations.reset()
       messageViews.reset()
       heights.clear()
+      restorePressedRowSizes()
+      for (const key of returningRowHeights.keys()) restoreReturningRowHeight(key)
+      pendingRowParses.clear()
       heightRevision++
       residentStart = 0
       admittedResidents = null
@@ -835,7 +899,6 @@
       measuredWidth = 0
       pressedLogicalEnd = null
       pressedPointerId = null
-      restorePressedRowSizes()
       if (pressReleaseTimer !== null) clearTimeout(pressReleaseTimer)
       pressReleaseTimer = null
     })
@@ -1289,6 +1352,8 @@
     if (residencyFrame !== null) cancelAnimationFrame(residencyFrame)
     if (pressReleaseTimer !== null) clearTimeout(pressReleaseTimer)
     restorePressedRowSizes()
+    for (const key of returningRowHeights.keys()) restoreReturningRowHeight(key)
+    pendingRowParses.clear()
     displayScheduler.destroy()
     releaseDisplaySourceChat(getCurrentChatRoomId())
     initialDisplayReadiness.destroy()
@@ -1464,7 +1529,7 @@
         class="chat-message-container shrink-0"
         data-transcript-row-id={entry.id}
         tabindex="-1"
-        use:measureTranscriptRow={entry.id}
+        use:measureTranscriptRow={entry}
         data-risu-dyna-icons={row.key === dynaIconRowKey ? 'true' : undefined}
         data-generation-display-projection={row.generationPresentationMode}>
         <Chat
@@ -1506,12 +1571,14 @@
             $automaticTranslationMessageIds.includes(row.message.chatId) &&
             !$serverOwnedGeneratedMessageIds.has(row.message.chatId)}
           onAutoTranslationEligibilityConsumed={() => consumeAutomaticTranslationEligibility(row.message.chatId ?? '')}
-          onInitialDisplayParseStart={row.awaitInitialDisplayParse
-            ? (registration) => initialDisplayReadiness.start(row.scopeId, registration)
-            : undefined}
-          onInitialDisplayParseSettled={row.awaitInitialDisplayParse
-            ? (registration) => initialDisplayReadiness.settle(row.scopeId, registration)
-            : undefined}
+          onInitialDisplayParseStart={(registration) => {
+            beginRowParse(entry.key, registration)
+            if (row.awaitInitialDisplayParse) initialDisplayReadiness.start(row.scopeId, registration)
+          }}
+          onInitialDisplayParseSettled={(registration) => {
+            settleRowParse(entry.key, registration)
+            if (row.awaitInitialDisplayParse) initialDisplayReadiness.settle(row.scopeId, registration)
+          }}
           displayPriority={row.awaitInitialDisplayParse ? 'critical' : 'background'}
           generationPersistenceState={row.generationPersistenceState}
           generationPhase={row.isAppendGenerationPresentation

@@ -100,6 +100,7 @@ vi.mock('src/ts/globalApi.svelte', () => ({
 }))
 
 import ChatBody from './ChatBody.svelte'
+import { CHAT_DISPLAY_SCHEDULER, createChatDisplayScheduler } from './chatDisplayScheduler'
 
 vi.mock('./sharedChatReadOwners.svelte', () => ({
   sharedChatReadOwners: {
@@ -408,4 +409,67 @@ describe('ChatBody translation parse bounds', () => {
     expect(onInitialDisplayParseSettled).toHaveBeenCalledOnce()
     expect(onInitialDisplayParseSettled).toHaveBeenCalledWith(onInitialDisplayParseStart.mock.calls[0][0])
   })
+
+  it.each(['render', 'translate', 'unmount'] as const)(
+    'registers a queued background body until %s',
+    async (outcome) => {
+      chatBodyMocks.ParseMarkdown.mockResolvedValue('queued message body')
+      chatBodyMocks.translateHTML.mockResolvedValue('translated queued body')
+      let runIdle: (() => void) | undefined
+      const scheduler = createChatDisplayScheduler((run) => {
+        runIdle = run
+        return () => {
+          runIdle = undefined
+        }
+      })
+      scheduler.setScope('chat-a')
+      const onInitialDisplayParseStart = vi.fn()
+      const onInitialDisplayParseSettled = vi.fn()
+      component = mount(ChatBody, {
+        target,
+        context: new Map([[CHAT_DISPLAY_SCHEDULER, scheduler]]),
+        props: {
+          idx: 0,
+          modelShortName: '',
+          msgDisplay: 'queued message body',
+          role: 'char',
+          translated: false,
+          translating: false,
+          retranslate: false,
+          allowClientTranslation: outcome === 'translate',
+          displayPriority: 'background',
+          onInitialDisplayParseStart,
+          onInitialDisplayParseSettled,
+        },
+      })
+      flushSync()
+      expect(onInitialDisplayParseStart).toHaveBeenCalledOnce()
+      expect(onInitialDisplayParseSettled).not.toHaveBeenCalled()
+      expect(chatBodyMocks.ParseMarkdown).not.toHaveBeenCalled()
+      expect(target.textContent).toBe('')
+
+      if (outcome !== 'unmount') {
+        scheduler.setPaused(false)
+        runIdle!()
+        await flushComponentPromises()
+        if (outcome === 'translate') {
+          expect(onInitialDisplayParseSettled).not.toHaveBeenCalled()
+          expect(target.textContent).toBe('')
+          // Automatic translation updates its bound flag before queuing the body.
+          await new Promise((resolve) => setTimeout(resolve, 20))
+          await flushComponentPromises()
+          runIdle!()
+          await flushComponentPromises()
+        }
+        expect(target.textContent).toContain(outcome === 'translate' ? 'translated queued body' : 'queued message body')
+      } else {
+        await unmount(component)
+        component = undefined
+      }
+      expect(onInitialDisplayParseStart).toHaveBeenCalledOnce()
+      expect(onInitialDisplayParseSettled).toHaveBeenCalledOnce()
+      expect(onInitialDisplayParseSettled).toHaveBeenCalledWith(onInitialDisplayParseStart.mock.calls[0][0])
+      scheduler.destroy()
+    },
+  )
 })

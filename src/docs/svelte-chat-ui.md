@@ -116,6 +116,13 @@ It chooses the first visible row by geometry and captures a changed user scroll
 position synchronously before awaited updates can alter that position.
 The intended fractional offset survives successive corrections so browser scroll
 rounding does not accumulate across parser/image updates.
+Returning rows retain their cached wrapper height while their initial bodies
+wait for the display scheduler and finish parsing. All mounted bodies register
+before queuing; only the newest rows participate in startup readiness. The
+residency pass releases a returning row's height after its bodies settle, then
+measures and corrects the viewport in the same frame. An empty remount therefore
+cannot overwrite a known tall row's height and move the working window during
+a pause or direction reversal. Full capture releases these temporary sizes.
 Existing start/end anchors still own entry and followed generation. Navigation
 waits for the live chat route/component, mounts and pins its target, then releases
 it after alignment; a navigation epoch fences stale geometry corrections.

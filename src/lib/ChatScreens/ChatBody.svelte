@@ -189,7 +189,6 @@
 
   const markParsing = async (data: string, charArg: string | simpleCharacterArgument, chatID: number) => {
     const runId = ++markParsingRun
-    beginInitialDisplayParse()
     const setTranslatingForRun = (value: boolean) => {
       if (runId === markParsingRun) {
         translating = value
@@ -435,10 +434,11 @@
         }
         return marked.value
       }
-    } finally {
+    } catch (error) {
       if (runId === markParsingRun) {
         settleInitialDisplayParse()
       }
+      throw error
     }
   }
 
@@ -558,6 +558,9 @@
 
     previousParse = untrack(() => {
       queuedDisplay?.abort()
+      // Register before background scheduling so the transcript can retain a
+      // returning row's measured height while its first body is still queued.
+      beginInitialDisplayParse()
       // Invalidate a previous in-flight parse even when its replacement queues.
       markParsingRun += 1
       const controller = new AbortController()
@@ -565,9 +568,7 @@
       if (!displayScheduler || parseDisplayPriority !== 'background') {
         return markParsing(parseData, parseCharacter, parseIndex)
       }
-      return displayScheduler
-        .run(() => markParsing(parseData, parseCharacter, parseIndex), controller.signal)
-        .then((html) => html ?? lastParsed)
+      return displayScheduler.run(() => markParsing(parseData, parseCharacter, parseIndex), controller.signal)
     })
     return previousParse
   })
@@ -578,6 +579,9 @@
     void result.then((html) => {
       if (cancelled || html === undefined) return
       lastParsed = html
+      // Translation detection can queue another parse without producing HTML.
+      // Keep the initial registration until a body is actually committed.
+      settleInitialDisplayParse()
     })
     return () => {
       cancelled = true

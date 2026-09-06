@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { defaultChatScreenTestChatController } from './DefaultChatScreen.testChatController'
   import type { ChatGenerationLoadingPhase } from './chatGenerationLoading'
+  import type { DisplaySourcePriority } from 'src/ts/server/displaySources'
 
   let {
     idx = -1,
@@ -18,6 +19,7 @@
     halfStreamingTokensPerSecond = undefined,
     onInitialDisplayParseStart = undefined,
     onInitialDisplayParseSettled = undefined,
+    displayPriority = 'normal',
   }: {
     idx?: number
     message?: string
@@ -33,6 +35,7 @@
     halfStreamingTokensPerSecond?: number
     onInitialDisplayParseStart?: (registration: symbol) => void
     onInitialDisplayParseSettled?: (registration: symbol) => void
+    displayPriority?: DisplaySourcePriority
   } = $props()
 
   const registration = Symbol('test-initial-display-parse')
@@ -47,7 +50,11 @@
       onInitialDisplayParseSettled(registration)
     }
     onInitialDisplayParseStart(registration)
-    const unregister = defaultChatScreenTestChatController.register(settle)
+    // Older rows also report their body lifecycle, but this controller only
+    // delays the critical rows whose parses own the startup skeleton.
+    let unregister = () => {}
+    if (displayPriority === 'background') queueMicrotask(settle)
+    else unregister = defaultChatScreenTestChatController.register(settle)
 
     return () => {
       unregister()

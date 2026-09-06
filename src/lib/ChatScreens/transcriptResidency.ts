@@ -21,6 +21,10 @@ export class TranscriptHeightCache {
     return this.entries.get(id) ?? TRANSCRIPT_ESTIMATED_ROW_HEIGHT
   }
 
+  measured(id: string): number | undefined {
+    return this.entries.get(id)
+  }
+
   set(id: string, height: number): boolean {
     if (!Number.isFinite(height) || height < 0 || id.length > 2048) return false
     const previous = this.entries.get(id)
