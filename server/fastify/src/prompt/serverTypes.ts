@@ -130,7 +130,7 @@ export type GenerationSettings = {
   jsonSchema?: string
   jsonSchemaEnabled?: boolean
   koboldURL?: string
-  localStopStrings?: string[]
+  localStopStrings?: string[] | null
   loreBookDepth?: number
   loreBookToken?: number
   mainPrompt?: string

@@ -601,10 +601,17 @@
           "type": "string"
         },
         "localStopStrings": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
         },
         "loreBookDepth": {
           "type": "number"
@@ -2526,10 +2533,17 @@
           "type": "string"
         },
         "localStopStrings": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
         },
         "customProxyRequestModel": {
           "type": "string"
@@ -8911,10 +8925,17 @@
           "$ref": "#/$defs/record46"
         },
         "localStopStrings": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
         },
         "top_p": {
           "type": "number"
@@ -9851,10 +9872,17 @@
           "type": "string"
         },
         "localStopStrings": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
         },
         "customProxyRequestModel": {
           "type": "string"
@@ -13756,10 +13784,17 @@
           "type": "string"
         },
         "localStopStrings": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
         },
         "customProxyRequestModel": {
           "type": "string"
@@ -18678,10 +18713,17 @@
           "$ref": "#/$defs/record229"
         },
         "localStopStrings": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
         },
         "top_p": {
           "type": "number"
@@ -20790,10 +20832,17 @@
           "type": "string"
         },
         "localStopStrings": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
         },
         "customProxyRequestModel": {
           "type": "string"
@@ -22108,10 +22157,17 @@
           "type": "string"
         },
         "localStopStrings": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
         },
         "customProxyRequestModel": {
           "type": "string"
@@ -23376,10 +23432,17 @@
           "type": "string"
         },
         "localStopStrings": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
         },
         "customProxyRequestModel": {
           "type": "string"

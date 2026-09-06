@@ -1356,6 +1356,48 @@ describe('Durable generation', () => {
     }
   })
 
+  it('completes a send after custom stop strings are disabled through the settings API', async () => {
+    const authority = await operationAuthority()
+    const settingsResponse = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/runtime',
+      headers: authHeaders({ 'risu-writer-session': 'writer-a' }),
+      payload: { baseRevision: authority.revision, patch: { localStopStrings: null } },
+    })
+    expect(settingsResponse.statusCode, settingsResponse.body).toBe(200)
+
+    let dispatchedStopStrings: unknown
+    providerImpl = (context) => {
+      dispatchedStopStrings = context.database.localStopStrings
+      return (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'Reply after disabling custom stops' }
+        yield { kind: 'done', finishReason: 'stop' }
+      })()
+    }
+    const operationId = randomUUID()
+    const acceptedMessageId = randomUUID()
+    const response = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({
+        operationId,
+        acceptedMessageId,
+        baseRevision: settingsResponse.json<{ revision: number }>().revision,
+      }),
+    )
+    expect(response.status).toBe(201)
+    await response.json()
+    await waitFor(async () => {
+      const status = await operationStatus(operationId)
+      return status.operation.state === 'completed' ? status : undefined
+    })
+    expect(dispatchedStopStrings).toBeNull()
+    const hydration = await chatHydration(await bootstrap())
+    expect(hydration.message).toEqual([
+      expect.objectContaining({ role: 'user', chatId: acceptedMessageId }),
+      expect.objectContaining({ role: 'char', data: 'Reply after disabling custom stops' }),
+    ])
+  })
+
   it('rejects a malformed known configuration before accepting a user message or operation', async () => {
     const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
     try {

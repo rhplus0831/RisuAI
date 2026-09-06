@@ -4136,7 +4136,7 @@ export interface Database {
     url: string
     token: string
   }
-  localStopStrings?: string[]
+  localStopStrings?: string[] | null
   autofillRequestUrl: boolean
   customProxyRequestModel: string
   generationSeed: number
@@ -4739,7 +4739,7 @@ export interface botPreset {
   groupOtherBotRole?: string
   NAIadventure?: boolean
   NAIappendName?: boolean
-  localStopStrings?: string[]
+  localStopStrings?: string[] | null
   customProxyRequestModel?: string
   reverseProxyOobaArgs?: OobaChatCompletionRequestParams
   top_p?: number

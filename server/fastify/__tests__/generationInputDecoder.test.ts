@@ -206,6 +206,46 @@ describe('selected generation persistence decoder', () => {
     expect(Object.hasOwn(input, 'promptTemplate')).toBe(template !== undefined)
   })
 
+  it.each([
+    { localStopStrings: null },
+    { localStopStrings: [] },
+    { localStopStrings: ['STOP\\nHERE'] },
+    { localStopStrings: undefined },
+  ])(
+    'preserves custom stop strings $localStopStrings across generation boundaries and presets',
+    ({ localStopStrings }) => {
+      const setting = localStopStrings === undefined ? {} : { localStopStrings }
+      const input = {
+        ...setting,
+        modelPresets: [{ id: 'model', ...setting }],
+        promptPresets: [{ id: 'prompt', ...setting }],
+      }
+      const bytes = JSON.stringify(input)
+      const database = { ...input, characters: [] }
+      const preflight = { database: input, currentChar: { chaId: 'character' }, currentChat: { id: 'chat' } }
+
+      expect(decodeGenerationSettings(input)).toBe(input)
+      expect(decodeGenerationDatabase(database)).toBe(database)
+      expect(decodeGenerationPreflightInputs(preflight)).toBe(preflight)
+      expect(decodeProviderGenerationSettings(input)).toBe(input)
+      expect(decodeMemoryGenerationSettings(input)).toBe(input)
+      expect(JSON.stringify(input)).toBe(bytes)
+      expect(database.localStopStrings).toBe(localStopStrings)
+      expect(Object.hasOwn(input, 'localStopStrings')).toBe(localStopStrings !== undefined)
+    },
+  )
+
+  it.each([
+    [{ localStopStrings: 'STOP' }, '/database/localStopStrings'],
+    [{ localStopStrings: [42] }, '/database/localStopStrings'],
+    [{ modelPresets: [{ id: 'model', localStopStrings: 'STOP' }] }, '/database/modelPresets/0/localStopStrings'],
+    [{ promptPresets: [{ id: 'prompt', localStopStrings: [42] }] }, '/database/promptPresets/0/localStopStrings'],
+  ])('rejects malformed custom stop strings in %j', (database, field) => {
+    expect(() =>
+      decodeGenerationPreflightInputs({ database, currentChar: { chaId: 'character' }, currentChat: { id: 'chat' } }),
+    ).toThrow(`Invalid preflight generation input at ${field}`)
+  })
+
   it.each([null, 'folder'])('preserves supported chat folder ownership %j without copying', (folderId) => {
     const input = selectedDatabaseWithMessage({ role: 'user', data: 'accepted' })
     const chat = input.characters[0].chats[0]
