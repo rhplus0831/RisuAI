@@ -33,9 +33,21 @@ describe('loadout repair boundary', () => {
     expect(database).toEqual(before)
   })
 
+  it.each([{ loadouts: [] }, { loadouts: [canonicalLoadout('loadout-a')] }])(
+    'accepts an absent last-loaded display name without repairing persisted state (%j)',
+    (database) => {
+      const before = structuredClone(database)
+
+      expect(ensureLoadoutCollection(database)).toEqual(before.loadouts)
+      expect(database).toEqual(before)
+      expect(database).not.toHaveProperty('lastLoadedLoadoutName')
+    },
+  )
+
   it.each([
     [{ lastLoadedLoadoutName: '' }, 'loadouts must be an array'],
-    [{ loadouts: [] }, 'lastLoadedLoadoutName must be a string'],
+    [{ loadouts: [], lastLoadedLoadoutName: null }, 'lastLoadedLoadoutName must be a string'],
+    [{ loadouts: [], lastLoadedLoadoutName: 42 }, 'lastLoadedLoadoutName must be a string'],
     [
       { loadouts: [canonicalLoadout('loadout-a'), canonicalLoadout('loadout-a')], lastLoadedLoadoutName: '' },
       'Duplicate loadout id: loadout-a',

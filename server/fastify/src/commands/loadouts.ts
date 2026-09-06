@@ -62,7 +62,9 @@ export function ensureLoadoutCollection(database: JsonRecord): LoadoutRecord[] {
     return record
   })
 
-  if (typeof database.lastLoadedLoadoutName !== 'string') {
+  // Older saves can omit this display-only setting. Collection commands and
+  // reference cascades must not require a last-used loadout or persist a default.
+  if (database.lastLoadedLoadoutName !== undefined && typeof database.lastLoadedLoadoutName !== 'string') {
     throw new ValidationError('lastLoadedLoadoutName must be a string')
   }
 

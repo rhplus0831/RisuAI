@@ -834,6 +834,96 @@ describe('presets collection range', () => {
     expect(readCollection('prompt_templates')).toMatchObject([{ type: 'plain', text: 'sp-1', role: 'system' }])
   })
 
+  it.each([
+    { selected: false, references: false },
+    { selected: true, references: false },
+    { selected: false, references: true },
+    { selected: true, references: true },
+  ])(
+    'deletes a prompt preset without a stored last-loaded name (selected=$selected, references=$references)',
+    async ({ selected, references }) => {
+      const seed = seedDatabase()
+      seed.promptPresetsId = selected ? 1 : 0
+      seed.mainPrompt = selected ? 'deleted prompt' : 'retained prompt'
+      seed.promptPresets = [
+        { id: 'prompt-0', name: 'Prompt 0', mainPrompt: 'retained prompt' },
+        { id: 'prompt-1', name: 'Prompt 1', mainPrompt: 'deleted prompt' },
+      ]
+      seed.loadouts = references
+        ? [{ id: 'loadout-a', name: 'Loadout A', promptPresetId: 'prompt-1', promptPresetName: 'Prompt 1' }]
+        : []
+      seed.characters = [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a-1',
+              name: 'A1',
+              message: [],
+              ...(references ? { generationSettings: { promptPresetId: 'prompt-1' } } : {}),
+            },
+          ],
+        },
+      ]
+      const revision = await importDatabase(seed)
+      const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+      try {
+        // Import fills defaults; reproduce an existing save where this display-only
+        // setting was never persisted, as in the reported DELETE requests.
+        sqlite
+          .prepare("UPDATE settings SET data_json = json_remove(data_json, '$.lastLoadedLoadoutName') WHERE id = 1")
+          .run()
+      } finally {
+        sqlite.close()
+      }
+      const before = rowidSnapshot()
+
+      const { body, metric } = await runCommand({
+        method: 'DELETE',
+        url: '/api/v1/commands/prompt-presets/prompt-1',
+        payload: { baseRevision: revision, promptPresetId: 'prompt-0' },
+      })
+
+      expect(body).toMatchObject({
+        revision: revision + 1,
+        selectedPromptPresetId: 'prompt-0',
+        cascadedChatCount: references ? 1 : 0,
+        cascadedLoadoutCount: references ? 1 : 0,
+      })
+      expect(metric.writtenTables).toEqual(
+        ['prompt_presets', ...(selected ? ['settings'] : []), ...(references ? ['chats', 'loadouts'] : [])].sort(),
+      )
+      expect(readCollection('prompt_presets')).toMatchObject([{ id: 'prompt-0' }])
+      expect(readSettings().promptPresetsId).toBe(0)
+      expect(readSettings().mainPrompt).toBe('retained prompt')
+      expect(readSettings()).not.toHaveProperty('lastLoadedLoadoutName')
+      expect(readCollection('loadouts')).toMatchObject(
+        references ? [{ id: 'loadout-a', promptPresetId: 'prompt-0', promptPresetName: 'Prompt 0' }] : [],
+      )
+      if (references) {
+        expect(readCollection('chats')).toMatchObject([
+          { id: 'chat-a-1', generationSettings: { promptPresetId: 'prompt-0' } },
+        ])
+      } else {
+        expectNoCharacterOrChatChurn(before)
+      }
+
+      const retry = await runCommand({
+        method: 'DELETE',
+        url: '/api/v1/commands/prompt-presets/prompt-1',
+        payload: { baseRevision: revision + 1, promptPresetId: 'prompt-0' },
+      })
+      expect(retry.body).toMatchObject({
+        revision: revision + 2,
+        selectedPromptPresetId: 'prompt-0',
+        cascadedChatCount: 0,
+        cascadedLoadoutCount: 0,
+      })
+      expect(retry.metric.writtenTables).toEqual([])
+    },
+  )
+
   it('keeps stale legacy prompt_templates out of selected modern generation after reopen', async () => {
     const seed = seedDatabase()
     seed.promptPresetsId = 0
