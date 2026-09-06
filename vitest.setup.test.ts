@@ -1,6 +1,32 @@
 import { describe, expect, it, vi } from 'vitest'
+import {
+  backgroundReady,
+  canApplyRoutes,
+  canGenerate,
+  canMutate,
+  canRenderShell,
+  pluginsReady,
+} from './src/ts/startupReadiness'
 
 describe('Vitest structured clone baseline', () => {
+  it('opens the exact post-startup capability baseline promised by global setup', () => {
+    expect({
+      canRenderShell: canRenderShell(),
+      canApplyRoutes: canApplyRoutes(),
+      canMutate: canMutate(),
+      pluginsReady: pluginsReady(),
+      canGenerate: canGenerate(),
+      backgroundReady: backgroundReady(),
+    }).toEqual({
+      canRenderShell: true,
+      canApplyRoutes: true,
+      canMutate: true,
+      pluginsReady: true,
+      canGenerate: true,
+      backgroundReady: true,
+    })
+  })
+
   it('preserves the values supported by the production structured clone path', () => {
     const source = {
       explicitUndefined: undefined,

@@ -32,6 +32,8 @@ describe('rekeyClonedChat', () => {
       hypaV3Data: {
         summaries: [{ chatMemos: ['message-a', 'message-b', 'message-tail'] }],
       },
+      hypaContextTruncationAcknowledged: true,
+      pinned: true,
     } as unknown as Chat
 
     const messageIdMap = rekeyClonedChat(chat, {
@@ -50,6 +52,8 @@ describe('rekeyClonedChat', () => {
     expect(chat.bookmarks).toEqual(['fork-message-a'])
     expect(chat.bookmarkNames).toEqual({ 'fork-message-a': 'Opening' })
     expect(chat.hypaV3Data?.summaries?.[0]?.chatMemos).toEqual(['fork-message-a', 'fork-message-b'])
+    expect(chat.hypaContextTruncationAcknowledged).toBeUndefined()
+    expect(chat.pinned).toBeUndefined()
   })
 
   it('can retain unknown legacy references while rekeying an imported chat', () => {
@@ -66,5 +70,21 @@ describe('rekeyClonedChat', () => {
     })
 
     expect(chat.bookmarks).toEqual(['new-message-a', 'legacy-missing'])
+  })
+
+  it('normalizes missing and duplicate local-lore ids while rekeying an imported chat', () => {
+    const chat = {
+      id: 'import-chat',
+      name: 'Import',
+      message: [],
+      localLore: [{ id: 'shared', content: 'First' }, { id: 'shared', content: 'Second' }, { content: 'Third' }],
+    } as unknown as Chat
+
+    rekeyClonedChat(chat, { createId: idSequence('new-chat') })
+
+    const ids = chat.localLore.map((entry) => entry.id)
+    expect(ids[0]).toBe('shared')
+    expect(ids.every((id) => typeof id === 'string' && id.length > 0)).toBe(true)
+    expect(new Set(ids).size).toBe(3)
   })
 })

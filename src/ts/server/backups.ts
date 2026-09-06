@@ -42,6 +42,22 @@ export interface UnsupportedBackupGroupsResult {
   error: string
 }
 
+export interface UnsupportedStandaloneChatBlocksResult {
+  status: 'unsupported-chat-blocks'
+  error: string
+}
+
+export interface ServerBackupAssetReport {
+  referencedCount: number
+  missingCount: number
+  orphanedCount: number
+}
+
+export interface ServerBackupSkippedBlock {
+  name: string
+  type: 'CHAT'
+}
+
 export type ServerBackupProgressPhase =
   | 'prepare'
   | 'request'
@@ -182,6 +198,7 @@ async function restoreServerBackupImplementation(input: {
           : `Backup restored, but resource refresh failed: ${resync.error}`,
     }
   }
+  await showLegacyMemoryMigrationNoticeAfterReplacement()
   reportProgress(input.onProgress, {
     phase: 'complete',
     message: 'Server backup loaded',
@@ -303,8 +320,15 @@ export async function importServerBundle(input: {
   signal?: AbortSignal | null
   onProgress?: ServerBackupProgressCallback
 }): Promise<
-  | ServerBackupResult<{ revision: number; event?: CommandEvent; discardedPendingMutations: number }>
+  | ServerBackupResult<{
+      revision: number
+      event?: CommandEvent
+      discardedPendingMutations: number
+      assetReport: ServerBackupAssetReport
+      skippedBlocks: ServerBackupSkippedBlock[]
+    }>
   | UnsupportedBackupGroupsResult
+  | UnsupportedStandaloneChatBlocksResult
 > {
   const finishReplacement = beginLocalReplacementDatabaseOperation()
   try {
@@ -320,8 +344,15 @@ async function importServerBundleImplementation(input: {
   signal?: AbortSignal | null
   onProgress?: ServerBackupProgressCallback
 }): Promise<
-  | ServerBackupResult<{ revision: number; event?: CommandEvent; discardedPendingMutations: number }>
+  | ServerBackupResult<{
+      revision: number
+      event?: CommandEvent
+      discardedPendingMutations: number
+      assetReport: ServerBackupAssetReport
+      skippedBlocks: ServerBackupSkippedBlock[]
+    }>
   | UnsupportedBackupGroupsResult
+  | UnsupportedStandaloneChatBlocksResult
 > {
   if (!canUseServerBackups()) return { status: 'unavailable' }
 
@@ -373,6 +404,8 @@ async function importServerBundleImplementation(input: {
 
   if (!response.ok) {
     handleActiveWriterStaleResponse(response, body)
+    const unsupportedStandaloneChatBlocks = readUnsupportedStandaloneChatBlocks(body)
+    if (unsupportedStandaloneChatBlocks) return unsupportedStandaloneChatBlocks
     const unsupportedGroups = readUnsupportedBackupGroups(body)
     if (unsupportedGroups) return unsupportedGroups
     return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
@@ -400,6 +433,7 @@ async function importServerBundleImplementation(input: {
           : `Backup imported, but resource refresh failed: ${resync.error}`,
     }
   }
+  await showLegacyMemoryMigrationNoticeAfterReplacement()
   reportProgress(input.onProgress, {
     phase: 'complete',
     message: 'Local backup loaded',
@@ -409,8 +443,25 @@ async function importServerBundleImplementation(input: {
     status: 'ok',
     revision: imported.revision,
     discardedPendingMutations,
+    assetReport: imported.assetReport,
+    skippedBlocks: imported.skippedBlocks,
     ...(imported.event ? { event: imported.event } : {}),
   }
+}
+
+function readUnsupportedStandaloneChatBlocks(body: unknown): UnsupportedStandaloneChatBlocksResult | null {
+  if (!body || typeof body !== 'object') return null
+  const record = body as { code?: unknown; error?: unknown }
+  if (record.code !== 'unsupported-standalone-chat-blocks' || typeof record.error !== 'string') return null
+  return {
+    status: 'unsupported-chat-blocks',
+    error: record.error,
+  }
+}
+
+async function showLegacyMemoryMigrationNoticeAfterReplacement(): Promise<void> {
+  const { showLegacyMemoryMigrationNoticeIfNeeded } = await import('../process/legacyMemoryMigrationNotice')
+  showLegacyMemoryMigrationNoticeIfNeeded()
 }
 
 function readUnsupportedBackupGroups(body: unknown): UnsupportedBackupGroupsResult | null {
@@ -620,23 +671,72 @@ function parseXhrHeaders(rawHeaders: string): Headers {
   return headers
 }
 
-function readBundleImportResult(
-  body: unknown,
-): { revision: number; event?: CommandEvent; databaseLineage: string; writerEpoch: number } | null {
+function readBundleImportResult(body: unknown): {
+  revision: number
+  event?: CommandEvent
+  databaseLineage: string
+  writerEpoch: number
+  assetReport: ServerBackupAssetReport
+  skippedBlocks: ServerBackupSkippedBlock[]
+} | null {
   if (!body || typeof body !== 'object') return null
   const record = body as {
     revision?: unknown
     event?: unknown
     databaseLineage?: unknown
     writerEpoch?: unknown
+    assetReport?: unknown
+    importReport?: unknown
   }
   if (!Number.isInteger(record.revision) || (record.revision as number) < 0) return null
   const ownership = readDatabaseOwnership(record)
   if (!ownership) return null
+  const assetReport = readServerBackupAssetReport(record.assetReport)
+  if (!assetReport) return null
+  const skippedBlocks = readServerBackupSkippedBlocks(record.importReport)
+  if (!skippedBlocks) return null
   return {
     revision: record.revision as number,
     ...(isCommandEvent(record.event) ? { event: record.event } : {}),
     ...ownership,
+    assetReport,
+    skippedBlocks,
+  }
+}
+
+function readServerBackupSkippedBlocks(value: unknown): ServerBackupSkippedBlock[] | null {
+  if (value === undefined) return []
+  if (!value || typeof value !== 'object') return null
+  const skippedBlocks = (value as { skippedBlocks?: unknown }).skippedBlocks
+  if (skippedBlocks === undefined) return []
+  if (!Array.isArray(skippedBlocks)) return null
+  const parsed: ServerBackupSkippedBlock[] = []
+  for (const block of skippedBlocks) {
+    if (!block || typeof block !== 'object') return null
+    const record = block as { name?: unknown; type?: unknown }
+    if (typeof record.name !== 'string' || record.type !== 'CHAT') return null
+    parsed.push({ name: record.name, type: 'CHAT' })
+  }
+  return parsed
+}
+
+function readServerBackupAssetReport(value: unknown): ServerBackupAssetReport | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<keyof ServerBackupAssetReport, unknown>
+  if (
+    !Number.isSafeInteger(record.referencedCount) ||
+    (record.referencedCount as number) < 0 ||
+    !Number.isSafeInteger(record.missingCount) ||
+    (record.missingCount as number) < 0 ||
+    !Number.isSafeInteger(record.orphanedCount) ||
+    (record.orphanedCount as number) < 0
+  ) {
+    return null
+  }
+  return {
+    referencedCount: record.referencedCount as number,
+    missingCount: record.missingCount as number,
+    orphanedCount: record.orphanedCount as number,
   }
 }
 

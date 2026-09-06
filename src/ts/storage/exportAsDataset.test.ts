@@ -6,15 +6,21 @@ const mocks = vi.hoisted(() => ({
   downloadFile: vi.fn(),
   ensureAllCharacterLorebooksHydrated: vi.fn(),
   ensureAllChatsHydrated: vi.fn(),
-  getDatabase: vi.fn(),
+  characters: [] as Array<Record<string, unknown>>,
 }))
 
-vi.mock('./database.svelte', () => ({ getDatabase: mocks.getDatabase }))
 vi.mock('../globalApi.svelte', () => ({ downloadFile: mocks.downloadFile }))
 vi.mock('../alert', () => ({ alertError: mocks.alertError, alertNormal: mocks.alertNormal }))
 vi.mock('../server/chatMessageHydration.svelte', () => ({
   ensureAllCharacterLorebooksHydrated: mocks.ensureAllCharacterLorebooksHydrated,
   ensureAllChatsHydrated: mocks.ensureAllChatsHydrated,
+}))
+vi.mock('../server/resourceState.svelte', () => ({
+  charactersResourceState: {
+    get characters() {
+      return mocks.characters
+    },
+  },
 }))
 
 import { exportAsDataset } from './exportAsDataset'
@@ -25,16 +31,14 @@ describe('exportAsDataset', () => {
     mocks.ensureAllChatsHydrated.mockResolvedValue(undefined)
     mocks.ensureAllCharacterLorebooksHydrated.mockResolvedValue(undefined)
     mocks.downloadFile.mockResolvedValue(undefined)
-    mocks.getDatabase.mockReturnValue({
-      characters: [
-        {
-          name: 'Character',
-          desc: 'Description',
-          globalLore: [{ key: 'Lore' }],
-          chats: [{ message: [{ role: 'char', data: 'Hello' }] }],
-        },
-      ],
-    })
+    mocks.characters = [
+      {
+        name: 'Character',
+        desc: 'Description',
+        globalLore: [{ key: 'Lore' }],
+        chats: [{ message: [{ role: 'char', data: 'Hello' }] }],
+      },
+    ]
   })
 
   it('reports hydration failures instead of leaving an unhandled rejection', async () => {

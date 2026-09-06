@@ -6,6 +6,8 @@
     initialValue: string
     highlight?: boolean
     popupEditor?: boolean | 'auto'
+    fieldsetDisabled?: boolean
+    disabled?: boolean
     onInput?: (value: string) => void
     onchange?: () => void
     onAncestorKeydown?: (event: KeyboardEvent) => void
@@ -16,6 +18,8 @@
     initialValue,
     highlight = false,
     popupEditor = 'auto',
+    fieldsetDisabled = false,
+    disabled = false,
     onInput = () => {},
     onchange = () => {},
     onAncestorKeydown = () => {},
@@ -36,5 +40,7 @@
 </script>
 
 <div role="dialog" aria-label="Test ancestor" tabindex="-1" onkeydown={onAncestorKeydown}>
-  <TextAreaInput bind:value {popupEditorContext} {highlight} {popupEditor} {onInput} {onchange} />
+  <fieldset disabled={fieldsetDisabled}>
+    <TextAreaInput bind:value {popupEditorContext} {highlight} {popupEditor} {disabled} {onInput} {onchange} />
+  </fieldset>
 </div>

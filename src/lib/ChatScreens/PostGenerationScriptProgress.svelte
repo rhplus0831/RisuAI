@@ -7,9 +7,11 @@
   let { characterId, chatId }: { characterId: string; chatId: string } = $props()
   let now = $state(Date.now())
   let progress = $derived.by(() => {
-    const current = $postGenerationProgress
-    if (!current) return null
-    return current.target.characterId === characterId && current.target.chatId === chatId ? current : null
+    return (
+      $postGenerationProgress.find(
+        (entry) => entry.target.characterId === characterId && entry.target.chatId === chatId,
+      ) ?? null
+    )
   })
 
   function ownerLabel(progress: ActivePostGenerationProgress): string {
@@ -28,11 +30,14 @@
   function phaseLabel(progress: ActivePostGenerationProgress): string {
     return progress.phase === 'editOutput'
       ? language.chatPostGenerationProgressEditOutput
-      : language.chatPostGenerationProgressOnOutput
+      : progress.phase === 'onOutput'
+        ? language.chatPostGenerationProgressOnOutput
+        : ''
   }
 
   let progressLabel = $derived.by(() => {
     if (!progress) return ''
+    if (progress.phase === 'translation') return language.chatPostGenerationProgressTranslating
     return language.chatPostGenerationProgressLabel(
       ownerLabel(progress),
       phaseLabel(progress),
@@ -42,7 +47,13 @@
   })
 
   let progressPercent = $derived.by(() => {
-    return progress ? getPostGenerationScriptProgress(progress.startedAt, now, progress.llmCallCount) : 0
+    return progress
+      ? getPostGenerationScriptProgress(
+          progress.startedAt,
+          now,
+          progress.phase === 'translation' ? 0 : progress.llmCallCount,
+        )
+      : 0
   })
 
   $effect(() => {

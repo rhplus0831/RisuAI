@@ -54,11 +54,24 @@ import {
   findGeneratedAssistantMessage,
 } from './serverBackedSendChat'
 import { markChatMessageMutationIntent } from '../server/chatMessageMutationIntent'
-import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
+import {
+  charactersResourceState,
+  markChatBodyResourceRevision,
+  replaceResourceDatabase,
+} from '../server/resourceState.svelte'
 import type { character, Chat, Message, MessageGenerationInfo } from '../storage/database.svelte'
-import type { ServerChatMessagePatch, ServerChatRestoration } from './request/serverChatEvents'
+import type { ServerChatMessagePatch, ServerChatRestoration } from '@risuai/protocol/generation-sse'
 import { getRerollBuffer, getRerollId, resetRerollNavigation } from './rerollNavigation.svelte'
 import { acknowledgeHydratedGenerationPersistences, queuedGenerationPersistences } from './generationPersistenceState'
+import { addChatOutputListener, chatOutputListeners, type ChatOutputListenerArg } from '../plugins/chatOutputListeners'
+import { _setPluginRuntimePhaseForTesting } from '../plugins/plugins.svelte'
+import {
+  beginGenerationDisplayProjection,
+  generationDisplayProjections,
+  resetGenerationDisplayProjectionsForTests,
+} from './generationDisplayProjection.svelte'
+import { clearAppliedServerResourceRevision } from '../server/commands'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {
@@ -89,8 +102,8 @@ function trapIterator(chat: Chat): void {
   })
 }
 
-describe('terminal assistant-message lookup (L39)', () => {
-  it('L39: resolves the message by chatId without copying the transcript', () => {
+describe('terminal assistant-message lookup', () => {
+  it('resolves the message by chatId without copying the transcript', () => {
     const chat = chatWith([
       { role: 'user', data: 'one', chatId: 'm-1' },
       { role: 'char', data: 'two', chatId: 'gen-1' },
@@ -101,7 +114,7 @@ describe('terminal assistant-message lookup (L39)', () => {
     expect(found?.data).toBe('two')
   })
 
-  it('L39: falls back to the newest generationInfo match, scanning in place', () => {
+  it('falls back to the newest generationInfo match, scanning in place', () => {
     const chat = chatWith([
       { role: 'char', data: 'old', generationInfo: { generationId: 'gen-2' } },
       { role: 'user', data: 'middle' },
@@ -115,7 +128,7 @@ describe('terminal assistant-message lookup (L39)', () => {
     expect(found?.data).toBe('newest')
   })
 
-  it('L39: returns undefined when nothing matches, still without copying', () => {
+  it('returns undefined when nothing matches, still without copying', () => {
     const chat = chatWith([
       { role: 'user', data: 'one', chatId: 'm-1' },
       { role: 'char', data: 'two', chatId: 'm-2' },
@@ -222,10 +235,11 @@ function seedReorderedTerminalChats(): { char: character; target: Chat; staleInd
   return { char: liveChar, target: liveChar.chats[1], staleIndexChat: liveChar.chats[0] }
 }
 
-describe('server-backed terminal stable chat target (R-02)', () => {
+describe('server-backed terminal stable chat target', () => {
   let originalDb: typeof testDatabaseState.db
 
   beforeEach(() => {
+    _setPluginRuntimePhaseForTesting('ready')
     originalDb = testDatabaseState.db
     resetRerollNavigation()
     inlayMock.run.mockReset()
@@ -236,13 +250,20 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     ttsMock.say.mockResolvedValue(undefined)
     hydrationMock.hydrate.mockReset()
     hydrationMock.hydrate.mockResolvedValue(undefined)
+    resetGenerationDisplayProjectionsForTests()
     queuedGenerationPersistences.set([])
+    chatOutputListeners.clear()
+    resetGenerationDisplayProjectionsForTests()
+    clearAppliedServerResourceRevision()
     selectedCharID.set(0)
   })
 
   afterEach(() => {
+    _setPluginRuntimePhaseForTesting('idle')
     resetRerollNavigation()
     queuedGenerationPersistences.set([])
+    chatOutputListeners.clear()
+    clearAppliedServerResourceRevision()
     testDatabaseState.db = originalDb
     selectedCharID.set(-1)
   })
@@ -267,8 +288,329 @@ describe('server-backed terminal stable chat target (R-02)', () => {
 
     expect(result.status).toBe('ok')
     expect(result.currentChat.id).toBe('chat-target')
+    if (result.status !== 'ok') throw new Error('unexpected terminal status')
+    expect(result.igpTarget).toEqual({
+      characterId: 'char-stable',
+      chatId: 'chat-target',
+      messageId: 'gen-stable',
+      expectedData: 'stable final text',
+      expectedGenerationId: 'gen-stable',
+    })
     expect(target.message[0].data).toBe('stable final text')
     expect(staleIndexChat.message[0].data).toBe('stale original')
+  })
+
+  it('fails closed when a ready owner collection contains duplicate character ids', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    testDatabaseState.db = {
+      characters: [char, char],
+    } as typeof testDatabaseState.db
+    charactersResourceState.status = 'ready'
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'done',
+        done: { postGeneration: { finalText: 'must not write' } },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+    })
+
+    expect(result.status).toBe('ok')
+    expect(target.message[0].data).toBe('target original')
+  })
+
+  it('hydrates regenerate authority before removing its transient target projection', async () => {
+    const target = makeTerminalChat('chat-target', [
+      { role: 'user', data: 'try again', chatId: 'user-1' } as Message,
+      { role: 'char', data: 'old reply', chatId: 'assistant-old' } as Message,
+    ])
+    const char = makeTerminalCharacter([target])
+    testDatabaseState.db = { characters: [char] } as typeof testDatabaseState.db
+    const liveChar = testDatabaseState.db.characters[0]
+    const liveChat = liveChar.chats[0]
+    const displayProjection = {
+      operationId: 'operation-1',
+      attemptNo: 1,
+      characterId: 'char-stable',
+      chatId: 'chat-target',
+      mode: 'regenerate' as const,
+      targetMessageId: 'assistant-old',
+      generationId: 'assistant-new',
+      projectionEpoch: 4,
+    }
+    beginGenerationDisplayProjection(displayProjection)
+    hydrationMock.hydrate.mockImplementationOnce(async () => {
+      liveChat.message[1] = terminalMessage('new reply', 'assistant-new')
+    })
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'done',
+        done: {
+          generationId: 'assistant-new',
+          postGeneration: { messageId: 'assistant-new', finalText: 'new reply' },
+        },
+      },
+      currentChar: liveChar,
+      currentChat: liveChat,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      targetMessageId: 'assistant-old',
+      generationInfo: { generationId: 'assistant-new' },
+      streamProjection: {
+        chatId: 'chat-target',
+        messageId: 'assistant-old',
+        generationId: 'assistant-new',
+        previousData: 'old reply',
+        ownedData: 'old reply',
+        appended: false,
+        displayProjection,
+      },
+    })
+
+    expect(hydrationMock.hydrate).toHaveBeenCalledWith('chat-target', { force: true, strict: true })
+    expect(result.status).toBe('ok')
+    expect(liveChat.message).toEqual([
+      expect.objectContaining({ chatId: 'user-1', data: 'try again' }),
+      expect.objectContaining({ chatId: 'assistant-new', data: 'new reply' }),
+    ])
+    expect(get(generationDisplayProjections)).toEqual([])
+  })
+
+  it('drops a failed regenerate projection without changing the original target', async () => {
+    const target = makeTerminalChat('chat-target', [
+      { role: 'user', data: 'try again', chatId: 'user-1' } as Message,
+      { role: 'char', data: 'old reply', chatId: 'assistant-old' } as Message,
+    ])
+    const char = makeTerminalCharacter([target])
+    testDatabaseState.db = { characters: [char] } as typeof testDatabaseState.db
+    const liveChar = testDatabaseState.db.characters[0]
+    const liveChat = liveChar.chats[0]
+    const displayProjection = {
+      operationId: 'operation-1',
+      attemptNo: 1,
+      characterId: 'char-stable',
+      chatId: 'chat-target',
+      mode: 'regenerate' as const,
+      targetMessageId: 'assistant-old',
+      generationId: 'assistant-new',
+      projectionEpoch: 4,
+    }
+    beginGenerationDisplayProjection(displayProjection)
+
+    const result = await applyServerBackedTerminal({
+      terminal: { status: 'error', error: 'provider failed before output' },
+      currentChar: liveChar,
+      currentChat: liveChat,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      targetMessageId: 'assistant-old',
+      generationInfo: { generationId: 'assistant-new' },
+      streamProjection: {
+        chatId: 'chat-target',
+        messageId: 'assistant-old',
+        generationId: 'assistant-new',
+        previousData: 'old reply',
+        ownedData: 'old reply',
+        appended: false,
+        displayProjection,
+      },
+    })
+
+    expect(result.status).toBe('failed')
+    expect(liveChat.message).toEqual([
+      expect.objectContaining({ chatId: 'user-1', data: 'try again' }),
+      expect.objectContaining({ chatId: 'assistant-old', data: 'old reply' }),
+    ])
+    expect(hydrationMock.hydrate).not.toHaveBeenCalled()
+    expect(get(generationDisplayProjections)).toEqual([])
+  })
+
+  it('notifies output listeners after the finalized assistant message is applied', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    const calls: ChatOutputListenerArg[] = []
+    const order: string[] = []
+    addChatOutputListener('output', async (arg) => {
+      order.push('first:start')
+      await Promise.resolve()
+      calls.push(arg)
+      arg.chat.message[0].data = 'detached plugin mutation'
+      arg.char.name = 'Detached Plugin Character'
+      order.push('first:end')
+    })
+    addChatOutputListener('output', () => {
+      order.push('second')
+    })
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'done',
+        done: { postGeneration: { finalText: 'listener-visible final text' } },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+    })
+
+    expect(result.status).toBe('ok')
+    expect(order).toEqual(['first:start', 'first:end', 'second'])
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({
+      characterIndex: 0,
+      chatIndex: 1,
+      messageIndex: 0,
+    })
+    expect(target.message[0].data).toBe('listener-visible final text')
+    expect(char.name).toBe('Stable Character')
+  })
+
+  it('applies the exact cancelled snapshot without running success-only terminal effects', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    target.message[0].data = 'persisted partial reply'
+    const listener = vi.fn()
+    addChatOutputListener('output', listener)
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'cancelled',
+        reattachOutcome: 'cancelled',
+        sideEffects: [{ kind: 'tts', payload: { text: 'must not speak' } }],
+        done: {
+          outcome: 'cancelled',
+          result: 'persisted partial reply',
+          alternates: ['must not become an alternate'],
+          postGeneration: {
+            messageId: 'gen-stable',
+            finalText: '*says nothing*persisted partial reply',
+            messagePatch: makePostGenerationPatch('chat-target', 'must not patch'),
+          },
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+      streamProjection: {
+        chatId: 'chat-target',
+        messageId: 'gen-stable',
+        generationId: 'gen-stable',
+        previousData: '',
+        ownedData: 'persisted partial reply',
+        appended: true,
+      },
+    })
+
+    expect(result).toMatchObject({ status: 'cancelled', reattachOutcome: 'cancelled', resendChat: false })
+    expect(target.message[0].data).toBe('*says nothing*persisted partial reply')
+    expect(target.scriptstate).toBeUndefined()
+    expect(listener).not.toHaveBeenCalled()
+    expect(ttsMock.say).not.toHaveBeenCalled()
+    expect(inlayMock.run).not.toHaveBeenCalled()
+    expect(getRerollBuffer()).toEqual([])
+  })
+
+  it('recreates a half-streaming placeholder removed before the cancelled snapshot arrives', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    target.message = [{ role: 'user', data: 'question', chatId: 'user-1' } as Message]
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'cancelled',
+        done: {
+          outcome: 'cancelled',
+          result: 'raw partial',
+          postGeneration: {
+            messageId: 'gen-half-stop',
+            finalText: 'processed partial',
+          },
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-half-stop', model: 'test-model' },
+      streamProjection: {
+        chatId: 'chat-target',
+        messageId: 'gen-half-stop',
+        generationId: 'gen-half-stop',
+        previousData: '',
+        ownedData: '',
+        appended: true,
+        detached: false,
+        messageIndex: 1,
+      },
+    })
+
+    expect(result.status).toBe('cancelled')
+    expect(target.message).toHaveLength(2)
+    expect(target.message[1]).toMatchObject({
+      role: 'char',
+      chatId: 'gen-half-stop',
+      data: 'processed partial',
+      saying: 'char-stable',
+      generationInfo: { generationId: 'gen-half-stop', model: 'test-model' },
+    })
+  })
+
+  it('keeps a processed failed partial instead of applying the pre-generation restoration', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    target.message[0].data = 'raw failed partial'
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'error',
+        error: 'provider exploded',
+        restoration: makeRestoration('chat-target'),
+        done: {
+          result: 'raw failed partial',
+          postGeneration: {
+            messageId: 'gen-stable',
+            finalText: 'processed failed partial',
+          },
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+      streamProjection: {
+        chatId: 'chat-target',
+        messageId: 'gen-stable',
+        generationId: 'gen-stable',
+        previousData: '',
+        ownedData: 'raw failed partial',
+        appended: true,
+      },
+    })
+
+    expect(result.status).toBe('failed')
+    expect(target.message).toHaveLength(1)
+    expect(target.message[0].data).toBe('processed failed partial')
+    expect(target.scriptstate).toBeUndefined()
+    expect(hydrationMock.hydrate).not.toHaveBeenCalled()
   })
 
   it('discards a late inlay completion after a newer message edit intent', async () => {
@@ -436,7 +778,7 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     expect(getRerollId()).toBe(0)
   })
 
-  it('does not seed terminal alternates after another chat becomes active', async () => {
+  it('keeps background terminal alternates for an already-resident chat until it is reopened', async () => {
     const { char, target } = seedReorderedTerminalChats()
     target.message[0].data = 'primary reply'
 
@@ -461,6 +803,11 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     expect(char.chats[char.chatPage].id).toBe('chat-stale-index')
     expect(getRerollBuffer()).toEqual([])
     expect(getRerollId()).toBe(-1)
+
+    char.chatPage = 1
+    expect(getRerollBuffer().map((candidate) => candidate[0]?.data)).toEqual(['primary reply', 'other reply'])
+    expect(getRerollId()).toBe(0)
+    expect(hydrationMock.hydrate).not.toHaveBeenCalled()
   })
 
   it('applies terminal post-generation patches to the stable chat id after chat reorder', async () => {
@@ -493,6 +840,119 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     expect(target.scriptstate).toEqual({ $mood: 'steady' })
     expect(staleIndexChat.message[0].data).toBe('stale original')
     expect(staleIndexChat.scriptstate).toBeUndefined()
+  })
+
+  it('does not apply a terminal patch after a newer local message mutation intent', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    target.message.unshift({ role: 'user', data: 'original user text', chatId: 'user-stable' })
+    const restorationGuard = captureServerBackedRestorationGuard('chat-target')
+    target.message[0].data = 'newer user edit'
+    markChatMessageMutationIntent('chat-target')
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'done',
+        done: {
+          postGeneration: {
+            revision: 8,
+            finalText: 'stale terminal final text',
+            messagePatch: makePostGenerationPatch('chat-target', 'stale patched text'),
+          },
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 1,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+      restorationGuard,
+      streamProjection: {
+        chatId: 'chat-target',
+        messageId: 'gen-stable',
+        generationId: 'gen-stable',
+        previousData: '',
+        ownedData: 'target original',
+        appended: true,
+      },
+    })
+
+    expect(result.status).toBe('ok')
+    expect(target.message).toEqual([
+      { role: 'user', data: 'newer user edit', chatId: 'user-stable' },
+      terminalMessage('target original'),
+    ])
+    expect(target.scriptstate).toBeUndefined()
+  })
+
+  it('does not apply a terminal patch older than the projected server revision', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    target.scriptstate = { $mood: 'newer server value' }
+    markChatBodyResourceRevision('chat-target', 9)
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'done',
+        done: {
+          postGeneration: {
+            revision: 8,
+            finalText: 'stale terminal final text',
+            messagePatch: makePostGenerationPatch('chat-target', 'stale patched text'),
+          },
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 1,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+    })
+
+    expect(result.status).toBe('ok')
+    expect(target.message[0].data).toBe('target original')
+    expect(target.scriptstate).toEqual({ $mood: 'newer server value' })
+  })
+
+  it('applies an embedded succeeded translation before terminal generation UI settlement', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'done',
+        done: {
+          postGeneration: {
+            messageId: 'gen-stable',
+            translation: {
+              status: 'succeeded',
+              jobId: 'translation-job-1',
+              translation: {
+                source: 'raw',
+                text: 'translated target',
+                sourceHash: 'source-hash',
+                targetLanguage: 'ko',
+                inputLanguage: 'en',
+                translatorType: 'google',
+                settingsHash: 'settings-hash',
+                updatedAt: 123,
+              },
+            },
+          },
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+    })
+
+    expect(result.status).toBe('ok')
+    expect(target.message[0].translation?.text).toBe('translated target')
   })
 
   it('mirrors a terminal patch before slow TTS and preserves a newer saved edit', async () => {
@@ -694,6 +1154,95 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     expect(hydrationMock.hydrate).toHaveBeenCalledWith('chat-target', { force: true, strict: true })
   })
 
+  it('removes an appended optimistic reply and creates no queued marker when journaling is unconfirmed', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    target.message = [terminalMessage('streamed without a journal')]
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'error',
+        error: 'Generation finalization journal was not confirmed',
+        persistenceDisposition: 'unconfirmed',
+        generationProjection: {
+          characterId: 'char-stable',
+          chatId: 'chat-target',
+          generationId: 'gen-stable',
+          mode: 'send',
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+      streamProjection: {
+        chatId: 'chat-target',
+        messageId: 'gen-stable',
+        generationId: 'gen-stable',
+        previousData: '',
+        ownedData: 'streamed without a journal',
+        appended: true,
+      },
+    })
+
+    expect(result.status).toBe('failed')
+    expect(target.message).toEqual([])
+    expect(get(queuedGenerationPersistences)).toEqual([])
+    expect(hydrationMock.hydrate).toHaveBeenCalledWith('chat-target', { force: true, strict: true })
+  })
+
+  it.each(['continue', 'regenerate'] as const)(
+    'restores the prior %s text when the still-owned projection has no confirmed journal',
+    async (mode) => {
+      const { char, target } = seedReorderedTerminalChats()
+      target.message = [
+        {
+          role: 'char',
+          data: 'prior text plus streamed text',
+          chatId: 'target-message',
+          generationInfo: { generationId: 'gen-stable' },
+        },
+      ]
+
+      await applyServerBackedTerminal({
+        terminal: {
+          status: 'error',
+          error: 'Generation finalization journal was not confirmed',
+          persistenceDisposition: 'unconfirmed',
+          generationProjection: {
+            characterId: 'char-stable',
+            chatId: 'chat-target',
+            generationId: 'gen-stable',
+            mode,
+            targetMessageId: 'target-message',
+          },
+        },
+        currentChar: char,
+        currentChat: target,
+        selectedChar: 0,
+        selectedChat: 0,
+        targetCharacterId: 'char-stable',
+        targetChatId: 'chat-target',
+        targetMessageId: 'target-message',
+        generationInfo: { generationId: 'gen-stable' },
+        streamProjection: {
+          chatId: 'chat-target',
+          messageId: 'target-message',
+          generationId: 'gen-stable',
+          previousData: 'prior text',
+          ownedData: 'prior text plus streamed text',
+          appended: false,
+        },
+      })
+
+      expect(target.message).toEqual([expect.objectContaining({ chatId: 'target-message', data: 'prior text' })])
+      expect(get(queuedGenerationPersistences)).toEqual([])
+      expect(hydrationMock.hydrate).toHaveBeenCalledWith('chat-target', { force: true, strict: true })
+    },
+  )
+
   it('keeps a retry-queued reply visibly provisional until authoritative persistence', async () => {
     const { char, target } = seedReorderedTerminalChats()
     target.message = [terminalMessage('streamed and queued')]
@@ -760,15 +1309,15 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     expect(get(queuedGenerationPersistences)).toEqual([])
   })
 
-  it('does not remove a newer edit of an optimistic reply after persistence rejection', async () => {
+  it('does not remove a newer edit while reconciling an unconfirmed journal', async () => {
     const { char, target } = seedReorderedTerminalChats()
     target.message = [terminalMessage('newer user edit')]
 
     await applyServerBackedTerminal({
       terminal: {
         status: 'error',
-        error: 'Generation finalization target is stale',
-        persistenceDisposition: 'rejected',
+        error: 'Generation finalization journal was not confirmed',
+        persistenceDisposition: 'unconfirmed',
         generationProjection: {
           characterId: 'char-stable',
           chatId: 'chat-target',
@@ -794,6 +1343,7 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     })
 
     expect(target.message[0].data).toBe('newer user edit')
+    expect(get(queuedGenerationPersistences)).toEqual([])
     expect(hydrationMock.hydrate).toHaveBeenCalledWith('chat-target', { force: true, strict: true })
   })
 })

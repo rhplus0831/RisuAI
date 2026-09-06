@@ -2,7 +2,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect } from 'vitest'
-import { getResourceDatabase as getDatabase } from '../../server/resourceState.svelte'
+import { charactersResourceState } from '../../server/resourceState.svelte'
 import { selectedCharID } from '../../stores.svelte'
 import type { Message } from '../../storage/database.svelte'
 import { chatProcessStage, doingChat } from '../index.svelte'
@@ -14,7 +14,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 
 export interface FixtureSnapshot {
   messages: NormalizedMessage[]
-  generationInfo: unknown
+  generationInfo?: unknown
   stages: number[]
   sideEffects: SideEffectCall[]
   providerCalls: NormalizedProviderCall[]
@@ -121,13 +121,15 @@ function normalizeProviderCall(call: { arg: unknown; model: unknown }): Normaliz
 
 export function captureSnapshot(stages: number[]): FixtureSnapshot {
   const charIdx = get(selectedCharID)
-  const char = getDatabase().characters[charIdx]
+  const char = charactersResourceState.characters[charIdx]
   const chat = char.chats[char.chatPage]
   const lastAssistant = [...chat.message].reverse().find((m) => m.role === 'char')
 
   return {
     messages: chat.message.map(normalizeMessage),
-    generationInfo: lastAssistant ? normalizeGenerationInfo(lastAssistant.generationInfo) : undefined,
+    ...(lastAssistant?.generationInfo !== undefined
+      ? { generationInfo: normalizeGenerationInfo(lastAssistant.generationInfo) }
+      : {}),
     stages,
     sideEffects: getSideEffectCalls(),
     providerCalls: getProviderCalls().map(normalizeProviderCall),

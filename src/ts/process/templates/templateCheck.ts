@@ -1,7 +1,8 @@
 import type { Database } from 'src/ts/storage/database.svelte'
+import { resolveEffectivePromptTemplate } from '@risuai/shared-core/effective-prompt-template'
 
 export function templateCheck(db: Database) {
-  const temp = db.promptTemplate
+  const temp = resolveEffectivePromptTemplate(db).promptTemplate
   if (!temp) {
     return []
   }

@@ -1,8 +1,16 @@
-import { beforeAll, describe, expect, it } from 'vitest'
-import type { Chat, Database, Message, character, loreBook } from '../../../src/ts/storage/database.svelte'
-import type { RisuModule } from '../../../src/ts/process/modules'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+  FastifyLoreBook as loreBook,
+  FastifyMessage as Message,
+} from '../src/prompt/serverTypes.js'
+import type { ServerModule as RisuModule } from '../src/prompt/moduleDescriptors.js'
 import {
   activateLorebook,
+  activateLorebookAsync,
+  countActiveLoreTokens,
   buildLorebookContext,
   getLorebookSearchEntryListInstrumentation,
   getLorebookSearchNormalizationInstrumentation,
@@ -81,7 +89,7 @@ function makeModule(overrides: Partial<RisuModule> = {}): RisuModule {
   } as RisuModule
 }
 
-describe('Phase 7-7a activateLorebook — sources', () => {
+describe('activateLorebook — sources', () => {
   it('returns no actives when no lore is configured', () => {
     const report = activateLorebook({
       database: makeDb(),
@@ -114,6 +122,27 @@ describe('Phase 7-7a activateLorebook — sources', () => {
         inject: null,
       },
     ])
+  })
+
+  it('categorically excludes Agent-only entries from normal lorebook activation', () => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            comment: 'Agent Reference',
+            content: 'Must never enter the main prompt.',
+            key: 'reference',
+            alwaysActive: true,
+            agentOnly: true,
+          }),
+        ],
+      }),
+      currentChat: makeChat(),
+    })
+
+    expect(report.actives).toEqual([])
+    expect(report.matchLog).toEqual([])
   })
 
   it('picks up chat.localLore', () => {
@@ -175,7 +204,7 @@ describe('Phase 7-7a activateLorebook — sources', () => {
   })
 })
 
-describe('Phase 7-7a activateLorebook — decorators', () => {
+describe('activateLorebook — decorators', () => {
   it('@@role user flips role and strips the decorator', () => {
     const report = activateLorebook({
       database: makeDb(),
@@ -298,7 +327,7 @@ describe('Phase 7-7a activateLorebook — decorators', () => {
   })
 })
 
-describe('Phase 7-7a activateLorebook — inject_lore', () => {
+describe('activateLorebook — inject_lore', () => {
   it('appends an injector entry onto a sibling identified by comment', () => {
     const report = activateLorebook({
       database: makeDb(),
@@ -339,7 +368,49 @@ describe('Phase 7-7a activateLorebook — inject_lore', () => {
   })
 })
 
-describe('Phase 7-7b activateLorebook — keyword matching', () => {
+describe('activateLorebook — inject_at', () => {
+  it.each([
+    {
+      name: 'append',
+      decorators: '@@inject_at globalNote',
+      operation: 'append' as const,
+      param: '',
+    },
+    {
+      name: 'prepend',
+      decorators: '@@inject_at main\n@@inject_prepend',
+      operation: 'prepend' as const,
+      param: '',
+    },
+    {
+      name: 'replace',
+      decorators: '@@inject_at description\n@@inject_replace SLOT',
+      operation: 'replace' as const,
+      param: 'SLOT',
+    },
+  ])('retains a non-lore $name injector for template rendering', ({ decorators, operation, param }) => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [makeLore({ content: `${decorators}\nInjected body` })],
+      }),
+      currentChat: makeChat(),
+    })
+
+    expect(report.actives).toHaveLength(1)
+    expect(report.actives[0]).toMatchObject({
+      prompt: 'Injected body',
+      inject: {
+        operation,
+        location: operation === 'append' ? 'globalNote' : operation === 'prepend' ? 'main' : 'description',
+        param,
+        lore: false,
+      },
+    })
+  })
+})
+
+describe('activateLorebook — keyword matching', () => {
   it('activates a keyword entry when a recent message contains the key', () => {
     const report = activateLorebook({
       database: makeDb(),
@@ -422,7 +493,29 @@ describe('Phase 7-7b activateLorebook — keyword matching', () => {
     expect(report.actives).toHaveLength(1)
   })
 
-  it('L9/v4-L7: valid imported lorebook useRegex output remains unchanged under bounds', () => {
+  it('parses slash-delimited regex keys with an empty flag set', () => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            useRegex: true,
+            key: '/cat.+sun/',
+            content: 'Sunlit cats.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'A cat naps under the sun.' })],
+      }),
+    })
+
+    expect(report.actives.map((entry) => entry.prompt)).toEqual(['Sunlit cats.'])
+    expect(report.matchLog.map((entry) => entry.activated)).toEqual(['/cat.+sun/'])
+  })
+
+  it('valid imported lorebook useRegex output remains unchanged under bounds', () => {
     const report = activateLorebook({
       database: makeDb(),
       currentChar: makeChar({
@@ -451,7 +544,7 @@ describe('Phase 7-7b activateLorebook — keyword matching', () => {
     ])
   })
 
-  it('L9/v4-L7: imported lorebook useRegex rejects unsafe keys before search', () => {
+  it('imported lorebook useRegex rejects unsafe keys before search', () => {
     expect(() =>
       activateLorebook({
         database: makeDb(),
@@ -562,6 +655,27 @@ describe('Phase 7-7b activateLorebook — keyword matching', () => {
     expect(report.actives).toEqual([])
   })
 
+  it('treats a bare @@exclude_keys_all as an empty all-match and suppresses the entry', async () => {
+    const input = {
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            key: 'cat',
+            content: '@@exclude_keys_all\nCats nap.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'A cat naps nearby.' })],
+      }),
+    }
+
+    expect(activateLorebook(input).actives).toEqual([])
+    expect((await activateLorebookAsync(input)).actives).toEqual([])
+  })
+
   it('@@match_full_word distinguishes whole-word vs substring', () => {
     const partial = activateLorebook({
       database: makeDb(),
@@ -617,6 +731,56 @@ describe('Phase 7-7b activateLorebook — keyword matching', () => {
       currentChat: makeChat({ message: messages }),
     })
     expect(report.actives).toEqual([])
+  })
+
+  it.each(['sync', 'async'] as const)(
+    'isolates child activation from readonly module configuration (%s)',
+    async (mode) => {
+      const parent = Object.freeze(
+        makeLore({ id: 'shared', alwaysActive: false, key: 'unmatched', comment: 'Parent', content: 'Parent body' }),
+      )
+      const child = Object.freeze(
+        makeLore({ id: 'shared', mode: 'child', alwaysActive: true, key: '', comment: 'Child', content: 'Child body' }),
+      )
+      const module = Object.freeze({ id: 'module', name: 'Module', description: '', lorebook: Object.freeze([child]) })
+      const database = makeDb({
+        modules: [module],
+        enabledModules: ['module'],
+        complexRegexCompatibilityMode: mode === 'async' ? 'worker' : 'strict',
+      })
+      const input = {
+        database,
+        currentChar: makeChar({ globalLore: [parent] }),
+        currentChat: makeChat({ message: [makeMessage({ data: 'plain input' })] }),
+      }
+      const before = JSON.stringify({ parent, module })
+      const report = mode === 'sync' ? activateLorebook(input) : await activateLorebookAsync(input)
+      expect(report.actives).toHaveLength(1)
+      expect(report.actives[0]).toMatchObject({ source: 'Parent', prompt: 'Parent body' })
+      expect(JSON.stringify({ parent, module })).toBe(before)
+    },
+  )
+
+  it.each([
+    { saying: 'external', key: 'CapturedSibling', name: undefined },
+    { saying: 'char-tess', key: 'RenamedTarget', name: undefined },
+    { saying: 'external', key: 'ExplicitSpeaker', name: 'ExplicitSpeaker' },
+    { saying: 'missing', key: 'RenamedTarget', name: undefined },
+  ])('resolves lore speaker names with request-owned precedence: $key', ({ saying, key, name }) => {
+    const currentChar = makeChar({
+      name: 'RenamedTarget',
+      globalLore: [makeLore({ key: 'unrelated', alwaysActive: false, content: 'speaker match' })],
+    })
+    const database = makeDb({ characters: [currentChar] })
+    const report = activateLorebook({
+      database,
+      currentChar,
+      currentChat: makeChat({ message: [makeMessage({ role: 'char', data: 'unrelated text', saying, name })] }),
+      resolveSpeakerName: (id) =>
+        id === 'external' ? 'CapturedSibling' : id === 'char-tess' ? 'OldTarget' : undefined,
+    })
+    expect(report.actives.map((entry) => entry.prompt)).toEqual(['speaker match'])
+    expect(report.matchLog[0]?.prompt).toContain(key.toLocaleLowerCase())
   })
 
   it('child mode mirrors the previous parent when the parent did not fire', () => {
@@ -779,6 +943,24 @@ describe('Phase 7-7b activateLorebook — keyword matching', () => {
     expect(second.actives).toHaveLength(1)
   })
 
+  it('@@keep_activate_after_match reads its sticky key from template defaults', () => {
+    const lore = makeLore({
+      id: 'lore-default-keep',
+      alwaysActive: false,
+      key: 'cat',
+      content: '@@keep_activate_after_match\nDefault sticky.',
+    })
+    const currentChar = makeChar({ globalLore: [lore] })
+    const report = activateLorebook({
+      database: makeDb({ templateDefaultVariables: '__internal_ka_lore-default-keep=true' }),
+      currentChar,
+      currentChat: makeChat({ message: [makeMessage({ data: 'unrelated' })] }),
+    })
+
+    expect(report.actives).toHaveLength(1)
+    expect(report.actives[0].prompt).toBe('Default sticky.')
+  })
+
   it('falls back to pickHashRand for the chat-var key when entry.id is absent', () => {
     const lore = makeLore({
       alwaysActive: false,
@@ -826,7 +1008,7 @@ describe('Phase 7-7b activateLorebook — keyword matching', () => {
   })
 })
 
-describe('Phase 7-7c activateLorebook — recursion', () => {
+describe('activateLorebook — recursion', () => {
   it('chains A -> B: B fires on the second pass via A activated body', () => {
     const report = activateLorebook({
       database: makeDb(),
@@ -1071,7 +1253,7 @@ function makeReport(actives: LoreEntryActive[]): LorebookActivationReport {
   return { actives, disabledUIPrompts: [], matchLog: [] }
 }
 
-describe('Phase 7-7e getDepthPrompts', () => {
+describe('getDepthPrompts', () => {
   it('keeps `pos=depth` entries with depth > 0', () => {
     const r = makeReport([
       makeActive({ pos: 'depth', depth: 1, source: 'a' }),
@@ -1107,7 +1289,7 @@ describe('Phase 7-7e getDepthPrompts', () => {
   })
 })
 
-describe('Phase 7-7e resolvePosition', () => {
+describe('resolvePosition', () => {
   it('substitutes {{position::name}} with the matching pt_<name> body', () => {
     const r = makeReport([makeActive({ pos: 'pt_slot', prompt: 'SLOT VALUE' })])
     expect(resolvePosition('before {{position::slot}} after', r)).toBe('before SLOT VALUE after')
@@ -1139,7 +1321,7 @@ describe('Phase 7-7e resolvePosition', () => {
   })
 })
 
-describe('Phase 7-7d activateLorebook — budget truncation', () => {
+describe('activateLorebook — budget truncation', () => {
   it('attaches per-entry tokens under the default cl100k_base encoding', () => {
     const report = activateLorebook({
       database: makeDb(),
@@ -1155,7 +1337,47 @@ describe('Phase 7-7d activateLorebook — budget truncation', () => {
     expect(report.actives[0].tokens).toBe(3)
   })
 
-  it('routes to o200k_base when input.model is in the o200k prefix list', () => {
+  it('counts CBS-evaluated content for cutoff without firing variable writes', () => {
+    const currentChat = makeChat({ scriptstate: {} })
+    const collapsedBranch = 'large hidden branch '.repeat(40)
+    const currentChar = makeChar({
+      chatPage: 0,
+      chats: [currentChat],
+      globalLore: [
+        makeLore({
+          comment: 'collapsed',
+          content: `{{#if 0}}{{setvar::preflightGuard::changed}}${collapsedBranch}{{/}}tiny`,
+        }),
+      ],
+      loreSettings: { tokenBudget: 1, scanDepth: 5, recursiveScanning: true },
+    })
+    const database = makeDb({ characters: [currentChar], currentChar: 0 } as Partial<Database>)
+
+    const report = activateLorebook({ database, currentChar, currentChat })
+
+    expect(report.actives).toHaveLength(1)
+    expect(report.actives[0]).toMatchObject({ source: 'collapsed', tokens: 1 })
+    expect(report.actives[0].prompt).toContain(collapsedBranch)
+    expect(currentChat.scriptstate).toEqual({})
+  })
+
+  it('rejects raw-small CBS source when its evaluated content exceeds the cutoff', () => {
+    const currentChat = makeChat()
+    const currentChar = makeChar({
+      chatPage: 0,
+      chats: [currentChat],
+      desc: 'large expanded description '.repeat(40),
+      globalLore: [makeLore({ comment: 'expanded', content: '{{description}}' })],
+      loreSettings: { tokenBudget: 2, scanDepth: 5, recursiveScanning: true },
+    })
+    const database = makeDb({ characters: [currentChar], currentChar: 0 } as Partial<Database>)
+
+    const report = activateLorebook({ database, currentChar, currentChat })
+
+    expect(report.actives).toEqual([])
+  })
+
+  it('routes to o200k_base when the database model is in the o200k prefix list', () => {
     // `café résumé 漢字` diverges: cl100k_base → 9, o200k_base → 6.
     const lore = makeLore({ comment: 'a', content: 'café résumé 漢字' })
     const cl = activateLorebook({
@@ -1164,10 +1386,9 @@ describe('Phase 7-7d activateLorebook — budget truncation', () => {
       currentChat: makeChat(),
     })
     const o200 = activateLorebook({
-      database: makeDb(),
+      database: makeDb({ aiModel: 'gpt-4o' }),
       currentChar: makeChar({ globalLore: [lore] }),
       currentChat: makeChat(),
-      model: 'gpt-4o',
     })
     expect(cl.actives[0].tokens).toBe(9)
     expect(o200.actives[0].tokens).toBe(6)
@@ -1309,7 +1530,7 @@ describe('Phase 7-7d activateLorebook — budget truncation', () => {
   })
 })
 
-describe('Phase 7-11c buildLorebookContext', () => {
+describe('buildLorebookContext', () => {
   const ctxFor = (): ExpandContext => ({
     database: makeDb({ characters: [makeChar()], currentChar: 0 } as Partial<Database>),
   })
@@ -1398,6 +1619,34 @@ describe('Phase 7-11c buildLorebookContext', () => {
     expect(positionParser('a {{position::x}} b', 'anyloc')).toBe('a XVAL b')
   })
 
+  it('applies append, prepend, and replace injectors at their target locations', () => {
+    const { positionParser } = buildLorebookContext(
+      ctxFor(),
+      makeChar(),
+      makeReport([
+        makeActive({
+          prompt: 'APPEND {{position::suffix}}',
+          inject: { operation: 'append', location: 'globalNote', param: '', lore: false },
+        }),
+        makeActive({
+          prompt: 'PREPEND',
+          inject: { operation: 'prepend', location: 'main', param: '', lore: false },
+        }),
+        makeActive({
+          prompt: 'REPLACEMENT',
+          inject: { operation: 'replace', location: 'description', param: 'SLOT', lore: false },
+        }),
+        makeActive({ pos: 'pt_suffix', prompt: 'SUFFIX' }),
+      ]),
+      emptySlots(),
+    )
+
+    expect(positionParser('BASE', 'globalNote')).toBe('BASE APPEND SUFFIX')
+    expect(positionParser('BASE', 'main')).toBe('PREPEND BASE')
+    expect(positionParser('left SLOT right', 'description')).toBe('left REPLACEMENT right')
+    expect(positionParser('UNCHANGED', 'authornote')).toBe('UNCHANGED')
+  })
+
   it('resolves {{position::}} inside a distributed row before expanding', () => {
     const slots = emptySlots()
     buildLorebookContext(
@@ -1433,8 +1682,8 @@ function countRegexCompiles<T>(fn: () => T): { result: T; compiles: Map<string, 
   }
 }
 
-describe('L3 lorebook keyword regex memoization', () => {
-  it('L3: compiles each regex key once across messages, recursive passes, and entries', () => {
+describe('lorebook keyword regex memoization', () => {
+  it('compiles each regex key once across messages, recursive passes, and entries', () => {
     const messages = Array.from({ length: 8 }, (_, i) =>
       makeMessage({ data: `filler message ${i} l3-needle-${i}`, chatId: `l3-m-${i}` }),
     )
@@ -1481,7 +1730,7 @@ describe('L3 lorebook keyword regex memoization', () => {
     expect(compiles.get('l3-never-matches-zzz')).toBe(1)
   })
 
-  it('L3: a malformed regex key still deactivates the query without throwing (cached miss)', () => {
+  it('a malformed regex key still deactivates the query without throwing (cached miss)', () => {
     const run = () =>
       activateLorebook({
         database: makeDb(),
@@ -1505,8 +1754,8 @@ describe('L3 lorebook keyword regex memoization', () => {
   })
 })
 
-describe('L5 lorebook search normalization', () => {
-  it('L5: normalizes base searchable messages once across recursive search passes', () => {
+describe('lorebook search normalization', () => {
+  it('normalizes base searchable messages once across recursive search passes', () => {
     resetLorebookSearchNormalizationInstrumentation()
     const messages = Array.from({ length: 6 }, (_, i) =>
       makeMessage({
@@ -1557,8 +1806,8 @@ describe('L5 lorebook search normalization', () => {
   })
 })
 
-describe('Phase 7 L7 lorebook search entry lists', () => {
-  it('L7: preserves recursive activation output without per-query combined arrays', () => {
+describe('lorebook search entry lists', () => {
+  it('preserves recursive activation output without per-query combined arrays', () => {
     resetLorebookSearchEntryListInstrumentation()
     const messages = Array.from({ length: 6 }, (_, i) =>
       makeMessage({
@@ -1607,5 +1856,82 @@ describe('Phase 7 L7 lorebook search entry lists', () => {
       depthSliceBuilds: 1,
       combinedSearchEntryArrayBuilds: 0,
     })
+  })
+})
+
+describe('lore token diagnostics', () => {
+  it.each(['strict', 'worker'] as const)(
+    'evaluates all sources together and leaves activation flags unchanged (%s)',
+    async (mode) => {
+      const currentChat = makeChat({
+        localLore: [makeLore({ content: 'local', comment: 'same name' })],
+        message: [makeMessage({ data: 'start' })],
+      })
+      const currentChar = makeChar({
+        globalLore: [
+          makeLore({
+            id: 'once',
+            key: 'start',
+            alwaysActive: false,
+            comment: 'same name',
+            content: '@@dont_activate_after_match\nmodule-key',
+          }),
+        ],
+      })
+      const database = makeDb({
+        complexRegexCompatibilityMode: mode,
+        enabledModules: ['mod-1'],
+        modules: [
+          makeModule({
+            lorebook: [makeLore({ key: 'module-key', alwaysActive: false, content: 'module', comment: 'same name' })],
+          }),
+        ],
+      })
+      const before = structuredClone({ currentChat, currentChar, database })
+      const writer = vi.fn()
+      const counts = await countActiveLoreTokens({ database, currentChar, currentChat, writeChatVar: writer })
+      expect(counts.character).toBeGreaterThan(0)
+      expect(counts.chat).toBeGreaterThan(0)
+      expect(counts.module).toBeGreaterThan(0)
+      expect(counts.hasRandomActivation).toBe(false)
+      expect({ currentChat, currentChar, database }).toEqual(before)
+      expect(writer).not.toHaveBeenCalled()
+      expect(await countActiveLoreTokens({ database, currentChar, currentChat })).toEqual(counts)
+    },
+  )
+
+  it('shares the lore budget across categories', async () => {
+    const currentChar = makeChar({ globalLore: [makeLore({ content: 'hello', insertorder: 200 })] })
+    const currentChat = makeChat({ localLore: [makeLore({ content: 'world', insertorder: 100 })] })
+    const counts = await countActiveLoreTokens({ database: makeDb({ loreBookToken: 1 }), currentChar, currentChat })
+    expect(counts).toMatchObject({ character: 1, chat: 0, module: 0 })
+  })
+
+  it('warns before a random entry is filtered out and ignores inactive modules and agent-only lore', async () => {
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.99)
+    try {
+      const probabilityLore = makeLore({ content: '@@probability 20\nrandom entry' })
+      const currentChat = makeChat()
+      const currentChar = makeChar({ globalLore: [probabilityLore] })
+      const database = makeDb()
+      expect(await countActiveLoreTokens({ database, currentChar, currentChat })).toMatchObject({
+        character: 0,
+        hasRandomActivation: true,
+      })
+      currentChar.globalLore = [makeLore({ ...probabilityLore, agentOnly: true })]
+      database.modules = [makeModule({ lorebook: [probabilityLore] })]
+      expect(await countActiveLoreTokens({ database, currentChar, currentChat })).toMatchObject({
+        hasRandomActivation: false,
+      })
+    } finally {
+      random.mockRestore()
+    }
+  })
+
+  it('recounts injected text in the receiving category without double-counting the injector', async () => {
+    const currentChar = makeChar({ globalLore: [makeLore({ comment: 'target', content: 'hello' })] })
+    const currentChat = makeChat({ localLore: [makeLore({ content: '@@inject_lore target\nworld' })] })
+    const counts = await countActiveLoreTokens({ database: makeDb(), currentChar, currentChat })
+    expect(counts).toMatchObject({ character: 2, chat: 0 })
   })
 })

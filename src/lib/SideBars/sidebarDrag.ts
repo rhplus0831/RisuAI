@@ -1,6 +1,5 @@
 import type { CharacterOrderDragPosition } from 'src/ts/characterCommands'
-
-export const SIDEBAR_CHARACTER_DRAG_TYPE = 'application/x-risu-internal'
+import { hasDragType, RISU_SIDEBAR_DRAG_TYPE } from 'src/ts/dragTypes'
 
 type SidebarCharacterOrderEntry =
   | string
@@ -43,12 +42,7 @@ function hasCharacterOrderPosition(
 }
 
 export function isSidebarCharacterDrag(types: ArrayLike<string> | null | undefined): boolean {
-  if (!types) return false
-
-  for (let index = 0; index < types.length; index += 1) {
-    if (types[index] === SIDEBAR_CHARACTER_DRAG_TYPE) return true
-  }
-  return false
+  return hasDragType(types, RISU_SIDEBAR_DRAG_TYPE)
 }
 
 export function createSidebarCharacterDragController() {

@@ -1,7 +1,12 @@
 import { Sha256 } from '@aws-crypto/sha256-js'
 
 export async function sha256Bytes(value: string | Uint8Array): Promise<Uint8Array<ArrayBuffer>> {
-  const input = typeof value === 'string' ? new TextEncoder().encode(value) : new Uint8Array(value)
+  const input =
+    typeof value === 'string'
+      ? new TextEncoder().encode(value)
+      : value.buffer instanceof ArrayBuffer
+        ? (value as Uint8Array<ArrayBuffer>)
+        : new Uint8Array(value)
   const subtle = globalThis.crypto?.subtle
   if (subtle) {
     return new Uint8Array(await subtle.digest('SHA-256', input))

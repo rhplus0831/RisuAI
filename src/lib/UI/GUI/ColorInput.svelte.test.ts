@@ -77,4 +77,27 @@ describe('ColorInput accessible name', () => {
       vi.useRealTimers()
     }
   })
+
+  it('does not report the color picker setup as user input', async () => {
+    const oninput = vi.fn()
+    component = mount(ColorInput, {
+      target,
+      props: {
+        ariaLabel: 'Accent color',
+        value: '#123456',
+        oninput,
+      },
+    })
+
+    await vi.waitFor(() => expect(target.querySelector('input[type="color"]')).toBeTruthy())
+    await tick()
+    expect(oninput).not.toHaveBeenCalled()
+
+    const input = target.querySelector<HTMLInputElement>('.text-input input:not([type])')!
+    input.value = '#abcdef'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    expect(oninput).toHaveBeenCalledOnce()
+  })
 })

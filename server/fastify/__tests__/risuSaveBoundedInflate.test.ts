@@ -30,7 +30,7 @@ function patterned(length: number): Uint8Array {
   return data
 }
 
-describe('M9 streaming bounded inflate', () => {
+describe('streaming bounded inflate', () => {
   it('produces byte-identical output to the sync decoders within the cap', () => {
     const payload = patterned(3 * MIB)
     const equalsPayload = (decoded: Uint8Array): boolean => Buffer.from(decoded).equals(Buffer.from(payload))

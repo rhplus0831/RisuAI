@@ -1,21 +1,28 @@
 import { writable } from 'svelte/store'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { risuChatParser } from '../../parser.svelte'
+import { selectedCharID } from '../../../stores.svelte'
+import {
+  charactersResourceState,
+  collectionsResourceState,
+  settingsResourceState,
+} from '../../../server/resourceState.svelte'
 
 //#region module mocks
 
-// A single shared, mutable DB the history CBS functions read through
-// `getDatabase()`. Exposing the same object to the test lets us assert the live
-// `Message` rows are never mutated by the shallow-spread render path.
+// A single shared, mutable owner fixture lets us assert the live `Message`
+// rows are never mutated by the shallow-spread render path.
 const mocks = vi.hoisted(() => {
   const db = {
     characters: [
       {
+        chaId: 'history-character',
         chatPage: 0,
         firstMessage: 'FIRST',
         alternateGreetings: [] as string[],
         chats: [
           {
+            id: 'history-chat',
             fmIndex: -1,
             scriptstate: {},
             message: [
@@ -62,9 +69,19 @@ vi.mock(import('../../../stores.svelte'), () => {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  selectedCharID.set(0)
+  charactersResourceState.characters = mocks.db.characters as never
+  charactersResourceState.currentChar = 0
+  charactersResourceState.status = 'ready'
+  settingsResourceState.value = { username: mocks.db.username }
+  settingsResourceState.status = 'ready'
+  settingsResourceState.groupStatuses.account = 'ready'
+  collectionsResourceState.values = {}
+  collectionsResourceState.statuses = {}
+  collectionsResourceState.status = 'ready'
 })
 
-describe('history CBS functions shallow-spread (Phase 7)', () => {
+describe('history CBS functions shallow-spread', () => {
   test('{{userhistory}} returns only user messages and never mutates the live rows', () => {
     const liveRows = mocks.db.characters[0].chats[0].message
     const rowRefs = liveRows.map((m) => m)
@@ -104,5 +121,105 @@ describe('history CBS functions shallow-spread (Phase 7)', () => {
     expect(parsed).toHaveLength(4)
     expect((JSON.parse(parsed[0]) as { data: string }).data).toBe('FIRST')
     expect(mocks.db.characters[0].chats[0].message).toEqual(before)
+  })
+
+  test('{{history::N}} returns the N most recent stored messages in chronological order', () => {
+    expect(JSON.parse(risuChatParser('{{history::2}}'))).toEqual(['reply to {{user}}', 'plain user line'])
+    expect(JSON.parse(risuChatParser('{{messages::1}}'))).toEqual(['plain user line'])
+  })
+
+  test('{{history::N}} returns all stored messages when N exceeds the chat length without adding the greeting', () => {
+    expect(JSON.parse(risuChatParser('{{history::50}}'))).toEqual([
+      'hello {{char}}',
+      'reply to {{user}}',
+      'plain user line',
+    ])
+  })
+
+  test('{{history::N::role}} preserves role prefixes within the selected window', () => {
+    expect(JSON.parse(risuChatParser('{{history::2::role}}'))).toEqual([
+      'char: reply to {{user}}',
+      'user: plain user line',
+    ])
+    expect(JSON.parse(risuChatParser('{{history::role}}'))).toHaveLength(3)
+  })
+
+  test('{{history::N}} returns an empty array for invalid counts', () => {
+    expect(JSON.parse(risuChatParser('{{history::0}}'))).toEqual([])
+    expect(JSON.parse(risuChatParser('{{history::-1}}'))).toEqual([])
+    expect(JSON.parse(risuChatParser('{{history::1.5}}'))).toEqual([])
+    expect(JSON.parse(risuChatParser('{{history::many}}'))).toEqual([])
+  })
+
+  test('ready parser history follows unique character, chat, transcript, and scriptstate owners', () => {
+    charactersResourceState.characters = [
+      {
+        chaId: 'owner-character-a',
+        chatPage: 0,
+        chats: [
+          {
+            id: 'owner-chat-a',
+            message: [{ role: 'char', data: 'non-selected owner', chatId: 'owner-message-a' }],
+            scriptstate: {},
+          },
+        ],
+      },
+      {
+        chaId: 'owner-character-b',
+        chatPage: 0,
+        chats: [
+          {
+            id: 'owner-chat-b',
+            message: [{ role: 'char', data: 'selected owner history', chatId: 'owner-message-b' }],
+            scriptstate: { $owner: 'ready' },
+          },
+        ],
+      },
+    ] as never
+    charactersResourceState.currentChar = 1
+    charactersResourceState.status = 'ready'
+    settingsResourceState.value = { username: 'Owner user' }
+    settingsResourceState.status = 'ready'
+    collectionsResourceState.status = 'ready'
+
+    expect(JSON.parse(risuChatParser('{{history::1}}'))).toEqual(['selected owner history'])
+
+    charactersResourceState.characters.push({
+      chaId: 'owner-character-c',
+      chatPage: 0,
+      chats: [{ id: 'owner-chat-b', message: [{ role: 'char', data: 'duplicate leak' }], scriptstate: {} }],
+    } as never)
+    expect(risuChatParser('{{history::1}}')).toBe('{{history::1}}')
+  })
+
+  test('owner errors do not fall back to compatibility history', () => {
+    charactersResourceState.status = 'error'
+    expect(risuChatParser('{{history::1}}')).toBe('{{history::1}}')
+  })
+
+  test('ready parser history fails closed on missing and duplicate transcript stable ids', () => {
+    charactersResourceState.characters = [
+      {
+        chaId: 'stable-id-character',
+        chatPage: 0,
+        chats: [
+          {
+            id: 'stable-id-chat',
+            message: [{ role: 'char', data: 'missing id' }],
+            scriptstate: {},
+          },
+        ],
+      },
+    ] as never
+    charactersResourceState.currentChar = 0
+    charactersResourceState.status = 'ready'
+
+    expect(risuChatParser('{{history::1}}')).toBe('{{history::1}}')
+
+    charactersResourceState.characters[0].chats[0].message = [
+      { role: 'char', data: 'first duplicate', chatId: 'duplicate-message' },
+      { role: 'char', data: 'second duplicate', chatId: 'duplicate-message' },
+    ] as never
+    expect(risuChatParser('{{history::1}}')).toBe('{{history::1}}')
   })
 })

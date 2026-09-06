@@ -1,13 +1,11 @@
 import fc from 'fast-check'
 import type { RisuModule } from 'src/ts/process/modules'
-import {
-  getResourceDatabase as getDatabase,
-  replaceResourceDatabase as setDatabaseLite,
-} from 'src/ts/server/resourceState.svelte'
+import { replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
 import type { customscript, Database, loreBook } from 'src/ts/storage/database.svelte'
 import { beforeEach, expect, test, vi } from 'vitest'
 import type { RPCToolCallTextContent } from '../../mcplib'
 import { ModuleHandler } from '../modules'
+import { getResourceDatabase as getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 //#region module mocks
 

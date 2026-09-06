@@ -6,7 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createCommandEventSink } from '../src/commands/events.js'
 import { openDatabase } from '../src/db.js'
 import { resolveActiveMessageLocationById } from '../src/messageStore.js'
-import { writePersistedWithMessages } from '../src/repository.js'
+import {
+  loadCharacterSelectionRows,
+  loadSettingsWithTranslatorPresetsFromSqlite,
+  writePersistedWithMessages,
+} from '../src/repository.js'
+import { sourceHash, upsertGreetingTranslation } from '../src/translation/greetingTranslationStore.js'
+import { resolveRawMessageTranslatorIdentity } from '../src/translation/rawMessageTranslation.js'
 
 const serverTranslationMocks = vi.hoisted(() => ({
   dispatchChatProvider: vi.fn(),
@@ -52,10 +58,29 @@ describe('runServerMessageTranslation', () => {
         translatorType: 'llm',
         translatorSendTextAsIs: true,
         aiModel: 'echo_model',
-        translatorPresetId: 0,
-        // Real persistence keeps these legacy scalars synced to step one.
-        translatorPrompt: 'Draft {{slot::content}}',
-        translatorMaxResponse: 111,
+        temperature: 50,
+        top_p: 1,
+        modelProfiles: [
+          {
+            id: 'persisted-translate-profile',
+            name: 'Persisted Translate Profile',
+            providerId: 'debug-echo',
+            modelId: 'debug-echo',
+            providerOptions: {
+              baseUrl: 'debug://persisted-translate',
+              requestModel: 'persisted-translate-model',
+            },
+            runtimeOptions: { temperature: 37, topP: 0.43, useStreaming: true },
+          },
+        ],
+        modelRoleProfiles: {
+          translate: { mode: 'profile', profileId: 'persisted-translate-profile' },
+        },
+        translatorPresetId: 'pipeline',
+        // Deliberately stale compatibility fields; the canonical pipeline owns
+        // prompt and response budget after reopen.
+        translatorPrompt: 'stale scalar prompt',
+        translatorMaxResponse: 7,
         translatorPresets: [
           {
             id: 'pipeline',
@@ -104,6 +129,9 @@ describe('runServerMessageTranslation', () => {
       assets: [],
     })
 
+    db.close()
+    db = openDatabase(dataDir)
+
     const settingsRow = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
     expect(JSON.parse(settingsRow.data_json)).not.toHaveProperty('translatorPresets')
     expect(db.prepare('SELECT COUNT(*) AS count FROM translator_presets').get()).toEqual({ count: 1 })
@@ -122,10 +150,35 @@ describe('runServerMessageTranslation', () => {
     expect(serverTranslationMocks.dispatchChatProvider).toHaveBeenCalledTimes(2)
     expect(serverTranslationMocks.dispatchChatProvider.mock.calls[0][0]).toMatchObject({
       outputTokens: 111,
+      profile: {
+        profileId: 'persisted-translate-profile',
+        modelId: 'debug-echo',
+        requestModel: 'persisted-translate-model',
+        providerOptions: {
+          baseUrl: 'debug://persisted-translate',
+        },
+      },
+      database: {
+        aiModel: 'debug-echo',
+        temperature: 37,
+        top_p: 0.43,
+        useStreaming: false,
+      },
       formated: [{ role: 'system', content: 'Draft original source' }],
     })
     expect(serverTranslationMocks.dispatchChatProvider.mock.calls[1][0]).toMatchObject({
       outputTokens: 222,
+      profile: {
+        profileId: 'persisted-translate-profile',
+        modelId: 'debug-echo',
+        requestModel: 'persisted-translate-model',
+      },
+      database: {
+        aiModel: 'debug-echo',
+        temperature: 37,
+        top_p: 0.43,
+        useStreaming: false,
+      },
       formated: [
         { role: 'system', content: 'Polish the previous translation' },
         { role: 'user', content: 'draft output' },
@@ -157,6 +210,27 @@ describe('runServerMessageTranslation', () => {
         translatorPrompt:
           'History:\n{{slot::history::2}}\nTranslations:\n{{slot::historytrans::2}}\nSource={{slot::content}}',
         translatorMaxResponse: 111,
+        translatorPresetId: 'history-pipeline',
+        translatorPresets: [
+          {
+            id: 'history-pipeline',
+            name: 'History pipeline',
+            prompt:
+              'History:\n{{slot::history::2}}\nTranslations:\n{{slot::historytrans::2}}\nSource={{slot::content}}',
+            maxResponse: 111,
+            steps: [
+              {
+                id: 'history-step',
+                name: 'History',
+                enabled: true,
+                prompt:
+                  'History:\n{{slot::history::2}}\nTranslations:\n{{slot::historytrans::2}}\nSource={{slot::content}}',
+                maxResponse: 111,
+                model: { mode: 'inheritTranslate' },
+              },
+            ],
+          },
+        ],
         characters: [
           {
             chaId: 'char-a',
@@ -189,6 +263,29 @@ describe('runServerMessageTranslation', () => {
       },
       assets: [],
     })
+    const character = loadCharacterSelectionRows(db, 'char-a').character
+    const settings = loadSettingsWithTranslatorPresetsFromSqlite(db)!
+    const settingsHash = resolveRawMessageTranslatorIdentity({ settings, character }).settingsHash
+    upsertGreetingTranslation(db, 'char-a', 0, {
+      text: 'wrong settings translation',
+      source: 'raw',
+      sourceHash: sourceHash('alternate greeting'),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm',
+      settingsHash: 'different-settings-hash',
+      updatedAt: 122,
+    })
+    upsertGreetingTranslation(db, 'char-a', 0, {
+      text: 'alternate translated',
+      source: 'raw',
+      sourceHash: sourceHash('alternate greeting'),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm',
+      settingsHash,
+      updatedAt: 123,
+    })
     serverTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
 
     await runServerMessageTranslation({
@@ -203,7 +300,7 @@ describe('runServerMessageTranslation', () => {
         role: 'system',
         content:
           `History:\n${historyBlock('char', 'alternate greeting')}${historyBlock('user', 'prior source')}\n` +
-          `Translations:\n${historyBlock('char', '')}${historyBlock('user', 'prior translated')}\n` +
+          `Translations:\n${historyBlock('char', 'alternate translated')}${historyBlock('user', 'prior translated')}\n` +
           'Source=current source',
       },
     ])

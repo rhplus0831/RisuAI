@@ -1,28 +1,24 @@
-import { writable, type Writable } from 'svelte/store'
 import {
   alertCardExport,
+  alertClear,
   alertConfirm,
   alertError,
   alertInput,
   alertNormal,
   alertProgress,
   alertStore,
-  alertTOS,
+  alertRealmTerms,
   alertWait,
 } from './alert'
 import {
   defaultSdDataFunc,
   type character,
-  setDatabase,
   type customscript,
   type loreSettings,
   type loreBook,
   type triggerscript,
   importPreset,
-  getDatabase,
-  setDatabaseLite,
   appVer,
-  type Database,
 } from './storage/database.svelte'
 import { checkNullish, decryptBuffer, isKnownUri, sleep } from './util'
 import { selectFileByDom } from './filePicker'
@@ -50,7 +46,7 @@ import { type CharacterCardV3, type LorebookEntry } from '@risuai/ccardlib'
 import { reencodeImage } from './process/files/inlays'
 import { PngChunk } from './pngChunk'
 import type { OnnxModelFiles } from './process/transformers'
-import { CharXImporter, CharXWriter } from './process/processzip'
+import { CharXImporter, CharXWriter, DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES } from './process/processzip'
 import {
   exportModule,
   importRisuModuleData,
@@ -58,17 +54,115 @@ import {
   readModule,
   type RisuModule,
 } from './process/modules'
-import { currentCharacterStateSnapshot, dispatchCreateCharacter } from './characterCommands'
+import {
+  applyCharacterCreateOptimistically,
+  currentCharacterStateSnapshot,
+  dispatchCreateCharacter,
+  type CharacterMutationOutcome,
+} from './characterCommands'
 import {
   importRealmCharacterFromServer,
   type ServerRealmImportProgress,
   type ServerRealmImportResult,
 } from './server/realmImport'
+import {
+  importLocalCharacterFileFromServer,
+  type ServerLocalCharacterImportResult,
+  type LocalFileImportProgress,
+} from './server/localFileImport'
 import { refreshServerRealmImportResources } from './server/resourceRefresh'
-import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { sanitizeHubAdditionalHtml } from './hubAdditionalHtml'
+import { ensureClientLorebookEntryIds } from './server/lorebookOwner.svelte'
+import {
+  ensureClientScriptDefinitionIds,
+  ensureClientTriggerDefinitionIds,
+} from './server/scriptDefinitionOwner.svelte'
+import { serverAssetIdFromReference } from './server/assets'
+import {
+  charactersResourceState,
+  getCharacterResourceOwner,
+  settingsResourceState,
+} from './server/resourceState.svelte'
+import { showRealmInfoStore } from './realmInfoStore'
+import type { hubType } from './types/risuHub'
+
+export { showRealmInfoStore } from './realmInfoStore'
+export type { hubType } from './types/risuHub'
 
 export const hubURL = '/api/v1/hub'
+export interface CharacterImportProcessOptions {
+  charXMaxEntrySizeBytes?: number
+  dataUriMaxBase64Length?: number
+}
+
+export interface CharacterImportCompletenessReport {
+  droppedArchiveEntries: string[]
+  droppedInlineAssets: Array<{ index: number; name: string }>
+}
+
+export type CharacterImportOutcome =
+  | (Extract<CharacterMutationOutcome, { status: 'accepted' }> & { characterId: string })
+  | Exclude<CharacterMutationOutcome, { status: 'accepted' }>
+
+function createCharacterImportCompletenessReport(): CharacterImportCompletenessReport {
+  return { droppedArchiveEntries: [], droppedInlineAssets: [] }
+}
+
+function hasDroppedCharacterContent(report: CharacterImportCompletenessReport): boolean {
+  return report.droppedArchiveEntries.length > 0 || report.droppedInlineAssets.length > 0
+}
+
+function wasArchiveEntryDropped(report: CharacterImportCompletenessReport, fileName: string): boolean {
+  return report.droppedArchiveEntries.includes(fileName)
+}
+
+function characterImportCompletenessMessage(report: CharacterImportCompletenessReport, imported: boolean): string {
+  const details = [
+    ...report.droppedArchiveEntries.map((fileName) => language.characterImportDroppedArchiveEntry(fileName)),
+    ...report.droppedInlineAssets.map(({ index, name }) => language.characterImportDroppedInlineAsset(index, name)),
+  ]
+    .map((detail) => `- ${detail}`)
+    .join('\n')
+  return imported
+    ? language.characterImportIncomplete(details)
+    : language.characterImportFailedAfterDroppedContent(details)
+}
+
+function rewritePrebuiltAssetExcludeReference(risuai: unknown, sourceReference: string, targetReference: string): void {
+  if (!risuai || typeof risuai !== 'object') return
+  const extension = risuai as { prebuiltAssetExclude?: unknown }
+  if (!Array.isArray(extension.prebuiltAssetExclude)) return
+  extension.prebuiltAssetExclude = extension.prebuiltAssetExclude.map((reference) =>
+    reference === sourceReference ? targetReference : reference,
+  )
+}
+
+function normalizeImportedPrebuiltAssetExcludes(
+  value: unknown,
+  additionalAssets: readonly [string, string, string][],
+  importedAssetReferences: ReadonlyMap<string, string>,
+): string[] {
+  if (!Array.isArray(value)) return []
+
+  const availableAssetIds = new Set(additionalAssets.map((asset) => asset[1]))
+  const normalized: string[] = []
+  const seen = new Set<string>()
+  for (const reference of value) {
+    if (typeof reference !== 'string') continue
+    const canonicalReference = serverAssetIdFromReference(reference)
+    const assetId =
+      importedAssetReferences.get(reference) ??
+      (availableAssetIds.has(reference)
+        ? reference
+        : canonicalReference && availableAssetIds.has(canonicalReference)
+          ? canonicalReference
+          : undefined)
+    if (!assetId || seen.has(assetId)) continue
+    seen.add(assetId)
+    normalized.push(assetId)
+  }
+  return normalized
+}
 
 export async function authenticatedHubFetch(input: RequestInfo | URL, init: RequestInit = {}) {
   const headers = new Headers(init.headers)
@@ -76,68 +170,224 @@ export async function authenticatedHubFetch(input: RequestInfo | URL, init: Requ
   return fetch(input, { ...init, headers })
 }
 
-function appendImportedCharacter(
+async function appendImportedCharacter(
   character: character,
   previous: ReturnType<typeof currentCharacterStateSnapshot>,
-): string | undefined {
+): Promise<CharacterImportOutcome> {
+  normalizeImportedCharacterIdentities(character)
   const characterId = character.chaId
-  withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    db.characters ??= []
-    if (characterId && db.characters.some((candidate) => candidate?.chaId === characterId)) {
-      return
-    }
-    db.characters.push(character)
-  })
-  dispatchCreateCharacter(character, previous)
-  return characterId
+  applyCharacterCreateOptimistically(character)
+  const outcome = await dispatchCreateCharacter(character, previous)
+  return outcome.status === 'accepted' ? { ...outcome, characterId } : outcome
 }
 
-export async function importCharacter(): Promise<string | null | undefined> {
+function reportCharacterImportOutcome(
+  outcome: CharacterImportOutcome,
+  completenessReport = createCharacterImportCompletenessReport(),
+): CharacterImportOutcome {
+  if (outcome.status === 'accepted') {
+    if (hasDroppedCharacterContent(completenessReport)) {
+      alertError(characterImportCompletenessMessage(completenessReport, true))
+    } else {
+      alertNormal(language.importedCharacter)
+    }
+  } else if (outcome.status === 'queued') {
+    if (hasDroppedCharacterContent(completenessReport)) {
+      alertError(`${characterImportCompletenessMessage(completenessReport, true)}\n\n${language.characterImportQueued}`)
+    } else {
+      alertNormal(language.characterImportQueued)
+    }
+  } else {
+    const detail = outcome.result.status === 'error' ? outcome.result.error : ''
+    alertError(detail ? `${language.characterImportFailed}\n${detail}` : language.characterImportFailed)
+  }
+  return outcome
+}
+
+function normalizeImportedCharacterIdentities(character: character): void {
+  ensureClientLorebookEntryIds(character.globalLore ?? (character.globalLore = []))
+
+  const chatIds = new Set<string>()
+  for (const chat of character.chats ?? []) {
+    chat.fmIndex ??= character.firstMsgIndex ?? -1
+    let chatId = typeof chat.id === 'string' && chat.id.trim() ? chat.id : ''
+    if (!chatId || chatIds.has(chatId)) {
+      do {
+        chatId = v4()
+      } while (chatIds.has(chatId))
+      chat.id = chatId
+    }
+    chatIds.add(chatId)
+    ensureClientLorebookEntryIds(chat.localLore ?? (chat.localLore = []))
+  }
+
+  character.customscript = ensureClientScriptDefinitionIds(character.customscript ?? [])
+  character.triggerscript = ensureClientTriggerDefinitionIds(character.triggerscript ?? [])
+}
+
+export async function importCharacter(): Promise<CharacterImportOutcome | null | undefined> {
   try {
     const files = await selectFileByDom(['*'], 'multiple')
     if (!files) {
       return
     }
 
-    let importedCharacterId: string | undefined
+    let outcome: CharacterImportOutcome | null = null
     for (const f of files) {
-      const importedId = await importCharacterProcess({
-        name: f.name,
-        data: f,
-      })
-      if (importedId) {
-        importedCharacterId = importedId
-      }
+      const nextOutcome = await importCharacterFile(f, f.name)
+      if (nextOutcome) outcome = nextOutcome
       checkCharOrder()
     }
-    return importedCharacterId
+    return outcome
   } catch (error) {
     alertError(error as Error)
-    return null
+    return {
+      status: 'failed',
+      result: {
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error),
+        reason: 'invalid-request',
+      },
+    }
   }
 }
 
-export async function importCharacterProcess(f: {
-  name: string
-  data: Uint8Array | File | ReadableStream<Uint8Array>
-}): Promise<string | null | undefined> {
+export async function importCharacterFile(
+  file: Blob,
+  fileName = file instanceof File ? file.name : 'character.png',
+): Promise<CharacterImportOutcome | null> {
+  const onProgress = (progress: LocalFileImportProgress) => showLocalCharacterImportProgress(progress, fileName)
+  onProgress({ phase: 'prepare' })
+  let result = await importLocalCharacterFileFromServer({ file, fileName, onProgress })
+  let pendingImportToken: string | undefined
+  let password: string | undefined
+  let allowLowLevelAccess = false
+
+  while (result.status === 'password-required' || result.status === 'low-level-access') {
+    pendingImportToken = result.pendingImportToken
+    alertClear()
+    if (result.status === 'password-required') {
+      const entered = await alertInput(language.inputCardPassword)
+      if (!entered) {
+        alertClear()
+        return null
+      }
+      password = entered
+    } else {
+      const confirmed = await alertConfirm(language.lowLevelAccessConfirm)
+      if (!confirmed) {
+        alertClear()
+        return null
+      }
+      allowLowLevelAccess = true
+    }
+    onProgress({ phase: 'processing' })
+    result = await importLocalCharacterFileFromServer({
+      pendingImportToken,
+      password,
+      allowLowLevelAccess,
+      onProgress,
+    })
+  }
+
+  if (result.status === 'password-invalid') {
+    alertError(language.errors.wrongPassword)
+    return null
+  }
+  const outcome = localCharacterImportOutcome(result)
+  return reportCharacterImportOutcome(
+    outcome,
+    result.status === 'ok'
+      ? {
+          droppedArchiveEntries: result.importReport.droppedArchiveEntries,
+          droppedInlineAssets: result.importReport.droppedInlineAssets,
+        }
+      : undefined,
+  )
+}
+
+function showLocalCharacterImportProgress(progress: LocalFileImportProgress, fileName: string) {
+  const labels = language.characterImportProgress
+  const completedBytes = 'completedBytes' in progress ? progress.completedBytes : undefined
+  const totalBytes = 'totalBytes' in progress ? progress.totalBytes : undefined
+  const percent =
+    completedBytes !== undefined && totalBytes && totalBytes > 0
+      ? Math.min(100, (completedBytes / totalBytes) * 100)
+      : null
+  const detail = [fileName]
+  if (completedBytes !== undefined) {
+    const formatBytes = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(2)} MiB`
+    detail.push(
+      totalBytes === undefined
+        ? formatBytes(completedBytes)
+        : `${formatBytes(completedBytes)} / ${formatBytes(totalBytes)}`,
+    )
+  }
+  if ('completedAssets' in progress && progress.completedAssets !== undefined) {
+    detail.push(labels.assetsSaved.replace('{{count}}', String(progress.completedAssets)))
+  }
+  alertProgress(labels[progress.phase], percent, detail.join('\n'))
+}
+
+function localCharacterImportOutcome(result: ServerLocalCharacterImportResult): CharacterImportOutcome {
+  if (result.status === 'ok') {
+    return {
+      status: 'accepted',
+      characterId: result.characterId,
+      result: {
+        status: 'ok',
+        revision: result.revision,
+        event: result.event,
+      },
+    }
+  }
+  if (result.status === 'conflict') {
+    return { status: 'failed', result: { status: 'conflict', currentRevision: result.currentRevision } }
+  }
+  if (result.status === 'unavailable') {
+    return { status: 'failed', result: { status: 'unavailable' } }
+  }
+  return {
+    status: 'failed',
+    result: {
+      status: 'error',
+      error: result.status === 'error' || result.status === 'password-invalid' ? result.error : 'Import failed',
+      reason: 'invalid-request',
+    },
+  }
+}
+
+export async function importCharacterProcess(
+  f: {
+    name: string
+    data: Uint8Array | File | ReadableStream<Uint8Array>
+  },
+  options: CharacterImportProcessOptions = {},
+): Promise<CharacterImportOutcome | null | undefined> {
+  const dataUriMaxBase64Length = options.dataUriMaxBase64Length ?? DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES
+  const completenessReport = createCharacterImportCompletenessReport()
   if (f.name.endsWith('json')) {
     if (f.data instanceof ReadableStream) {
       return null
     }
     const data = f.data instanceof Uint8Array ? f.data : new Uint8Array(await f.data.arrayBuffer())
     const da = JSON.parse(Buffer.from(data).toString('utf-8'))
-    const importedCharacterId = await importCharacterCardSpec(da)
-    if (importedCharacterId) {
-      return importedCharacterId
+    const imported = await importCharacterCardSpec(
+      da,
+      undefined,
+      'normal',
+      {},
+      undefined,
+      dataUriMaxBase64Length,
+      completenessReport,
+    )
+    if (imported) {
+      return imported
     }
     if ((da.char_name || da.name) && (da.char_persona || da.description) && (da.char_greeting || da.first_mes)) {
       const previous = currentCharacterStateSnapshot()
       const character = convertOffSpecCards(da)
-      const importedId = appendImportedCharacter(character, previous)
-      alertNormal(language.importedCharacter)
-      return importedId
+      return reportCharacterImportOutcome(await appendImportedCharacter(character, previous))
     } else {
       alertError(language.errors.noData)
       return
@@ -150,12 +400,29 @@ export async function importCharacterProcess(f: {
       msg: 'Loading... (Reading)',
     })
 
-    const importer = new CharXImporter()
+    const importer = new CharXImporter({ maxEntrySizeBytes: options.charXMaxEntrySizeBytes })
     importer.alertInfo = true
     await importer.parse(f.data)
+    let completionError: unknown
+    try {
+      await importer.done()
+    } catch (error) {
+      completionError = error
+    }
+    completenessReport.droppedArchiveEntries.push(...importer.excludedFiles)
+    if (completionError) {
+      if (hasDroppedCharacterContent(completenessReport)) {
+        alertError(characterImportCompletenessMessage(completenessReport, false))
+      }
+      throw completionError
+    }
     const cardData = importer.cardData
     if (!cardData) {
-      alertError(language.errors.noData)
+      alertError(
+        hasDroppedCharacterContent(completenessReport)
+          ? characterImportCompletenessMessage(completenessReport, false)
+          : language.errors.noData,
+      )
       return
     }
     const card: CharacterCardV3 = JSON.parse(cardData)
@@ -163,11 +430,10 @@ export async function importCharacterProcess(f: {
       alertError(language.errors.noData)
       return
     }
-    let lorebook: loreBook[] = []
+    let lorebook: loreBook[] | undefined
     if (importer.moduleData) {
       const md = await readModule(Buffer.from(importer.moduleData))
       if (!md) {
-        await importer.done()
         return null
       }
       card.data.extensions ??= {}
@@ -178,8 +444,15 @@ export async function importCharacterProcess(f: {
         lorebook = md.lorebook
       }
     }
-    await importer.done()
-    return await importCharacterCardSpec(card, undefined, 'normal', importer.assets, lorebook)
+    return await importCharacterCardSpec(
+      card,
+      undefined,
+      'normal',
+      importer.assets,
+      lorebook,
+      dataUriMaxBase64Length,
+      completenessReport,
+    )
   }
 
   if (!f.name.endsWith('png')) {
@@ -300,9 +573,16 @@ export async function importCharacterProcess(f: {
           try {
             const decrypted = await decryptBuffer(encrypted, password)
             const charaData: CharacterCardV2Risu = JSON.parse(Buffer.from(decrypted).toString('utf-8'))
-            const importedCharacterId = await importCharacterCardSpec(charaData, img, 'normal', assets)
-            if (importedCharacterId) {
-              return importedCharacterId
+            const imported = await importCharacterCardSpec(
+              charaData,
+              img,
+              'normal',
+              assets,
+              undefined,
+              dataUriMaxBase64Length,
+            )
+            if (imported) {
+              return imported
             } else {
               throw new Error('Error while importing')
             }
@@ -315,9 +595,16 @@ export async function importCharacterProcess(f: {
         const decrypted = await decryptBuffer(encrypted, 'RISU_NONE')
         try {
           const charaData: CharacterCardV2Risu = JSON.parse(Buffer.from(decrypted).toString('utf-8'))
-          const importedCharacterId = await importCharacterCardSpec(charaData, img, 'normal', assets)
-          if (importedCharacterId) {
-            return importedCharacterId
+          const imported = await importCharacterCardSpec(
+            charaData,
+            img,
+            'normal',
+            assets,
+            undefined,
+            dataUriMaxBase64Length,
+          )
+          if (imported) {
+            return imported
           }
         } catch (error) {
           alertError(language.errors.noData)
@@ -340,14 +627,10 @@ export async function importCharacterProcess(f: {
     const imgp = await saveAsset(img)
     const previous = currentCharacterStateSnapshot()
     const character = convertOffSpecCards(charaData, imgp)
-    const importedCharacterId = appendImportedCharacter(character, previous)
-    alertNormal(language.importedCharacter)
-    return importedCharacterId
+    return reportCharacterImportOutcome(await appendImportedCharacter(character, previous))
   }
-  return await importCharacterCardSpec(parsed, img, 'normal', assets)
+  return await importCharacterCardSpec(parsed, img, 'normal', assets, undefined, dataUriMaxBase64Length)
 }
-
-export const showRealmInfoStore: Writable<null | hubType> = writable(null)
 
 let latestRealmInfoRequest = 0
 let realmInfoRequestController: AbortController | null = null
@@ -591,8 +874,9 @@ function convertOffSpecCards(
 }
 
 export async function exportChar(charaID: number): Promise<string> {
-  const db = getDatabase({ snapshot: true })
-  let char = structuredClone(db.characters[charaID])
+  const owner = characterOwnerAt(charaID)
+  if (!owner) return ''
+  let char = structuredClone(owner)
 
   if (!char.image) {
     const res = await fetch('/none.webp')
@@ -626,8 +910,10 @@ async function importCharacterCardSpec(
   img?: Uint8Array,
   mode: 'hub' | 'normal' = 'normal',
   assetDict: { [key: string]: string } = {},
-  overrideLorebook: loreBook[] = [],
-): Promise<string | null> {
+  overrideLorebook?: loreBook[],
+  dataUriMaxBase64Length = DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES,
+  completenessReport = createCharacterImportCompletenessReport(),
+): Promise<CharacterImportOutcome | null> {
   if (!card || (card.spec !== 'chara_card_v2' && card.spec !== 'chara_card_v3')) {
     return null
   }
@@ -648,6 +934,7 @@ async function importCharacterCardSpec(
   let sdData = defaultSdDataFunc()
   let extAssets: [string, string, string][] = []
   let notificationImage = ''
+  const importedAssetReferences = new Map<string, string>()
   let ccAssets: {
     type: string
     uri: string
@@ -671,6 +958,7 @@ async function importCharacterCardSpec(
           const key = risuext.emotions[i][1].replace('__asset:', '')
           const imgp = assetDict[key]
           if (!imgp) {
+            if (wasArchiveEntryDropped(completenessReport, key)) continue
             throw new Error('Error while importing, asset ' + key + ' not found')
           }
           importedEmotions[i] = [risuext.emotions[i][0], imgp]
@@ -697,6 +985,7 @@ async function importCharacterCardSpec(
       const importedAdditionalAssets: ([string, string, string] | undefined)[] = []
       const additionalAssetUploads: {
         targetIndex: number
+        sourceReference: string
         data: Uint8Array
         fileName: string
       }[] = []
@@ -713,16 +1002,20 @@ async function importCharacterCardSpec(
         let fileName = ''
         if (risuext.additionalAssets[i].length >= 3) fileName = risuext.additionalAssets[i][2]
         if (risuext.additionalAssets[i][1].startsWith('__asset:')) {
-          const key = risuext.additionalAssets[i][1].replace('__asset:', '')
+          const sourceReference = risuext.additionalAssets[i][1]
+          const key = sourceReference.replace('__asset:', '')
           const imgp = assetDict[key]
           if (!imgp) {
+            if (wasArchiveEntryDropped(completenessReport, key)) continue
             throw new Error('Error while importing, asset ' + key + ' not found')
           }
           importedAdditionalAssets[i] = [risuext.additionalAssets[i][0], imgp, fileName]
+          importedAssetReferences.set(sourceReference, imgp)
           continue
         }
         additionalAssetUploads.push({
           targetIndex: i,
+          sourceReference: risuext.additionalAssets[i][1],
           data:
             mode === 'hub'
               ? await getHubResources(risuext.additionalAssets[i][1])
@@ -738,11 +1031,13 @@ async function importCharacterCardSpec(
       )
       for (let i = 0; i < additionalAssetUploads.length; i++) {
         const targetIndex = additionalAssetUploads[i].targetIndex
+        const assetId = savedAdditionalAssets[i]
         importedAdditionalAssets[targetIndex] = [
           risuext.additionalAssets[targetIndex][0],
-          savedAdditionalAssets[i],
+          assetId,
           additionalAssetUploads[i].fileName,
         ]
+        importedAssetReferences.set(additionalAssetUploads[i].sourceReference, assetId)
       }
       extAssets.push(...importedAdditionalAssets.filter((entry): entry is [string, string, string] => !!entry))
     }
@@ -751,9 +1046,12 @@ async function importCharacterCardSpec(
         const key = risuext.notificationImage.replace('__asset:', '')
         const imgp = assetDict[key]
         if (!imgp) {
-          throw new Error('Error while importing, asset ' + key + ' not found')
+          if (!wasArchiveEntryDropped(completenessReport, key)) {
+            throw new Error('Error while importing, asset ' + key + ' not found')
+          }
+        } else {
+          notificationImage = imgp
         }
-        notificationImage = imgp
       } else {
         const [savedNotificationImage] = await saveAssets([
           {
@@ -781,6 +1079,10 @@ async function importCharacterCardSpec(
           const rkey = risuext.vits[key].replace('__asset:', '')
           const imgp = assetDict[rkey]
           if (!imgp) {
+            if (wasArchiveEntryDropped(completenessReport, rkey)) {
+              delete risuext.vits[key]
+              continue
+            }
             throw new Error('Error while importing, asset ' + rkey + ' not found')
           }
           risuext.vits[key] = imgp
@@ -798,7 +1100,7 @@ async function importCharacterCardSpec(
         risuext.vits[vitsUploads[i].key] = savedVitsAssets[i]
       }
 
-      if (keys.length > 0) {
+      if (Object.keys(risuext.vits).length > 0) {
         vits = {
           name: 'Imported VITS',
           files: risuext.vits,
@@ -824,7 +1126,7 @@ async function importCharacterCardSpec(
         alertStore.set({
           type: 'progress',
           msg: `Loading... (Assets)`,
-          submsg: ((i / data.assets.length) * 100).toFixed(2),
+          submsg: (((i + 1) / data.assets.length) * 100).toFixed(2),
         })
         if (i % 100 === 0) {
           await sleep(10)
@@ -833,6 +1135,7 @@ async function importCharacterCardSpec(
           const key = data.assets[i].uri.replace('__asset:', '')
           const assetId = assetDict[key]
           if (!assetId) {
+            if (wasArchiveEntryDropped(completenessReport, key)) continue
             throw new Error('Error while importing, asset ' + key + ' not found')
           }
           resolvedAssetUris[i] = assetId
@@ -842,28 +1145,34 @@ async function importCharacterCardSpec(
           const key = data.assets[i].uri.replace('embeded://', '')
           const assetId = assetDict[key]
           if (!assetId) {
+            if (wasArchiveEntryDropped(completenessReport, key)) continue
             throw new Error('Error while importing, asset ' + key + ' not found')
           }
           resolvedAssetUris[i] = assetId
         } else if (data.assets[i].uri.startsWith('data:')) {
           //data uri
           const b64 = data.assets[i].uri.split(',')[1] ?? ''
-          if (b64.length < 50 * 1024 * 1024) {
+          if (b64.length < dataUriMaxBase64Length) {
             // CCv3 inline data: URI assets are image
             // bytes by convention; PNG default is acceptable.
             dataUriUploads.push({ targetIndex: i, data: Buffer.from(b64, 'base64') })
           } else {
-            alertError('Data URI too large')
-            continue
+            completenessReport.droppedInlineAssets.push({ index: i, name: data.assets[i].name ?? '' })
           }
         } else {
           continue
         }
       }
 
-      const savedDataUriAssets = await saveAssets(dataUriUploads.map((asset) => ({ data: asset.data })))
+      const savedDataUriAssets =
+        dataUriUploads.length > 0 ? await saveAssets(dataUriUploads.map((asset) => ({ data: asset.data }))) : []
       for (let i = 0; i < dataUriUploads.length; i++) {
         resolvedAssetUris[dataUriUploads[i].targetIndex] = savedDataUriAssets[i]
+      }
+
+      for (let i = 0; i < data.assets.length; i++) {
+        const resolvedAssetUri = resolvedAssetUris[i]
+        if (resolvedAssetUri) importedAssetReferences.set(data.assets[i].uri, resolvedAssetUri)
       }
 
       for (let i = 0; i < data.assets.length; i++) {
@@ -904,6 +1213,7 @@ async function importCharacterCardSpec(
   }
 
   if (risuext && risuext?.lowLevelAccess) {
+    alertClear()
     const conf = await alertConfirm(language.lowLevelAccessConfirm)
     if (!conf) {
       return null
@@ -1005,7 +1315,11 @@ async function importCharacterCardSpec(
     defaultVariables: data?.extensions?.risuai?.defaultVariables ?? '',
     chatFolders: [],
     prebuiltAssetCommand: data?.extensions?.risuai?.prebuiltAssetCommand ?? '',
-    prebuiltAssetExclude: data?.extensions?.risuai?.prebuiltAssetExclude ?? [],
+    prebuiltAssetExclude: normalizeImportedPrebuiltAssetExcludes(
+      risuext?.prebuiltAssetExclude,
+      extAssets,
+      importedAssetReferences,
+    ),
     prebuiltAssetStyle: data?.extensions?.risuai?.prebuiltAssetStyle ?? '',
   }
 
@@ -1017,9 +1331,7 @@ async function importCharacterCardSpec(
     char.modification_date = card.data.modification_date ?? 0
   }
 
-  appendImportedCharacter(char, previous)
-  alertNormal(language.importedCharacter)
-  return char.chaId
+  return reportCharacterImportOutcome(await appendImportedCharacter(char, previous), completenessReport)
 }
 
 function convertCharbook(arg: {
@@ -1107,6 +1419,7 @@ function convertCharbook(arg: {
       delete extensions.match_whole_words
     }
 
+    const agentOnly = extensions.risu_agent_only === true
     lorebook.push({
       key: book.keys.join(', '),
       secondkey: book.secondary_keys?.join(', ') ?? '',
@@ -1117,6 +1430,7 @@ function convertCharbook(arg: {
       alwaysActive: book.constant ?? false,
       selective: book.selective ?? false,
       extentions: { ...extensions, risu_case_sensitive: book.case_sensitive ?? false },
+      agentOnly,
       activationPercent: book.extensions?.risu_activationPercent,
       loreCache: book.extensions?.risu_loreCache ?? null,
       useRegex: book.use_regex ?? false,
@@ -1141,20 +1455,23 @@ function createBaseV2(char: character) {
         key: string
         data: string[]
       }
+      risu_agent_only?: boolean
     } = structuredClone(lore.extentions ?? {})
 
     let caseSensitive = ext.risu_case_sensitive ?? false
     ext.risu_activationPercent = lore.activationPercent
     ext.risu_loreCache = lore.loreCache
+    const agentOnly = lore.agentOnly === true || ext.risu_agent_only === true
+    ext.risu_agent_only = agentOnly
 
     charBook.push({
-      keys: lore.key.split(',').map((r) => r.trim()),
-      secondary_keys: lore.selective ? lore.secondkey.split(',').map((r) => r.trim()) : undefined,
+      keys: agentOnly ? [] : lore.key.split(',').map((r) => r.trim()),
+      secondary_keys: agentOnly ? [] : lore.selective ? lore.secondkey.split(',').map((r) => r.trim()) : undefined,
       content: lore.content,
       extensions: ext,
       enabled: true,
       insertion_order: lore.insertorder,
-      constant: lore.alwaysActive,
+      constant: agentOnly ? false : lore.alwaysActive,
       selective: lore.selective,
       name: lore.comment,
       comment: lore.comment,
@@ -1163,9 +1480,8 @@ function createBaseV2(char: character) {
       folder: lore.folder,
     })
   }
-  char.loreExt ??= {}
-
-  char.loreExt.risu_fullWordMatching = char.loreSettings?.fullWordMatching ?? false
+  const exportedLoreExtensions = structuredClone(char.loreExt ?? {})
+  exportedLoreExtensions.risu_fullWordMatching = char.loreSettings?.fullWordMatching ?? false
 
   const card: CharacterCardV2Risu = {
     spec: 'chara_card_v2',
@@ -1185,7 +1501,7 @@ function createBaseV2(char: character) {
         scan_depth: char.loreSettings?.scanDepth,
         token_budget: char.loreSettings?.tokenBudget,
         recursive_scanning: char.loreSettings?.recursiveScanning,
-        extensions: char.loreExt ?? {},
+        extensions: exportedLoreExtensions,
         entries: charBook,
       },
       tags: char.tags ?? [],
@@ -1370,7 +1686,8 @@ export async function exportCharacterCard(
             msg: 'Loading... (Adding Assets)',
             submsg: ((i / card.data.assets.length) * 100).toFixed(2),
           })
-          let key = card.data.assets[i].uri
+          const sourceReference = card.data.assets[i].uri
+          let key = sourceReference
           let rData: Uint8Array
           if (key === 'ccdefault:' && type !== 'png') {
             key = char.image
@@ -1506,6 +1823,7 @@ export async function exportCharacterCard(
             }
             await writer.write(path, Buffer.from(await compressImage(rData)))
           }
+          rewritePrebuiltAssetExcludeReference(card.data.extensions.risuai, sourceReference, card.data.assets[i].uri)
         }
       }
       if (type === 'json') {
@@ -1619,21 +1937,24 @@ export function createBaseV3(char: character) {
         key: string
         data: string[]
       }
+      risu_agent_only?: boolean
     } = structuredClone(lore.extentions ?? {})
 
     let caseSensitive = ext.risu_case_sensitive ?? false
     ext.risu_activationPercent = lore.activationPercent
     ext.risu_loreCache = lore.loreCache
+    const agentOnly = lore.agentOnly === true || ext.risu_agent_only === true
+    ext.risu_agent_only = agentOnly
 
     charBook.push({
       ...({
-        keys: lore.key.split(',').map((r) => r.trim()),
-        secondary_keys: lore.selective ? lore.secondkey.split(',').map((r) => r.trim()) : undefined,
+        keys: agentOnly ? [] : lore.key.split(',').map((r) => r.trim()),
+        secondary_keys: agentOnly ? [] : lore.selective ? lore.secondkey.split(',').map((r) => r.trim()) : undefined,
         content: lore.content,
         extensions: ext,
         enabled: true,
         insertion_order: lore.insertorder,
-        constant: lore.alwaysActive,
+        constant: agentOnly ? false : lore.alwaysActive,
         selective: lore.selective,
         name: lore.comment,
         comment: lore.comment,
@@ -1644,9 +1965,8 @@ export function createBaseV3(char: character) {
       folder: lore.folder,
     })
   }
-  char.loreExt ??= {}
-
-  char.loreExt.risu_fullWordMatching = char.loreSettings?.fullWordMatching ?? false
+  const exportedLoreExtensions = structuredClone(char.loreExt ?? {})
+  exportedLoreExtensions.risu_fullWordMatching = char.loreSettings?.fullWordMatching ?? false
 
   const card: CharacterCardV3 = {
     spec: 'chara_card_v3',
@@ -1666,7 +1986,7 @@ export function createBaseV3(char: character) {
         scan_depth: char.loreSettings?.scanDepth,
         token_budget: char.loreSettings?.tokenBudget,
         recursive_scanning: char.loreSettings?.recursiveScanning,
-        extensions: char.loreExt ?? {},
+        extensions: exportedLoreExtensions,
         entries: charBook,
       },
       tags: char.tags ?? [],
@@ -1717,27 +2037,6 @@ export function createBaseV3(char: character) {
     }
   }
   return card
-}
-
-export type hubType = {
-  name: string
-  desc: string
-  download: string
-  id: string
-  img: string
-  tags: string[]
-  viewScreen: 'none' | 'emotion' | 'imggen'
-  hasLore: boolean
-  hasEmotion: boolean
-  hasAsset: boolean
-  creator?: string
-  creatorName?: string
-  hot: number
-  license: string
-  authorname?: string
-  original?: string
-  type: string
-  hidden?: boolean
 }
 
 export interface RisuHubCatalogResult {
@@ -1822,7 +2121,7 @@ export async function downloadRisuHub(
 ) {
   try {
     if (!arg.forceRedirect) {
-      if (!(await alertTOS())) {
+      if (!(await alertRealmTerms())) {
         return
       }
     }
@@ -1839,6 +2138,8 @@ export async function downloadRisuHub(
       if (!isLatestRealmImportOperation(realmImportOperationToken)) {
         return
       }
+      // Release the progress overlay so the queued confirmation can be shown.
+      alertStore.set({ type: 'none', msg: '' })
       const confirmed = await alertConfirm(language.lowLevelAccessConfirm)
       if (!confirmed) {
         if (isLatestRealmImportOperation(realmImportOperationToken)) {
@@ -1893,26 +2194,24 @@ export async function downloadRisuHub(
       res.headers.get('content-type') === 'application/zip' ||
       res.headers.get('content-type') === 'application/charx'
     ) {
-      let importedCharacterId: string | null | undefined
+      let importedCharacter: CharacterImportOutcome | null | undefined
       if (
         res.headers.get('content-type') === 'application/zip' ||
         res.headers.get('content-type') === 'application/charx'
       ) {
-        importedCharacterId = await importCharacterProcess({
+        importedCharacter = await importCharacterProcess({
           name: 'realm.charx',
           data: new Uint8Array(await res.arrayBuffer()),
         })
       } else {
-        importedCharacterId = await importCharacterProcess({
+        importedCharacter = await importCharacterProcess({
           name: 'realm.png',
           data: res.body!,
         })
       }
       checkCharOrder()
-      const db = getDatabase()
-      const index = importedCharacterId
-        ? db.characters.findIndex((character) => character.chaId === importedCharacterId)
-        : -1
+      const index =
+        importedCharacter?.status === 'accepted' ? characterOwnerIndexById(importedCharacter.characterId) : -1
       if (
         isLatestRealmImportOperation(realmImportOperationToken) &&
         index !== -1 &&
@@ -1931,12 +2230,9 @@ export async function downloadRisuHub(
 
     data.data.extensions.risuRealmImportId = id
 
-    const importedCharacterId = await importCharacterCardSpec(data, await getHubResources(img), 'hub')
+    const importedCharacter = await importCharacterCardSpec(data, await getHubResources(img), 'hub')
     checkCharOrder()
-    const db = getDatabase()
-    const index = importedCharacterId
-      ? db.characters.findIndex((character) => character.chaId === importedCharacterId)
-      : -1
+    const index = importedCharacter?.status === 'accepted' ? characterOwnerIndexById(importedCharacter.characterId) : -1
     if (
       isLatestRealmImportOperation(realmImportOperationToken) &&
       index !== -1 &&
@@ -1997,9 +2293,8 @@ async function finishServerRealmImport(
     percent: 100,
   })
   checkCharOrder()
-  const db = getDatabase()
-  const index = db.characters.findIndex((character) => character.chaId === imported.characterId)
-  if (index !== -1 && (db.goCharacterOnImport || arg.forceRedirect)) {
+  const index = characterOwnerIndexById(imported.characterId)
+  if (index !== -1 && shouldNavigateImportedCharacter(arg)) {
     changeChar(index, {
       isFresh: () => isLatestRealmImportOperation(operationToken),
     })
@@ -2013,8 +2308,25 @@ async function finishServerRealmImport(
 }
 
 function shouldNavigateImportedCharacter(arg: { forceRedirect?: boolean }): boolean {
-  const db = getDatabase()
-  return !!(db.goCharacterOnImport || arg.forceRedirect)
+  if (arg.forceRedirect) return true
+  const sidebarStatus = settingsResourceState.groupStatuses.sidebar ?? settingsResourceState.status
+  return (
+    settingsResourceState.status !== 'error' &&
+    sidebarStatus === 'ready' &&
+    settingsResourceState.value.goCharacterOnImport === true
+  )
+}
+
+function characterOwnerAt(index: number): character | undefined {
+  if (charactersResourceState.status !== 'ready' || index < 0) return undefined
+  const candidate = charactersResourceState.characters[index]
+  return candidate?.chaId ? getCharacterResourceOwner(candidate.chaId) : undefined
+}
+
+function characterOwnerIndexById(characterId: string): number {
+  if (charactersResourceState.status !== 'ready') return -1
+  const owner = getCharacterResourceOwner(characterId)
+  return owner ? charactersResourceState.characters.indexOf(owner) : -1
 }
 
 function showRealmImportProgress(progress: ServerRealmImportProgress) {

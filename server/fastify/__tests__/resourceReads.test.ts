@@ -9,7 +9,21 @@ import { buildApp } from '../src/app.js'
 import { COLLECTION_FIELDS } from '../src/repository.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { setupAuthedClient } from './helpers/auth.js'
-import { PROMPT_SETTINGS_KEYS } from '../../../src/ts/promptSettings.js'
+import { PROMPT_SETTINGS_KEYS } from '@risuai/shared-core/prompt-settings'
+import { BULK_RESOURCE_MAX_BODY_BYTES, BULK_RESOURCE_MAX_IDS } from '../src/routes/resourceReads.js'
+import { applyMigrations } from '../src/db.js'
+import { addAlternateMessage, replaceChatMessages } from '../src/messageStore.js'
+import {
+  SERVER_CHARACTER_SUMMARY_KEYS,
+  SERVER_CHARACTER_SUMMARY_VERSION,
+  isServerCharactersSummaryPayload,
+} from '@risuai/protocol/character-summary-resource'
+import {
+  SERVER_SHELL_PAYLOAD_KEYS,
+  SERVER_SHELL_PROTOCOL_VERSION,
+  SERVER_SHELL_SETTINGS_KEYS,
+  isServerShellPayload,
+} from '@risuai/protocol/shell-resource'
 
 interface Harness {
   app: FastifyInstance
@@ -39,6 +53,20 @@ let harness: Harness
 let assertion: string
 let revision: number
 
+function readAllDatabaseRows(): Record<string, unknown[]> {
+  const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+  try {
+    const tables = sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as Array<{
+      name: string
+    }>
+    return Object.fromEntries(
+      tables.map(({ name }) => [name, sqlite.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all() as unknown[]]),
+    )
+  } finally {
+    sqlite.close()
+  }
+}
+
 beforeEach(async () => {
   harness = await startHarness()
   ;({ assertion } = await setupAuthedClient(harness.app))
@@ -50,6 +78,8 @@ beforeEach(async () => {
       database: {
         currentChar: 0,
         characterOrder: ['char-a', 'char-b'],
+        selectedPersona: 0,
+        personaPrompt: 'Persona prompt',
         mainPrompt: 'Main prompt',
         jailbreak: 'Jailbreak prompt',
         globalNote: 'Global note',
@@ -75,6 +105,15 @@ beforeEach(async () => {
         localNetworkMode: true,
         localNetworkTimeoutSec: 45,
         openAIKey: 'root-secret',
+        providerCredentials: [
+          { id: 'credential-api', name: 'API', type: 'apiKey', apiKey: 'profile-secret' },
+          {
+            id: 'credential-vertex',
+            name: 'Vertex',
+            type: 'vertexServiceAccount',
+            vertex: { clientEmail: 'vertex@example.com', privateKey: 'vertex-secret' },
+          },
+        ],
         modelProfiles: [
           {
             id: 'profile-a',
@@ -82,19 +121,19 @@ beforeEach(async () => {
             providerId: 'vertex',
             modelId: 'model-a',
             providerOptions: {
-              apiKey: 'profile-secret',
+              credentialId: 'credential-vertex',
               vertex: {
                 projectId: 'project-a',
-                privateKey: 'vertex-secret',
               },
             },
           },
         ],
+        modelProfileOrder: [{ kind: 'profile', profileId: 'profile-a' }],
         modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-a' } },
         modelRuntimeDefaults: { maxContext: 8_192 },
         enabledModules: ['module-a'],
         modules: [{ id: 'module-a', name: 'Module A', cjs: 'module.exports = true' }],
-        plugins: [{ name: 'plugin-a', displayName: 'Plugin A', script: 'Risuai.log("plugin")' }],
+        plugins: [{ name: 'plugin-a', displayName: 'Plugin A', script: 'Risuai.log("plugin")', version: '3.0' }],
         modelPresets: [{ id: 'model-a', name: 'Model A', openAIKey: 'model-secret' }],
         promptPresets: [
           {
@@ -125,13 +164,22 @@ beforeEach(async () => {
         loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
         loreBook: [{ id: 'lorebook-a', name: 'Lorebook A', data: [] }],
         translatorPresets: [{ id: 'translator-a', name: 'Translator A' }],
+        hypaV3Settings: { summarizationPrompt: 'stale flat prompt' },
+        supaMemoryKey: 'stale-flat-key',
         hypaV3Presets: [{ id: 'hypa-a', name: 'Hypa A' }],
         pluginCustomStorage: { 'plugin-a:state': { enabled: true } },
         characters: [
           {
             chaId: 'char-a',
             name: 'Ada',
+            displayName: 'Ada Lovelace',
+            image: 'asset://ada',
+            creatorNotes: '# `en`\nFirst programmer',
+            trashTime: null,
+            creation_date: 1,
+            modification_date: 2,
             lastInteraction: 123,
+            chatPage: 0,
             desc: 'Full character detail',
             oaiTTSConfig: { apiKey: 'tts-secret' },
             globalLore: [{ key: ['Ada'], content: 'Character lore' }],
@@ -139,6 +187,7 @@ beforeEach(async () => {
               {
                 id: 'chat-a',
                 name: 'Chat A',
+                pinned: true,
                 message: [
                   { uid: 'message-a', role: 'user', data: 'one' },
                   { uid: 'message-b', role: 'char', data: 'two' },
@@ -179,6 +228,237 @@ function cachePayload(hashes: Record<string, string[]>): Record<string, unknown>
 }
 
 describe('authenticated resource read routes', () => {
+  it('loads greeting translations after migrating a legacy numeric translator selection', async () => {
+    const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      const row = sqlite.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      const settings = {
+        ...JSON.parse(row.data_json),
+        translatorPresetId: 0,
+        translatorType: 'google',
+        translator: 'en',
+      }
+      sqlite.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+      sqlite.exec('UPDATE schema_version SET version = 36 WHERE id = 1')
+      applyMigrations(sqlite, 36)
+      expect(
+        JSON.parse(
+          (sqlite.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }).data_json,
+        ).translatorPresetId,
+      ).toBe('translator-a')
+    } finally {
+      sqlite.close()
+    }
+    const before = readAllDatabaseRows()
+    const response = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters/char-a/greeting-translations?chatId=chat-a',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      characterId: 'char-a',
+      chatId: 'chat-a',
+      revision,
+      settingsHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      translations: [],
+    })
+    expect(readAllDatabaseRows()).toEqual(before)
+  })
+
+  it.each([null, '', 0, 'missing-translator'])(
+    'returns an unavailable greeting projection without repairing invalid translator selection %s on read',
+    async (selection) => {
+      const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+      try {
+        const row = sqlite.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+        const settings = { ...JSON.parse(row.data_json), translatorPresetId: selection, translatorType: 'google' }
+        sqlite.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+      } finally {
+        sqlite.close()
+      }
+      const before = readAllDatabaseRows()
+      const response = await harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/characters/char-a/greeting-translations?chatId=chat-a',
+        headers: { 'risu-auth': assertion },
+      })
+      expect(response.statusCode).toBe(200)
+      expect(response.json()).toEqual({
+        characterId: 'char-a',
+        chatId: 'chat-a',
+        revision,
+        settingsHash: null,
+        translations: [],
+      })
+      expect(readAllDatabaseRows()).toEqual(before)
+    },
+  )
+
+  it('returns the exact versioned coherent shell projection', async () => {
+    const response = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/resources/shell',
+      headers: authHeaders(),
+    })
+
+    expect(response.statusCode).toBe(200)
+    const shell = response.json()
+    expect(Object.keys(shell)).toEqual(SERVER_SHELL_PAYLOAD_KEYS)
+    expect(shell.protocolVersion).toBe(SERVER_SHELL_PROTOCOL_VERSION)
+    expect(shell.revision).toBe(revision)
+    expect(Object.keys(shell.settings)).toEqual(SERVER_SHELL_SETTINGS_KEYS)
+    expect(shell.characters).toMatchObject({
+      version: SERVER_CHARACTER_SUMMARY_VERSION,
+      revision,
+      currentChar: 0,
+      characterOrder: ['char-a', 'char-b'],
+    })
+    expect(isServerShellPayload(shell)).toBe(true)
+    expect(Object.keys(shell.characters.characters[0])).toEqual(SERVER_CHARACTER_SUMMARY_KEYS)
+
+    for (const forbidden of [
+      'openAIKey',
+      'providerCredentials',
+      'modules',
+      'plugins',
+      'promptPresets',
+      'botPresets',
+      'personas',
+    ]) {
+      expect(shell.settings).not.toHaveProperty(forbidden)
+    }
+    expect(response.payload).not.toContain('root-secret')
+    expect(response.payload).not.toContain('Large legacy body')
+    expect(response.payload).not.toContain('Character lore')
+    expect(response.payload).not.toContain('Large message')
+  })
+
+  it('normalizes missing, null, empty, malformed, and legacy shell settings before strict bootstrap validation', async () => {
+    const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      const row = sqlite.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      const settings = JSON.parse(row.data_json) as Record<string, unknown>
+      delete settings.language
+      settings.username = null
+      settings.customCSS = ''
+      settings.keepSessionAlive = 'pip'
+      settings.animationSpeed = 'fast'
+      settings.colorScheme = {}
+      settings.customTextTheme = { FontColorStandard: '#ffffff' }
+      settings.doNotWarnExternalServers = 1
+      settings.characterOrder = null
+      settings.currentChar = 99
+      sqlite.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+    } finally {
+      sqlite.close()
+    }
+
+    const response = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/resources/shell',
+      headers: authHeaders(),
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json().settings).toMatchObject({
+      language: 'en',
+      username: 'User',
+      customCSS: '',
+      keepSessionAlive: 'sound',
+      animationSpeed: 0.4,
+      colorScheme: expect.objectContaining({ type: 'dark' }),
+      customTextTheme: expect.objectContaining({
+        FontColorStandard: '#ffffff',
+        FontColorBold: '#f8f8f2',
+      }),
+      doNotWarnExternalServers: false,
+    })
+    expect(response.json().characters).toMatchObject({ characterOrder: [], currentChar: -1 })
+    expect(isServerShellPayload(response.json())).toBe(true)
+
+    const fullSettings = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings',
+      headers: authHeaders(),
+    })
+    expect(fullSettings.json().settings).toMatchObject({
+      language: 'en',
+      username: 'User',
+      customCSS: '',
+      keepSessionAlive: 'sound',
+      animationSpeed: 0.4,
+      colorScheme: expect.objectContaining({ type: 'dark' }),
+      customTextTheme: expect.objectContaining({
+        FontColorStandard: '#ffffff',
+        FontColorBold: '#f8f8f2',
+      }),
+      doNotWarnExternalServers: false,
+      characterOrder: [],
+      currentChar: -1,
+    })
+
+    const languageGroup = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/language',
+      headers: authHeaders(),
+    })
+    expect(languageGroup.json().settings.language).toBe('en')
+
+    const advancedGroup = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/advanced',
+      headers: authHeaders(),
+    })
+    expect(advancedGroup.json().settings.keepSessionAlive).toBe('sound')
+  })
+
+  it('returns one exact standalone setting projection', async () => {
+    const stableSelection = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/resources/settings/selectedPersonaId',
+      headers: authHeaders(),
+    })
+    expect(stableSelection.statusCode).toBe(200)
+    expect(stableSelection.json()).toEqual({
+      revision,
+      setting: 'selectedPersonaId',
+      state: { present: true, value: 'persona-a' },
+    })
+
+    const present = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/resources/settings/selectedPersona',
+      headers: authHeaders(),
+    })
+    expect(present.statusCode).toBe(200)
+    expect(present.json()).toEqual({
+      revision,
+      setting: 'selectedPersona',
+      state: { present: true, value: 0 },
+    })
+
+    const defaulted = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/resources/settings/userNote',
+      headers: authHeaders(),
+    })
+    expect(defaulted.statusCode).toBe(200)
+    expect(defaulted.json()).toEqual({
+      revision,
+      setting: 'userNote',
+      state: { present: true, value: '' },
+    })
+
+    const unknown = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/resources/settings/openAIKey',
+      headers: authHeaders(),
+    })
+    expect(unknown.statusCode).toBe(404)
+    expect(unknown.json()).toMatchObject({ error: 'standalone_setting_not_found' })
+  })
+
   it('returns settings without collection fields and masks provider secrets', async () => {
     const response = await harness.app.inject({
       method: 'GET',
@@ -211,12 +491,15 @@ describe('authenticated resource read routes', () => {
       group: 'providers',
       settings: {
         openAIKey: MASKED_PROVIDER_SECRET,
+        providerCredentials: [
+          { id: 'credential-api', apiKey: MASKED_PROVIDER_SECRET },
+          { id: 'credential-vertex', vertex: { privateKey: MASKED_PROVIDER_SECRET } },
+        ],
         modelProfiles: [
           {
             id: 'profile-a',
             providerOptions: {
-              apiKey: MASKED_PROVIDER_SECRET,
-              vertex: { privateKey: MASKED_PROVIDER_SECRET },
+              credentialId: 'credential-vertex',
             },
           },
         ],
@@ -233,6 +516,8 @@ describe('authenticated resource read routes', () => {
     expect(memory.statusCode).toBe(200)
     expect(memory.json()).toMatchObject({ revision, group: 'memory' })
     expect(memory.json().settings).not.toHaveProperty('hypaV3Presets')
+    expect(memory.json().settings).not.toHaveProperty('hypaV3Settings')
+    expect(memory.json().settings).not.toHaveProperty('supaMemoryKey')
 
     const runtime = await harness.app.inject({
       method: 'GET',
@@ -255,7 +540,7 @@ describe('authenticated resource read routes', () => {
     expect(language.json()).toMatchObject({
       revision,
       group: 'language',
-      settings: { translatorPresetId: 0 },
+      settings: { translatorPresetId: 'translator-a' },
     })
 
     const prompt = await harness.app.inject({
@@ -302,7 +587,7 @@ describe('authenticated resource read routes', () => {
     expect(modules.json()).toEqual({
       revision,
       group: 'modules',
-      settings: { enabledModules: ['module-a'] },
+      settings: { enabledModules: ['module-a'], moduleFolders: [] },
     })
 
     const account = await harness.app.inject({
@@ -324,7 +609,8 @@ describe('authenticated resource read routes', () => {
       revision,
       group: 'agents',
       settings: {
-        agentPresets: [{ id: 'agent-a', name: 'Agent A', enabled: true, version: 1, steps: [] }],
+        agents: [],
+        agentPresets: [{ id: 'agent-a', name: 'Agent A', enabled: true, version: 1, agentUses: [], steps: [] }],
         agentPresetDefaultId: 'agent-a',
       },
     })
@@ -340,12 +626,15 @@ describe('authenticated resource read routes', () => {
       revision,
       group: 'models',
       settings: {
+        providerCredentials: [
+          { id: 'credential-api', apiKey: MASKED_PROVIDER_SECRET },
+          { id: 'credential-vertex', vertex: { privateKey: MASKED_PROVIDER_SECRET } },
+        ],
         modelProfiles: [
           {
             id: 'profile-a',
             providerOptions: {
-              apiKey: MASKED_PROVIDER_SECRET,
-              vertex: { privateKey: MASKED_PROVIDER_SECRET },
+              credentialId: 'credential-vertex',
             },
           },
         ],
@@ -354,7 +643,7 @@ describe('authenticated resource read routes', () => {
       },
     })
     expect(Object.keys(models.json().settings).sort()).toEqual(
-      ['modelProfiles', 'modelRoleProfiles', 'modelRuntimeDefaults'].sort(),
+      ['providerCredentials', 'modelProfiles', 'modelProfileOrder', 'modelRoleProfiles', 'modelRuntimeDefaults'].sort(),
     )
     expect(models.json().settings).not.toHaveProperty('openAIKey')
 
@@ -677,7 +966,7 @@ describe('authenticated resource read routes', () => {
     expect(unknownGroup.json().error).toBe('settings_group_not_found')
   })
 
-  it('retains the aggregate root prompt template when the selected modern preset pointer is malformed', async () => {
+  it('rejects a malformed selected prompt pointer without changing any persisted row', async () => {
     const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
     try {
       const row = sqlite.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
@@ -687,6 +976,7 @@ describe('authenticated resource read routes', () => {
     } finally {
       sqlite.close()
     }
+    const damagedRows = readAllDatabaseRows()
 
     const aggregate = await harness.app.inject({
       method: 'GET',
@@ -694,17 +984,11 @@ describe('authenticated resource read routes', () => {
       headers: authHeaders(),
     })
 
-    expect(aggregate.statusCode).toBe(200)
-    expect(aggregate.json().collections.promptPresets).toEqual([
-      { id: 'prompt-a', name: 'Prompt A' },
-      { id: 'prompt-empty', name: 'Prompt Empty' },
-    ])
-    expect(aggregate.json().collections.promptTemplate).toEqual([
-      { id: 'root-prompt', type: 'plain', text: 'Root prompt', role: 'system' },
-    ])
+    expect(aggregate.statusCode).toBe(500)
+    expect(readAllDatabaseRows()).toEqual(damagedRows)
   })
 
-  it('retains the root projection and rejects dedicated hydration when modern preset ids are duplicated', async () => {
+  it('rejects duplicate modern preset ids without changing any persisted row', async () => {
     const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
     try {
       sqlite
@@ -713,24 +997,23 @@ describe('authenticated resource read routes', () => {
     } finally {
       sqlite.close()
     }
+    const damagedRows = readAllDatabaseRows()
 
     const aggregate = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/collections',
       headers: authHeaders(),
     })
-    expect(aggregate.statusCode).toBe(200)
-    expect(aggregate.json().collections.promptTemplate).toEqual([
-      { id: 'root-prompt', type: 'plain', text: 'Root prompt', role: 'system' },
-    ])
+    expect(aggregate.statusCode).toBe(500)
+    expect(readAllDatabaseRows()).toEqual(damagedRows)
 
     const hydration = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/prompt-presets/prompt-a/template',
       headers: authHeaders(),
     })
-    expect(hydration.statusCode).toBe(409)
-    expect(hydration.json().error).toBe('prompt_preset_ambiguous')
+    expect(hydration.statusCode).toBe(500)
+    expect(readAllDatabaseRows()).toEqual(damagedRows)
   })
 
   it('preserves and hydrates the selected default-scaffold fallback from the root template', async () => {
@@ -825,7 +1108,7 @@ describe('authenticated resource read routes', () => {
     })
   })
 
-  it('returns character/chat metadata with matching chat and lorebook stubs', async () => {
+  it('returns exact versioned character summaries and preserves scoped detail reads', async () => {
     const list = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/characters',
@@ -833,19 +1116,37 @@ describe('authenticated resource read routes', () => {
     })
     expect(list.statusCode).toBe(200)
     expect(list.json()).toMatchObject({
+      version: SERVER_CHARACTER_SUMMARY_VERSION,
       revision,
       currentChar: 0,
       characterOrder: ['char-a', 'char-b'],
     })
+    expect(isServerCharactersSummaryPayload(list.json())).toBe(true)
     const listedAda = list.json().characters.find((character: { chaId?: string }) => character.chaId === 'char-a')
-    expect(listedAda).toMatchObject({
+    expect(Object.keys(listedAda)).toEqual(SERVER_CHARACTER_SUMMARY_KEYS)
+    expect(listedAda).toEqual({
+      __serverCharacterShell: true,
       chaId: 'char-a',
-      desc: 'Full character detail',
-      oaiTTSConfig: { apiKey: MASKED_PROVIDER_SECRET },
-      chats: [{ id: 'chat-a', name: 'Chat A', message: [] }],
+      type: 'character',
+      name: 'Ada',
+      displayName: 'Ada Lovelace',
+      image: 'asset://ada',
+      creatorNotes: '# `en`\nFirst programmer',
+      trashTime: null,
+      creation_date: 1,
+      modification_date: 2,
+      lastInteraction: 123,
+      chatCount: 1,
+      activeChatId: 'chat-a',
+      chatIds: ['chat-a'],
+      pinnedChats: [{ id: 'chat-a', name: 'Chat A' }],
     })
-    expect(listedAda).not.toHaveProperty('globalLore')
-    expect(listedAda.chats[0]).not.toHaveProperty('hypaV3Data')
+    for (const forbidden of ['chats', 'desc', 'oaiTTSConfig', 'globalLore', 'customscript', 'triggerscript']) {
+      expect(listedAda).not.toHaveProperty(forbidden)
+    }
+    expect(list.payload).not.toContain('tts-secret')
+    expect(list.payload).not.toContain('Character lore')
+    expect(list.payload).not.toContain('summary')
 
     const detail = await harness.app.inject({
       method: 'GET',
@@ -869,7 +1170,7 @@ describe('authenticated resource read routes', () => {
     expect(missing.json().error).toBe('character_not_found')
   })
 
-  it('substitutes cached message-free character projections without depending on inventory order', async () => {
+  it('substitutes cached character summaries without depending on inventory order', async () => {
     const list = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/characters',
@@ -877,19 +1178,16 @@ describe('authenticated resource read routes', () => {
     })
     const characters = list.json().characters as Array<Record<string, unknown>>
     const characterHashes = characters.map(jsonSha256)
-    const unmaskedAdaHash = jsonSha256({
-      ...characters[0],
-      oaiTTSConfig: { apiKey: 'tts-secret' },
-    })
 
     const cached = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/characters',
       headers: authHeaders(),
-      payload: cachePayload({ characters: [characterHashes[1], unmaskedAdaHash, characterHashes[0]] }),
+      payload: cachePayload({ characters: [characterHashes[1], characterHashes[0]] }),
     })
     expect(cached.statusCode).toBe(200)
     expect(cached.json()).toEqual({
+      version: SERVER_CHARACTER_SUMMARY_VERSION,
       revision,
       cache: { version: 2, algorithm: 'sha256' },
       characters: characterHashes.map((hash) => ({ hash })),
@@ -934,7 +1232,7 @@ describe('authenticated resource read routes', () => {
 
     const aggregate = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/characters',
+      url: '/api/v1/characters/aggregate',
       headers: authHeaders(),
     })
     const detail = await harness.app.inject({
@@ -987,7 +1285,7 @@ describe('authenticated resource read routes', () => {
     expect(missing.json().error).toBe('character_not_found')
   })
 
-  it('serves full, ranged, and bulk chat message reads', async () => {
+  it('serves full, ranged, and bulk chat message reads with per-chat alternates', async () => {
     const full = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/chats/chat-a/messages',
@@ -1030,17 +1328,61 @@ describe('authenticated resource read routes', () => {
       messageTotal: 2,
       alternates: [],
     })
+    expect(generationWindow.json()).not.toHaveProperty('hypaV3Data')
+
+    const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      sqlite
+        .prepare('INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, ?, ?)')
+        .run('chat-bulk-b', 'char-a', 1, JSON.stringify({ id: 'chat-bulk-b', name: 'Chat Bulk B', message: [] }))
+      replaceChatMessages(sqlite, 'chat-bulk-b', [{ chatId: 'bulk-b-primary', role: 'char', data: 'bulk B primary' }])
+      addAlternateMessage(sqlite, 'chat-a', {
+        chatId: 'chat-a-alternate-old',
+        role: 'char',
+        data: 'chat A older candidate',
+      })
+      addAlternateMessage(sqlite, 'chat-a', {
+        chatId: 'chat-a-alternate-new',
+        role: 'char',
+        data: 'chat A newer candidate',
+      })
+      addAlternateMessage(sqlite, 'chat-bulk-b', {
+        chatId: 'chat-b-alternate',
+        role: 'char',
+        data: 'chat B candidate',
+      })
+    } finally {
+      sqlite.close()
+    }
 
     const bulk = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/chats/messages/bulk',
       headers: authHeaders(),
-      payload: { ids: ['chat-a', 'missing', 'chat-a'] },
+      payload: { ids: ['chat-a', 'chat-bulk-b', 'missing', 'chat-a'] },
     })
     expect(bulk.statusCode).toBe(200)
-    expect(bulk.json()).toMatchObject({
+    expect(bulk.json()).toEqual({
       revision,
-      chats: [{ chatId: 'chat-a', message: [{ uid: 'message-a' }, { uid: 'message-b' }] }],
+      chats: [
+        {
+          chatId: 'chat-a',
+          message: [
+            expect.objectContaining({ uid: 'message-a', data: 'one' }),
+            expect.objectContaining({ uid: 'message-b', data: 'two' }),
+          ],
+          hypaV3Data: { mainChunks: [{ text: 'summary' }] },
+          alternates: [
+            { chatId: 'chat-a-alternate-new', role: 'char', data: 'chat A newer candidate' },
+            { chatId: 'chat-a-alternate-old', role: 'char', data: 'chat A older candidate' },
+          ],
+        },
+        {
+          chatId: 'chat-bulk-b',
+          message: [{ chatId: 'bulk-b-primary', role: 'char', data: 'bulk B primary' }],
+          alternates: [{ chatId: 'chat-b-alternate', role: 'char', data: 'chat B candidate' }],
+        },
+      ],
       missing: ['missing'],
     })
 
@@ -1059,6 +1401,63 @@ describe('authenticated resource read routes', () => {
     })
     expect(invalidGenerationWindow.statusCode).toBe(400)
     expect(invalidGenerationWindow.json().error).toBe('invalid_chat_message_range')
+  })
+
+  it('bounds raw ids and request bodies on both bulk resource routes', async () => {
+    const routes = [
+      { url: '/api/v1/chats/messages/bulk', invalidError: 'invalid_chat_ids' },
+      { url: '/api/v1/characters/lorebooks/bulk', invalidError: 'invalid_character_lorebook_ids' },
+    ]
+
+    for (const route of routes) {
+      const exactIds = Array.from({ length: BULK_RESOURCE_MAX_IDS }, (_, index) => `missing-${index}`)
+      const exact = await harness.app.inject({
+        method: 'POST',
+        url: route.url,
+        headers: authHeaders(),
+        payload: { ids: exactIds },
+      })
+      expect(exact.statusCode, route.url).toBe(200)
+      expect(exact.json().missing, route.url).toEqual(exactIds)
+
+      const deduplicated = await harness.app.inject({
+        method: 'POST',
+        url: route.url,
+        headers: authHeaders(),
+        payload: { ids: Array(BULK_RESOURCE_MAX_IDS).fill(' missing-duplicate ') },
+      })
+      expect(deduplicated.statusCode, route.url).toBe(200)
+      expect(deduplicated.json().missing, route.url).toEqual(['missing-duplicate'])
+
+      const tooMany = await harness.app.inject({
+        method: 'POST',
+        url: route.url,
+        headers: authHeaders(),
+        payload: { ids: Array(BULK_RESOURCE_MAX_IDS + 1).fill('duplicate-still-counts') },
+      })
+      expect(tooMany.statusCode, route.url).toBe(413)
+      expect(tooMany.json(), route.url).toEqual({
+        error: 'bulk_resource_limit_exceeded',
+        maxItems: BULK_RESOURCE_MAX_IDS,
+      })
+
+      const invalid = await harness.app.inject({
+        method: 'POST',
+        url: route.url,
+        headers: authHeaders(),
+        payload: { ids: [''] },
+      })
+      expect(invalid.statusCode, route.url).toBe(400)
+      expect(invalid.json().error, route.url).toBe(route.invalidError)
+
+      const oversized = await harness.app.inject({
+        method: 'POST',
+        url: route.url,
+        headers: { ...authHeaders(), 'content-type': 'application/json' },
+        payload: JSON.stringify({ ids: ['x'.repeat(BULK_RESOURCE_MAX_BODY_BYTES)] }),
+      })
+      expect(oversized.statusCode, route.url).toBe(413)
+    }
   })
 
   it('serves full single and bulk character lorebooks while character rows are stubbed', async () => {
@@ -1142,7 +1541,7 @@ describe('authenticated resource read routes', () => {
         openAIKey: MASKED_PROVIDER_SECRET,
         temperature: 0.7,
         mainPrompt: 'Large legacy body'.repeat(2_000),
-        promptTemplate: [{ id: 'legacy-prompt', type: 'plain', text: 'Legacy prompt body' }],
+        promptTemplate: [{ id: 'legacy-prompt', type: 'plain', text: 'Legacy prompt body', role: 'system' }],
       }),
     })
     expect(legacy.payload).not.toContain('legacy-secret')

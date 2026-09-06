@@ -1,0 +1,1086 @@
+# Maintainability and Performance Status
+
+Updated: 2026-09-06
+
+## Execution Cursor
+
+- State: Complete; all ten findings and Phases 0–6 accepted.
+- Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
+- Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
+- Final verification source: `e91f2438b7464906544110df99e5a19ce507c4df`.
+- Next task: none; this workstream is closed.
+- Final dispositions and residual owners: [final closeout](evidence/final-closeout.md).
+- Blockers: none.
+- Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
+  acceptance evidence and completed Phase 2 slices are recorded below.
+
+Read [PLAN.md](PLAN.md) for stable scope, evidence, and invariants; read only the
+selected [phase](phases/README.md) for implementation detail.
+
+## Phase Router
+
+| Phase | Findings | State | Accepted implementation/evidence |
+| --- | --- | --- | --- |
+| [0. Character creation safety](phases/phase-0-character-creation-safety.md) | F01 | Accepted | Targeted append; 18 HTTP preservation/replay/rollback cases |
+| [1. Baselines and budgets](phases/phase-1-baselines-and-budgets.md) | F02–F10 | Accepted | [Baselines and numeric budgets](evidence/baselines.md) |
+| [2. Browser work](phases/phase-2-browser-work.md) | F03, F05, F04, F06 | Accepted | Scoped rollback, single normalization, background cache, selected locale |
+| [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md) | F02, F09 | Accepted | [Selected inputs, concrete contracts and final costs](evidence/generation-inputs.md) |
+| [4. Server maintenance](phases/phase-4-server-maintenance.md) | F07 | Accepted | [Bounded discovery/workers, guarded GC and original latency limits](evidence/maintenance-scheduling.md) |
+| [5. Transcript residency](phases/phase-5-transcript-residency.md) | F08 | Accepted | [Original budgets and final native checks](evidence/transcript-residency.md#accepted-working-window-costs-and-final-native-verification) |
+| [6. Shared policy and closeout](phases/phase-6-shared-policy-and-closeout.md) | F10; all closeout evidence | Accepted | [Shared owner, final costs, aggregate/recovery and residuals](evidence/final-closeout.md) |
+
+## Finding Dispositions
+
+| Finding | Disposition | Completion evidence |
+| --- | --- | --- |
+| F01 | Fixed; targeted creation and Agent Preset deletion cleanup preserve dependent rows | [Final verification](evidence/final-closeout.md#combined-verification-and-limitations) |
+| F02 | Selected reads and bounded query programs implemented within recorded exceptions | [Original final timing limits pass](evidence/closeout-generation-final.json) |
+| F03 | Fixed; scoped metadata and organization captures | [Final verification](evidence/final-closeout.md#combined-verification-and-limitations) |
+| F04 | Fixed; bounded background writes/pruning and lifecycle fences | [Final verification](evidence/final-closeout.md#combined-verification-and-limitations) |
+| F05 | Fixed; one owned normalization per staged/replaced intent | [Final verification](evidence/final-closeout.md#combined-verification-and-limitations) |
+| F06 | Fixed; selected loading, readiness and real-browser chunk retry | [Final verification](evidence/final-closeout.md#combined-verification-and-limitations) |
+| F07 | Fixed; bounded native backup workers and cooperative fenced GC meet original latency budgets | [Final verification](evidence/final-closeout.md#combined-verification-and-limitations) |
+| F08 | Fixed; bounded adaptive residency meets original costs and native interaction gates | [Final verification](evidence/final-closeout.md#combined-verification-and-limitations) |
+| F09 | Fixed; finite checked views and explicit mutable ownership | [Final verification](evidence/final-closeout.md#combined-verification-and-limitations) |
+| F10 | Fixed; one neutral shared owner and forwarding runtime facades | [Final verification](evidence/final-closeout.md#combined-verification-and-limitations) |
+
+## Verification Ledger
+
+Distinguish audit observations, documentation checks, and implementation gates.
+Do not carry an opening pass forward as proof of a later implementation commit.
+
+| Scope | Source/date | Evidence | Limitation |
+| --- | --- | --- | --- |
+| Opening audit | Opening source, 2026-09-05 | Eight research areas cross-checked against source; both character creation endpoints reproduced BardWiki deletion in disposable SQLite fixtures. | Temporary reproductions are not checked-in regression tests; no production data inspected. |
+| Opening preload | Opening source, 2026-09-05 | `pnpm build:initial-preload` passed; 389,721 total gzip bytes, 291,801 language gzip bytes. | Build sizes are not browser latency measurements or total post-startup transfer. |
+| Plan review | Current documentation worktree, 2026-09-05 | Two read-only reviews completed; clarified cache-generation fences, nested prompt types, backup pins, and full-transcript screenshot exceptions. | Review of proposed work; no implementation evidence. |
+| Plan documents | Opening source plus plan documents, 2026-09-05 | Explicit link/path validation passed for all 11 plan/index documents; `pnpm check:docs` passed for 49 current documents; whitespace checks passed. | Does not close implementation findings. |
+| Agent aggregate | Opening source plus plan documents, 2026-09-05 | `pnpm test:agent` passed in 2m 16s: server/browser-smoke types, topology, current docs, frontend tests/check, server tests, and smoke build. | Excludes Playwright, specialized performance, and user/CI compatibility lanes; the new F01 regression is still future work. |
+
+For each implemented slice add its source commit, fixture/reproduction, exact
+commands and results, before/after cost, changed contract if any, and residual
+risk. If evidence fails, record the failure and next action instead of advancing
+the phase. Keep long generated logs outside this document; preserve the facts
+needed to reproduce them here or in the owning phase's bounded slice record.
+
+## Decisions and Exceptions
+
+- All ten audited findings are fixed within the explicit configuration/legacy
+  and product exceptions below. F01 includes the confirmed Agent Preset deletion
+  follow-up; F08's measured decision required residency implementation. No
+  required finding is deferred. Final retained costs, owners and revisit triggers
+  are collected in the [closeout](evidence/final-closeout.md).
+- Phase 0 precedes broad benchmarking because F01 is a reproduced correctness
+  failure. Performance measurement must not delay its repair.
+- F08 retains an implementation decision gate. A measured decision to keep
+  paging must record its supported fixture envelope and revisit trigger.
+- The single-writer model, durable outbox, revision/event ordering, and existing
+  shared-package boundaries remain invariants, not optimization targets.
+
+- 2026-09-05, F08 product amendment: the user's commit `4e90ff094` accepts
+  full-transcript native browser find being unavailable for unmounted messages
+  and limits cross-message drag selection/copy. Phase 5 still preserves mounted
+  message selection, per-message copy, in-app search, jumps, export, and
+  temporary full-transcript screenshots. The phase document is authoritative
+  for this accepted constraint change.
+
+- 2026-09-05, sequencing amendment for F02/F07: Phase 3's finite types,
+  structural scope and behavior gates pass (181 chat, 69 durable, 18 loader and
+  11 browser cases); only the small timing comparison remains open. Phase 4a
+  backup implementation may proceed under a separate owner while that bounded
+  timing issue is resolved. Backup edits own repository maintenance/lifecycle;
+  validator edits own generated validation artifacts. No shared-file edits or
+  concurrent performance runs are allowed. Phase 4 acceptance and all later
+  phase gates still require Phase 3 timing accepted; this is no finding deferral
+  or budget change. Revisit sequencing if either owner exposes a dependency.
+
+- 2026-09-05, F02 retained-cost amendment: ordinary selection excludes unrelated
+  character/chat bodies, extracted collection bodies and assets. The existing
+  global configuration JSON row still parses embedded profiles/credentials and
+  Agent records before selection; legacy embedded-character storage keeps a
+  named compatibility read. [Separate measurements](evidence/generation-inputs.md)
+  expose both costs, while original ordinary-path budgets are unchanged and pass.
+  These are retained architectural exceptions, not new caches or a deferred
+  ordinary-reader cutover. Splitting authoritative configuration would require
+  coordinated mutation/import/credential-repair migration beyond this input
+  change. Repository/settings ownership retains that work; revisit when the
+  339,610-byte configuration fixture exceeds the original large 1.066/2.812 ms
+  preparation budgets, or when those collections move out of the settings row.
+  Remove the legacy exception when pre-extraction input support is retired.
+
+- 2026-09-05, F01 correctness follow-up: the remaining ordinary
+  `deleteAgentPresetCommand` broad writer was reproduced at `2e2c321e9` in a
+  dedicated disposable HTTP fixture. DELETE returns 200 with correct selection
+  cleanup, but both affected and unaffected chats lose BardWiki settings,
+  documents, versions, search and links (each family 2 to 0). Scope now includes
+  targeted settings/affected-chat cleanup for this caller under F01; intentional
+  import/restore replacement writers remain separate. The dedicated regression
+  must pass preservation, rollback and replay before closeout. No performance
+  budget changes or new finding IDs are introduced.
+
+- 2026-09-06, F08 working-window refinement before implementation: repeated
+  complete matrices retain a 39.0/39.5 ms throttled scrolling miss while the
+  initial 30-row case passes at 17.6 ms and visible rich-text coverage uses only
+  two or three rows. Reduce normal overscan from 60 to 30 working rows without
+  raising the original 76-row hard ceiling or changing protected interactions.
+  Preserve compact custom layouts with bounded growth in 15-row increments to
+  the prior 60-row maximum when nearly the working target number of resident rows are visible.
+  Growth is sticky for the displayed chat, avoiding admission-size oscillation;
+  scope replacement resets the 30-row target. Existing pin-budget subtraction
+  still enforces 76. This changes an implementation overscan choice, not the
+  original workload or numerical acceptance limits. Complete native interaction,
+  compact-viewport and unprofiled cost verification are required. CSS containment
+  is rejected because it changes positioning/clipping of supported custom HTML.
+
+Future amendments belong here with date, affected finding, evidence, owner,
+residual cost, and revisit condition. If an amendment changes stable scope or
+phase dependencies, update `PLAN.md` and the affected phase at the same time.
+
+## Phase 0 Accepted Evidence
+
+- Source cross-check: both normal creation routes still invoke the broad
+  message-free writer at the execution anchor. Six independent read-only Luna
+  research areas were checked against live source; production edits remain
+  sequential by owner.
+- Foreign-key inventory: `chats` and `greeting_translations` cascade from
+  `characters`. BardWiki settings/documents/receipts/jobs/search cascade from
+  `chats`; versions, sources, links, manifests, and staging depend on those
+  BardWiki rows. Messages and `chat_hypa_v3` are logical chat dependents without
+  chat foreign keys. Preservation assertions must cover all of them directly.
+- The new append path reads settings and an identity/trash-status projection
+  for order validation, performs keyed duplicate checks, and inserts only the new
+  character and optional empty chat. Existing single-writer transaction, receipt,
+  revision, event, and post-commit emission boundaries are reused.
+- Broad-writer inventory: after the creation cutover, ordinary
+  `deleteAgentPresetCommand` remains a message-free caller; generic hydrated
+  mutation and import/restore replacement helpers also retain broad writers.
+  This is evidence of remaining cost/risk, not an implemented remedy. Phase 0
+  does not widen into those owners; audit further at closeout before any scope
+  decision. Import/restore replacement semantics remain intentional.
+- Workflow interpretation: the current `AGENTS.md` and test guide require the
+  aggregate only after all implementation work is complete. Phase-level checks
+  therefore use exact focused tests; `pnpm test:agent` is the final combined gate.
+
+- Durable reproduction: `characterCreationSafety.test.ts` failed on each opening
+  route after HTTP 200: two existing BardWiki manifests became zero. The fixture
+  seeds two characters/chats, four messages, two Hypa rows, greeting translations,
+  all ten BardWiki families including resolved links/search, split collections,
+  plugin storage, and a prior command receipt. SQL audit triggers detect physical
+  rewrites even when rowids are reused. Both routes now preserve every old row.
+- Explicit domain-table budget: 16 broad table families before; exactly
+  `characters` + `settings` after, adding `chats` only for an initial chat. Normal
+  revision/event/receipt infrastructure is asserted separately. Replay writes
+  nothing and emits nothing; injected chat/event/receipt failures roll back all
+  rows, revision, and audit triggers.
+- The replay fixture exposed request normalization before receipt fingerprinting.
+  Both routes now capture the submitted-intent fingerprint before normalization,
+  including generated global-lore defaults and selection timestamps.
+- Focused verification: `pnpm test --` followed by each of
+  `server/fastify/__tests__/characterCreationSafety.test.ts` (18 passed),
+  `server/fastify/__tests__/commands.test.ts` (241 passed),
+  `server/fastify/__tests__/commandMutationReceipts.test.ts` (12 passed),
+  `server/fastify/__tests__/commandSingleRowPaths.test.ts` (21 passed), and
+  `server/fastify/__tests__/bardWikiLifecycle.test.ts` (8 passed).
+  `pnpm check:docs` passed (49 current documents); explicit
+  `validateCurrentDocumentation` with all ten workstream documents,
+  `indexSpecs: []`, and `literalPathExemptions: []` passed. Prettier and
+  whitespace checks passed. Final aggregate/browser/performance evidence is
+  still pending, and these correctness tests make no latency claim.
+- Residual cost: order validation visits existing character identities and
+  extracts identity/trash status with SQLite JSON expressions; it does not
+  materialize unrelated bodies in JavaScript. Legacy embedded-character state
+  is rejected for explicit import/recovery rather than shadowed by an append.
+  This prevents future deletion; recovery of historical production loss remains
+  outside this local change.
+
+## Phase 1 Accepted Evidence
+
+- Browser structural probes and budgets: `f1fa4753b`,
+  [F03/F04/F05 baseline](evidence/browser-work-baseline.md). Twelve focused
+  cases pass; fixed-folder snapshot grows to 9,916,585 bytes, mutable outbox
+  bodies normalize twice, and ten resource reads cause ten prune passes.
+- Generation preparation/type inventory: `c5f58918f`,
+  [F02/F09 baseline](evidence/generation-baseline.md). Two focused cases and the
+  opt-in isolated timing run pass. Fixed target history with 48 unrelated owners
+  loads 1,049,413 database bytes and 826 SQL result rows per preparation pass.
+- Server maintenance: `dfb2d4db1`,
+  [F07 baseline](evidence/maintenance-baseline.md). Isolated 20/200/2,000-asset
+  matrix passes; zero API/heartbeat progress during GC or post-snapshot backup
+  copying. Three measured repetitions plus one warmup per size are retained.
+- Locale startup: `c25343989`, [F06 baseline](evidence/locale-baseline.md).
+  Production initial preload repeats 389,721 gzip bytes; all twelve English/
+  Korean cold/refresh cases show the requested first composer label and reach
+  background readiness. Browser trace/readiness and production closure evidence
+  remain separate. Repeated script closure lists are being deduplicated in the
+  retained evidence without discarding individual timings or transfer totals.
+- F10 source digests match and its four policy ownership/behavior tests pass.
+- F08 probe: `c4cbb74ec`; [accepted isolated matrix and decision rule](evidence/transcript-baseline.md).
+  All ten cases pass in 6.7 minutes. Corrected synthetic image bytes and excluded
+  expensive trace recording before measurement. The nine profile/size cases use
+  one journey each, 48-frame scroll samples and repeated 15-row page loads;
+  screenshot capture/restoration is separate. Full cost matrix is opt-in.
+- The large transcript fixtures pass scroll budgets but exceed the chosen
+  incremental-page layout and post-GC heap comparison budgets. Deep jumps also
+  issue 570 display-source requests; their full wall time cannot be attributed
+  to DOM layout. F08's implementation/retention decision remains Phase 5 work.
+- F06 retained script paths are deduplicated without changing individual
+  milestone, first-label, gzip, encoded-body, or transfer measurements.
+- Standard current-document and explicit workstream link/path validation passed.
+  All phase-specific focused/browser/performance evidence is recorded in its
+  owner. The final combined `pnpm test:agent` remains pending until implementation
+  is complete, as required by current project guidance. User/CI compatibility
+  and `pnpm test:all` have not been run or implied by these passes.
+
+## Phase 2a: Metadata Capture Accepted; Organization Next
+
+- Implementation: `1dff5c13f`. `captureChatMetadataPatch` / `captureChatFolderMetadataPatch`
+  capture only allowed supplied fields plus stable owner IDs. Direct outcome
+  dispatchers reuse durable pending-attempt/rebase and projection fencing.
+- Live callers migrated: sidebar fold/color/folder rename/chat rename and compact
+  chat-list rename. The folder-rename path also checks writer loss before
+  changing its local projection, preserving the unsaved draft.
+- [After counters](evidence/sidebar-metadata-after.json): exactly 126 snapshot
+  bytes at all three Phase 1 fixtures (before: 1,808 / 249,264 / 9,916,585).
+  Zero character rows or messages; two scalar copies, largest five bytes.
+  The existing one-scalar rollback cost and unrelated message identity survive.
+- Focused tests: `pnpm test -- src/ts/chatCommands.test.ts` (195 passed),
+  `pnpm test -- src/lib/SideBars/SideChatList.svelte.test.ts` (67),
+  `pnpm test -- src/lib/Others/ChatList.svelte.test.ts` (25), and
+  `pnpm test -- src/ts/chatCommands.workCosts.dom.test.ts` (3). Cases hold
+  overlapping requests, fail older/newer operations, preserve background message
+  identities, handle writer loss after capture, and settle queued work after
+  authoritative refresh as accepted or failed. UI tests assert no broad capture.
+- Current navigation/recovery guides updated; `pnpm check:docs`, Prettier and
+  whitespace checks pass. These structural measurements make no latency claim.
+- [Remaining caller inventory](evidence/sidebar-snapshot-inventory.md) covers
+  create/delete/reorder/folder organization, branch/fork, reset and import.
+  F03 stays open until their capture scopes are narrowed and verified. Required
+  removed/attempted transcript ownership must remain explicit and bounded by
+  the operation's affected rows.
+
+## Phase 2a: Organization Capture Accepted (F03 Closed)
+
+- Implementation: `4964b4cbc`; metadata precursor
+  is `1dff5c13f`. Eight distinct typed captures now serve every live sidebar,
+  compact list, branch and import caller. The legacy full-state declaration
+  remains solely for compatibility inputs/tests; no live caller invokes it.
+- Scoped reorder/fork also bypass old optimistic whole-chat-list cloning,
+  preserving surviving chat/folder/message identities. Delete/reset retain only
+  removed row references so detached message/note edits survive failed rollback;
+  capture-time epochs fence authoritative replacements across awaited flushing.
+- [Supplemental before](evidence/sidebar-organization-before.json) and
+  [after](evidence/sidebar-organization-after.json) use fixed two-chat structure
+  with a growing surviving sibling and unrelated histories: broad capture
+  10,524 / 291,740 / 10,365,561 bytes. New create/folder-create/folder-delete/
+  order/import representations are 326/234/257/298/196 bytes at all sizes.
+  Target delete is 958 bytes (two required messages, zero capture copies), fork
+  1,501 bytes (two new messages); reset retains only its removed owner's chats,
+  up to 313,842 representation bytes/1,002 messages, with zero capture copies.
+  These representation sizes are not heap-allocation claims for retained rows.
+- The additional fixture is a Phase 1 budget cross-check before the organization
+  cutover: fixed captures and maximum copied payloads stay under 4 KiB; reset is
+  bounded by required owner chats plus 2 KiB metadata. Zero unrelated bodies are
+  retained/copied; an unreadable existing import transcript proves no hidden
+  serialization. Required new/removed transcript ownership remains explicit.
+- Focused verification: `pnpm test -- src/ts/chatCommands.test.ts` (223 passed),
+  `pnpm test -- src/lib/SideBars/SideChatList.svelte.test.ts` (67),
+  `pnpm test -- src/lib/Others/ChatList.svelte.test.ts` (26),
+  `pnpm test -- src/lib/ChatScreens/Chat.customHtml.test.ts` (60),
+  `pnpm test -- src/ts/characters.importChat.test.ts` (21), metadata cost probe
+  (3), and `pnpm test -- src/ts/chatOrganization.workCosts.dom.test.ts`
+  (25 passed, three baseline-only cases skipped). Legacy baseline mode separately
+  passed three cases. Added guards keep the four live entrypoints off broad
+  capture; tests cover both legacy and scoped structural semantics.
+- Navigation/recovery guides updated; standard and explicit plan documentation,
+  Prettier and whitespace checks pass. F03 meets its structural budget; no
+  latency claim is made. New/forked transcripts and rollback restoration of
+  removed rows retain their necessary operation-owned work.
+
+- Final review reproduced a deletion-selection race during awaited note flushing:
+  after selecting surviving chat C, failed deletion restored old chat A. Scoped
+  deletion now predicts/binds its selection effect at capture/optimistic write
+  and freezes scalar ownership before awaiting. Both helper and direct-projection
+  regressions pass; core 223, sidebar 67 and compact-list 26 were rerun.
+
+## Phase 2b: Single Outbox Normalization Accepted
+
+- Implementation: `9690cd25d`. Public staging and
+  exact replacement capture external intent once. A private continuation derives
+  projection targets and stages any required successor from that owned snapshot;
+  the public target helper still validates external input. No storage format or
+  receipt/replay ordering changes.
+- [After counters](evidence/outbox-normalization-after.json): mutable body copies
+  drop from 2/16/2 to 1/8/1, and processed bytes from
+  306/131,472/33,552,434 to 153/65,736/16,776,217. Recursively frozen JSON bodies
+  still need zero copies. The one encrypted-envelope serialization remains
+  244/66,205/16,776,308 bytes; transport serialization is outside this fixture.
+- Removing the redundant validation pass exposed JSON conversion that introduces
+  an invalid body shape or persisted base revision. The owned JSON result is now
+  checked before any staging effects. Tests also cover mutable caller edits,
+  request-list mutation during conversion, sparse requests, frozen non-JSON
+  canonicalization, cycles/BigInt, request/payload limits, public-helper validation,
+  exact placeholder correction and dispatch-race successor ownership.
+- Focused verification: `pnpm test -- src/ts/server/pendingMutationOutbox.test.ts`
+  (247 passed), `pnpm test -- src/ts/server/pendingMutationOutbox.crossTab.test.ts`
+  (6), and `pnpm test -- src/ts/server/pendingMutationOutbox.workCosts.svelte-node.test.ts`
+  (6). Exact replacement retains its undispatched receipt; ordinary restaging
+  and dispatched predecessors retain fresh-successor and drain semantics.
+- Current recovery guide updated. Prettier, whitespace, current-document and
+  explicit plan link/path checks pass. These counters meet F05's structural
+  budget and make no latency claim; encryption and required body ownership remain.
+
+## Phase 2c: Background Cache Maintenance Accepted
+
+- Implementation: `6b9b632f9`.
+  [Ownership, numeric bounds, lifecycle and verification record](evidence/cache-maintenance.md)
+  includes structural counters and retained built-browser journeys.
+- Cold/warm/eight-read scenarios now perform 4/3/3 prunes versus ten before;
+  each isolated eight-read burst performs one prune at every cache size. Valid
+  responses resolve while actual pruning is held. One 311-byte response-owned
+  capture per read remains explicit. No transport or latency savings are claimed.
+- Pending jobs/body bytes/values/manifests and temporary stored growth have fixed
+  admission bounds; entry, byte and manifest pressure converge to the original
+  retention limits even while scheduled timers are held. Clear and ownership/
+  connection changes fence suspended reads/writes/prunes without resetting the
+  old queue's memory accounting.
+- Focused checks: cache 37, delivery/auth-loss 23, cost 3, root reads 20, hydration
+  13, writer session 11, observer lifecycle 3. Negative controls reproduced held-
+  maintenance blocking and stale response repopulation. Review also reproduced
+  a missing hydration-401 cleanup, now fixed across all hydration transports.
+- Browser checks: cache population 1, startup recovery 7 (rerun after auth fix),
+  visible state recovery 3. These also provide the pending Phase 2a/2b offline,
+  lost-response, writer/lineage and sidebar recovery evidence. Current guides,
+  Prettier, whitespace and both documentation validators pass. Final aggregate
+  remains the combined gate after all implementation phases.
+
+## Phase 2d: Selected Locale Accepted
+
+- Implementation: `8bc5a83b6`.
+  [Loading contract and all before/after evidence](evidence/locale-loading.md)
+  records the exact fixtures, commands, readiness medians, and retry regression.
+- Initial HTML JavaScript falls from 389,721 to 159,433 gzip bytes (59.09%);
+  only English appears in either static startup closure. Immediate closure
+  gzip falls from 1,377,316 to 1,148,933. Existing budgets are unchanged.
+- Twelve isolated English/Korean cold/refresh cases preserve the first localized
+  composer, improve all four median readiness comparisons, and request only
+  English or English plus Korean. Required selected-pack transfer stays accounted.
+- Three real-browser switching/failure journeys pass. A native Chromium failed-
+  module cache prevented memo-only retries; build-owned URL references with a
+  retry query resolve that actual failure without prefetching other packs.
+- Focused language, startup, resource/database, onboarding, settings, reactive UI
+  and build-report tests pass as enumerated in the evidence. Current guides and
+  both documentation validators, Prettier and whitespace checks pass. Phase 2
+  meets its budgets; final aggregate remains pending until all implementation ends.
+
+## Phase 3: Selected Repository Primitives Accepted; Cutover In Progress
+
+- Implementation: `93d99a957`. New preflight
+  loader returns selected configuration and separate owner metadata without
+  reading transcripts/Hypa bodies. New assembly loader reads the selected target
+  and required collection bodies; neither scans asset metadata. Root prompt
+  cards are read only for the exact selected default scaffold's absent-body
+  fallback. Explicit null/empty/owned bodies and nondefault absence stay distinct.
+- ID and module-namespace expression indexes prevent hidden unrelated JSON scans
+  behind selected lookups. Duplicate prompt owners fail closed, module ID/
+  namespace matching preserves collection order, and nonempty extracted tables
+  retain precedence over embedded fallback. Index setup is idempotent and does
+  not advance the revision.
+- Referenced speaker names and misses are captured synchronously, including
+  initial user/named rows because later role changes can expose their speaker
+  ID. Supported Lua/V2 operations cannot introduce new saying IDs: full-history
+  replacement keeps only role/data, and other mutations edit/remove existing
+  fields. The captured name map therefore needs no later SQL lookup or broad
+  sibling-character shells. Existing working-character lookup remains primary.
+- `pnpm test -- server/fastify/__tests__/generationInputLoaders.test.ts`: 14
+  passed. Tests cover row/asset scope, indexed query plans, ordering/duplicates,
+  legacy embedded scope, template ownership, stable Hypa selection and speaker
+  snapshot behavior. Prettier, whitespace and documentation checks pass.
+- Route cutover, concrete type/schema closure, immutable configuration/working
+  ownership, combined cost/timing and browser evidence remain in progress. F02
+  and F09 remain open. Settings still occupy one configuration JSON row; its
+  embedded profile/credential/agent arrays need explicit residual-cost evidence
+  before final acceptance rather than a universal constant-cost claim.
+
+## Phase 3: Immutable Agent Reader Inputs Accepted
+
+- Implementation: `eca180cd1`. Neutral Agent readers
+  and validators accept deep readonly records and nested collections; resolution
+  retains the borrowed preset identity while normalized records and execution
+  steps remain owned mutable outputs. No aggregate server/browser state moves
+  into shared-core, and selection/dependency/output ordering stays unchanged.
+- Exact focused tests: `pnpm test -- src/ts/agentPresetRecords.test.ts` (16),
+  `pnpm test -- src/ts/agentPresetResolver.test.ts` (12), and
+  `pnpm test -- packages/shared-core/src/agentPresetResolverParity.test.ts` (1).
+  Frozen modular/legacy inputs and independent nested output edits are covered.
+  Prettier, whitespace and documentation checks pass. This supports the ongoing
+  immutable generation configuration cutover; F02/F09 remain open.
+
+## Phase 3: Nullable Message Wire Contract Corrected
+
+- Implementation: `706b18bc8`. Command validation
+  already permits stored `time: null`, and generation restoration/mutation
+  envelopes preserve it, but the SSE schema previously accepted numbers only.
+  The schema now describes the supported nullable timestamp without changing
+  emitted payloads or normalizing full-history data.
+- `pnpm test -- packages/protocol/src/generationSse.test.ts`: six passed, including
+  null metadata round trips through mutation/restoration and invalid string
+  rejection. Prettier, whitespace and documentation checks pass. This correction
+  was exposed by concrete prompt types; full F09 acceptance is still pending.
+
+## Phase 3: Concrete Immutable Consumer Contracts Implemented
+
+- Implementation: `8de501a4a`. Finite settings and all six
+  participating record views replace the unrestricted prompt contract. Five
+  persistence/provider/memory/preflight boundaries validate a generated schema,
+  preserve imported extension data, and reject invalid known fields without
+  leaking values. Deep readonly configuration is borrowed; mutable character,
+  target transcripts, global variables and scalar overlays have explicit owners.
+- Focused exact tests: decoder 21, compiler contract 1, assembly 142, Lua 60,
+  lorebook 85, modules 15, templates 71, dispatch profile options 100, memory
+  worker 24, display 3, raw translation 33, completion 96, proxy 32, BardWiki
+  apply 12 and rebuild 5. Native Node ESM imports pass. Details are in the
+  [generation input evidence](evidence/generation-inputs.md).
+- The browser accepted-send suite passes all 11 cases on the combined worktree.
+  This validates native imports, reload/retry/stop/recovery and concurrent chats;
+  it does not close performance acceptance.
+- Three matched isolated before/after timing cycles confirm improved large
+  unrelated-library preparation but a small-case regression: pooled assembly
+  median 2.190 to 2.792 ms. The original 2.409 ms budget is unchanged. F02 and
+  the phase gate remain open while this added per-request work is investigated.
+  Root route/cost/durable integration is still the next separate commit.
+
+## Phase 3: Selected Route Cutover Implemented
+
+- Implementation: `0afc940ca`. Both readiness and actual
+  assembly use selected repository inputs; direct preview retains ID-specific
+  missing-entity errors, and malformed known inputs reject before acceptance.
+  Accepted sends/retries build a new snapshot after their own revision boundary.
+  Provider fallback preserves primary settings and shares readonly configuration.
+- Exact focused tests: generation chat 181, durable generation 69, selected
+  loaders 16, operation startup 1, and structural preparation costs 3. Accepted
+  send browser 11 passes. The durable fixture changes a prompt between acceptance
+  and assembly and verifies the new prompt plus accepted message. Invalid known
+  input leaves message/operation/revision/provider state untouched.
+- All original structural budgets pass: selected snapshot 2,715 bytes, preflight
+  5 rows with zero messages, four-message assembly 9 rows, zero asset rows and
+  zero aggregate database clones. Extra configuration-row parsing is exposed
+  separately. No numeric timing budget was raised; the small-case timing gate
+  remains open. [Matched investigation samples](evidence/generation-timing-investigation.json)
+  retain all three before/after cycles, including failures.
+
+## Phase 3: Bounded Query Program Reuse Implemented
+
+- Implementation: `cb914e641`. Profiling found native
+  SQLite preparation/read work dominant in the small fixture; repeated CBS
+  adapters account for less than 0.001 ms per assembly and are left unchanged.
+  Selected readers reuse at most 16 fixed programs per connection, with at most
+  4,096 aggregate parameter bytes per retained program. Larger selectors bypass
+  reuse. No rows, snapshots, or configuration values are memoized.
+- A repeated ordinary assembly performs zero new query compilations while still
+  returning all nine expected rows. Later prompt/history writes and independent
+  connections remain fresh. Oversized selectors demonstrably recompile and do
+  not replace the retained small-selector program. Instrumentation now observes
+  statement execution and restores its prototype spies before timing.
+- Exact focused checks: selected loaders 18, preparation probes 4, chat generation
+  181 and durable generation 69. Structural budgets remain unchanged and pass.
+  The named embedded-character compatibility axis is now measured at 0/12/48
+  unrelated units: selected output 2,277/140,134/553,918 bytes and total settings
+  JSON read 4,222/600,872/2,393,168 bytes per preparation. It still performs zero
+  aggregate database clones or asset metadata reads; no ordinary-path budget is
+  incorrectly applied to this explicit legacy exception.
+- Timing acceptance remains open. All matched measurements are retained for
+  final comparison; startup validator compilation is the next bounded change.
+
+## Phase 4a: Design and Bounds Accepted Before Implementation
+
+- Two read-only Luna areas cross-checked backup and GC interleavings. One
+  coordinator per normalized data directory admits one exclusive backup/import/
+  restore/delete operation with zero queued operations, four compatibility-save
+  mutations or four operations staging live assets across awaits, and one GC
+  sweep. Conflicting admission returns transient HTTP 503 `maintenance_busy`.
+  Successful backup HTTP responses still wait for completed publication.
+- Backup filesystem work uses two workers, one buffered entry per directory at
+  at most 32 directory levels, and 64 KiB stream buffers. Deeper legacy extras
+  fail closed rather than creating an unbounded traversal stack. An exclusive lease starts before SQLite's backup
+  await and lasts through verification, publication or failure cleanup. Internal
+  safety snapshots and retention reuse an explicit owner token. No SQLite
+  transaction spans an await. Shutdown rejects admission, signals cancellation,
+  and drains leases before closing SQLite.
+- Required references come from the captured SQLite snapshot, including pending
+  finalization/catalog/plugin-storage surfaces. Missing metadata or required
+  bytes cannot publish success. Existing optional orphan files and directory
+  extras remain included when encountered; extras are not claimed to share the
+  SQLite snapshot's exact instant. Compatibility writes/removes and multi-await
+  live staging are excluded throughout capture. Raw synchronous uploads remain
+  allowed and may add harmless extras.
+- Restore recovery policy: only its automatic safety snapshot may fill missing
+  captured-live bytes from the verified, pinned restore source by identical hash
+  and declared size. It does not repair or change live files during capture.
+  Missing in both locations, or corrupt fallback bytes, still fails closed.
+  This preserves recovery after live-file loss without incomplete-success backups.
+- Existing synchronous reference-report work is an explicit intermediate 4a
+  residual; the later bounded scan must cover backup verification as well as GC
+  before Phase 4 latency acceptance. Restore's existing journal/synchronous
+  swap transaction remains authoritative.
+
+## Phase 3 Accepted: Standalone Validators and Final Measurement
+
+- Implementation: `e4fc41def`, following `8de501a4a`
+  (finite immutable consumers), `0afc940ca` (selected live routes), `cb914e641`
+  (bounded query programs), and the earlier repository/Agent/wire slices.
+- [Complete source, measurements and verification](evidence/generation-inputs.md)
+  retains the original baseline, every failed intermediate comparison, all final
+  paired samples, the settings-row and named legacy axes, and native import cost.
+  Three alternating fresh processes per source retain one warmup/three measured
+  repetitions per fixture. All nine samples contribute to each final median.
+- Original small preflight/assembly limits 0.453/2.409 ms are met at 0.379/2.327 ms;
+  large unrelated limits 1.066/2.812 ms are met at 0.262/1.608 ms. All original
+  row/clone/snapshot budgets pass, including zero aggregate database clones and
+  zero unrelated asset rows. No numeric budget was raised or sample discarded.
+- Standalone validators use the unchanged schema/options and remove runtime
+  schema compilation. Three alternating native processes measure median decoder
+  import 541.0 to 97.1 ms; first validation stays similar and module parsing is
+  still accounted. Observed post-import heap falls from 60.2 to 9.46 MB without
+  forced GC; this is not a retained-heap guarantee.
+- Final decoder 23 and compiler-contract 1 tests pass. The final native-browser
+  accepted-send suite passes all 11 cases with the generated runtime. Other exact
+  route/prompt/provider/memory/script checks and the original structural budgets
+  pass as listed in evidence. Prettier, whitespace and both documentation
+  validators pass. Phase 3 is accepted; final aggregate remains pending until
+  all implementation phases finish. Phase 4's temporary sequencing exception
+  no longer carries an open dependency.
+
+## Phase 4a: Backup Copy and Ownership Slice Implemented
+
+- Implementation: `2e2c321e9`. Exclusive protection spans SQLite's
+  await, required-byte verification, asynchronous copying, publication or cleanup.
+  Shared save/staging leases close the races around mutable compatibility files
+  and multi-await live asset conversion. Same-hash/size restore fallback preserves
+  recovery of missing live bytes. Pre-snapshot write fences reject destructive
+  replacement when accepted ordinary or revision-free writes arrive meanwhile.
+- Independent review found a post-commit retention await that delayed restored
+  generation reconciliation/event publication. The fixed synchronous callback
+  runs those effects before retention yields. A controlled held-retention test
+  proves later settings events stay ordered and newly accepted current-instance
+  generation work is not marked abandoned.
+- Retention now traverses manifests asynchronously and retains only the configured
+  newest automatic selection plus at most two protected IDs. It ignores manual/
+  malformed records without collecting them. Created-time/id tie selection and
+  protected manual-versus-automatic capacity retain their prior outcomes.
+- `preClose` starts cancellation/admission closure; `onClose` drains before closing
+  SQLite. A held real HTTP backup exposed keep-alive drain after cancellation;
+  cancelled backup responses now close the connection. The shutdown regression
+  verifies cleanup and lease release before close completes.
+- Exact focused tests: maintenance coordinator 10, staging 7, backup maintenance
+  22, backups 53, local backup database 4, GC 19, save codec 46, legacy storage 13,
+  local file import 3, Realm 30: 207 passed. Maintenance cases use real SSE,
+  authenticated GET/command/upload progress during held copies, conflicts,
+  missing/corrupt/fallback bytes, stale safety captures, cancellation and shutdown.
+  Prettier, whitespace and documentation validators pass. No cost matrix or
+  aggregate is claimed for this intermediate slice.
+- The complete reference report and captured asset metadata array are still
+  synchronous/unbounded by batch. Shared bounded discovery must replace them in
+  backup and GC before Phase 4 acceptance. Public backup listing and journaled
+  restore staging/swap/recovery retain their existing synchronous costs.
+
+## Phase 4b: Bounds Before Implementation
+
+- Discovery pages read at most 64 source rows, yielding after 256 KiB or 4 ms of
+  work. A single projected owner/scalar can exceed the byte/time slice; expose
+  its largest-row measurement instead of adding an incompatible storage limit.
+  Distinct reference/chat IDs spill to one caller-owned scratch SQLite file with
+  a 2 MiB cache, rather than full-corpus JavaScript report arrays. Backup and GC
+  share this vocabulary and scanner; scratch cleanup precedes lease release.
+- Reclamation processes at most 16 candidates synchronously per transaction,
+  rechecking authoritative write/lineage, external-connection, protection and
+  upload-activity fences. Metadata and canonical-file deletion have no await
+  between them; asynchronous work never unlinks a canonical path later.
+  New writes/staging or stale discovery conservatively stop the sweep.
+- One sweep may run per directory. Results retain at most 1,024 deleted IDs/file
+  names plus complete counts, and candidate/file traversal remains paged.
+  Existing grace/staging protection remains. These bounds complement the original
+  unchanged API/event-loop latency targets; final isolated comparison is pending.
+
+## F01 Follow-up Accepted: Agent Preset Deletion
+
+- The dedicated deletion reproduction at `2e2c321e9` returned HTTP 200 and
+  correct cleanup counters but deleted all settings/document/version/search/link
+  rows for both affected and unrelated BardWiki chats. Scope amendment
+  `9ca9bc918` authorized the targeted correction.
+- `server/fastify/src/commands/agentPresets.ts` now uses the existing targeted
+  cross-owner mutation boundary, loads settings, selects matching chat payloads,
+  and updates only those chats and matching stored loadout positions. It retains
+  complete Agent/preset/loadout validation, default cleanup, legacy embedded
+  owners, one revision/event, receipt replay, and atomic rollback. Character and
+  chat identities are never replaced by this ordinary deletion.
+- Exact focused checks: `agentPresetDeletionSafety.test.ts` 13,
+  `commands.test.ts` 241, and `commandMutationReceipts.test.ts` 12 passed. The
+  dedicated test observes physical SQL writes and all five affected BardWiki
+  families, unrelated messages/owners, malformed-input rejection, receipt replay,
+  and injected chat/event/receipt failures. This is a correctness correction;
+  SQL still examines chat JSON for matches and validates the loadout collection.
+  Final combined aggregate remains pending until all implementation finishes.
+
+## Phase 4b: Shared Reference Discovery Primitive
+
+- `server/fastify/src/assetReferenceScan.ts` projects known reference fields in
+  source pages of at most 64 rows and spills distinct references/chat IDs to a
+  disposable SQLite file with a 2 MiB cache. Cooperative slices yield after
+  256 KiB or 4 ms; one existing oversized scalar or native legacy JSON projection
+  remains nonpreemptible and is reported by `largestRowBytes`.
+- The shared asset-owner vocabulary covers extracted/embedded precedence,
+  plugins, catalog entries, pending finalizations, and active/alternate message
+  rows. No authoritative transaction/iterator remains open across a yield, and
+  scratch cleanup leaves primary write counters unchanged. Signed rowid text
+  cursors preserve legacy 64-bit IDs without OFFSET or whole-body projection.
+- `assetReferenceScan.test.ts` passes 16 focused cases: owner parity against the
+  existing report, exclusions/malformed fields, alias/orphan ownership, signed
+  cursors, paged progress, oversized fields, cancellation and scratch recovery.
+  Backup/GC cutover and original latency acceptance are the next slice.
+
+## Phase 4b: Backup/GC Cutover Implemented; Timing Open
+
+- Backup reference verification now uses the shared scanner over its captured
+  SQLite database and streams metadata in 64-row pages into the two file workers.
+  GC owns one maintenance lease, discovers asynchronously, and reclaims at most
+  16 candidates per transaction/turn. Stale write, lineage, external-connection,
+  staging or upload-activity fences retain the remaining candidates. Canonical
+  unlink occurs only immediately after successful commit with no intervening await.
+- Exact focused checks pass: scanner 16, GC 19, GC scheduling 16, backup
+  maintenance 22, backups 53, local backup database 4, and the default small
+  maintenance probe 1 (matrix skipped). Held GC tests prove real authenticated
+  HTTP and command SSE progress, reference/upload races, cancellation/drain,
+  commit failure byte preservation, re-upload after a committed batch, and full
+  counts with a 1,024-entry result cap. Existing backup interleavings still pass.
+- The first isolated matrix retains all nine samples in
+  [maintenance investigation](evidence/maintenance-investigation.json).
+  Every fixture makes API/turn progress during GC and post-snapshot backup.
+  Large GC median max-gap/API is 13.306/13.794 ms, within original
+  16.117/16.576 ms limits. Backup 16.244/16.773 ms exceeds 7.924/8.142 ms;
+  Phase 4 remains open. Median large total completion is 1,181.697 ms backup
+  and 594.333 ms GC, versus 23.690/32.234 ms baseline; async overhead is visible.
+- A separate exact `serverLoadCostHarness.test.ts` run exposed a Phase 3 prompt
+  fixture returning HTTP 400; diagnosis is pending. This does not invalidate
+  the dedicated maintenance cases, and no final aggregate has been run.
+
+## Phase 4 Timing Investigation and Directory Bound Revision
+
+- An opt-in V8 performance observer attributes the backup's >5 ms event-loop
+  gaps to minor/major garbage collection during the continuous authenticated
+  request probe. Both diagnostic samples and the original uninstrumented failure
+  remain in the investigation artifact; no sample or original budget is removed.
+- The first copy traversal's one-entry directory buffer causes an asynchronous
+  filesystem refill for every already-copied asset name. Before tuning it, revise
+  the explicit traversal bound to 64 entries per level at at most 32 levels
+  (2,048 buffered Dirents maximum). The file-worker bound stays two and hash
+  buffers stay 64 KiB. This trades bounded directory metadata for fewer filesystem
+  round trips; it does not increase concurrent copies or retain a corpus array.
+- With the revised directory buffer and bounded small-file hash buffer, large
+  median total backup time improves to 832.159 ms from 1,181.697 ms, but median
+  max-gap remains 24.174 ms in the diagnostic run. Every large >5 ms gap still
+  aligns with V8 collection. The 22 backup interleaving cases pass. Small files
+  use at most one 64 KiB buffer per worker; large files retain streaming hashes.
+- A diagnostic removing successful-request Vitest matcher allocation still
+  records 19.446 ms backup gaps, so that probe change is reverted. Original
+  comparison budgets and continuous-request concurrency remain unchanged.
+- The cost harness's supported sparse-input rejections are fixed in
+  `ee9d61213`; decoder 26, strict compiler 1, templates 72 and all 38 load harness
+  cases now pass without changing the imported hydration fixture.
+
+## Phase 4 GC File-Age Batch Bound
+
+The first asynchronous GC makes one filesystem round trip per asset during its
+global upload-grace pass. Before tuning this scan, set a bound of four concurrent
+file-age reads, retaining only four names/results in addition to the 64-entry
+directory buffer. Every started read settles before the authoritative fence is
+checked again or the lease is released. Candidate deletion remains synchronous
+in 16-entry transactions. This reduces scheduling overhead without weakening
+new-upload detection, grace semantics or stale-scan cancellation.
+The batched implementation passes the 19 existing GC cases and 17 scheduling
+cases, including a held four-read batch that drains completely on cancellation
+before backup admission resumes. Final timing acceptance remains pending.
+
+## Phase 4 Backup Worker Decision Before Implementation
+
+The bounded asynchronous copier preserves correctness and allows request/stream
+progress, but repeated isolated measurements still exceed the original backup
+stall budget. V8 diagnostics show that long tiny-file traversal admits thousands
+of concurrent-probe responses and repeatedly triggers 16–26 ms collections in
+the API process. Directory buffering and small-file hash allocation reduce total
+work but do not resolve this failure. Keep those failed measurements visible.
+
+Move file copy/hash execution into two private Node worker threads per backup,
+with at most one batch of 16 file descriptors in flight per worker and no queued
+batches. Each worker handles its batch sequentially with a reusable 64 KiB hash
+buffer. No file payload crosses the worker message boundary. Shared cancellation
+is checked between files/hash reads; an uncancellable native copy must finish
+before worker drain. Close every worker before cleanup, publication or lease
+release. Reference discovery, snapshot authority, manifest/retention, and all
+live-file mutation policy remain in the existing main-thread owners.
+
+The test-seam Luna review supports keeping repository publication/lease tests
+and adding real-worker drain/bounds tests. Its packaging worker timed out;
+local source confirms `api:start` executes TS source through `tsx` and the
+existing bounded-regex worker already runs plain Node worker code. The new
+worker entry must execute in native Node without importing app/SQLite state,
+and exact tests must exercise that entry rather than only a fake executor.
+
+## Phase 4 Backup Workers Implemented; Final Timing Pending
+
+- `backupCopyPool.ts` owns two native Node workers across assets, extras and
+  compatibility saves. Each accepts one batch of at most 16 descriptors, with
+  no waiting queue or file payload transfer. The native erasable-TS entry has
+  only Node runtime imports and reuses one 64 KiB hash buffer per worker.
+- Shared cancellation does not release ownership early. Both consumer batches,
+  acknowledgements and actual worker exits complete before reference scratch
+  cleanup, manifest publication or lease release. Native file copies remain
+  uncancellable mid-call; shutdown waits for completion. Required size/hash,
+  ENOENT-only verified restore fallback, optional orphan and symlink behavior
+  remain unchanged. Independent read-only lifecycle review found no defect.
+- Exact native-worker tests 17, backup maintenance 22 and backups 53 pass. Native
+  tests exercise the real entry, batch/queue limits, byte verification, iterator
+  failure, worker exit, held acknowledgements and cancellation during a 64 MiB
+  copy/hash. Existing copy fault barriers now intercept the typed pool method
+  and delegate actual worker execution; retention/restore fault seams stay local.
+- The probe now labels heap samples as API-isolate-only and process RSS as
+  including worker memory. The old baseline prose's 896-byte save size was a
+  transcription error: its raw artifact and unchanged fixture both use 928 bytes.
+  All original latency budgets and nine-sample matrix remain the acceptance gate.
+
+## Phase 4 Accepted
+
+- Final implementation/measurement: `864441bfe`; supporting bounded scanner,
+  GC cutover, copy tuning and four-read grace batches are separately committed.
+  [Complete evidence](evidence/maintenance-scheduling.md) retains the original
+  fixture/budgets, all failed diagnostics and all nine final measured samples.
+- Original large max-gap/API budgets are met: backup 4.865/4.475 ms versus
+  limits 7.924/8.142, and GC 4.370/4.630 ms versus 16.117/16.576. Every size
+  permits API/turn progress during unfinished GC and after SQLite snapshot.
+  Real HTTP/SSE interleavings and correctness/drain/batch gates pass.
+- Total completion is slower than the synchronous baseline: large medians
+  197.021 ms backup and 306.965 ms GC versus 23.690/32.234. Small overhead,
+  worker-inclusive RSS and API-only heap are explicit in evidence. No numeric
+  limit was raised, request load changed, or sample discarded for acceptance.
+- Remaining synchronous public listing/restore phases, one oversized/native
+  projection and uncancellable native copies are recorded with their owners.
+  Final aggregate remains pending until all implementation is finished.
+  Phase 5 may now remeasure transcript residency and record its decision.
+
+## Phase 5 decision before implementation
+
+At `47aa4d7da`, the repeated ten-case transcript matrix passes functional checks
+but the 600-row cases still exceed the original heap and incremental-page
+layout budgets. [The recorded decision](evidence/transcript-residency.md) selects
+viewport residency: 60 working rows, at most 8 distinct user-interaction owners
+and at most 8 singleton navigation/presentation pins (76 total). Measured
+height/spacers remain separate from hydrated data. Full screenshot capture is
+a temporary explicit exception; the existing paging path remains a diagnostic
+rollback. Acceptance is pending implementation and real-browser evidence.
+
+### Phase 5 interaction ownership and cutover refinement
+
+`9c8e678d2` commits bounded interaction reservations and finite translation view
+preferences before the DOM cutover. Focused checks pass: Chat 63, partial editors
+12, interaction scopes 5, view cache 3 and reservation manager 3. The first seven
+native integration cases pass on the uncommitted cutover; final validation and
+cost acceptance remain pending.
+
+Inspection of overlapping generation presentation identities refines the initial
+eight-singleton estimate: at most ten singleton IDs may coexist. They consume
+the shared budget before working rows; the working window shrinks below 60 when
+needed, preserving the original 76-row hard limit. No timing, heap or row budget
+is raised. Active reserved/focused/selected older rows also keep their already
+hydrated logical range when an ordinary page count shrinks; mounted DOM stays
+within that same bound.
+
+### Phase 5 DOM cutover verification
+
+The ten-case native functional lane passes with trace/diagnostics off. Desktop
+and mobile preserve the folded target within one pixel, mounted-message
+selection/copy and drafts survive traversal, eight separately accepted saves
+retain exact authoritative text, and capture failure/cancellation restores the
+bound. Pending image-backed jumps cannot move a reopened route. The 180-row
+legacy rollback mounts every logical row without spacers and preserves all ten
+older-page anchors, deep jump and latest navigation. The fallback bypasses
+residency geometry/observers and restores native anchoring; its existing
+interaction admission remains active. Focused transcript-window 105, startup 4
+and transcript-owner 10 cases pass. Existing native startup (3) and debug-echo
+layout/recovery (1) cases pass: 14 native cases total. Unchanged full cost-matrix
+acceptance remains open.
+
+### Phase 5 first cost comparison remains unaccepted
+
+`497aa1eaf` passes all 14 native functional checks. The full isolated ten-case
+cost matrix passes row/anchor assertions and original large heap/page-layout
+budgets, but 600-row scrolling p95 is 67.5/64.2/288.6 ms versus unchanged limits
+33.8/33.8/35.2. [Every sample is retained](evidence/transcript-residency-first-costs.json).
+Phase 5 stays open for measured scroll-cost correction; Phase 6 implementation
+still waits for its acceptance.
+
+### Phase 5 progressive admission correctness
+
+CPU profiling identified synchronous row construction as the dominant rapid
+scroll cost. The bounded admission correction replaces one ordinary component
+per frame, prioritizes the current viewport, retains released pins without
+remounting, and freezes ordinary wrapper heights during a pointer gesture.
+All eleven native cases now pass, including eight one-click accepted saves and
+readable progress during rapid motion followed by complete viewport coverage.
+The [retained profile and movement evidence](evidence/transcript-residency.md)
+separates diagnostics, pending placeholders and settled work. Original scroll,
+heap and page-layout acceptance still requires the next isolated matrix.
+
+### Phase 5 progressive comparison interrupted by anchor failure
+
+At `547f927b3`, desktop30/180 scrolling is within the original budget (16.9/18.3
+ms p95), with separately measured settlement. Desktop600 fails older-page31
+at 13 pixels of drift; six later measured cases and screenshot do not run.
+[Completed journeys and the failure](evidence/transcript-residency-progressive-first-costs.json)
+are retained; that version did not serialize the failed journey's earlier stages.
+The next probe preserves partial failed journeys. Anchor selection is being
+corrected from component insertion order to visual first-row order. Phase 5
+remains open; no tolerance or fixture is changed.
+
+### Phase 5 page-settlement probe correction
+
+At `76db02c20`, desktop30/180/600 and mobile30 complete; desktop600 passes all
+38 older-page anchors and records 19.8 ms scroll p95 and 29.672 MiB retained
+heap. Mobile180 then reports 548 pixels against an anchor that was already
+below the viewport at capture. The old page-completion helper did not wait for
+progressive admission, and its last-mounted-row anchor could be offscreen.
+[The four journeys and complete partial failure](evidence/transcript-residency-anchor-first-costs.json)
+are retained. The next probe includes admission/body/image completion in page
+cost and requires a visible anchor. No workload or acceptance budget changes;
+Phase 5 remains open until a complete comparison and final native checks pass.
+
+### Phase 5 complete progressive matrix remains unaccepted
+
+`de102e8e3` completes all ten measured journeys with strengthened page settlement
+and visible anchors. Every ordinary stage stays at or below 61 rows; maximum
+anchor drift is 0.015625 pixels. Original large heap and page-layout limits pass.
+Desktop/mobile scrolling also passes, but 4× CPU p95 is 63.9 ms at 180 messages
+and 60.6 ms at 600 against the unchanged 35.2 ms limit. The large throttled
+post-scroll settlement is 9.100 seconds, fully retained. [All samples and budget
+results](evidence/transcript-residency-progressive-costs.json) are recorded;
+functional success does not accept performance. A focused profile of the current
+one-row admission must guide the remaining correction before Phase 6.
+
+### Phase 5 keyed-item invalidation correction
+
+The [current progressive profile](evidence/transcript-progressive-scroll-profile.json)
+at `493c4feb8` attributes nearly all sampled `mark_reactions` work to keyed-each
+item signal updates. Every geometry/admission rebuild created new wrappers for
+all mounted rows. Bounded identity reuse now retains only unchanged current
+ordinary row entries (maximum 76), invalidates changed row records, and clears
+on full/legacy rendering, scope changes and destruction. Ten focused residency
+and 105 transcript-window tests pass; original unprofiled cost acceptance remains
+open. No sanitizer behavior, workload or numerical budget changes.
+
+### Phase 5 entry identity improves throttled scrolling; empty-body correction next
+
+The complete `4c4019e8a` comparison passes all ten journeys and every original
+budget except throttled accumulated scrolling: 39.5/39.8 ms p95 at 180/600 rows
+versus 35.2 ms. [All stages and the budget assessment](evidence/transcript-residency-entry-costs.json)
+are retained. The next narrow correction skips sanitizer work for exactly empty
+initial bodies while preserving every nonempty path; 13 focused parser tests
+pass. Geometry remains unchanged. Phase 5 stays open until original numeric
+limits and final native interactions pass together.
+
+### Phase 5 exact-empty-body comparison remains unaccepted
+
+The complete `ba47e4f6d` comparison passes all ten journeys and every original
+budget except throttled accumulated scrolling: 39.0/39.5 ms p95 at 180/600 rows
+versus 35.2 ms. [All measurements and budget comparisons](evidence/transcript-residency-empty-costs.json)
+remain retained. The next investigation is offscreen-resident layout work;
+anchors and protected interactions remain required gates. No acceptance limits
+or workloads have changed, and Phase 6 still waits for Phase 5 acceptance.
+
+### Phase 5 compact-aware working-window verification
+
+The 30-row normal target, bounded growth to 60 for dense viewports, and existing
+76-row hard ceiling pass all twelve native cases, including genuine 20-pixel
+source rows with more than 30 visible messages and complete viewport coverage.
+All eight native accepted saves, selection, jumps, folded anchors, rapid movement,
+legacy rollback and capture restoration pass. Focused residency 11,
+transcript-window 105 and startup 4 cases pass. The implementation now requires
+its clean-commit full unprofiled matrix; Phase 5 is not accepted by functional
+success alone.
+
+### Phase 5 accepted
+
+Source `f384980479a3e0a82c7ab9b25771f6222a0275b5` passes the full isolated ten-case
+unprofiled matrix and all sixteen final native cases. [Every measured stage,
+scroll frame and settlement](evidence/transcript-after.json) and [final native
+observations](evidence/transcript-final-native.json) are retained. Large
+scrolling p95 is 18.6/18.6/25.1 ms against original limits 33.8/33.8/35.2;
+retained heap and page layout/style also pass. Maximum measured ordinary
+residency is 31 and anchor drift is 0.015625 pixels. Compact native layouts
+show 40 visible source rows with 46 mounted, complete coverage and zero spacer.
+Large post-scroll settlement remains 1.440/1.273/3.380 seconds, measured before
+forced GC, with source-correct readable content. All earlier failures remain
+visible; no original budget or workload was relaxed. Phase 6 is now authorized.
+
+## Phase 6a: Shared Trigger Policy Implemented
+
+`packages/shared-core/src/triggerCompatibility.ts` is the byte-identical 98-line
+move of the previous browser/server policy (SHA-256
+`84e4b4d9d2213d2906cf22d165e0eab3107954276435758a72336209a16077e7`). Both old
+runtime paths now forward every export from
+`@risuai/shared-core/trigger-compatibility`. The 41-effect catalog, exact trailing
+space regex classifier, empty CBS exclusions, sorted deduplicated diagnostics,
+cycle/array handling and input ownership are unchanged. Actual execution and
+warning collection remain in Fastify. The package export and both facade/consumer
+edges are checked by the existing AST ownership inventory.
+
+Seven separate `pnpm test -- <one exact file>` invocations pass:
+shared `triggerCompatibility.test.ts` 23, `ownership.test.ts` 84,
+`importBoundary.test.ts` 2; server `triggerCompatibilityOwnership.test.ts` 4,
+`triggers.test.ts` 143, `phase9CompatibilityStructure.test.ts` 4; browser
+`src/lib/SideBars/Scripts/triggerV2Import.test.ts` 17. Shared tests exercise
+browser/server/package identity and immutable cyclic behavior. Current prompt,
+domain and package guides are updated; current docs (49), explicit plan docs
+(22), Prettier and whitespace checks pass. All planned implementation is now
+complete. Final cost, recovery and agent aggregate checks are next.
+
+## Phase 6 First Combined Verification: Repairs Required
+
+Source `bc7e4ad2d8e8da5adc84fc04d3a91eb36cc5a2b3` passes all deterministic work
+checks, three isolated generation processes, the nine-sample maintenance matrix,
+twelve locale startup journeys, production preload boundaries and twenty-five
+additional native recovery cases (26 specs / 37 journeys together). [All first
+closeout costs](evidence/closeout-costs-first.json) retain every sample and original
+budget assessment. Initial HTML is 159,571 gzip bytes; generation small/large
+and maintenance original limits pass.
+
+The first post-implementation `pnpm test:agent` fails in 148.79 seconds:
+architecture inventory drift, five type errors, six frontend test failures and
+seven server test failures. [Exact failures and command ledger](evidence/closeout-first-verification.json)
+are retained. Investigation identifies a supported custom-model record without
+`params` rejected by finite decoding, missing Korean transcript keys, test generic
+and legacy-character type gaps, stale architectural/metric ownership expectations,
+and asynchronous test seams that still model former bootstrap, retry and backup
+publication paths. These require focused repairs; passing cost/native lanes do
+not waive the combined gate. No finding is archived or described as fully closed.
+
+## Phase 6 Combined-Gate Repairs
+
+- A custom model can legitimately omit `params`: both runtime dispatch parsing
+  and the shared model resolver already treat absence as no extra parameters.
+  The finite contract/schema now accept that omission while rejecting a nonstring
+  value; the multimodal byte-parity fixture remains unchanged and passes.
+- Lua excludes simple edit owners before its legacy null/missing character-tag
+  check. Runtime character/simple behavior is unchanged and now narrows under
+  both strict and non-strict null checking. Resolved-type ownership replaces the
+  obsolete test explicitly requiring an `any` database alias. Other ownership
+  assertions preserve the exact optional regex comment, readonly lore cache,
+  optional bounded-regex settings and provider-only BardWiki view.
+- Focused F09 checks: decoder 27, strict/non-strict compiler 2, Lua 64,
+  server-backed prompt fixtures 27, database ownership 2, BardWiki ownership 1,
+  module descriptors 2 and value ownership 3 pass. The current prompt guide
+  records optional custom-model parameters.
+- Other separately committed focused repairs pass: Korean locale 22;
+  organization work 25 (three baseline skips), cache delivery 23, creation
+  preservation 18; bootstrap 184, translator preset UI 71 and import safety 41;
+  architecture inventory 7, flat model inventory 1 and command ceilings 8.
+  Bootstrap holds the actual lifecycle-discard boundary, translator mocks honor
+  deferred rollback disposition, and import failure injection targets the real
+  asynchronous pending-manifest write. Assertions retain ordering, intent,
+  safety failure and cleanup guarantees. Production behavior is unchanged.
+- The maintained archived JSON inventories are live tooling inputs: reviewed
+  updates add one selected prompt projection/table occurrence and only the
+  changed test-resource access counts. No historical narrative is rewritten.
+  CBS scalar adaptation is explicitly classified, and creation metric assertions
+  now require only character/settings writes. No gate was removed or widened.
+
+All repairs are implemented; another aggregate remains required. The first
+failed aggregate and its passing cost/native evidence stay retained separately.
+
+## Phase 6 Second Combined Verification: Companion Inventory Count
+
+At `fcc14488c`, all 680 frontend files / 8,207 tests and 219 server files /
+3,994 tests pass; five existing skips remain. Frontend types report zero errors
+and warnings, and the build passes. [The second aggregate](evidence/closeout-second-verification.json)
+still fails because the resource-owner gap matrix retained 4,215 references
+while the separately reviewed current inventory totals 4,232. Its companion
+count now follows those exact seventeen added test references; the existing
+negative matrix test first validates the unmodified maintained pair, catching
+this mismatch in focused verification. Server/browser typechecks must still run
+past that inventory gate in the next complete aggregate.
+
+## Phase 6 Downstream Typechecks and Deterministic Remote Marking
+
+The [third aggregate at `a3f83bd62`](evidence/closeout-third-verification.json)
+passes every maintained inventory and reaches both downstream typechecks. Those
+identify only test/projection typing: optional locale already returned by the
+smoke producer, nullable compact observations, maintenance diagnostic arrays,
+Response archive bytes and the template parser's optional position. All are
+made explicit without weakening runtime assertions. Focused maintenance 1
+(matrix intentionally skipped), staging 7 and templates 72 pass. Native locale
+runtime 3 and transcript residency 12 pass with all cost/profile flags off.
+
+A translator fixture also allowed its real 250 ms local debounce to acknowledge
+a row before the test marked it as remote work. The two remote-mark fixtures
+now freeze only timeout scheduling while IndexedDB/crypto proceed, assert exact
+predecessor/successor data, then explicitly advance the debounce to verify replay
+blocks the successor. All 71 cases pass. The earlier production rollback model
+is unchanged; these are deterministic fixture repairs. Another full aggregate
+is required before final closeout.
+
+## Phase 6 Aggregate Accepted; Small Timing Recheck Open
+
+At `e9af657a5163ef5bb30cf5c7ba33e1a8c7c97503`, `pnpm test:agent` passes all seven
+lanes in 145.869 seconds: protocol/shared/Fastify/browser types, inventories,
+topology, current docs, all 8,207 frontend and 3,994 server tests (five existing
+skips), frontend types and smoke build. Refreshed deterministic costs and all
+26 exact browser specs / 37 recovery/startup journeys pass at that source.
+Production preload remains 159,566 gzip bytes and immediate closure 1,163,265,
+with English-only static locale membership; all original bundle limits pass.
+
+[Every refreshed cost](evidence/closeout-costs-second.json) remains retained.
+The three-process/nine-sample small generation medians miss original limits:
+0.464013/2.600956 ms versus 0.453/2.409. Large generation, maintenance, cache,
+locale, and prior transcript acceptance remain valid; this does not accept the
+remaining small-case gate. No workload, warmup, repetition or threshold changes.
+
+A predeclared [three-cycle alternating comparison](evidence/closeout-generation-paired.json)
+of accepted `bc7e4ad2d` and current `e9af657a5` retains all six complete processes.
+The accepted control now measures 0.471006/2.685228 ms; current measures
+0.403998/2.801477. Both miss small assembly, while current large preparation
+passes at 0.265634/1.794493 ms. Static review finds no leaked instrumentation or
+per-database cache issue: spies restore before timing and the small fixture uses
+fewer than sixteen warmed query programs. Identical later four-message/fresh-DB
+fixtures are much faster, indicating process warmup sensitivity. This explains
+why another blind retry is insufficient. A separate opt-in profile of the first
+small timing journey will guide a bounded correction; original absolute budgets
+remain the acceptance gate.
+
+## Phase 6 Accepted and Workstream Closed
+
+The [diagnostic profile](evidence/closeout-generation-profile.json) attributes
+34.1% of non-infrastructure samples to token encoding. The bounded correction
+in `9650d422c` uses the ordinary cl100k/o200k encoder only when no special-token
+prefix can occur; exact IDs/counts and all special-token errors retain parity.
+Focused tokenizer 25, golden counts 12, assembly 142 and final-budget 10 pass.
+The independent final retokenization and all original workload/budget choices
+remain unchanged.
+
+At clean `e91f2438b7464906544110df99e5a19ce507c4df`, all three isolated unprofiled
+generation processes pass structural checks. [All 216 measured timing values](evidence/closeout-generation-final.json)
+are retained; pooled small preflight/assembly is 0.366937/1.366220 ms against
+0.453/2.409 ms, and large is 0.233674/0.902917 against 1.066/2.812 ms. Required
+history, configuration-row parsing and embedded legacy costs remain explicit.
+Earlier misses and controls are preserved; no sample or original gate is dropped.
+
+The [final aggregate](evidence/closeout-final-verification.json) passes in
+143.904 seconds: all seven lanes, 8,207 frontend and 4,000 server tests, five
+existing skips, complete core/browser/server types and smoke build. After the
+encoder correction, all eleven accepted-send/recovery native cases also pass.
+Prior combined cache/writer/lineage/locale journeys and unchanged maintenance,
+bundle and transcript cost evidence retain their exact source anchors.
+
+The [final finding-by-finding record](evidence/final-closeout.md) records all
+implemented remedies, measured outcomes, retained costs, owners, revisit
+conditions and current-guide links. Current docs and the complete workstream
+are validated explicitly before and after archival. The intact plan, phases,
+status and every retained failed/accepted artifact move into the existing
+performance-and-stability archive; its index is updated and the active-plan
+entry is removed. Full quality and compatibility lanes remain user/CI-owned.

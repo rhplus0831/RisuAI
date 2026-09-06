@@ -1,64 +1,64 @@
-import { get } from 'svelte/store'
-import { selectedCharID } from '../stores.svelte'
 import { alertError } from '../alert'
-import { mutateChatWithScopedCommand } from '../chatCommands'
-import { getDatabase, type character, type Message, type MessageGenerationInfo } from '../storage/database.svelte'
+import { ensureMessageId } from '../chatCommands'
+import { settingsResourceState } from '../server/resourceState.svelte'
+import type { Message, MessageGenerationInfo } from '../storage/database.svelte'
+import {
+  mutateStablePostGenerationChat,
+  mutateStablePostGenerationMessage,
+  resolveStablePostGenerationChat,
+  resolveStablePostGenerationMessage,
+  stablePostGenerationMessageTarget,
+  type StablePostGenerationChatTarget,
+} from './postGeneration/stableTarget'
 
 export interface SendChatErrorContext {
-  selectedChar: number
-  selectedChat: number
-  currentChar: character | undefined
+  target: StablePostGenerationChatTarget | null
+  messageId?: string
   generationInfo: MessageGenerationInfo | undefined
 }
 
 export function reportSendChatError(error: string, ctx: SendChatErrorContext): void {
-  if (!getDatabase().inlayErrorResponse) {
+  if (
+    settingsResourceState.status === 'error' ||
+    settingsResourceState.groupStatuses.advanced !== 'ready' ||
+    settingsResourceState.value.inlayErrorResponse !== true
+  ) {
     alertError(error)
     return
   }
 
   try {
-    const db = getDatabase()
-
-    const sc = ctx.selectedChar >= 0 ? ctx.selectedChar : get(selectedCharID)
-    const charRoom = db.characters?.[sc]
-    if (!charRoom) {
+    const resolution = resolveStablePostGenerationChat(ctx.target)
+    if (!resolution || !Array.isArray(resolution.chat.message)) {
       alertError(error)
       return
     }
-    const st = ctx.selectedChat >= 0 ? ctx.selectedChat : charRoom.chatPage
-    const chatRoom = charRoom.chats?.[st]
-    if (!chatRoom || !Array.isArray(chatRoom.message)) {
-      alertError(error)
-      return
+    const messageTarget = stablePostGenerationMessageTarget(ctx.target?.characterId, ctx.target?.chatId, ctx.messageId)
+    if (messageTarget) {
+      const messageResolution = resolveStablePostGenerationMessage(messageTarget)
+      if (messageResolution?.message.role !== 'char') {
+        alertError(error)
+        return
+      }
     }
 
     const suffix = `\n\`\`\`risuerror\n${error}\n\`\`\``
-    const applied = mutateChatWithScopedCommand(
-      (chat) => {
-        const messages = chat.message
-        const last = messages[messages.length - 1]
-
-        if (last?.role === 'char') {
-          last.data += suffix
-          return
-        }
-
-        const m: Message = {
-          role: 'char',
-          data: `\`\`\`risuerror\n${error}\n\`\`\``,
-          time: Date.now(),
-        }
-        if (ctx.currentChar?.chaId) {
-          m.saying = ctx.currentChar.chaId
-        }
-        if (ctx.generationInfo) {
-          m.generationInfo = ctx.generationInfo
-        }
-        messages.push(m)
-      },
-      { selectedChar: sc, selectedChat: st },
-    )
+    const applied = messageTarget
+      ? mutateStablePostGenerationMessage(messageTarget, (message) => {
+          if (message.role !== 'char') return
+          message.data += suffix
+        })
+      : mutateStablePostGenerationChat(ctx.target, (chat) => {
+          const message: Message = {
+            role: 'char',
+            data: `\`\`\`risuerror\n${error}\n\`\`\``,
+            time: Date.now(),
+            saying: resolution.character.chaId,
+            ...(ctx.generationInfo ? { generationInfo: ctx.generationInfo } : {}),
+          }
+          ensureMessageId(message)
+          chat.message.push(message)
+        })
     if (!applied) {
       alertError(error)
     }

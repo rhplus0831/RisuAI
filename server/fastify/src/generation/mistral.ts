@@ -9,6 +9,7 @@ import {
 } from './sse.js'
 import { readBoundedBodyJson, readBoundedBodyText } from './body.js'
 import { formatUpstreamFetchError, formatUpstreamHttpError, upstreamStatusText } from './upstreamError.js'
+import { extractApiResponseMetadata, mergeApiResponseMetadata } from './apiMetadata.js'
 
 export interface MistralRequest {
   model: string
@@ -191,6 +192,7 @@ function buildRequestInit(req: MistralRequest, stream: boolean): { body: string;
   if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
     applyAdditionalParameters(body, headers, req.additionalParams)
   }
+  body.stream = stream
   return { body: JSON.stringify(body), headers }
 }
 
@@ -235,6 +237,8 @@ export async function runMistral(req: MistralRequest): Promise<CompletionResult>
     return { type: 'fail', result: `invalid upstream JSON: ${msg}` }
   }
 
+  const apiMetadata = extractApiResponseMetadata(body, ['choices', 'error', 'model'])
+
   if (!response.ok) {
     const upstreamMsg = typeof body.error?.message === 'string' ? body.error.message : `HTTP ${response.status}`
     return { type: 'fail', result: upstreamMsg }
@@ -248,6 +252,7 @@ export async function runMistral(req: MistralRequest): Promise<CompletionResult>
 
   const result: CompletionResult = { type: 'success', result: content }
   if (typeof body.model === 'string') result.model = body.model
+  if (apiMetadata) result.apiMetadata = apiMetadata
   return result
 }
 
@@ -344,6 +349,7 @@ export async function* runMistralStream(req: MistralRequest): AsyncGenerator<Com
   const decoder = new TextDecoder()
   let buf = ''
   let finishReason: CompletionStreamFrame['finishReason'] = 'stop'
+  let apiMetadata: Record<string, unknown> | undefined
 
   try {
     while (true) {
@@ -369,7 +375,7 @@ export async function* runMistralStream(req: MistralRequest): AsyncGenerator<Com
         evt = popSseEventBlock(buf)
         if (data === null) continue
         if (data.trim() === '[DONE]') {
-          yield { kind: 'done', finishReason }
+          yield { kind: 'done', finishReason, ...(apiMetadata ? { apiMetadata } : {}) }
           return
         }
         let frame: MistralStreamFrame
@@ -380,6 +386,7 @@ export async function* runMistralStream(req: MistralRequest): AsyncGenerator<Com
           yield { kind: 'error', error: `invalid upstream stream JSON: ${msg}` }
           return
         }
+        apiMetadata = mergeApiResponseMetadata(apiMetadata, extractApiResponseMetadata(frame, ['choices', 'error']))
         const choice = Array.isArray(frame.choices) ? frame.choices[0] : undefined
         const delta = choice?.delta?.content
         if (typeof delta === 'string' && delta.length > 0) {
@@ -408,6 +415,6 @@ export async function* runMistralStream(req: MistralRequest): AsyncGenerator<Com
       yield { kind: 'error', error: 'truncated upstream stream event' }
       return
     }
-    yield { kind: 'done', finishReason }
+    yield { kind: 'done', finishReason, ...(apiMetadata ? { apiMetadata } : {}) }
   }
 }

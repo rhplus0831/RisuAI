@@ -25,6 +25,7 @@ import {
 } from '../commands/mutations.js'
 import { createCharacterRecord, type CharacterRecord } from '../commands/characters.js'
 import { ensureCharacterChats } from '../commands/chats.js'
+import { repairLorebookEntries } from '../commands/lorebooks.js'
 import {
   ValidationError,
   addAsset,
@@ -50,6 +51,7 @@ import {
   type RealmAssetSource,
 } from '../realmImport/characterCard.js'
 import { emitProtocolMetric } from '../protocolMetrics.js'
+import { getMaintenanceCoordinator, MaintenanceBusyError, type MaintenanceLease } from '../maintenanceCoordinator.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -80,6 +82,7 @@ interface RealmImportBody {
   baseRevision?: unknown
   allowLowLevelAccess?: unknown
   pendingImportToken?: unknown
+  clientCapabilities?: { realmProgressDelta?: unknown }
 }
 
 export type RealmImportProgressPhase = 'validate' | 'download' | 'extract' | 'assets' | 'convert' | 'commit'
@@ -202,28 +205,37 @@ export function registerRealmImportRoutes(
     if (!(await requireAuth(authState, req, reply))) return
 
     const abort = createRealmImportAbort(req, reply, deadlineMs)
+    const coordinator = getMaintenanceCoordinator(dataDir)
+    let lease: MaintenanceLease | undefined
     try {
+      // Admission must precede the SSE response headers so a busy maintenance
+      // owner is reported as an ordinary retryable HTTP 503.
+      lease = coordinator.beginAssetStaging(abort.signal)
+      const signal = lease.signal
       const body = (req.body ?? {}) as RealmImportBody
       const writerSessionId = readActiveWriterSessionId(req)
       const eventOrigin = writerSessionId ? { writerSessionId } : undefined
       if (acceptsProgressStream(req.headers.accept)) {
-        await streamRealmImport(reply, (reportProgress) =>
-          runRealmImport({
-            db,
-            dataDir,
-            eventSink,
-            eventOrigin,
-            body,
-            hubUrl,
-            realmUrl,
-            maxExpandedImportBytes: options.maxExpandedImportBytes,
-            maxDynamicJsonBytes: options.maxDynamicJsonBytes,
-            maxFetchedAssetBytes: options.maxFetchedAssetBytes,
-            maxFetchedAssetTotalBytes: options.maxFetchedAssetTotalBytes,
-            pendingCharxImports,
-            signal: abort.signal,
-            reportProgress,
-          }),
+        await streamRealmImport(
+          reply,
+          (reportProgress) =>
+            runRealmImport({
+              db,
+              dataDir,
+              eventSink,
+              eventOrigin,
+              body,
+              hubUrl,
+              realmUrl,
+              maxExpandedImportBytes: options.maxExpandedImportBytes,
+              maxDynamicJsonBytes: options.maxDynamicJsonBytes,
+              maxFetchedAssetBytes: options.maxFetchedAssetBytes,
+              maxFetchedAssetTotalBytes: options.maxFetchedAssetTotalBytes,
+              pendingCharxImports,
+              signal,
+              reportProgress,
+            }),
+          body.clientCapabilities?.realmProgressDelta === true,
         )
         return
       }
@@ -240,9 +252,13 @@ export function registerRealmImportRoutes(
         maxFetchedAssetBytes: options.maxFetchedAssetBytes,
         maxFetchedAssetTotalBytes: options.maxFetchedAssetTotalBytes,
         pendingCharxImports,
-        signal: abort.signal,
+        signal,
       })
     } catch (err) {
+      if (err instanceof MaintenanceBusyError) {
+        reply.code(503)
+        return { error: err.code, code: err.code }
+      }
       if (err instanceof RevisionConflictError) {
         reply.code(409)
         return { error: err.message, currentRevision: err.currentRevision }
@@ -265,6 +281,7 @@ export function registerRealmImportRoutes(
       }
       throw err
     } finally {
+      lease?.release()
       abort.cleanup()
     }
   })
@@ -325,6 +342,7 @@ async function runRealmImport(args: {
   signal: AbortSignal
   reportProgress?: RealmImportProgressReporter
 }): Promise<{ revision: number; event: unknown; characterId: string }> {
+  throwIfRealmImportAborted(args.signal)
   const reportProgress = createMonotonicProgressReporter(args.reportProgress)
   reportProgress({ phase: 'validate', message: 'Preparing Realm import', percent: 1 })
 
@@ -527,6 +545,7 @@ async function importRealmJsonCard(args: {
       },
     })
 
+    throwIfRealmImportAborted(args.signal)
     args.reportProgress({ phase: 'assets', message: 'Saving card assets', percent: 82 })
     const assetResults = persistStagedFetchedAssets({
       db: args.db,
@@ -577,6 +596,7 @@ async function streamRealmImport(
   run: (
     reportProgress: RealmImportProgressReporter,
   ) => Promise<{ revision: number; event: unknown; characterId: string }>,
+  realmProgressDelta = false,
 ): Promise<void> {
   reply.hijack()
   reply.raw.writeHead(200, {
@@ -586,14 +606,30 @@ async function streamRealmImport(
     'x-accel-buffering': 'no',
   })
 
-  const write = (event: string, payload: unknown): void => {
+  const write = (event: string, payload: unknown): boolean => {
     if (!reply.raw.writableEnded) {
       reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`)
+      return true
     }
+    return false
+  }
+
+  let lastProgress: RealmImportProgress | null = null
+  const writeProgress = (progress: RealmImportProgress): void => {
+    if (!realmProgressDelta || lastProgress === null) {
+      if (write('progress', progress)) lastProgress = progress
+      return
+    }
+    const payload: Partial<RealmImportProgress> & Pick<RealmImportProgress, 'percent'> = {
+      percent: progress.percent,
+    }
+    if (progress.phase !== lastProgress.phase) payload.phase = progress.phase
+    if (progress.message !== lastProgress.message) payload.message = progress.message
+    if (write('progress', payload)) lastProgress = progress
   }
 
   try {
-    const result = await run((progress) => write('progress', progress))
+    const result = await run(writeProgress)
     write('done', result)
   } catch (err) {
     if (err instanceof RevisionConflictError) {
@@ -923,6 +959,7 @@ async function importRealmCharx(args: {
     maxExpandedBytes: args.maxExpandedImportBytes,
     onAssetStaged: extractProgress,
   })
+  throwIfRealmImportAborted(args.signal)
   emitProtocolMetric('realm_import_staged_assets', {
     stagedAssetCount: stagedAssets.length,
     stagedAssetBytes: stagedAssets.reduce((sum, asset) => sum + asset.byteLength, 0),
@@ -936,53 +973,78 @@ async function importRealmCharx(args: {
     start: 65,
     end: 82,
   })
-  const assetDict = saveStagedCharxAssets({
+  const persistedAssets = saveStagedCharxAssets({
     db: args.db,
     dataDir: args.dataDir,
     eventSink: args.eventSink,
     stagedAssets,
     onAssetSaved: persistProgress,
   })
+  const assetResults = [...persistedAssets.results]
 
-  args.reportProgress?.({ phase: 'convert', message: 'Converting character card', percent: 85 })
-  const character = await convertRealmCharacterCard(card, {
-    allowLowLevelAccess: args.allowLowLevelAccess,
-    assetDict,
-    storeAsset: (source) =>
-      saveFetchedAsset({
+  try {
+    args.reportProgress?.({ phase: 'convert', message: 'Converting character card', percent: 85 })
+    const character = await convertRealmCharacterCard(card, {
+      allowLowLevelAccess: args.allowLowLevelAccess,
+      assetDict: persistedAssets.assetDict,
+      storeAsset: (source) =>
+        saveFetchedAsset({
+          db: args.db,
+          dataDir: args.dataDir,
+          eventSink: args.eventSink,
+          source,
+          hubUrl: '',
+          maxExpandedImportBytes: args.maxExpandedImportBytes,
+          maxFetchedAssetBytes: args.maxFetchedAssetBytes,
+          maxFetchedAssetTotalBytes: args.maxFetchedAssetTotalBytes,
+          signal: args.signal,
+          onAssetSaved(result) {
+            assetResults.push(result)
+          },
+        }),
+    })
+    throwIfRealmImportAborted(args.signal)
+    if (moduleMetadata?.lorebook) {
+      character.globalLore = repairLorebookEntries(
+        cloneJson(moduleMetadata.lorebook),
+        `character ${String(character.chaId)}.globalLore`,
+      )
+    }
+
+    args.reportProgress?.({ phase: 'commit', message: 'Saving character', percent: 92 })
+    return appendRealmCharacter({
+      db: args.db,
+      dataDir: args.dataDir,
+      eventSink: args.eventSink,
+      eventOrigin: args.eventOrigin,
+      character,
+    })
+  } catch (err) {
+    try {
+      cleanupCreatedAssetResults({
         db: args.db,
         dataDir: args.dataDir,
-        eventSink: args.eventSink,
-        source,
-        hubUrl: '',
-        maxExpandedImportBytes: args.maxExpandedImportBytes,
-        maxFetchedAssetBytes: args.maxFetchedAssetBytes,
-        maxFetchedAssetTotalBytes: args.maxFetchedAssetTotalBytes,
-        signal: args.signal,
-      }),
-  })
-  if (moduleMetadata?.lorebook) {
-    character.globalLore = cloneJson(moduleMetadata.lorebook)
+        results: assetResults,
+      })
+    } catch (cleanupErr) {
+      emitProtocolMetric('realm_import_asset_cleanup_failed', {
+        createdAssetCount: assetResults.filter((result) => result.created).length,
+        error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+      })
+    }
+    throw err
   }
-
-  args.reportProgress?.({ phase: 'commit', message: 'Saving character', percent: 92 })
-  return appendRealmCharacter({
-    db: args.db,
-    dataDir: args.dataDir,
-    eventSink: args.eventSink,
-    eventOrigin: args.eventOrigin,
-    character,
-  })
 }
 
-function appendRealmCharacter(args: {
+export function appendRealmCharacter(args: {
   db: DatabaseSync
   dataDir: string
   eventSink: CommandEventSink
   eventOrigin?: CommandEventOrigin
+  baseRevision?: number
   character: JsonRecord
 }): JsonCommandMutationResult<{ characterId: string }> {
-  const baseRevision = getSchemaState(args.db).revision
+  const baseRevision = args.baseRevision ?? getSchemaState(args.db).revision
   const chatCarrier = { ...args.character } as CharacterRecord
   const chats = ensureCharacterChats(chatCarrier)
   const characterRecord = createCharacterRecord(
@@ -1308,59 +1370,63 @@ function saveStagedCharxAssets(args: {
   eventSink: CommandEventSink
   stagedAssets: StagedCharxAsset[]
   onAssetSaved?: () => void
-}): Record<string, string> {
+}): { assetDict: Record<string, string>; results: AddAssetResult[] } {
   const createdAssets: PersistedAsset[] = []
   const createdFiles: Array<{ file: string; existedBefore: boolean }> = []
   const assetDict: Record<string, string> = {}
+  const results: AddAssetResult[] = []
+  const currentRevision = getSchemaState(args.db).revision
+  let transactionOpen = false
 
   fs.mkdirSync(assetsDir(args.dataDir), { recursive: true })
 
-  for (const staged of args.stagedAssets) {
-    const bytes = fs.readFileSync(staged.filePath)
-    if (bytes.length === 0) {
-      throw new ValidationError('Realm asset payload is empty')
-    }
-    const contentType = resolveAssetContentType({
-      kind: 'bytes',
-      fileName: staged.fileName,
-    })
-    const ext = CONTENT_TYPE_EXTENSIONS[contentType]
-    if (!ext) {
-      throw new ValidationError(`Unsupported content-type: ${contentType}`)
-    }
-
-    const id = createHash('sha256').update(bytes).digest('hex')
-    const existing = getAssetMetadataById(args.db, id)
-    if (existing) {
-      const file = assetPath(args.dataDir, existing)
-      if (!fs.existsSync(file)) {
-        fs.writeFileSync(file, bytes)
+  try {
+    for (const staged of args.stagedAssets) {
+      const bytes = fs.readFileSync(staged.filePath)
+      if (bytes.length === 0) {
+        throw new ValidationError('Realm asset payload is empty')
       }
-      assetDict[staged.fileName] = existing.id
+      const contentType = resolveAssetContentType({
+        kind: 'bytes',
+        fileName: staged.fileName,
+      })
+      const ext = CONTENT_TYPE_EXTENSIONS[contentType]
+      if (!ext) {
+        throw new ValidationError(`Unsupported content-type: ${contentType}`)
+      }
+
+      const id = createHash('sha256').update(bytes).digest('hex')
+      const existing = getAssetMetadataById(args.db, id)
+      if (existing) {
+        const file = assetPath(args.dataDir, existing)
+        if (!fs.existsSync(file)) {
+          fs.writeFileSync(file, bytes)
+        }
+        assetDict[staged.fileName] = existing.id
+        results.push({ entry: existing, created: false, revision: currentRevision })
+        args.onAssetSaved?.()
+        continue
+      }
+
+      const entry: PersistedAsset = {
+        id,
+        ext,
+        size: bytes.length,
+        contentType,
+      }
+      const file = path.join(assetsDir(args.dataDir), `${id}.${ext}`)
+      const existedBefore = fs.existsSync(file)
+      createdFiles.push({ file, existedBefore })
+      fs.writeFileSync(file, bytes)
+      createdAssets.push(entry)
+      results.push({ entry, created: true, revision: currentRevision })
+      assetDict[staged.fileName] = entry.id
       args.onAssetSaved?.()
-      continue
     }
 
-    const entry: PersistedAsset = {
-      id,
-      ext,
-      size: bytes.length,
-      contentType,
-    }
-    const file = path.join(assetsDir(args.dataDir), `${id}.${ext}`)
-    const existedBefore = fs.existsSync(file)
-    fs.writeFileSync(file, bytes)
-    createdFiles.push({ file, existedBefore })
-    createdAssets.push(entry)
-    assetDict[staged.fileName] = entry.id
-    args.onAssetSaved?.()
-  }
-
-  if (createdAssets.length > 0) {
-    let transactionOpen = false
-    args.db.exec('BEGIN IMMEDIATE')
-    transactionOpen = true
-    try {
+    if (createdAssets.length > 0) {
+      args.db.exec('BEGIN IMMEDIATE')
+      transactionOpen = true
       insertAssetMetadataBatch(args.db, createdAssets)
       const event = persistRevisionedCommandEvent(args.db, {
         ...COMMAND_EVENT_CATALOG.assetCreated,
@@ -1369,20 +1435,23 @@ function saveStagedCharxAssets(args: {
       args.db.exec('COMMIT')
       transactionOpen = false
       args.eventSink.emit(event)
-    } catch (err) {
-      if (transactionOpen) {
-        args.db.exec('ROLLBACK')
+      for (let index = 0; index < results.length; index += 1) {
+        results[index] = { ...results[index], revision: event.revision, event }
       }
-      for (const { file, existedBefore } of createdFiles) {
-        if (!existedBefore) {
-          fs.rmSync(file, { force: true })
-        }
-      }
-      throw err
     }
+  } catch (err) {
+    if (transactionOpen) {
+      args.db.exec('ROLLBACK')
+    }
+    for (const { file, existedBefore } of createdFiles) {
+      if (!existedBefore) {
+        fs.rmSync(file, { force: true })
+      }
+    }
+    throw err
   }
 
-  return assetDict
+  return { assetDict, results }
 }
 
 function concatBytes(chunks: Uint8Array[], byteLength: number): Uint8Array {
@@ -1565,6 +1634,7 @@ async function saveFetchedAsset(args: {
   maxFetchedAssetBytes?: number
   maxFetchedAssetTotalBytes?: number
   signal: AbortSignal
+  onAssetSaved?: (result: AddAssetResult) => void
 }): Promise<string> {
   if (args.source.kind === 'bytes') {
     const bytes = args.source.bytes ?? Buffer.alloc(0)
@@ -1574,6 +1644,7 @@ async function saveFetchedAsset(args: {
     const contentType = resolveAssetContentType(args.source)
     const result = addAsset(args.db, args.dataDir, { bytes, contentType })
     emitAssetEvent(args.eventSink, result)
+    args.onAssetSaved?.(result)
     return result.entry.id
   }
 
@@ -1596,6 +1667,7 @@ async function saveFetchedAsset(args: {
       eventSink: args.eventSink,
       assets: [staged],
     })
+    args.onAssetSaved?.(results[0])
     return results[0].entry.id
   } finally {
     await fs.promises.rm(stageDir, { recursive: true, force: true })

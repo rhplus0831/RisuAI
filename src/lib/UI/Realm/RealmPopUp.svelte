@@ -11,10 +11,11 @@
     getRealmInfo,
   } from 'src/ts/characterCards'
 
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import RealmLicense from './RealmLicense.svelte'
   import MultiLangDisplay from '../GUI/MultiLangDisplay.svelte'
   import { tooltip } from 'src/ts/gui/tooltip'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   interface Props {
@@ -24,6 +25,12 @@
 
   let { openedData = $bindable(), onRemoved }: Props = $props()
   let removing = $state(false)
+  let hideAllImages = $derived(
+    settingsResourceState.groupStatuses.display === 'ready' && Boolean(settingsResourceState.value.hideAllImages),
+  )
+  let accountId = $derived(
+    settingsResourceState.groupStatuses.account === 'ready' ? settingsResourceState.value.account?.id : undefined,
+  )
 
   function closePopup(): void {
     cancelPendingRealmInfoRequest()
@@ -114,9 +121,9 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 {#if openedData}
   <div
+    use:modalBackdropDismiss={closePopup}
     data-modal-root
-    class="top-0 left-0 z-50 fixed w-full h-full bg-black/50 flex justify-center items-center text-textcolor"
-    onclick={closePopup}>
+    class="top-0 left-0 z-50 fixed w-full h-full bg-black/50 flex justify-center items-center text-textcolor">
     <div
       use:modalFocusTrap
       class="p-6 max-w-full bg-darkbg rounded-md flex flex-col gap-4 w-2xl overflow-y-auto max-h-full"
@@ -158,7 +165,7 @@
             }}>{language.realm.forked}</button>
         {/if}
         <div class="flex justify-start gap-4 mt-4">
-          {#if getDatabase().hideAllImages}
+          {#if hideAllImages}
             <div class="h-36 w-36 rounded-md bg-darkbutton flex items-center justify-center text-textcolor2">
               <span class="text-4xl">?</span>
             </div>
@@ -221,7 +228,7 @@
           onclick={reportCharacter}>
           <FlagIcon />
         </button>
-        {#if openedData.creator && getDatabase().account?.id === openedData.creator}
+        {#if openedData.creator && accountId === openedData.creator}
           <button
             type="button"
             aria-label={language.realm.removeCharacter}

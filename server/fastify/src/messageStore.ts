@@ -1,11 +1,16 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
+import { isDeepStrictEqual } from 'node:util'
+import { invalidateUnsummarizedMemoryForChat, invalidatesPromptMemorySource } from './memoryInvalidation.js'
 import { recordTableWrite } from './protocolMetrics.js'
+import { invalidateBardWikiReceiptsForTranscriptMutation } from './bardWikiInvalidation.js'
 
 // Chat messages live in their own SQLite table, one row per message, instead of
-// being embedded in the domain projection. This module is the pure CRUD layer
-// over that table. Chat metadata stays in the `chats` table; the `messages`
-// table keeps the unbounded, high-churn `message[]`.
+// being embedded in the domain projection. This module is the CRUD boundary
+// over that table. Content-changing rewrites also invalidate derived,
+// unsummarized memory rows in the same transaction. Chat metadata stays in the
+// `chats` table; the `messages` table keeps the unbounded, high-churn
+// `message[]`.
 //
 // Messages table columns:
 //   - `chat_id` — the chat's id (`Chat.id`).
@@ -228,6 +233,7 @@ export function replaceChatMessages(db: DatabaseSync, chatId: string, messages: 
   recordTableWrite('messages')
   db.prepare('DELETE FROM messages WHERE chat_id = ? AND alternate = 0').run(chatId)
   insertChatMessages(db, chatId, messages)
+  invalidateBardWikiReceiptsForTranscriptMutation(db, chatId)
 }
 
 export function activeMessageIdExists(db: DatabaseSync, messageId: string): boolean {
@@ -304,6 +310,7 @@ export function updateActiveMessageById(
   const resolved = resolveActiveMessageLocationById(db, messageId)
   if (resolved.ok === false) return { ok: false, reason: resolved.reason }
   const { location } = resolved
+  const before = getChatMessages(db, location.chatId)
 
   const next = { ...location.message, ...patch, chatId: messageId }
   const row = toRow(next)
@@ -311,6 +318,8 @@ export function updateActiveMessageById(
   db.prepare(
     'UPDATE messages SET uid = ?, role = ?, data = ?, disabled = ?, json = ? WHERE chat_id = ? AND seq = ? AND alternate = 0',
   ).run(row.uid, row.role, row.data, row.disabled, row.json, location.chatId, location.seq)
+  invalidatePromptMemoryIfNeeded(db, location.chatId, before, getChatMessages(db, location.chatId))
+  invalidateBardWikiReceiptsForTranscriptMutation(db, location.chatId)
   return { ok: true, chatId: location.chatId }
 }
 
@@ -419,10 +428,13 @@ export function writeGenerationChatMessage(
     return { ok: true, messageId: row.uid }
   }
 
+  const before = getChatMessages(db, chatId)
   recordTableWrite('messages')
   db.prepare(
     'UPDATE messages SET uid = ?, role = ?, data = ?, disabled = ?, json = ? WHERE chat_id = ? AND seq = ? AND alternate = 0',
   ).run(row.uid, row.role, row.data, row.disabled, row.json, chatId, existing.seq)
+  invalidatePromptMemoryIfNeeded(db, chatId, before, getChatMessages(db, chatId))
+  invalidateBardWikiReceiptsForTranscriptMutation(db, chatId)
   return { ok: true, messageId: row.uid, displaced: JSON.parse(existing.json) as JsonRecord }
 }
 
@@ -442,20 +454,19 @@ function insertChatMessages(db: DatabaseSync, chatId: string, messages: readonly
 
 /**
  * Persist a caller-proven append-only replacement by inserting only the desired
- * tail. Returns false when the current active transcript no longer has the
- * expected prefix length, so callers can fall back to the generic diff path.
+ * tail. Returns false when the current active transcript no longer matches the
+ * expected prefix, so callers can reject stale state or fall back to the generic
+ * diff path.
  */
 export function appendActiveChatMessageTail(
   db: DatabaseSync,
   chatId: string,
   messages: readonly unknown[],
-  prefixLength: number,
+  expectedPrefix: readonly unknown[],
 ): boolean {
-  if (!Number.isInteger(prefixLength) || prefixLength < 0) {
-    throw new Error('append prefix length must be a non-negative integer')
-  }
+  const prefixLength = expectedPrefix.length
   if (messages.length <= prefixLength) return false
-  if (countChatMessages(db, chatId) !== prefixLength) return false
+  if (!isDeepStrictEqual(getChatMessages(db, chatId), expectedPrefix)) return false
 
   const tail = messages.slice(prefixLength)
   chatMessageDiffInstrumentation.appendFastPathRows += tail.length
@@ -476,6 +487,26 @@ export function replaceAllChatMessages(
   db.exec('DELETE FROM messages')
   for (const { chatId, messages } of chats) {
     insertChatMessages(db, chatId, messages)
+  }
+}
+
+/** Insert durable reroll candidates after {@link replaceAllChatMessages} has
+ *  cleared the message table. Input arrays use the hydration contract's
+ *  newest-first order; negative seq values preserve that order on reads. */
+export function insertAllChatAlternateMessages(
+  db: DatabaseSync,
+  chats: ReadonlyArray<{ chatId: string; alternates: readonly unknown[] }>,
+): void {
+  if (!chats.some(({ alternates }) => alternates.length > 0)) return
+  recordTableWrite('messages')
+  const insert = db.prepare(
+    'INSERT INTO messages (chat_id, seq, uid, role, data, disabled, json, alternate) VALUES (?, ?, ?, ?, ?, ?, ?, 1)',
+  )
+  for (const { chatId, alternates } of chats) {
+    for (let index = 0; index < alternates.length; index++) {
+      const row = toRow(readMessageObject(alternates[index]))
+      insert.run(chatId, index - alternates.length, row.uid, row.role, row.data, row.disabled, row.json)
+    }
   }
 }
 
@@ -513,6 +544,7 @@ export function applyChatMessageDiff(
   next: readonly unknown[],
 ): void {
   chatMessageDiffInstrumentation.genericDiffRuns += 1
+  const invalidatesPromptMemory = invalidatesPromptMemorySource(base, next)
   let prefix = 0
   const shared = Math.min(base.length, next.length)
   while (prefix < shared && stableEqual(base[prefix], next[prefix])) prefix++
@@ -534,6 +566,19 @@ export function applyChatMessageDiff(
       const row = toRow(message)
       insert.run(chatId, seq, row.uid, row.role, row.data, row.disabled, row.json)
     }
+  }
+  if (invalidatesPromptMemory) invalidateUnsummarizedMemoryForChat(db, chatId)
+  if (prefix < base.length) invalidateBardWikiReceiptsForTranscriptMutation(db, chatId)
+}
+
+function invalidatePromptMemoryIfNeeded(
+  db: DatabaseSync,
+  chatId: string,
+  before: readonly unknown[],
+  after: readonly unknown[],
+): void {
+  if (invalidatesPromptMemorySource(before, after)) {
+    invalidateUnsummarizedMemoryForChat(db, chatId)
   }
 }
 
@@ -564,6 +609,25 @@ export function getChatMessagesRange(db: DatabaseSync, chatId: string, start: nu
 /** Every chat's ACTIVE messages, grouped by chat id, in `seq` order (one query). */
 export function getAllChatMessagesGrouped(db: DatabaseSync): Map<string, JsonRecord[]> {
   const rows = db.prepare('SELECT chat_id, json FROM messages WHERE alternate = 0 ORDER BY chat_id, seq').all() as {
+    chat_id: string
+    json: string
+  }[]
+  const grouped = new Map<string, JsonRecord[]>()
+  for (const row of rows) {
+    let list = grouped.get(row.chat_id)
+    if (!list) {
+      list = []
+      grouped.set(row.chat_id, list)
+    }
+    list.push(JSON.parse(row.json) as JsonRecord)
+  }
+  return grouped
+}
+
+/** Every chat's durable reroll candidates, grouped by chat id in the same
+ *  newest-first order used by scoped hydration. */
+export function getAllChatAlternateMessagesGrouped(db: DatabaseSync): Map<string, JsonRecord[]> {
+  const rows = db.prepare('SELECT chat_id, json FROM messages WHERE alternate = 1 ORDER BY chat_id, seq ASC').all() as {
     chat_id: string
     json: string
   }[]

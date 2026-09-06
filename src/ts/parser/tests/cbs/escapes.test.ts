@@ -14,7 +14,7 @@ vi.mock(
       getCurrentCharacter: () => ({}),
       getDatabase: () => mocks.db,
       reapplyPendingPresetProjections: () => {},
-    }) as typeof import('../../../storage/database.svelte'),
+    }) as unknown as typeof import('../../../storage/database.svelte'),
 )
 
 vi.mock(import('../../../globalApi.svelte'), () => ({
@@ -37,9 +37,11 @@ const mocks = vi.hoisted(() => {
     db: {
       characters: [
         {
+          chaId: 'escapes-character',
           chatPage: 0,
           chats: [
             {
+              id: 'escapes-chat',
               scriptstate: varStorage,
             },
           ],

@@ -11,6 +11,10 @@ import { createAuthState } from '../src/auth.js'
 import { CURRENT_SCHEMA_VERSION, openDatabase } from '../src/db.js'
 import { GenerationJobRegistry } from '../src/generationJobs.js'
 import { registerBootstrapRoutes } from '../src/routes/bootstrap.js'
+import {
+  enqueueGenerationFinalizationRetry,
+  markGenerationFinalizationRetryFailure,
+} from '../src/generationFinalizationRetry.js'
 
 const subtle = webcrypto.subtle
 
@@ -97,11 +101,12 @@ describe('bootstrap runtime metadata', () => {
   })
 
   it('rejects unauthenticated bootstrap once a password is set', async () => {
-    await harness.app.inject({
+    const setup = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/auth/setup',
       payload: { password: 'hunter2' },
     })
+    expect(setup.statusCode).toBe(200)
 
     const response = await harness.app.inject({ method: 'GET', url: '/api/v1/bootstrap' })
 
@@ -129,8 +134,13 @@ describe('bootstrap runtime metadata', () => {
       databaseLineage: expect.any(String),
       writerEpoch: 0,
       assetBaseUrl: '/api/v1/assets',
+      generationOperationProtocol: { version: 1 },
+      displaySourceProtocol: { version: 1 },
+      generationOperationProjectionEpoch: 0,
+      generationOperations: [],
       activeGenerationJobs: [],
       activeMessageTranslations: [],
+      activeGreetingTranslations: [],
     })
   })
 
@@ -158,12 +168,218 @@ describe('bootstrap runtime metadata', () => {
       databaseLineage: expect.any(String),
       writerEpoch: 0,
       assetBaseUrl: '/api/v1/assets',
+      generationOperationProtocol: { version: 1 },
+      displaySourceProtocol: { version: 1 },
+      generationOperationProjectionEpoch: 1,
+      generationOperations: [],
       activeGenerationJobs: [],
       activeMessageTranslations: [],
+      activeGreetingTranslations: [],
+    })
+    expect(response.json()).not.toHaveProperty('database')
+  })
+
+  it('reconstructs writer-scoped pending and terminal finalization state after an app restart', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await harness.app.close()
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      enqueueGenerationFinalizationRetry(db, {
+        generationId: 'generation-pending',
+        chatId: 'chat-a',
+        mode: 'send',
+        message: {
+          role: 'char',
+          data: 'pending reply',
+          chatId: 'generation-pending',
+          generationInfo: { generationId: 'generation-pending' },
+        },
+        chatVarMutations: [],
+        targetSnapshot: { mode: 'send', kind: 'tail', transcriptLength: 0 },
+      })
+      markGenerationFinalizationRetryFailure(db, 'generation-pending', 'temporary failure', false)
+
+      enqueueGenerationFinalizationRetry(db, {
+        generationId: 'generation-terminal',
+        chatId: 'chat-a',
+        mode: 'send',
+        message: { role: 'char', data: 'terminal reply', chatId: 'generation-terminal' },
+        chatVarMutations: [],
+        targetSnapshot: { mode: 'send', kind: 'tail', transcriptLength: 0 },
+      })
+      markGenerationFinalizationRetryFailure(db, 'generation-terminal', 'unsafe target', true)
+
+      enqueueGenerationFinalizationRetry(db, {
+        generationId: 'generation-legacy',
+        chatId: 'chat-a',
+        mode: 'send',
+        message: { role: 'char', data: 'legacy reply', chatId: 'generation-legacy' },
+        chatVarMutations: [],
+      })
+      db.prepare(
+        `
+          UPDATE generation_finalization_retries
+          SET mode = 'continue', target_message_id = 'message-a'
+          WHERE generation_id = 'generation-legacy'
+        `,
+      ).run()
+      markGenerationFinalizationRetryFailure(db, 'generation-legacy', 'stalled_legacy', true)
+    } finally {
+      db.close()
+    }
+
+    const rebuilt = await buildApp({
+      config: {
+        host: '127.0.0.1',
+        port: 0,
+        dataDir: harness.dataDir,
+        bodyLimit: 1024 * 1024,
+        importMaxBytes: Infinity,
+        trustProxy: false,
+        hubUrl: 'https://sv.risuai.xyz',
+      },
+      generationChat: { finalizationRetry: false },
+    })
+    harness.app = rebuilt.app
+
+    const response = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+    })
+
+    expect(response.statusCode).toBe(200)
+    const finalizations = response.json().generationFinalizations
+    expect(finalizations).toHaveLength(3)
+    expect(finalizations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          generationId: 'generation-pending',
+          state: 'queued',
+          failureCount: 1,
+          provisionalMessage: expect.objectContaining({ data: 'pending reply' }),
+        }),
+        expect.objectContaining({ generationId: 'generation-terminal', state: 'terminal' }),
+        expect.objectContaining({
+          generationId: 'generation-legacy',
+          messageId: 'message-a',
+          state: 'stalled_legacy',
+        }),
+      ]),
+    )
+
+    const observer = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion, 'risu-writer-observer-session': 'different-writer' },
+    })
+    expect(observer.statusCode).toBe(200)
+    expect(observer.json().generationFinalizations).toBeUndefined()
+  })
+
+  it('migrates the pre-Agent settings owner before generation-settings commands run', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const imported = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        database: {
+          modelPresets: [{ id: 'model-a', name: 'Model A' }],
+          agentPresets: [
+            {
+              id: 'legacy-agent-preset',
+              name: 'Legacy Agent Preset',
+              enabled: true,
+              version: 1,
+              steps: [],
+            },
+          ],
+          characters: [
+            {
+              chaId: 'char-a',
+              name: 'Character A',
+              chats: [{ id: 'chat-a', name: 'Chat A', note: '', message: [], localLore: [] }],
+              chatFolders: [],
+              chatPage: 0,
+            },
+          ],
+          characterOrder: ['char-a'],
+        },
+      },
+    })
+    expect(imported.statusCode, imported.body).toBe(200)
+    await harness.app.close()
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const row = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      const settings = JSON.parse(row.data_json) as Record<string, unknown>
+      delete settings.agents
+      settings.agentPresets = [
+        {
+          id: 'legacy-agent-preset',
+          name: 'Legacy Agent Preset',
+          enabled: true,
+          version: 1,
+          steps: [],
+        },
+      ]
+      db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+    } finally {
+      db.close()
+    }
+
+    const rebuilt = await buildApp({
+      config: {
+        host: '127.0.0.1',
+        port: 0,
+        dataDir: harness.dataDir,
+        bodyLimit: 1024 * 1024,
+        importMaxBytes: Infinity,
+        trustProxy: false,
+        hubUrl: 'https://sv.risuai.xyz',
+      },
+      memoryWorker: false,
+      assetGc: false,
+    })
+    harness.app = rebuilt.app
+
+    const agents = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/agents',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(agents.statusCode, agents.body).toBe(200)
+    expect(agents.json().settings).toMatchObject({
+      agents: [],
+      agentPresets: [expect.objectContaining({ id: 'legacy-agent-preset', agentUses: [], steps: [] })],
+    })
+
+    const saved = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: imported.json().revision,
+        generationSettings: {
+          configured: true,
+          modelPresetId: 'model-a',
+          modelPresetSelectionSource: 'manual',
+          jailbreakToggle: false,
+        },
+      },
+    })
+    expect(saved.statusCode, saved.body).toBe(200)
+    expect(saved.json().generationSettings).toMatchObject({
+      configured: true,
+      modelPresetId: 'model-a',
+      jailbreakToggle: false,
     })
   })
 
-  it('L19: gzip-compresses large bootstrap JSON without changing the body', async () => {
+  it('gzip-compresses large bootstrap JSON without changing the body', async () => {
     const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-bootstrap-compression-'))
     const app = Fastify({ logger: false })
     const db = openDatabase(dataDir)

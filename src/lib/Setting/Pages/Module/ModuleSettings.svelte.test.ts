@@ -16,27 +16,67 @@ const moduleProcessSpies = vi.hoisted(() => ({
 }))
 
 const moduleCommandSpies = vi.hoisted(() => ({
-  createGlobalModule: vi.fn(async (_module: any): Promise<any> => null),
+  createGlobalModule: vi.fn(async (_module: any): Promise<any> => ({ status: 'accepted', result: null })),
   deleteGlobalModule: vi.fn(),
-  saveGlobalModuleDraft: vi.fn(async (_moduleId: string, _module: any): Promise<any> => null),
+  saveGlobalModuleDraft: vi.fn(
+    async (_moduleId: string, _module: any): Promise<any> => ({
+      status: 'accepted',
+      result: null,
+    }),
+  ),
   setGlobalModuleEnabled: vi.fn(),
+  createModuleFolder: vi.fn(async (): Promise<any> => ({ status: 'accepted', result: null })),
+  renameModuleFolder: vi.fn(async (): Promise<any> => ({ status: 'accepted', result: null })),
+  deleteModuleFolder: vi.fn(async (): Promise<any> => ({ status: 'accepted', result: null })),
+  reorderModuleFolders: vi.fn(async (): Promise<any> => ({ status: 'accepted', result: null })),
+  reorderGlobalModules: vi.fn(async (): Promise<any> => ({ status: 'accepted', result: null })),
 }))
 
-const lorebookBridgeSpies = vi.hoisted(() => ({
+const moduleDraftStoreSpies = vi.hoisted(() => {
+  const state = { sequence: 0, failureListener: null as (() => void) | null }
+  return {
+    state,
+    deleteModuleEditorDraft: vi.fn(async () => true),
+    isModuleEditorDraftGenerationCurrent: vi.fn(async () => true),
+    readLatestModuleEditorDraft: vi.fn(async () => null as any),
+    registerModuleEditorDraftStorageFailureListener: vi.fn((listener: () => void) => {
+      state.failureListener = listener
+      return () => {
+        if (state.failureListener === listener) state.failureListener = null
+      }
+    }),
+    writeModuleEditorDraft: vi.fn((input: any) => {
+      state.sequence += 1
+      return {
+        generation: {
+          key: JSON.stringify([input.mode, input.moduleId]),
+          databaseLineage: 'database-a',
+          writerSessionId: 'writer-a',
+          mode: input.mode,
+          moduleId: input.moduleId,
+          sequence: state.sequence,
+          updatedAt: state.sequence,
+        },
+        ready: Promise.resolve('persisted'),
+      }
+    }),
+  }
+})
+
+const lorebookOwnerSpies = vi.hoisted(() => ({
   applyLorebookEntryDraftEdit: vi.fn(() => false),
   flushPendingLorebookEntryDraftEdit: vi.fn(),
   replaceModuleLorebookCollectionDraft: vi.fn(() => false),
-  watchServerBackedLorebooks: vi.fn(() => () => {}),
 }))
 
-const scriptDefinitionBridgeSpies = vi.hoisted(() => ({
+const scriptDefinitionOwnerSpies = vi.hoisted(() => ({
   applyModuleScriptDefinitionDraft: vi.fn(() => false),
-  watchServerBackedScriptDefinitions: vi.fn(() => () => {}),
 }))
 
 const alertSpies = vi.hoisted(() => ({
   alertConfirm: vi.fn(async () => false),
   alertError: vi.fn(),
+  alertInput: vi.fn(async () => null as string | null),
   alertMd: vi.fn(),
   alertNormal: vi.fn(),
 }))
@@ -56,14 +96,17 @@ vi.mock('src/ts/process/modules', () => moduleProcessSpies)
 vi.mock('src/ts/moduleCommands', async (importActual) => ({
   ...(await importActual<typeof import('src/ts/moduleCommands')>()),
   ...moduleCommandSpies,
+  createGlobalModuleWithOutcome: moduleCommandSpies.createGlobalModule,
+  saveGlobalModuleDraftWithOutcome: moduleCommandSpies.saveGlobalModuleDraft,
 }))
-vi.mock('src/ts/server/lorebookBridge.svelte', async (importActual) => ({
-  ...(await importActual<typeof import('src/ts/server/lorebookBridge.svelte')>()),
-  ...lorebookBridgeSpies,
+vi.mock('src/ts/server/moduleEditorDraftStore', () => moduleDraftStoreSpies)
+vi.mock('src/ts/server/lorebookOwner.svelte', async (importActual) => ({
+  ...(await importActual<typeof import('src/ts/server/lorebookOwner.svelte')>()),
+  ...lorebookOwnerSpies,
 }))
-vi.mock('src/ts/server/scriptDefinitionBridge.svelte', async (importActual) => ({
-  ...(await importActual<typeof import('src/ts/server/scriptDefinitionBridge.svelte')>()),
-  ...scriptDefinitionBridgeSpies,
+vi.mock('src/ts/server/scriptDefinitionOwner.svelte', async (importActual) => ({
+  ...(await importActual<typeof import('src/ts/server/scriptDefinitionOwner.svelte')>()),
+  ...scriptDefinitionOwnerSpies,
 }))
 vi.mock('src/ts/alert', () => alertSpies)
 vi.mock('src/ts/globalApi.svelte', () => globalApiSpies)
@@ -86,9 +129,13 @@ import ModuleSettings from './ModuleSettings.svelte'
 import { language } from 'src/lang'
 import type { RisuModule } from 'src/ts/process/modules'
 import {
-  getResourceDatabase as getDatabase,
+  collectionsResourceState,
   replaceResourceDatabase as setDatabaseLite,
+  settingsResourceState,
 } from 'src/ts/server/resourceState.svelte'
+import { selectedCharID } from 'src/ts/stores.svelte'
+import { requestActiveModuleEditorLeave } from 'src/ts/moduleEditorLeaveGuard'
+import { getResourceDatabase as getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -112,11 +159,13 @@ interface ModuleFixtureOptions {
   description?: string
   namespace?: string
   mcp?: RisuModule['mcp']
+  folderId?: string
   readCounter?: NameReadCounter
 }
 
 let target: HTMLElement
 let component: MountedComponent | undefined
+const confirmLeave = vi.fn(() => false)
 
 function makeModule(options: ModuleFixtureOptions): RisuModule {
   let currentName = options.name
@@ -125,6 +174,7 @@ function makeModule(options: ModuleFixtureOptions): RisuModule {
     description: options.description ?? `${options.name} description`,
     namespace: options.namespace,
     mcp: options.mcp,
+    folderId: options.folderId,
   }
 
   Object.defineProperty(module, 'name', {
@@ -174,10 +224,12 @@ function seedModules(readCounter?: NameReadCounter) {
     loreBook: [],
     moduleIntergration: 'shared, trimmed',
     modules: [],
+    moduleFolders: [],
     showDeprecatedTriggerV1: false,
     useAdditionalAssetsPreview: false,
   } as any)
-  getDatabase().modules = modules
+  collectionsResourceState.values.modules = modules
+  collectionsResourceState.statuses.modules = 'ready'
 }
 
 function mountSettings() {
@@ -269,9 +321,19 @@ async function clickModuleSurfaceAction(actionKind: string) {
 }
 
 beforeEach(() => {
+  selectedCharID.set(-1)
   target = document.createElement('div')
   document.body.appendChild(target)
   vi.clearAllMocks()
+  confirmLeave.mockReturnValue(false)
+  vi.stubGlobal('confirm', confirmLeave)
+  moduleDraftStoreSpies.state.sequence = 0
+  moduleDraftStoreSpies.state.failureListener = null
+  moduleDraftStoreSpies.readLatestModuleEditorDraft.mockResolvedValue(null)
+  moduleDraftStoreSpies.isModuleEditorDraftGenerationCurrent.mockResolvedValue(true)
+  moduleDraftStoreSpies.deleteModuleEditorDraft.mockResolvedValue(true)
+  moduleCommandSpies.createGlobalModule.mockResolvedValue({ status: 'accepted', result: null })
+  moduleCommandSpies.saveGlobalModuleDraft.mockResolvedValue({ status: 'accepted', result: null })
   moduleCommandSpies.deleteGlobalModule.mockResolvedValue({ status: 'accepted', result: null })
   moduleCommandSpies.setGlobalModuleEnabled.mockResolvedValue({ status: 'accepted', result: null })
   alertSpies.alertConfirm.mockResolvedValue(false)
@@ -285,6 +347,89 @@ afterEach(() => {
   }
   target.remove()
   document.body.innerHTML = ''
+  vi.unstubAllGlobals()
+})
+
+describe('ModuleSettings unsaved-change safeguards', () => {
+  it('leaves an unchanged editor without prompting', async () => {
+    mountSettings()
+    moduleAction('alpha-id', 'edit').click()
+    await tick()
+
+    expect(requestActiveModuleEditorLeave()).toBe(true)
+    expect(confirmLeave).not.toHaveBeenCalled()
+  })
+
+  it('keeps a dirty editor open when leaving is canceled', async () => {
+    mountSettings()
+    moduleAction('alpha-id', 'edit').click()
+    await tick()
+    await updateModuleName('Unsaved Alpha')
+
+    expect(requestActiveModuleEditorLeave()).toBe(false)
+    expect(confirmLeave).toHaveBeenCalledWith(language.moduleSave.leaveEditorConfirm)
+    expect(target.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('Unsaved Alpha')
+    expect(moduleDraftStoreSpies.deleteModuleEditorDraft).not.toHaveBeenCalled()
+  })
+
+  it('warns for a changed create draft but not a newly opened blank draft', async () => {
+    mountSettings()
+    await clickModuleSurfaceAction('create')
+
+    expect(requestActiveModuleEditorLeave()).toBe(true)
+    expect(confirmLeave).not.toHaveBeenCalled()
+
+    await updateModuleName('Unsaved New Module')
+
+    expect(requestActiveModuleEditorLeave()).toBe(false)
+    expect(confirmLeave).toHaveBeenCalledWith(language.moduleSave.leaveEditorConfirm)
+  })
+
+  it('allows leaving a dirty editor while retaining its recovery draft', async () => {
+    confirmLeave.mockReturnValue(true)
+    mountSettings()
+    moduleAction('alpha-id', 'edit').click()
+    await tick()
+    await updateModuleName('Recoverable Alpha')
+
+    expect(requestActiveModuleEditorLeave()).toBe(true)
+    expect(confirmLeave).toHaveBeenCalledWith(language.moduleSave.leaveEditorConfirm)
+    expect(moduleDraftStoreSpies.deleteModuleEditorDraft).not.toHaveBeenCalled()
+  })
+
+  it('confirms before explicitly discarding a dirty draft', async () => {
+    mountSettings()
+    moduleAction('alpha-id', 'edit').click()
+    await tick()
+    await updateModuleName('Maybe discard Alpha')
+
+    await clickModuleSurfaceAction('discard-draft')
+
+    expect(confirmLeave).toHaveBeenCalledWith(language.moduleSave.discardChangesConfirm)
+    expect(target.querySelector('[data-risu-module-action="submit-edit"]')).toBeTruthy()
+    expect(moduleDraftStoreSpies.deleteModuleEditorDraft).not.toHaveBeenCalled()
+
+    confirmLeave.mockReturnValue(true)
+    await clickModuleSurfaceAction('discard-draft')
+
+    expect(target.querySelector('[data-risu-module-action="submit-edit"]')).toBeNull()
+    expect(moduleDraftStoreSpies.deleteModuleEditorDraft).toHaveBeenCalledOnce()
+  })
+
+  it('requests the native browser warning only for a dirty editor', async () => {
+    mountSettings()
+    moduleAction('alpha-id', 'edit').click()
+    await tick()
+
+    const unchangedUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(unchangedUnload)
+    expect(unchangedUnload.defaultPrevented).toBe(false)
+
+    await updateModuleName('Unsaved before unload')
+    const dirtyUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(dirtyUnload)
+    expect(dirtyUnload.defaultPrevented).toBe(true)
+  })
 })
 
 describe('ModuleSettings derived module rows', () => {
@@ -349,13 +494,42 @@ describe('ModuleSettings derived module rows', () => {
     expect(labels).toContain(`${language.import}: ${language.loreBook}`)
   })
 
-  it('L43: ModuleSettings empty search shows every module in lowercase sorted order', () => {
+  it('ModuleSettings empty search preserves the authoritative module order', () => {
     mountSettings()
 
-    expect(moduleRowNames()).toEqual(['Alpha Module', 'beta Module', 'MCP Tools', 'zulu module'])
+    expect(moduleRowNames()).toEqual(['zulu module', 'Alpha Module', 'beta Module', 'MCP Tools'])
   })
 
-  it('L43: ModuleSettings filtered rows keep action targets by module id', async () => {
+  it('groups modules by folder, searches descriptions, and exposes folder management', async () => {
+    settingsResourceState.value.moduleFolders = [
+      { id: 'folder-b', name: 'Tools' },
+      { id: 'folder-a', name: 'Writing' },
+    ]
+    collectionsResourceState.values.modules = [
+      makeModule({ id: 'alpha-id', name: 'Alpha Module', folderId: 'folder-a' }),
+      makeModule({ id: 'beta-id', name: 'Beta Module', description: 'special needle', folderId: 'folder-b' }),
+      makeModule({ id: 'loose-id', name: 'Loose Module', folderId: 'missing' }),
+    ]
+    mountSettings()
+
+    expect(
+      Array.from(target.querySelectorAll<HTMLElement>('[data-risu-module-folder]'), (section) =>
+        section.getAttribute('data-risu-module-folder'),
+      ),
+    ).toEqual(['folder-b', 'folder-a', 'uncategorized'])
+    expect(moduleRowNames()).toEqual(['Beta Module', 'Alpha Module', 'Loose Module'])
+
+    await updateSearch('needle')
+    expect(moduleRowNames()).toEqual(['Beta Module'])
+    expect(rowForModuleId('beta-id').getAttribute('draggable')).toBe('false')
+
+    alertSpies.alertInput.mockResolvedValueOnce('New Folder')
+    moduleSurfaceAction('create-folder').click()
+    await vi.waitFor(() => expect(moduleCommandSpies.createModuleFolder).toHaveBeenCalledOnce())
+    expect(moduleCommandSpies.createModuleFolder).toHaveBeenCalledWith(expect.objectContaining({ name: 'New Folder' }))
+  })
+
+  it('ModuleSettings filtered rows keep action targets by module id', async () => {
     alertSpies.alertConfirm.mockResolvedValueOnce(true)
     mountSettings()
     await updateSearch('BETA')
@@ -378,6 +552,56 @@ describe('ModuleSettings derived module rows', () => {
     await tick()
     await Promise.resolve()
     expect(moduleCommandSpies.deleteGlobalModule).toHaveBeenCalledWith('beta-id')
+  })
+
+  it('shows the current chat Prompt Preset namespace integration state', () => {
+    getDatabase().moduleIntergration = ''
+    getDatabase().promptPresets = [{ id: 'gpt-preset', name: 'GPT', moduleIntergration: 'shared' }]
+    getDatabase().characters = [
+      {
+        chaId: 'character-a',
+        chatPage: 0,
+        chats: [{ id: 'chat-a', generationSettings: { promptPresetId: 'gpt-preset' } }],
+      },
+    ] as any
+    selectedCharID.set(0)
+
+    mountSettings()
+
+    expect(rowForModuleId('beta-id').getAttribute('data-risu-integration-state')).toBe('integrated')
+    expect(moduleAction('beta-id', 'toggle-enabled').getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('fails closed for errored or duplicate module collection owners', () => {
+    collectionsResourceState.statuses.modules = 'error'
+    mountSettings()
+
+    expect(moduleRows()).toEqual([])
+    expect(moduleSurfaceAction('create').disabled).toBe(true)
+    expect(moduleSurfaceAction('import').disabled).toBe(true)
+
+    unmount(component!)
+    component = undefined
+    seedModules()
+    getDatabase().modules = [
+      makeModule({ id: 'duplicate-id', name: 'First duplicate' }),
+      makeModule({ id: 'duplicate-id', name: 'Second duplicate' }),
+    ]
+    mountSettings()
+
+    expect(moduleRows()).toEqual([])
+    expect(moduleSurfaceAction('create').disabled).toBe(true)
+    expect(moduleCommandSpies.setGlobalModuleEnabled).not.toHaveBeenCalled()
+  })
+
+  it('does not dispatch enable mutations when the enabled-module owner is unavailable', () => {
+    settingsResourceState.groupStatuses.modules = 'error'
+    mountSettings()
+
+    const toggle = moduleAction('beta-id', 'toggle-enabled')
+    expect(toggle.disabled).toBe(true)
+    toggle.click()
+    expect(moduleCommandSpies.setGlobalModuleEnabled).not.toHaveBeenCalled()
   })
 
   it('keeps a module toggle busy through its durable outcome and reports queued work', async () => {
@@ -424,7 +648,7 @@ describe('ModuleSettings derived module rows', () => {
     expect(deleteButton.disabled).toBe(false)
   })
 
-  it('L43: ModuleSettings edit after filtering saves the original module id', async () => {
+  it('ModuleSettings edit after filtering saves the original module id', async () => {
     mountSettings()
     await updateSearch('beta')
 
@@ -517,12 +741,10 @@ describe('ModuleSettings derived module rows', () => {
 
     expect(getDatabase().modules[1]).toEqual(liveBeforeEdit)
     expect(moduleCommandSpies.saveGlobalModuleDraft).not.toHaveBeenCalled()
-    expect(lorebookBridgeSpies.applyLorebookEntryDraftEdit).not.toHaveBeenCalled()
-    expect(lorebookBridgeSpies.flushPendingLorebookEntryDraftEdit).not.toHaveBeenCalled()
-    expect(lorebookBridgeSpies.replaceModuleLorebookCollectionDraft).not.toHaveBeenCalled()
-    expect(lorebookBridgeSpies.watchServerBackedLorebooks).not.toHaveBeenCalled()
-    expect(scriptDefinitionBridgeSpies.applyModuleScriptDefinitionDraft).not.toHaveBeenCalled()
-    expect(scriptDefinitionBridgeSpies.watchServerBackedScriptDefinitions).not.toHaveBeenCalled()
+    expect(lorebookOwnerSpies.applyLorebookEntryDraftEdit).not.toHaveBeenCalled()
+    expect(lorebookOwnerSpies.flushPendingLorebookEntryDraftEdit).not.toHaveBeenCalled()
+    expect(lorebookOwnerSpies.replaceModuleLorebookCollectionDraft).not.toHaveBeenCalled()
+    expect(scriptDefinitionOwnerSpies.applyModuleScriptDefinitionDraft).not.toHaveBeenCalled()
 
     unmount(component!)
     component = undefined
@@ -558,8 +780,8 @@ describe('ModuleSettings derived module rows', () => {
     expect(savedModule.regex[0]).toMatchObject({ type: 'editinput', in: '', out: '' })
     expect(savedModule.trigger).toHaveLength(1)
     expect(savedModule.trigger[0]).toMatchObject({ type: 'start' })
-    expect(lorebookBridgeSpies.replaceModuleLorebookCollectionDraft).not.toHaveBeenCalled()
-    expect(scriptDefinitionBridgeSpies.applyModuleScriptDefinitionDraft).not.toHaveBeenCalled()
+    expect(lorebookOwnerSpies.replaceModuleLorebookCollectionDraft).not.toHaveBeenCalled()
+    expect(scriptDefinitionOwnerSpies.applyModuleScriptDefinitionDraft).not.toHaveBeenCalled()
   })
 
   it('keeps nested collections in create drafts until the create command', async () => {
@@ -569,8 +791,8 @@ describe('ModuleSettings derived module rows', () => {
     await addNestedModuleDraftRows()
 
     expect(moduleCommandSpies.createGlobalModule).not.toHaveBeenCalled()
-    expect(lorebookBridgeSpies.replaceModuleLorebookCollectionDraft).not.toHaveBeenCalled()
-    expect(scriptDefinitionBridgeSpies.applyModuleScriptDefinitionDraft).not.toHaveBeenCalled()
+    expect(lorebookOwnerSpies.replaceModuleLorebookCollectionDraft).not.toHaveBeenCalled()
+    expect(scriptDefinitionOwnerSpies.applyModuleScriptDefinitionDraft).not.toHaveBeenCalled()
 
     await clickModuleSurfaceAction('submit-create')
 
@@ -586,7 +808,7 @@ describe('ModuleSettings derived module rows', () => {
     expect(moduleCommandSpies.createGlobalModule.mock.calls[0][0].trigger).toHaveLength(1)
   })
 
-  it('L43: ModuleSettings search recomputes sorted rows once per search edit and reuses them across view switches', async () => {
+  it('ModuleSettings search recomputes sorted rows once per search edit and reuses them across view switches', async () => {
     const readCounter = { count: 0 }
     seedModules(readCounter)
     mountSettings()
@@ -633,9 +855,10 @@ describe('ModuleSettings derived module rows', () => {
     expect(fieldset?.disabled).toBe(true)
     expect(nameInput?.closest<HTMLFieldSetElement>('fieldset')?.disabled).toBe(true)
     expect(moduleSurfaceAction('submit-create').disabled).toBe(true)
-    expect(target.textContent).toContain(language.moduleSave.saving)
+    expect(target.textContent).not.toContain(language.moduleSave.saving)
+    expect(target.textContent).toContain(language.createModule)
 
-    save.resolve({ status: 'error', error: 'disk full' })
+    save.resolve({ status: 'failed', result: { status: 'error', error: 'disk full' } })
     await save.promise
     await tick()
 
@@ -659,7 +882,7 @@ describe('ModuleSettings derived module rows', () => {
     expect(target.textContent).toContain(language.editModule)
     expect(moduleSurfaceAction('submit-edit').disabled).toBe(true)
 
-    save.resolve({ status: 'conflict', currentRevision: 42 })
+    save.resolve({ status: 'failed', result: { status: 'conflict', currentRevision: 42 } })
     await save.promise
     await tick()
 
@@ -685,7 +908,10 @@ describe('ModuleSettings derived module rows', () => {
   })
 
   it('keeps a create draft when module commands are unavailable', async () => {
-    moduleCommandSpies.createGlobalModule.mockResolvedValueOnce({ status: 'unavailable' })
+    moduleCommandSpies.createGlobalModule.mockResolvedValueOnce({
+      status: 'failed',
+      result: { status: 'unavailable' },
+    })
     mountSettings()
     await clickModuleSurfaceAction('create')
     await updateModuleName('Offline draft')
@@ -709,9 +935,12 @@ describe('ModuleSettings derived module rows', () => {
     expect(target.textContent).toContain(language.createModule)
 
     save.resolve({
-      status: 'ok',
-      revision: 11,
-      event: { type: 'module.created', revision: 11, resource: 'module' },
+      status: 'accepted',
+      result: {
+        status: 'ok',
+        revision: 11,
+        event: { type: 'module.created', revision: 11, resource: 'module' },
+      },
     })
     await save.promise
     await tick()
@@ -719,5 +948,226 @@ describe('ModuleSettings derived module rows', () => {
     expect(target.textContent).toContain(language.modules)
     expect(target.textContent).not.toContain(language.moduleSave.saving)
     expect(target.querySelector('[data-risu-module-action="submit-create"]')).toBeNull()
+  })
+
+  it('restores a nested create draft after reload with its original stable client id', async () => {
+    moduleDraftStoreSpies.readLatestModuleEditorDraft.mockResolvedValueOnce({
+      mode: 'create',
+      moduleId: 'stable-create-id',
+      editBaseline: null,
+      tempModule: {
+        id: 'stable-create-id',
+        name: 'Recovered Create',
+        description: 'Recovered description',
+        cjs: 'recovered code',
+        assets: [['asset-a', 'asset-ref']],
+        lorebook: [{ id: 'lore-a', content: 'recovered lore' }],
+        regex: [{ id: 'regex-a', in: 'before', out: 'after' }],
+        trigger: [{ id: 'trigger-a', type: 'start', effect: [] }],
+      },
+      generation: {
+        key: 'recovered-create',
+        databaseLineage: 'database-a',
+        writerSessionId: 'writer-a',
+        mode: 'create',
+        moduleId: 'stable-create-id',
+        sequence: 7,
+        updatedAt: 7,
+      },
+      updatedAt: 7,
+    })
+
+    mountSettings()
+
+    await vi.waitFor(() =>
+      expect(target.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('Recovered Create'),
+    )
+    await clickModuleSurfaceAction('submit-create')
+    expect(moduleCommandSpies.createGlobalModule).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'stable-create-id',
+        cjs: 'recovered code',
+        assets: [['asset-a', 'asset-ref']],
+        lorebook: [expect.objectContaining({ content: 'recovered lore' })],
+        regex: [expect.objectContaining({ in: 'before' })],
+        trigger: [expect.objectContaining({ id: 'trigger-a' })],
+      }),
+    )
+  })
+
+  it('rebases a recovered edit onto the latest server module before reopening and saving', async () => {
+    const latest = getDatabase().modules.find((candidate) => candidate.id === 'alpha-id')!
+    latest.description = 'Remote description'
+    ;(latest as any).cjs = 'remote code'
+    moduleDraftStoreSpies.readLatestModuleEditorDraft.mockResolvedValueOnce({
+      mode: 'edit',
+      moduleId: 'alpha-id',
+      editBaseline: { id: 'alpha-id', name: 'Alpha Module', description: 'Old description' },
+      tempModule: { id: 'alpha-id', name: 'Local recovered name', description: 'Old description' },
+      generation: {
+        key: 'recovered-edit',
+        databaseLineage: 'database-a',
+        writerSessionId: 'writer-a',
+        mode: 'edit',
+        moduleId: 'alpha-id',
+        sequence: 8,
+        updatedAt: 8,
+      },
+      updatedAt: 8,
+    })
+
+    mountSettings()
+    await vi.waitFor(() =>
+      expect(target.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('Local recovered name'),
+    )
+    await clickModuleSurfaceAction('submit-edit')
+
+    expect(moduleCommandSpies.saveGlobalModuleDraft).toHaveBeenCalledWith(
+      'alpha-id',
+      expect.objectContaining({
+        name: 'Local recovered name',
+        description: 'Remote description',
+        cjs: 'remote code',
+      }),
+    )
+  })
+
+  it('opens Copy/Export/Discard recovery UI when an edited target was deleted', async () => {
+    const generation = {
+      key: 'deleted-edit',
+      databaseLineage: 'database-a',
+      writerSessionId: 'writer-a',
+      mode: 'edit' as const,
+      moduleId: 'deleted-module',
+      sequence: 9,
+      updatedAt: 9,
+    }
+    moduleDraftStoreSpies.readLatestModuleEditorDraft.mockResolvedValueOnce({
+      mode: 'edit',
+      moduleId: 'deleted-module',
+      editBaseline: { id: 'deleted-module', name: 'Deleted baseline' },
+      tempModule: { id: 'deleted-module', name: 'Recover this module', cjs: 'recoverable code' },
+      generation,
+      updatedAt: 9,
+    })
+
+    mountSettings()
+
+    await vi.waitFor(() =>
+      expect(target.querySelector('[data-risu-recovered-module-draft]')?.textContent).toContain('recoverable code'),
+    )
+    expect(target.querySelector('[role="alert"]')?.textContent).toContain(language.moduleSave.editTargetMissing)
+    moduleSurfaceAction('export-recovered-draft').click()
+    expect(moduleProcessSpies.exportModule).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'deleted-module', cjs: 'recoverable code' }),
+    )
+
+    confirmLeave.mockReturnValue(true)
+    await clickModuleSurfaceAction('discard-draft')
+    expect(moduleDraftStoreSpies.deleteModuleEditorDraft).toHaveBeenCalledWith(generation)
+    expect(target.querySelector('[data-risu-recovered-module-draft]')).toBeNull()
+  })
+
+  it('keeps a queued create open and deletes its exact generation only after final acceptance', async () => {
+    const settlement = createDeferred<any>()
+    moduleCommandSpies.createGlobalModule.mockResolvedValueOnce({
+      status: 'queued',
+      result: { status: 'unavailable' },
+      mutationIds: ['mutation-a'],
+      settlement: settlement.promise,
+    })
+    mountSettings()
+    await clickModuleSurfaceAction('create')
+    await updateModuleName('Queued module')
+
+    await clickModuleSurfaceAction('submit-create')
+
+    expect(target.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('Queued module')
+    expect(moduleDraftStoreSpies.deleteModuleEditorDraft).not.toHaveBeenCalled()
+    expect(alertSpies.alertNormal).not.toHaveBeenCalledWith(language.moduleSave.queued)
+
+    settlement.resolve({ status: 'accepted' })
+    await vi.waitFor(() => expect(target.querySelector('[data-risu-module-action="submit-create"]')).toBeNull())
+    expect(moduleDraftStoreSpies.deleteModuleEditorDraft).toHaveBeenCalledOnce()
+  })
+
+  it('deletes an accepted queued generation even after the editor unmounts', async () => {
+    const settlement = createDeferred<any>()
+    moduleCommandSpies.createGlobalModule.mockResolvedValueOnce({
+      status: 'queued',
+      result: { status: 'unavailable' },
+      mutationIds: ['mutation-create'],
+      settlement: settlement.promise,
+    })
+    mountSettings()
+    await clickModuleSurfaceAction('create')
+    await updateModuleName('Unmounted queued module')
+    await clickModuleSurfaceAction('submit-create')
+    const generation = moduleDraftStoreSpies.writeModuleEditorDraft.mock.results.at(-1)?.value.generation
+
+    unmount(component!)
+    component = undefined
+    settlement.resolve({ status: 'accepted' })
+
+    await vi.waitFor(() => expect(moduleDraftStoreSpies.deleteModuleEditorDraft).toHaveBeenCalledWith(generation))
+  })
+
+  it('keeps a queued edit and recovery draft after final failure with persistent loud feedback', async () => {
+    const settlement = createDeferred<any>()
+    moduleCommandSpies.saveGlobalModuleDraft.mockResolvedValueOnce({
+      status: 'queued',
+      result: { status: 'unavailable' },
+      mutationIds: ['mutation-edit'],
+      settlement: settlement.promise,
+    })
+    mountSettings()
+    moduleAction('alpha-id', 'edit').click()
+    await tick()
+    await updateModuleName('Queued edit')
+    await clickModuleSurfaceAction('submit-edit')
+
+    settlement.resolve({ status: 'failed', result: { status: 'error', error: 'replay rejected' } })
+    await vi.waitFor(() => expect(target.querySelector('[role="alert"]')?.textContent).toContain('replay rejected'))
+
+    expect(target.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('Queued edit')
+    expect(moduleDraftStoreSpies.deleteModuleEditorDraft).not.toHaveBeenCalled()
+    expect(alertSpies.alertError).toHaveBeenCalledWith(expect.stringContaining('replay rejected'))
+  })
+
+  it('surfaces local encrypted-draft storage failure without disabling the editor', async () => {
+    mountSettings()
+    await clickModuleSurfaceAction('create')
+    await updateModuleName('Keep editing')
+
+    moduleDraftStoreSpies.state.failureListener?.()
+    await tick()
+
+    expect(target.querySelector('[role="alert"]')?.textContent).toContain(language.moduleSave.draftStorageFailed)
+    expect(alertSpies.alertError).toHaveBeenCalledWith(language.moduleSave.draftStorageFailed)
+    expect(target.querySelector<HTMLInputElement>('input[type="text"]')?.disabled).toBe(false)
+    expect(target.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('Keep editing')
+  })
+
+  it('explicitly disables contenteditable descendants only during an explicit Save', async () => {
+    const save = createDeferred<any>()
+    moduleCommandSpies.createGlobalModule.mockReturnValueOnce(save.promise)
+    mountSettings()
+    await clickModuleSurfaceAction('create')
+    await updateModuleName('Contenteditable lock')
+    const fieldset = target.querySelector('fieldset')
+    const editable = document.createElement('div')
+    editable.setAttribute('contenteditable', 'true')
+    fieldset?.append(editable)
+    expect(editable.getAttribute('contenteditable')).toBe('true')
+
+    moduleSurfaceAction('submit-create').click()
+    await tick()
+    expect(editable.getAttribute('contenteditable')).toBe('false')
+    expect(editable.getAttribute('aria-disabled')).toBe('true')
+
+    save.resolve({ status: 'failed', result: { status: 'unavailable' } })
+    await save.promise
+    await tick()
+    expect(editable.getAttribute('contenteditable')).toBe('true')
   })
 })

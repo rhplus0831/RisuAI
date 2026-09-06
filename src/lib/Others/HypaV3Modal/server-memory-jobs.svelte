@@ -9,6 +9,11 @@
   } from 'src/ts/process/request/serverMemory'
   import { subscribeServerMemoryJobEvents } from 'src/ts/server/memoryJobEvents'
   import { createMemoryJobRefreshController, type MemoryJobRefreshController } from 'src/ts/server/memoryJobRefresh'
+  import {
+    memoryJobProjectionStore,
+    replaceMemoryJobsForChat,
+    selectMemoryJobsForChat,
+  } from 'src/ts/server/memoryJobProjection.svelte'
 
   interface Props {
     chatId: string
@@ -16,15 +21,16 @@
 
   let { chatId }: Props = $props()
 
-  let jobs = $state<ServerMemoryJob[]>([])
+  const jobs = $derived(selectMemoryJobsForChat($memoryJobProjectionStore, chatId))
   let loading = $state(false)
   let actionError = $state<string | null>(null)
   let refreshError = $state<string | null>(null)
   const error = $derived(refreshError ?? actionError)
-  let cancellingJobIds = $state(new Set<string>())
+  let cancellingJobInstanceIds = $state(new Set<string>())
   let lastLoadedAt = $state<string | null>(null)
   let refreshController: MemoryJobRefreshController | null = null
   let unsubscribeMemoryEvents: (() => void) | null = null
+  let ownerEpoch = 0
 
   function kindLabel(kind: ServerMemoryJob['kind']): string {
     switch (kind) {
@@ -51,14 +57,14 @@
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
-  function setCancelling(jobId: string, cancelling: boolean): void {
-    const next = new Set(cancellingJobIds)
+  function setCancelling(instanceId: string, cancelling: boolean): void {
+    const next = new Set(cancellingJobInstanceIds)
     if (cancelling) {
-      next.add(jobId)
+      next.add(instanceId)
     } else {
-      next.delete(jobId)
+      next.delete(instanceId)
     }
-    cancellingJobIds = next
+    cancellingJobInstanceIds = next
   }
 
   function refreshJobs(): Promise<void> {
@@ -73,17 +79,24 @@
     return applied
   }
 
-  async function cancelJob(jobId: string): Promise<void> {
-    if (cancellingJobIds.has(jobId)) return
+  async function cancelJob(job: ServerMemoryJob): Promise<void> {
+    if (cancellingJobInstanceIds.has(job.instanceId)) return
 
     const cancelChatId = chatId
-    setCancelling(jobId, true)
-    const result = await cancelServerMemoryJob(jobId)
-    setCancelling(jobId, false)
+    const cancelOwnerEpoch = ownerEpoch
+    const cancelInstanceId = job.instanceId
+    setCancelling(cancelInstanceId, true)
+    const result = await cancelServerMemoryJob(job.id)
 
-    if (chatId !== cancelChatId) return
+    if (ownerEpoch !== cancelOwnerEpoch || chatId !== cancelChatId) return
+    setCancelling(cancelInstanceId, false)
 
     if (result.status === 'ok') {
+      const stillOwnsInstance = jobs.some(
+        (current) =>
+          current.chatId === cancelChatId && current.id === job.id && current.instanceId === cancelInstanceId,
+      )
+      if (!stillOwnsInstance || result.job.instanceId !== cancelInstanceId) return
       actionError = null
       applyJobUpdate(result.job)
       return
@@ -99,6 +112,8 @@
   }
 
   $effect(() => {
+    chatId
+    ownerEpoch += 1
     refreshController?.setChatId(chatId)
   })
 
@@ -106,17 +121,16 @@
     refreshController = createMemoryJobRefreshController({
       chatId,
       listJobs: (currentChatId, signal, etag) => listServerMemoryJobs({ chatId: currentChatId, etag }, signal),
-      onJobs: (nextJobs, loadedAt) => {
-        jobs = nextJobs
+      onJobs: (nextJobs, loadedAt, snapshot) => {
+        replaceMemoryJobsForChat(chatId, nextJobs, snapshot)
         refreshError = null
         lastLoadedAt = loadedAt
       },
       onError: (message) => {
-        jobs = []
         refreshError = message
       },
       onClear: () => {
-        jobs = []
+        replaceMemoryJobsForChat(chatId, [])
         actionError = null
         refreshError = null
         lastLoadedAt = null
@@ -132,6 +146,7 @@
   })
 
   onDestroy(() => {
+    ownerEpoch += 1
     unsubscribeMemoryEvents?.()
     unsubscribeMemoryEvents = null
     refreshController?.dispose()
@@ -175,7 +190,7 @@
     </div>
   {:else}
     <div class="mt-3 flex flex-col gap-2">
-      {#each jobs as job (job.id)}
+      {#each jobs as job (job.instanceId)}
         <div
           class="flex flex-col gap-3 rounded-sm border border-zinc-700 bg-zinc-900/70 p-3 sm:flex-row sm:items-center sm:justify-between">
           <div class="min-w-0">
@@ -201,11 +216,11 @@
           {#if job.status === 'pending' || job.status === 'running'}
             <button
               class="inline-flex items-center justify-center gap-2 rounded-sm border border-rose-900/80 px-3 py-2 text-sm text-rose-200 transition-colors hover:bg-rose-950/60 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={cancellingJobIds.has(job.id)}
-              onclick={() => void cancelJob(job.id)}
+              disabled={cancellingJobInstanceIds.has(job.instanceId)}
+              onclick={() => void cancelJob(job)}
               title="Cancel job">
               <XIcon class="h-4 w-4" />
-              {cancellingJobIds.has(job.id) ? 'Cancelling' : 'Cancel'}
+              {cancellingJobInstanceIds.has(job.instanceId) ? 'Cancelling' : 'Cancel'}
             </button>
           {/if}
         </div>

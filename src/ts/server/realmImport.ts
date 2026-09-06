@@ -71,6 +71,7 @@ export async function importRealmCharacterFromServer(
             baseRevision,
             allowLowLevelAccess: options.allowLowLevelAccess === true,
             ...(options.pendingImportToken ? { pendingImportToken: options.pendingImportToken } : {}),
+            clientCapabilities: { realmProgressDelta: true },
           }),
         })
       } catch (err) {
@@ -103,10 +104,14 @@ async function readRealmImportProgressStream(
   }
 
   try {
+    let lastProgress: ServerRealmImportProgress | null = null
     for await (const frame of iterateSseEvents(response.body, options.signal ?? null)) {
       if (frame.event === 'progress') {
-        const progress = readProgressFrame(frame.data)
-        if (progress) options.onProgress?.(progress)
+        const progress = readProgressFrame(frame.data, lastProgress)
+        if (progress) {
+          lastProgress = progress
+          options.onProgress?.(progress)
+        }
         continue
       }
       if (frame.event === 'done') {
@@ -206,16 +211,22 @@ function readRealmImportSuccessBody(body: unknown): ServerRealmImportResult {
   }
 }
 
-function readProgressFrame(data: string): ServerRealmImportProgress | null {
+function readProgressFrame(
+  data: string,
+  lastProgress: ServerRealmImportProgress | null,
+): ServerRealmImportProgress | null {
   const parsed = parseJsonFrame(data)
   if (!parsed || typeof parsed !== 'object') return null
   const record = parsed as Record<string, unknown>
-  if (typeof record.phase !== 'string') return null
-  if (typeof record.message !== 'string') return null
   if (typeof record.percent !== 'number' || !Number.isFinite(record.percent)) return null
+  if (record.phase !== undefined && typeof record.phase !== 'string') return null
+  if (record.message !== undefined && typeof record.message !== 'string') return null
+  const phase = typeof record.phase === 'string' ? record.phase : lastProgress?.phase
+  const message = typeof record.message === 'string' ? record.message : lastProgress?.message
+  if (phase === undefined || message === undefined) return null
   return {
-    phase: record.phase as ServerRealmImportProgressPhase,
-    message: record.message,
+    phase: phase as ServerRealmImportProgressPhase,
+    message,
     percent: Math.max(0, Math.min(100, record.percent)),
   }
 }

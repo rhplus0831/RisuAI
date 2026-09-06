@@ -33,7 +33,7 @@ beforeEach(() => {
   }
 })
 
-describe('getFileSrc Fastify-mode shape gate (A4EC7 / B8)', () => {
+describe('getFileSrc Fastify-mode shape gate', () => {
   it('returns absolute /api/v1/assets URLs unchanged', async () => {
     const url = '/api/v1/assets/' + 'a'.repeat(64)
     expect(await getFileSrc(url)).toBe(url)

@@ -16,7 +16,14 @@
   } from '@lucide/svelte'
 
   import type { Chat, ChatFolder, character } from 'src/ts/storage/database.svelte'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import {
+    applyChatFolderMetadataOwnerPatch,
+    applyChatMetadataOwnerPatch,
+    charactersResourceState,
+    getCharacterResourceOwner,
+    restoreChatFolderMetadataOwnerSnapshot,
+    restoreChatMetadataOwnerSnapshot,
+  } from 'src/ts/server/resourceState.svelte'
   import { reloadGuiDisplay } from 'src/ts/stores.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
 
@@ -24,7 +31,6 @@
   import Button from '../UI/GUI/Button.svelte'
   import TextInput from '../UI/GUI/TextInput.svelte'
 
-  import { exportChat, importChat, exportAllChats } from 'src/ts/characters'
   import { alertChatOptions, alertConfirm, alertError, alertNormal, alertSelect, alertStore } from 'src/ts/alert'
   import { sleep, sortableOptions } from 'src/ts/util'
   import { bookmarkListOpen } from 'src/ts/stores.svelte'
@@ -37,8 +43,17 @@
     applyOptimisticCreatedChat,
     applyOptimisticCreatedChatFolder,
     applyOptimisticDeletedChat,
+    applyOptimisticResetChats,
+    captureChatCreateSnapshot,
+    captureChatDeleteSnapshot,
+    captureChatFolderCreateSnapshot,
+    captureChatFolderDeleteSnapshot,
+    captureChatForkSnapshot,
+    captureChatOrderSnapshot,
+    captureChatResetSnapshot,
+    captureChatMetadataPatch,
+    captureChatFolderMetadataPatch,
     currentChatSelectionSnapshot,
-    currentChatStateSnapshot,
     dispatchCreateChatFolderWithOutcome,
     dispatchCreateChatWithOutcome,
     dispatchDeleteChatFolderWithOutcome,
@@ -46,30 +61,89 @@
     dispatchForkChatWithOutcome,
     dispatchReorderChatFoldersAndChatsByIdsWithOutcome,
     dispatchReorderChatsByIdsWithOutcome,
+    dispatchResetChatsWithOutcome,
+    dispatchSaveChatGenerationSettingsWithOutcome,
     dispatchSelectChat,
-    dispatchUpdateChatAsync,
-    dispatchUpdateChatFolderWithOutcome,
-    dispatchUpdateChatWithOutcome,
+    dispatchChatFolderMetadataPatchWithOutcome,
+    dispatchChatMetadataPatchWithOutcome,
+    restoreChatFolderRowMetadata,
+    restoreChatRowMetadata,
+    type ChatFolderRowMetadataSnapshot,
     type ChatMutationOutcome,
+    type ChatRowMetadataSnapshot,
   } from 'src/ts/chatCommands'
   import { reportWriterAccessLostMutation } from 'src/ts/server/activeWriterSession'
-  import { canUseServerCommands, type ServerCommandResult } from 'src/ts/server/commands'
-  import {
-    rollbackServerBackedChatFolderRowMetadata,
-    rollbackServerBackedChatRowMetadata,
-    syncServerBackedChatMetadataBaselines,
-    watchServerBackedChatMetadata,
-  } from 'src/ts/server/chatBridge.svelte'
-  import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
+  import { canUseServerCommands } from 'src/ts/server/commands'
   import { groupChatsByFolderId } from './chatFolderGrouping'
   import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
   import { rekeyClonedChat } from 'src/ts/chatFork'
+  import { generationJobLifecycles } from 'src/ts/process/reattach'
+  import { collectExhaustedGenerationChatIds } from './sidebarMultitasking'
+  import GenerationIndicator from './GenerationIndicator.svelte'
+  import UnreadIndicator from './UnreadIndicator.svelte'
+  import { markChatRead, unreadChatIds } from 'src/ts/process/chatUnread.svelte'
+  import {
+    createActiveChatPersonaSelectionPatch,
+    resolveActiveChatGenerationSettings,
+  } from 'src/ts/activeChatGenerationSettings'
+  import { resolveChatBoundPersonaId } from 'src/ts/personaModuleLinks'
+  import { selectedPersonaId } from 'src/ts/persona'
+  import { exportAllChats, exportChat, importChat, matchesAllChatsExportFence } from 'src/ts/characters'
 
   interface Props {
     chara: character
   }
 
-  let { chara }: Props = $props()
+  const unavailableCharacter = {
+    chatFolders: [],
+    chatPage: 0,
+    chats: [],
+  } as unknown as character
+
+  let { chara: aggregateCharacter }: Props = $props()
+  let sidebarCharacter = $derived.by(() => {
+    if (charactersResourceState.status === 'error') return undefined
+    const owner = aggregateCharacter.chaId ? getCharacterResourceOwner(aggregateCharacter.chaId) : undefined
+    if (owner || charactersResourceState.status === 'ready') return owner
+    return aggregateCharacter
+  })
+  let chara = $derived(sidebarCharacter ?? unavailableCharacter)
+
+  function identityCharacterRows(): readonly character[] {
+    if (charactersResourceState.status === 'error') return []
+    if (charactersResourceState.characters.length > 0) return charactersResourceState.characters
+    return charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading'
+      ? [aggregateCharacter]
+      : []
+  }
+
+  function uniqueSidebarChat(chatId: string | undefined): Chat | undefined {
+    if (!chatId) return undefined
+    const ownerCount = identityCharacterRows().reduce(
+      (count, character) => count + (character.chats ?? []).filter((candidate) => candidate.id === chatId).length,
+      0,
+    )
+    if (ownerCount !== 1) return undefined
+    const matches = (sidebarCharacter?.chats ?? []).filter((candidate) => candidate.id === chatId)
+    return matches.length === 1 ? matches[0] : undefined
+  }
+
+  function uniqueSidebarFolder(folderId: string | undefined): ChatFolder | undefined {
+    if (!folderId) return undefined
+    const ownerCount = identityCharacterRows().reduce(
+      (count, character) =>
+        count + (character.chatFolders ?? []).filter((candidate) => candidate.id === folderId).length,
+      0,
+    )
+    if (ownerCount !== 1) return undefined
+    const matches = (sidebarCharacter?.chatFolders ?? []).filter((candidate) => candidate.id === folderId)
+    return matches.length === 1 ? matches[0] : undefined
+  }
+
+  function renderedChatName(chat: Chat): string {
+    if (!chat.id) return charactersResourceState.status === 'ready' ? '' : (chat.name ?? '')
+    return uniqueSidebarChat(chat.id)?.name ?? ''
+  }
   let editMode = $state(false)
   let pendingPersonaBindings = $state<Record<string, boolean>>({})
   type ChatStructureMutationStatus = 'pending' | 'queued' | 'failed'
@@ -105,17 +179,13 @@
   let validChatFolderIds = $derived(new Set((chara.chatFolders ?? []).map((folder) => folder.id)))
   let chatsByFolderId = $derived(groupChatsByFolderId(chara.chats, validChatFolderIds))
   let organizerIdsStable = $derived(hasStableOrganizationIds())
+  let reattachWarningChatIds = $derived(collectExhaustedGenerationChatIds($generationJobLifecycles))
 
   let chatRouteOpen = $derived(
     $currentRoute.kind === 'character' &&
       $currentRoute.chaId === chara?.chaId &&
       typeof $currentRoute.chatId === 'string',
   )
-
-  $effect(() => {
-    const stop = untrack(() => watchServerBackedChatMetadata())
-    return stop
-  })
 
   $effect(() => {
     const previousChatDrafts = untrack(() => chatNameDrafts)
@@ -159,10 +229,6 @@
     return `${operation}:${targetId}`
   }
 
-  function pendingStructureMutations(): ChatStructureMutationState[] {
-    return Object.values(chatStructureMutations).filter((mutation) => mutation.status === 'pending')
-  }
-
   function chatConflictKey(chatId: string): string {
     return `chat:${chatId}`
   }
@@ -179,10 +245,37 @@
     return `folder-order:${characterId ?? 'missing-owner'}`
   }
 
-  function hasConflictingStructureMutation(conflictKeys: readonly string[]): boolean {
-    return pendingStructureMutations().some((mutation) =>
-      mutation.conflictKeys.some((conflictKey) => conflictKeys.includes(conflictKey)),
+  function hasConflictingStructureMutation(conflictKeys: readonly string[], ignoredMutationKey?: string): boolean {
+    return Object.entries(chatStructureMutations).some(
+      ([key, mutation]) =>
+        (!ignoredMutationKey || (key !== ignoredMutationKey && !key.startsWith(`${ignoredMutationKey}:`))) &&
+        mutation.status === 'pending' &&
+        mutation.conflictKeys.some((conflictKey) => conflictKeys.includes(conflictKey)),
     )
+  }
+
+  function mutationKeyBelongsToGroup(key: string, groupKey: string): boolean {
+    return key === groupKey || key.startsWith(`${groupKey}:`)
+  }
+
+  function clearFailedStructureMutations(groupKey: string): void {
+    for (const [key, mutation] of Object.entries(chatStructureMutations)) {
+      if (mutationKeyBelongsToGroup(key, groupKey) && mutation.status === 'failed') {
+        delete chatStructureMutations[key]
+      }
+    }
+  }
+
+  function clearAcceptedStructureMutation(key: string, run: number, groupKey?: string): void {
+    if (!groupKey) {
+      if (chatStructureMutations[key]?.run === run) delete chatStructureMutations[key]
+      return
+    }
+    for (const [candidateKey, mutation] of Object.entries(chatStructureMutations)) {
+      if (mutationKeyBelongsToGroup(candidateKey, groupKey) && mutation.run <= run) {
+        delete chatStructureMutations[candidateKey]
+      }
+    }
   }
 
   function structureMutationForTarget(
@@ -234,6 +327,7 @@
     dispatch: () => Promise<ChatMutationOutcome> | undefined,
     queuedMessage?: string,
     onFinal?: (outcome: Awaited<Extract<ChatMutationOutcome, { status: 'queued' }>['settlement']>) => void,
+    mutationGroupKey?: string,
   ): Promise<ChatMutationOutcome['status']> {
     const run = ++nextStructureMutationRun
     chatStructureMutations[key] = { targetKind, targetId, action, conflictKeys, run, status: 'pending' }
@@ -252,7 +346,7 @@
           (finalOutcome) => {
             if (chatStructureMutations[key]?.run !== run) return
             if (finalOutcome.status === 'accepted') {
-              delete chatStructureMutations[key]
+              clearAcceptedStructureMutation(key, run, mutationGroupKey)
               onFinal?.(finalOutcome)
               return
             }
@@ -269,7 +363,7 @@
         )
         return 'queued'
       }
-      delete chatStructureMutations[key]
+      clearAcceptedStructureMutation(key, run, mutationGroupKey)
       return 'accepted'
     } catch {
       if (chatStructureMutations[key]?.run === run) {
@@ -282,6 +376,7 @@
 
   function selectChat(index: number): void {
     const chatId = chara.chats[index]?.id
+    if (!uniqueSidebarChat(chatId)) return
     if (chara.chaId && chatId) {
       navigate(characterRoutePath(chara.chaId, chatId))
       return
@@ -297,23 +392,27 @@
 
   function activateChatRow(index: number): void {
     if (editMode) return
+    const chat = uniqueSidebarChat(chara.chats[index]?.id)
+    if (!chat?.id) return
+    markChatRead(chat.id)
     selectChat(index)
     reloadGuiDisplay()
   }
 
   async function toggleChatFolder(folder: ChatFolder): Promise<void> {
     if (editMode || hasConflictingStructureMutation([folderConflictKey(folder.id)])) return
-    const previous = currentChatStateSnapshot()
-    const folded = !folder.folded
-    if (!applyDirectOptimisticFolderMetadata(folder.id, (candidate) => (candidate.folded = folded))) return
+    const ownerFolder = uniqueSidebarFolder(folder.id)
+    if (!ownerFolder) return
+    const folded = !ownerFolder.folded
+    const previous = captureChatFolderMetadataPatch(folder.id, { folded }, chara.chaId)
+    if (!previous || !applyDirectOptimisticFolderMetadata(folder.id, { folded })) return
     await settleStructureMutation(
       structureMutationKey('fold-folder', folder.id),
       'folder',
       folder.id,
       `${language.edit}: ${folder.name}`,
       [folderConflictKey(folder.id)],
-      () =>
-        dispatchUpdateChatFolderWithOutcome(folder.id, { folded }, previous, rollbackServerBackedChatFolderRowMetadata),
+      () => dispatchChatFolderMetadataPatchWithOutcome(previous, rollbackOwnedChatFolderMetadata),
     )
     reloadGuiDisplay()
   }
@@ -332,14 +431,14 @@
   function recoverRejectedProvisionalChatRoute(characterId: string, provisionalChatId: string): void {
     const route = get(currentRoute)
     if (route.kind !== 'character' || route.chaId !== characterId || route.chatId !== provisionalChatId) return
-    const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+    const character = sidebarCharacter?.chaId === characterId ? sidebarCharacter : undefined
     if (!character || character.chats?.some((chat) => chat.id === provisionalChatId)) return
     const replacementChatId = character.chats?.[character.chatPage]?.id
     navigate(characterRoutePath(characterId, replacementChatId), { replace: true })
   }
 
   function isExpectedSidebarChatSelected(characterId: string, chatId: string): boolean {
-    const selectedCharacter = getDatabase().characters?.[$selectedCharID]
+    const selectedCharacter = sidebarCharacter
     return Boolean(
       selectedCharacter?.chaId === characterId &&
       chara.chaId === characterId &&
@@ -374,7 +473,7 @@
   }
 
   function isCurrentOrganizerOwner(characterId: string): boolean {
-    return chara.chaId === characterId && getDatabase().characters?.[$selectedCharID]?.chaId === characterId
+    return sidebarCharacter?.chaId === characterId
   }
 
   function isCurrentBranchGraphOwner(
@@ -382,9 +481,11 @@
     selectedCharacterIndex: number,
     characterReference: character,
   ): boolean {
-    const selectedCharacter = getDatabase().characters?.[$selectedCharID]
+    const selectedCharacter = sidebarCharacter
     if (characterId) return selectedCharacter?.chaId === characterId
-    return $selectedCharID === selectedCharacterIndex && selectedCharacter === characterReference
+    const selectedIndex =
+      charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : $selectedCharID
+    return selectedIndex === selectedCharacterIndex && selectedCharacter === characterReference
   }
 
   function organizerButtonForChat(chatId: string): HTMLButtonElement | undefined {
@@ -450,9 +551,10 @@
     assignments: Record<string, string | null>,
   ): Promise<void> {
     if (!chara.chaId) return
-    const previous = currentChatStateSnapshot()
     const selectedChatId = chara.chats[chara.chatPage]?.id
     if (canUseServerCommands()) {
+      const previous = captureChatOrderSnapshot(chara.chaId)
+      if (!previous) return
       const conflictKeys = [chatOrderConflictKey(), chatConflictKey(targetChatId)]
       if (hasConflictingStructureMutation(conflictKeys)) return
       await settleStructureMutation(
@@ -479,16 +581,17 @@
 
   async function openChatOrganizerActions(chat: Chat, focusOrigin?: HTMLButtonElement): Promise<void> {
     const ownerCharacterId = chara.chaId
+    const ownerChat = uniqueSidebarChat(chat.id)
     if (
       !ownerCharacterId ||
       !isCurrentOrganizerOwner(ownerCharacterId) ||
-      !chat.id ||
+      !ownerChat?.id ||
       !hasStableOrganizationIds() ||
       isChatStructuralActionPending(chat.id)
     )
       return
     const shouldRestoreFocus = focusOrigin === document.activeElement
-    const chatId = chat.id
+    const chatId = ownerChat.id
     const initialAssignments = chatFolderAssignments()
     const initialSourceFolderId = initialAssignments[chatId] ?? null
     const initialGroups = groupedChatIds(initialAssignments)
@@ -531,7 +634,7 @@
       if (!requestedTargetFolderId) return
     }
 
-    const currentChat = chara.chats.find((candidate) => candidate.id === chatId)
+    const currentChat = uniqueSidebarChat(chatId)
     if (!currentChat || !hasStableOrganizationIds()) return
     const assignments = chatFolderAssignments()
     const sourceFolderId = assignments[chatId] ?? null
@@ -565,8 +668,10 @@
 
   async function openChatFolderOrganizerActions(folder: ChatFolder, focusOrigin?: HTMLButtonElement): Promise<void> {
     const ownerCharacterId = chara.chaId
+    const ownerFolder = uniqueSidebarFolder(folder.id)
     if (
       !ownerCharacterId ||
+      !ownerFolder ||
       !isCurrentOrganizerOwner(ownerCharacterId) ||
       hasConflictingStructureMutation([folderConflictKey(folder.id)])
     )
@@ -602,22 +707,17 @@
       const colorSelection = parseAlertSelection(colorSelectionValue, colors.length)
       if (colorSelection === null) return
       if (hasConflictingStructureMutation([folderConflictKey(folder.id)])) return
-      const previous = currentChatStateSnapshot()
       const color = colors[colorSelection]
-      if (!color || !applyDirectOptimisticFolderMetadata(folder.id, (candidate) => (candidate.color = color))) return
+      if (!color) return
+      const previous = captureChatFolderMetadataPatch(folder.id, { color }, chara.chaId)
+      if (!previous || !applyDirectOptimisticFolderMetadata(folder.id, { color })) return
       await settleStructureMutation(
         structureMutationKey('color-folder', folder.id),
         'folder',
         folder.id,
         `${language.changeFolderColor}: ${folder.name}`,
         [folderConflictKey(folder.id)],
-        () =>
-          dispatchUpdateChatFolderWithOutcome(
-            folder.id,
-            { color },
-            previous,
-            rollbackServerBackedChatFolderRowMetadata,
-          ),
+        () => dispatchChatFolderMetadataPatchWithOutcome(previous, rollbackOwnedChatFolderMetadata),
       )
       return
     }
@@ -632,11 +732,12 @@
     ;[folderIds[currentFolderIndex], folderIds[targetIndex]] = [folderIds[targetIndex], folderIds[currentFolderIndex]]
     const assignments = chatFolderAssignments()
     const chatIds = flattenChatGroups(groupedChatIds(assignments), folderIds)
-    const previous = currentChatStateSnapshot()
     const selectedChatId = chara.chats[chara.chatPage]?.id
     const usingServerCommands = canUseServerCommands()
     if (usingServerCommands && !chara.chaId) return
     if (usingServerCommands) {
+      const previous = captureChatOrderSnapshot(chara.chaId)
+      if (!previous) return
       const conflictKeys = [
         chatOrderConflictKey(chara.chaId),
         folderOrderConflictKey(chara.chaId),
@@ -674,8 +775,8 @@
   }
 
   async function createChat(): Promise<void> {
+    if (!sidebarCharacter) return
     if (hasConflictingStructureMutation([chatOrderConflictKey()])) return
-    const previous = currentChatStateSnapshot()
     const len = chara.chats.length
     const chat = {
       message: [],
@@ -687,6 +788,8 @@
     }
     if (canUseServerCommands()) {
       const characterId = chara.chaId
+      const previous = captureChatCreateSnapshot(characterId, chat)
+      if (!previous) return
       const originRoute = currentRouteIdentity()
       const applied = applyOptimisticCreatedChat(characterId, chat, previous)
       if (!applied || !characterId || !chat.id) return
@@ -719,7 +822,8 @@
   async function forkChat(sourceChat: Chat): Promise<void> {
     const sourceChatId = sourceChat.id
     const characterId = chara.chaId
-    let liveSourceChat = sourceChat
+    let liveSourceChat = uniqueSidebarChat(sourceChatId)
+    if (!liveSourceChat) return
     if (canUseServerCommands() && sourceChatId) {
       if (isChatStructuralActionPending(sourceChatId)) return
       try {
@@ -729,8 +833,7 @@
         return
       }
 
-      const liveCharacter = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
-      const hydratedSourceChat = liveCharacter?.chats?.find((candidate) => candidate.id === sourceChatId)
+      const hydratedSourceChat = uniqueSidebarChat(sourceChatId)
       if (!hydratedSourceChat) {
         alertError(language.chatDataLoadFailed)
         return
@@ -738,12 +841,13 @@
       liveSourceChat = hydratedSourceChat
     }
 
-    const previous = currentChatStateSnapshot()
     const newChat = $state.snapshot(liveSourceChat)
     newChat.name = createChatCopyName(newChat.name, 'Copy')
     rekeyClonedChat(newChat)
     if (canUseServerCommands()) {
       if (!sourceChatId || !newChat.id) return
+      const previous = captureChatForkSnapshot(sourceChatId, { chat: newChat })
+      if (!previous) return
       const conflictKeys = [
         chatOrderConflictKey(characterId),
         chatConflictKey(sourceChatId),
@@ -765,65 +869,68 @@
     chara.chats = chara.chats
   }
 
-  function currentSidebarCharacter(): character | undefined {
-    return (
-      getDatabase().characters?.find((candidate) => Boolean(chara.chaId) && candidate.chaId === chara.chaId) ??
-      getDatabase().characters?.[$selectedCharID]
-    )
+  function applyDirectOptimisticChatMetadata(chatId: string, patch: Partial<Chat>): boolean {
+    const characterId = sidebarCharacter?.chaId
+    if (!characterId || !uniqueSidebarChat(chatId)) return false
+    return applyChatMetadataOwnerPatch(characterId, chatId, patch)
   }
 
-  function applyOptimisticChatMetadata(chatId: string, mutate: (chat: Chat) => void): boolean {
-    let applied = false
-    withTrustedResourceWrite(() => {
-      const liveChat = currentSidebarCharacter()?.chats?.find((candidate) => candidate.id === chatId)
-      if (liveChat) {
-        mutate(liveChat)
-        applied = true
-      }
-    })
-    return applied
+  function applyDirectOptimisticFolderMetadata(folderId: string, patch: Partial<ChatFolder>): boolean {
+    const characterId = sidebarCharacter?.chaId
+    if (!characterId || !uniqueSidebarFolder(folderId)) return false
+    return applyChatFolderMetadataOwnerPatch(characterId, folderId, patch)
   }
 
-  function applyOptimisticFolderMetadata(folderId: string, mutate: (folder: ChatFolder) => void): boolean {
-    let applied = false
-    withTrustedResourceWrite(() => {
-      const liveFolder = currentSidebarCharacter()?.chatFolders?.find((candidate) => candidate.id === folderId)
-      if (liveFolder) {
-        mutate(liveFolder)
-        applied = true
-      }
-    })
-    return applied
+  function rollbackOwnedChatMetadata(snapshot: ChatRowMetadataSnapshot): void {
+    if (charactersResourceState.status === 'ready') {
+      if (!snapshot.characterId) return
+      restoreChatMetadataOwnerSnapshot({
+        characterId: snapshot.characterId,
+        chatId: snapshot.chatId,
+        metadata: snapshot.metadata,
+        attempted: snapshot.attempted,
+      })
+      return
+    }
+    restoreChatRowMetadata(snapshot)
   }
 
-  function applyDirectOptimisticChatMetadata(chatId: string, mutate: (chat: Chat) => void): boolean {
-    const applied = applyOptimisticChatMetadata(chatId, mutate)
-    if (applied) syncServerBackedChatMetadataBaselines()
-    return applied
-  }
-
-  function applyDirectOptimisticFolderMetadata(folderId: string, mutate: (folder: ChatFolder) => void): boolean {
-    const applied = applyOptimisticFolderMetadata(folderId, mutate)
-    if (applied) syncServerBackedChatMetadataBaselines()
-    return applied
+  function rollbackOwnedChatFolderMetadata(snapshot: ChatFolderRowMetadataSnapshot): void {
+    if (charactersResourceState.status === 'ready') {
+      if (!snapshot.characterId) return
+      restoreChatFolderMetadataOwnerSnapshot({
+        characterId: snapshot.characterId,
+        folderId: snapshot.folderId,
+        metadata: snapshot.metadata,
+        attempted: snapshot.attempted,
+      })
+      return
+    }
+    restoreChatFolderRowMetadata(snapshot)
   }
 
   async function updateChatName(chat: Chat, name: string): Promise<void> {
-    if (chat.name === name || reportWriterAccessLostMutation()) return
+    const ownerChat = uniqueSidebarChat(chat.id)
+    if (!ownerChat || ownerChat.name === name || reportWriterAccessLostMutation()) return
     if (canUseServerCommands()) {
       const chatId = chat.id
-      const liveChat = currentSidebarCharacter()?.chats?.find((candidate) => candidate.id === chatId)
-      if (!chatId || !liveChat || liveChat.name === name || hasConflictingStructureMutation([chatConflictKey(chatId)]))
-        return
-      const previous = currentChatStateSnapshot()
-      if (!applyDirectOptimisticChatMetadata(chatId, (candidate) => (candidate.name = name))) return
+      const liveChat = uniqueSidebarChat(chatId)
+      if (!chatId || !liveChat || liveChat.name === name) return
+      const key = structureMutationKey('rename-chat', chatId)
+      if (hasConflictingStructureMutation([chatConflictKey(chatId)], key)) return
+      const previous = captureChatMetadataPatch(chatId, { name }, chara.chaId)
+      if (!previous || !applyDirectOptimisticChatMetadata(chatId, { name })) return
+      clearFailedStructureMutations(key)
       await settleStructureMutation(
-        structureMutationKey('rename-chat', chatId),
+        `${key}:${v4()}`,
         'chat',
         chatId,
         `${language.edit}: ${name}`,
         [chatConflictKey(chatId)],
-        () => dispatchUpdateChatWithOutcome(chatId, { name }, previous, false, rollbackServerBackedChatRowMetadata),
+        () => dispatchChatMetadataPatchWithOutcome(previous, rollbackOwnedChatMetadata),
+        undefined,
+        undefined,
+        key,
       )
       return
     }
@@ -831,26 +938,27 @@
   }
 
   async function updateFolderName(folder: ChatFolder, name: string): Promise<void> {
+    const ownerFolder = uniqueSidebarFolder(folder.id)
+    if (!ownerFolder || ownerFolder.name === name || reportWriterAccessLostMutation()) return
     if (canUseServerCommands()) {
       const folderId = folder.id
-      const liveFolder = currentSidebarCharacter()?.chatFolders?.find((candidate) => candidate.id === folderId)
-      if (
-        !folderId ||
-        !liveFolder ||
-        liveFolder.name === name ||
-        hasConflictingStructureMutation([folderConflictKey(folderId)])
-      )
-        return
-      const previous = currentChatStateSnapshot()
-      if (!applyDirectOptimisticFolderMetadata(folderId, (candidate) => (candidate.name = name))) return
+      const liveFolder = uniqueSidebarFolder(folderId)
+      if (!folderId || !liveFolder || liveFolder.name === name) return
+      const key = structureMutationKey('rename-folder', folderId)
+      if (hasConflictingStructureMutation([folderConflictKey(folderId)], key)) return
+      const previous = captureChatFolderMetadataPatch(folderId, { name }, chara.chaId)
+      if (!previous || !applyDirectOptimisticFolderMetadata(folderId, { name })) return
+      clearFailedStructureMutations(key)
       await settleStructureMutation(
-        structureMutationKey('rename-folder', folderId),
+        `${key}:${v4()}`,
         'folder',
         folderId,
         `${language.edit}: ${name}`,
         [folderConflictKey(folderId)],
-        () =>
-          dispatchUpdateChatFolderWithOutcome(folderId, { name }, previous, rollbackServerBackedChatFolderRowMetadata),
+        () => dispatchChatFolderMetadataPatchWithOutcome(previous, rollbackOwnedChatFolderMetadata),
+        undefined,
+        undefined,
+        key,
       )
       return
     }
@@ -861,58 +969,47 @@
     if (!chatId || pendingPersonaBindings[chatId]) return
     pendingPersonaBindings[chatId] = true
     try {
-      const chat = currentSidebarCharacter()?.chats?.find((candidate) => candidate.id === chatId)
+      const chat = uniqueSidebarChat(chatId)
       if (!chat) return
 
-      const previousBinding = chat.bindedPersona ?? ''
+      const previousBinding = resolveChatBoundPersonaId(chat) ?? ''
       const confirmed = await alertConfirm(
         previousBinding ? language.doYouWantToUnbindCurrentPersona : language.doYouWantToBindCurrentPersona,
       )
       if (!confirmed) return
 
-      const liveChat = currentSidebarCharacter()?.chats?.find((candidate) => candidate.id === chatId)
-      if (!liveChat || (liveChat.bindedPersona ?? '') !== previousBinding) return
+      const liveChat = uniqueSidebarChat(chatId)
+      if (!liveChat || (resolveChatBoundPersonaId(liveChat) ?? '') !== previousBinding) return
 
-      const previous = currentChatStateSnapshot()
-      let bindedPersona = ''
+      let personaId: string | null = null
       if (!previousBinding) {
-        const selectedPersona = getDatabase().selectedPersona
-        const persona = getDatabase().personas?.[selectedPersona]
-        if (!persona) return
-        bindedPersona = persona.id || v4()
-        if (!persona.id) {
-          withTrustedResourceWrite(() => {
-            if (getDatabase().selectedPersona !== selectedPersona) return
-            const livePersona = getDatabase().personas?.[selectedPersona]
-            if (livePersona && !livePersona.id) {
-              livePersona.id = bindedPersona
-            }
-          })
-        }
+        personaId = selectedPersonaId()
+        if (!personaId) return
       }
 
-      if (!applyDirectOptimisticChatMetadata(chatId, (candidate) => (candidate.bindedPersona = bindedPersona))) return
-
-      let result: ServerCommandResult | null
-      try {
-        result = await dispatchUpdateChatAsync(
+      const state = resolveActiveChatGenerationSettings({
+        target: {
+          selectedCharID: -1,
+          chatPage: -1,
+          characterId: chara.chaId,
           chatId,
-          { bindedPersona },
-          previous,
-          false,
-          rollbackServerBackedChatRowMetadata,
-        )
-      } catch {
+        },
+      })
+      if (state.chat?.id !== chatId) return
+      const operation = dispatchSaveChatGenerationSettingsWithOutcome(
+        chatId,
+        createActiveChatPersonaSelectionPatch(personaId, state),
+      )
+      if (!operation) {
         alertError(language.personaBindingFailed)
         return
       }
-      if (result && result.status !== 'ok') {
-        const retainedBinding =
-          currentSidebarCharacter()?.chats?.find((candidate) => candidate.id === chatId)?.bindedPersona ?? ''
-        if (retainedBinding === bindedPersona) {
-          alertNormal(language.personaBindingQueued)
-          return
-        }
+      const result = await operation.settlement
+      if (result.status === 'queued') {
+        alertNormal(language.personaBindingQueued)
+        return
+      }
+      if (result.status === 'failed') {
         alertError(language.personaBindingFailed)
         return
       }
@@ -923,18 +1020,21 @@
   }
 
   async function deleteChat(chat: Chat, index: number): Promise<void> {
+    const ownerChat = uniqueSidebarChat(chat.id)
+    if (!ownerChat) return
     if (chara.chats.length === 1) {
       alertError(language.errors.onlyOneChat)
       return
     }
     if (!chat.id || isChatStructuralActionPending(chat.id)) return
-    const confirmed = await alertConfirm(`${language.removeConfirm}${chat.name}`)
-    if (!confirmed || isChatStructuralActionPending(chat.id)) return
+    const confirmed = await alertConfirm(`${language.removeConfirm}${ownerChat.name}`)
+    if (!confirmed || isChatStructuralActionPending(chat.id) || !uniqueSidebarChat(chat.id)) return
 
-    const previous = currentChatStateSnapshot()
     const deletedSelectedChat = chara.chats[chara.chatPage]?.id === chat.id
     if (canUseServerCommands()) {
       const characterId = chara.chaId
+      const previous = captureChatDeleteSnapshot(chat.id, characterId)
+      if (!previous) return
       const originRoute = currentRouteIdentity()
       const result = applyOptimisticDeletedChat(characterId, chat.id, previous)
       if (!result.applied) return
@@ -966,12 +1066,85 @@
     }
   }
 
+  async function exportAllAndMaybeResetChats(): Promise<void> {
+    const characterId = chara.chaId
+    if (!characterId) return
+    const exportResult = await exportAllChats(characterId)
+    if (!exportResult.success) return
+
+    const firstConfirmed = await alertConfirm(language.chatListDeleteAllAfterExportConfirm)
+    if (!firstConfirmed) return
+    const secondConfirmed = await alertConfirm(language.chatListDeleteAllSecondConfirm)
+    if (!secondConfirmed || hasConflictingStructureMutation([chatOrderConflictKey(characterId)])) return
+
+    const liveCharacter = sidebarCharacter?.chaId === characterId ? sidebarCharacter : undefined
+    if (!liveCharacter) return
+    if (!matchesAllChatsExportFence(liveCharacter.chats, exportResult.fence)) {
+      alertError(language.chatListDeleteAllExportChanged)
+      return
+    }
+    const previousChatIds = liveCharacter.chats.map((candidate) => candidate.id)
+    const chat: Chat = {
+      message: [],
+      note: '',
+      name: 'Chat 1',
+      localLore: [],
+      fmIndex: -1,
+      id: v4(),
+    }
+    const previous = captureChatResetSnapshot(characterId)
+    if (!previous) return
+    const originRoute = currentRouteIdentity()
+    if (!applyOptimisticResetChats(characterId, chat, previous)) return
+
+    const outcome = await settleStructureMutation(
+      structureMutationKey('reset-chats', characterId),
+      'order',
+      characterId,
+      language.chatListDeleteAllAction,
+      [chatOrderConflictKey(characterId), ...previousChatIds.map((chatId) => chatConflictKey(chatId))],
+      () => dispatchResetChatsWithOutcome(characterId, chat, previous),
+      undefined,
+      (finalOutcome) => {
+        if (finalOutcome.status === 'failed') recoverRejectedProvisionalChatRoute(characterId, chat.id)
+      },
+    )
+    if (
+      outcome !== 'failed' &&
+      currentRouteIdentity() === originRoute &&
+      isExpectedSidebarChatSelected(characterId, chat.id)
+    ) {
+      navigate(characterRoutePath(characterId, chat.id), { replace: true })
+    }
+  }
+
+  async function exportChatOnDemand(chatId: string): Promise<void> {
+    if (!chara.chaId || !uniqueSidebarChat(chatId)) return
+    try {
+      await exportChat({ characterId: chara.chaId, chatId })
+    } catch (error) {
+      alertError(error as Error)
+    }
+  }
+
+  async function importChatOnDemand(): Promise<void> {
+    if (!sidebarCharacter) return
+    try {
+      await importChat()
+    } catch (error) {
+      alertError(error as Error)
+    }
+  }
+
   async function deleteChatFolder(folder: ChatFolder, index: number): Promise<void> {
+    const ownerFolder = uniqueSidebarFolder(folder.id)
+    if (!ownerFolder) return
     if (isFolderStructuralActionPending(folder.id)) return
-    const confirmed = await alertConfirm(`${language.removeConfirm}${folder.name}`)
-    if (!confirmed || isFolderStructuralActionPending(folder.id)) return
-    const previous = currentChatStateSnapshot()
+    const confirmed = await alertConfirm(`${language.removeConfirm}${ownerFolder.name}`)
+    if (!confirmed || isFolderStructuralActionPending(folder.id) || !uniqueSidebarFolder(folder.id)) return
     if (canUseServerCommands()) {
+      const previous = captureChatFolderDeleteSnapshot(folder.id, chara.chaId)
+      if (!previous) return
       await settleStructureMutation(
         structureMutationKey('delete-folder', folder.id),
         'folder',
@@ -993,8 +1166,8 @@
   }
 
   async function createChatFolder(): Promise<void> {
+    if (!sidebarCharacter) return
     if (hasConflictingStructureMutation([folderOrderConflictKey()])) return
-    const previous = currentChatStateSnapshot()
     const length = chara.chatFolders?.length ?? 0
     const folder = {
       id: v4(),
@@ -1002,6 +1175,8 @@
       folded: false,
     }
     if (canUseServerCommands()) {
+      const previous = captureChatFolderCreateSnapshot(chara.chaId, folder)
+      if (!previous) return
       if (!applyOptimisticCreatedChatFolder(chara.chaId, folder, previous)) return
       await settleStructureMutation(
         structureMutationKey('create-folder', folder.id),
@@ -1177,7 +1352,6 @@
               await resetSortableProjection()
               return
             }
-            const previous = currentChatStateSnapshot()
             const currentChatPage = chara.chatPage
             const usingServerCommands = canUseServerCommands()
             const chatOrder = buildChatDomOrder()
@@ -1191,6 +1365,11 @@
             const selectedChatId = selectedChatIdFromDom(chatOrder.chatsById, chara.chats[currentChatPage]?.id)
             if (usingServerCommands) {
               const characterId = chara.chaId
+              const previous = captureChatOrderSnapshot(characterId)
+              if (!previous) {
+                await resetSortableProjection()
+                return
+              }
               await settleStructureMutation(
                 structureMutationKey('drag-chats', characterId),
                 'order',
@@ -1228,7 +1407,6 @@
           await resetSortableProjection()
           return
         }
-        const previous = currentChatStateSnapshot()
         const currentChatPage = chara.chatPage
         const usingServerCommands = canUseServerCommands()
         const folderOrder = buildFolderDomOrder(event.to)
@@ -1242,6 +1420,11 @@
         const selectedChatId = selectedChatIdFromDom(folderOrder.chatsById, chara.chats[currentChatPage]?.id)
         if (usingServerCommands) {
           const characterId = chara.chaId
+          const previous = captureChatOrderSnapshot(characterId)
+          if (!previous) {
+            await resetSortableProjection()
+            return
+          }
           await settleStructureMutation(
             structureMutationKey('drag-folders', characterId),
             'order',
@@ -1306,7 +1489,9 @@
 <div
   data-risu-chat-list="sidebar"
   class="flex flex-col w-full h-[calc(100%-2rem)] max-h-[calc(100%-2rem)]"
-  data-risu-chat-open={chatRouteOpen ? 'true' : 'false'}>
+  data-risu-chat-open={chatRouteOpen ? 'true' : 'false'}
+  aria-hidden={!sidebarCharacter}
+  hidden={!sidebarCharacter}>
   {#if chatRouteOpen}
     <div class="flex flex-col gap-3">
       <button
@@ -1317,7 +1502,7 @@
         <span>{language.goback}</span>
       </button>
 
-      {#if getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
+      {#if chara.chaId !== '§playground'}
         <AuthorNoteEditor {chara} />
         <Toggles {chara} />
       {/if}
@@ -1334,7 +1519,7 @@
     </div>
 
     <div aria-live="polite">
-      {#each Object.entries(chatStructureMutations) as [key, mutation] (key)}
+      {#each Object.entries(chatStructureMutations).filter(([, mutation]) => mutation.status === 'failed') as [key, mutation] (key)}
         <div
           data-risu-chat-mutation={key}
           data-risu-chat-mutation-status={mutation.status}
@@ -1375,7 +1560,6 @@
                     bind:value={folderNameDrafts[folder.id]}
                     className="grow min-w-0"
                     ariaLabel={`${language.edit}: ${folder.name}`}
-                    disabled={isFolderStructurePending(folder.id)}
                     onchange={() => void updateFolderName(folder, folderNameDrafts[folder.id])}
                     padding={false} />
                 {:else}
@@ -1458,16 +1642,21 @@
                       data-risu-chat-folder-id={chat.folderId ?? ''}
                       data-risu-chat-selected={index === chara.chatPage ? 'true' : 'false'}
                       data-risu-chat-mutation-status={structureMutationForTarget('chat', chat.id)?.status ?? ''}
+                      data-risu-chat-reattach-warning={chat.id && reattachWarningChatIds.has(chat.id)
+                        ? 'true'
+                        : undefined}
+                      data-risu-chat-unread={chat.id && $unreadChatIds.has(chat.id) ? 'true' : undefined}
                       aria-busy={isChatStructurePending(chat.id)}
-                      class="risu-chats flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
+                      class="risu-chats relative flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
                       class:bg-selected={index === chara.chatPage}
+                      class:ring-1={chat.id && reattachWarningChatIds.has(chat.id)}
+                      class:ring-yellow-500={chat.id && reattachWarningChatIds.has(chat.id)}
                       onclick={() => activateChatRow(index)}>
                       {#if editMode}
                         <TextInput
                           bind:value={chatNameDrafts[chat.id ?? '']}
                           className="grow min-w-0"
                           ariaLabel={`${language.edit}: ${chat.name}`}
-                          disabled={isChatStructurePending(chat.id)}
                           onchange={() => void updateChatName(chat, chatNameDrafts[chat.id ?? ''])}
                           padding={false} />
                       {:else}
@@ -1480,8 +1669,18 @@
                             event.stopPropagation()
                             activateChatRow(index)
                           }}>
-                          <span>{chat.name}</span>
+                          <span>{renderedChatName(chat)}</span>
                         </button>
+                      {/if}
+                      {#if chat.id && reattachWarningChatIds.has(chat.id)}
+                        <GenerationIndicator
+                          state="warning"
+                          label={language.generationReattachFailure.sidebarWarning(renderedChatName(chat))}
+                          onActivate={() => activateChatRow(index)} />
+                      {:else if chat.id && $unreadChatIds.has(chat.id)}
+                        <UnreadIndicator
+                          label={`${language.newMessage}: ${renderedChatName(chat)}`}
+                          onActivate={() => activateChatRow(index)} />
                       {/if}
                       <div class="ml-auto flex shrink-0 justify-end">
                         {#if editMode && chat.id && organizerIdsStable}
@@ -1489,7 +1688,7 @@
                             type="button"
                             data-risu-chat-action="organize"
                             data-risu-chat-organizer-action={chat.id}
-                            aria-label={`${language.options}: ${chat.name}`}
+                            aria-label={`${language.options}: ${renderedChatName(chat)}`}
                             disabled={isChatStructuralActionPending(chat.id)}
                             class="sr-only"
                             onclick={(event) => {
@@ -1502,7 +1701,7 @@
                         <button
                           type="button"
                           data-risu-chat-action="options"
-                          aria-label={`${language.chatOptions}: ${chat.name}`}
+                          aria-label={`${language.chatOptions}: ${renderedChatName(chat)}`}
                           aria-busy={(pendingPersonaBindings[chat.id ?? ''] ?? false) ||
                             isChatStructurePending(chat.id)}
                           aria-disabled={(pendingPersonaBindings[chat.id ?? ''] ?? false) ||
@@ -1531,7 +1730,7 @@
                         <button
                           type="button"
                           data-risu-chat-action="edit"
-                          aria-label={`${language.edit}: ${chat.name}`}
+                          aria-label={`${language.edit}: ${renderedChatName(chat)}`}
                           class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                           onclick={(e) => {
                             e.stopPropagation()
@@ -1542,12 +1741,12 @@
                         <button
                           type="button"
                           data-risu-chat-action="export"
-                          aria-label={`${language.export}: ${chat.name}`}
+                          aria-label={`${language.export}: ${renderedChatName(chat)}`}
                           class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                           onclick={async (e) => {
                             e.stopPropagation()
                             if (chara.chaId && chat.id) {
-                              exportChat({ characterId: chara.chaId, chatId: chat.id })
+                              void exportChatOnDemand(chat.id)
                             }
                           }}>
                           <DownloadIcon size={18} />
@@ -1555,7 +1754,7 @@
                         <button
                           type="button"
                           data-risu-chat-action="delete"
-                          aria-label={`${language.remove}: ${chat.name}`}
+                          aria-label={`${language.remove}: ${renderedChatName(chat)}`}
                           disabled={isChatStructuralActionPending(chat.id)}
                           class="text-textcolor2 hover:text-green-500 cursor-pointer"
                           class:opacity-50={isChatStructuralActionPending(chat.id)}
@@ -1583,16 +1782,19 @@
               data-risu-chat-folder-id={chat.folderId ?? ''}
               data-risu-chat-selected={index === chara.chatPage ? 'true' : 'false'}
               data-risu-chat-mutation-status={structureMutationForTarget('chat', chat.id)?.status ?? ''}
+              data-risu-chat-reattach-warning={chat.id && reattachWarningChatIds.has(chat.id) ? 'true' : undefined}
+              data-risu-chat-unread={chat.id && $unreadChatIds.has(chat.id) ? 'true' : undefined}
               aria-busy={isChatStructurePending(chat.id)}
-              class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
+              class="relative flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
               class:bg-selected={index === chara.chatPage}
+              class:ring-1={chat.id && reattachWarningChatIds.has(chat.id)}
+              class:ring-yellow-500={chat.id && reattachWarningChatIds.has(chat.id)}
               onclick={() => activateChatRow(index)}>
               {#if editMode}
                 <TextInput
                   bind:value={chatNameDrafts[chat.id ?? '']}
                   className="grow min-w-0"
                   ariaLabel={`${language.edit}: ${chat.name}`}
-                  disabled={isChatStructurePending(chat.id)}
                   onchange={() => void updateChatName(chat, chatNameDrafts[chat.id ?? ''])}
                   padding={false} />
               {:else}
@@ -1605,8 +1807,18 @@
                     event.stopPropagation()
                     activateChatRow(index)
                   }}>
-                  <span>{chat.name}</span>
+                  <span>{renderedChatName(chat)}</span>
                 </button>
+              {/if}
+              {#if chat.id && reattachWarningChatIds.has(chat.id)}
+                <GenerationIndicator
+                  state="warning"
+                  label={language.generationReattachFailure.sidebarWarning(renderedChatName(chat))}
+                  onActivate={() => activateChatRow(index)} />
+              {:else if chat.id && $unreadChatIds.has(chat.id)}
+                <UnreadIndicator
+                  label={`${language.newMessage}: ${renderedChatName(chat)}`}
+                  onActivate={() => activateChatRow(index)} />
               {/if}
               <div class="ml-auto flex shrink-0 justify-end">
                 {#if editMode && chat.id && organizerIdsStable}
@@ -1614,7 +1826,7 @@
                     type="button"
                     data-risu-chat-action="organize"
                     data-risu-chat-organizer-action={chat.id}
-                    aria-label={`${language.options}: ${chat.name}`}
+                    aria-label={`${language.options}: ${renderedChatName(chat)}`}
                     disabled={isChatStructuralActionPending(chat.id)}
                     class="sr-only"
                     onclick={(event) => {
@@ -1627,7 +1839,7 @@
                 <button
                   type="button"
                   data-risu-chat-action="options"
-                  aria-label={`${language.chatOptions}: ${chat.name}`}
+                  aria-label={`${language.chatOptions}: ${renderedChatName(chat)}`}
                   aria-busy={(pendingPersonaBindings[chat.id ?? ''] ?? false) || isChatStructurePending(chat.id)}
                   aria-disabled={(pendingPersonaBindings[chat.id ?? ''] ?? false) || isChatStructurePending(chat.id)}
                   disabled={(pendingPersonaBindings[chat.id ?? ''] ?? false) || isChatStructurePending(chat.id)}
@@ -1653,7 +1865,7 @@
                 <button
                   type="button"
                   data-risu-chat-action="edit"
-                  aria-label={`${language.edit}: ${chat.name}`}
+                  aria-label={`${language.edit}: ${renderedChatName(chat)}`}
                   class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                   onclick={(e) => {
                     e.stopPropagation()
@@ -1664,12 +1876,12 @@
                 <button
                   type="button"
                   data-risu-chat-action="export"
-                  aria-label={`${language.export}: ${chat.name}`}
+                  aria-label={`${language.export}: ${renderedChatName(chat)}`}
                   class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                   onclick={async (e) => {
                     e.stopPropagation()
                     if (chara.chaId && chat.id) {
-                      exportChat({ characterId: chara.chaId, chatId: chat.id })
+                      void exportChatOnDemand(chat.id)
                     }
                   }}>
                   <DownloadIcon size={18} />
@@ -1677,7 +1889,7 @@
                 <button
                   type="button"
                   data-risu-chat-action="delete"
-                  aria-label={`${language.remove}: ${chat.name}`}
+                  aria-label={`${language.remove}: ${renderedChatName(chat)}`}
                   disabled={isChatStructuralActionPending(chat.id)}
                   class="text-textcolor2 hover:text-green-500 cursor-pointer"
                   class:opacity-50={isChatStructuralActionPending(chat.id)}
@@ -1701,9 +1913,7 @@
           aria-label={language.chatListExportAll}
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
           onclick={() => {
-            if (chara.chaId) {
-              exportAllChats(chara.chaId)
-            }
+            void exportAllAndMaybeResetChats()
           }}>
           <DownloadIcon size={18} />
         </button>
@@ -1712,7 +1922,7 @@
           aria-label={language.chatListImport}
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
           onclick={() => {
-            importChat()
+            void importChatOnDemand()
           }}>
           <HardDriveUploadIcon size={18} />
         </button>
@@ -1731,8 +1941,10 @@
           aria-label={language.branch}
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
           onclick={async () => {
+            if (!hasStableOrganizationIds()) return
             const ownerCharacterId = chara.chaId
-            const ownerSelectedCharacterIndex = $selectedCharID
+            const ownerSelectedCharacterIndex =
+              charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : $selectedCharID
             const ownerCharacterReference = chara
             const run = ++branchGraphHydrationRun
             const isFresh = () =>

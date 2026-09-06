@@ -1,23 +1,51 @@
 import type {
+  AgentLorebookInput,
   AgentPresetStepInputScope,
   AgentPresetStepPhase,
   AgentPresetStepRecord,
-} from '../../../../src/ts/agentPresetRecords.js'
-import { AGENT_PRESET_STEP_INPUT_SCOPES } from '../../../../src/ts/agentPresetRecords.js'
-import type { AgentPresetPhasePlan } from '../../../../src/ts/agentPresetResolver.js'
+} from '@risuai/shared-core/agent-preset-records'
+import { AGENT_PRESET_STEP_INPUT_SCOPES, agentToggleStorageKey } from '@risuai/shared-core/agent-preset-records'
+import { resolveAgentLorebookInput } from '@risuai/shared-core/agent-lorebook-inputs'
+import type { AgentPresetPhasePlan } from '@risuai/shared-core/agent-preset-resolver'
 import {
   assertModelProfileGenerationReady,
   modelProfileGenerationBlockReason,
   resolveModelProfile,
   resolveModelProfileByProfileId,
   type ResolvedModelProfile,
-} from '../../../../src/ts/model/modelProfileResolver.js'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
-import type { Chat, Database, Message, character } from '../../../../src/ts/storage/database.svelte'
-import { expandAgentPresetOutputCbs } from '../../../../src/ts/agentPresetReferences.js'
+} from '@risuai/shared-core/model-profile-resolver'
+import type { PromptMessage } from './promptMessage.js'
+import { parseChatMLRows } from '@risuai/shared-core/chatml-rows'
+import { stripInternalReasoning } from '@risuai/shared-core/internal-reasoning'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+  FastifyMessage as Message,
+} from './serverTypes.js'
+import type { DatabaseSync } from 'node:sqlite'
+import { expandAgentPresetOutputCbs } from '@risuai/shared-core/agent-preset-output-references'
 import type { CompletionStreamFrame } from '../generation/frames.js'
-import { dispatchChatProvider } from './chatDispatch.js'
+import {
+  AgentPresetGenerationError,
+  isAgentPresetGenerationError,
+  type AgentPresetGenerationErrorBody,
+  type AgentPresetStepFailureKind,
+  type AgentPresetStepFailurePolicyOutcome,
+} from './agentPresetErrors.js'
+import { dispatchChatProvider, type ChatDispatchHistoryInput } from './chatDispatch.js'
 import { activateLorebook } from './lorebook.js'
+import { ensureTokenizerLoadedForDb } from './tokenizerConfig.js'
+import { expandVariables } from './variables.js'
+import { selectedPersonaIndexFromStableId } from '@risuai/shared-core/persona-selection-identity'
+
+export {
+  AgentPresetGenerationError,
+  isAgentPresetGenerationError,
+  type AgentPresetGenerationErrorBody,
+  type AgentPresetStepFailureKind,
+  type AgentPresetStepFailurePolicyOutcome,
+} from './agentPresetErrors.js'
 
 const DEFAULT_MAX_INPUT_CHARS = 24_000
 const DEFAULT_MAX_OUTPUT_CHARS = 1_200
@@ -26,6 +54,8 @@ const DEFAULT_TEMPERATURE = 100
 const RECENT_CHAT_TAIL_COUNT = 12
 const CHAT_SEARCH_LIMIT = 6
 const PREPARED_INPUT_CBS_RE = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
+const AGENT_INPUT_CBS_RE = /\{\{\s*agentInput::([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
+const AGENT_TOGGLE_CBS_RE = /\{\{\s*agentToggle::([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 const PREPARED_INPUT_SCOPE_NAMES: ReadonlySet<string> = new Set(AGENT_PRESET_STEP_INPUT_SCOPES)
 
 export interface AgentPresetPreviousOutput {
@@ -38,6 +68,7 @@ export interface AgentPresetPreviousOutput {
 
 export interface AgentPresetPreparedInputContext {
   database: Database
+  requestHistoryDb?: DatabaseSync
   currentChar: character
   currentChat: Chat
   currentUserMessage?: string
@@ -47,7 +78,8 @@ export interface AgentPresetPreparedInputContext {
 }
 
 export interface AgentPresetPreparedInputSection {
-  scope: AgentPresetStepInputScope
+  scope: AgentPresetStepInputScope | 'agentLorebookInput'
+  inputKey?: string
   label: string
   sourceLabel: string
   content: string
@@ -56,7 +88,8 @@ export interface AgentPresetPreparedInputSection {
 }
 
 export interface AgentPresetPreparedInputDiagnostic {
-  scope: AgentPresetStepInputScope
+  scope: AgentPresetStepInputScope | 'agentLorebookInput'
+  inputKey?: string
   sourceLabel: string
   reason: 'unavailable' | 'empty' | 'max_input_exhausted' | 'collector_error'
   message: string
@@ -73,14 +106,18 @@ export interface BuildAgentPresetStepMessagesInput {
   step: AgentPresetStepRecord
   preparedInputs: AgentPresetPreparedInputCollection
   agentOutputs?: Readonly<Record<string, string>>
+  toggleValues?: Readonly<Record<string, string>>
+  /** Expands standard CBS after ChatML roles are fixed and before prepared inputs are inserted. */
+  expandChatMLContent?: (content: string) => string
 }
 
 export interface AgentPresetProviderDispatchArgs {
   database: Database
-  messages: OpenAIChat[]
+  messages: PromptMessage[]
   outputTokens: number
   profile: ResolvedModelProfile
   signal: AbortSignal
+  history?: ChatDispatchHistoryInput
 }
 
 export type AgentPresetProviderDispatcher = (
@@ -122,20 +159,6 @@ export interface ExecuteAgentPresetStepInput extends AgentPresetPreparedInputCon
   signal?: AbortSignal
   dispatchProvider?: AgentPresetProviderDispatcher
 }
-
-export type AgentPresetStepFailureKind =
-  | 'dependency_skipped'
-  | 'model_not_ready'
-  | 'timeout'
-  | 'provider_error'
-  | 'invalid_json_output'
-  | 'empty_output'
-
-export type AgentPresetStepFailurePolicyOutcome =
-  | 'optional_failure'
-  | 'required_failure'
-  | 'fallback_text'
-  | 'stop_generation'
 
 export type AgentPresetStepExecutionResult =
   | {
@@ -217,41 +240,36 @@ export interface ExecuteAgentPresetPhaseInput extends AgentPresetPreparedInputCo
   onProgress?: AgentPresetPhaseProgressReporter
 }
 
-export interface AgentPresetGenerationErrorBody {
-  error: 'agent_preset_generation_failed'
-  message: string
-  statusCode: number
-  phase?: AgentPresetStepPhase
+export function assertAgentPresetLorebookInputsReady(input: {
+  steps: readonly AgentPresetStepRecord[]
+  currentChar: character
+  currentChat: Chat
   presetId?: string
   presetName?: string
-  stepId?: string
-  stepName?: string
-  outputKey?: string
-  failureKind?: AgentPresetStepFailureKind
-  failurePolicyOutcome?: AgentPresetStepFailurePolicyOutcome
-  diagnostics?: unknown
-}
-
-export class AgentPresetGenerationError extends Error {
-  readonly statusCode: number
-  readonly body: AgentPresetGenerationErrorBody
-
-  constructor(message: string, body: Omit<AgentPresetGenerationErrorBody, 'error' | 'message' | 'statusCode'> = {}) {
-    const statusCode = 422
-    super(message)
-    this.name = 'AgentPresetGenerationError'
-    this.statusCode = statusCode
-    this.body = {
-      error: 'agent_preset_generation_failed',
-      message,
-      statusCode,
-      ...body,
+}): void {
+  for (const step of input.steps) {
+    for (const definition of step.lorebookInputs ?? []) {
+      if (!definition.required) continue
+      const resolution = resolveAgentLorebookInput(definition, input.currentChar, input.currentChat)
+      if (resolution.status === 'resolved') continue
+      const message = 'message' in resolution ? resolution.message : `Missing lorebook input: ${definition.displayName}`
+      throw new AgentPresetGenerationError(message, {
+        phase: step.phase,
+        presetId: input.presetId,
+        presetName: input.presetName,
+        stepId: step.id,
+        stepName: step.name,
+        outputKey: step.outputKey,
+        diagnostics: {
+          status: 'lorebook_input_not_ready',
+          inputKey: definition.key,
+          displayName: definition.displayName,
+          resolution: resolution.status,
+          ...('scope' in resolution && resolution.scope ? { scope: resolution.scope } : {}),
+        },
+      })
     }
   }
-}
-
-export function isAgentPresetGenerationError(error: unknown): error is AgentPresetGenerationError {
-  return error instanceof AgentPresetGenerationError
 }
 
 class AgentPresetTimeoutError extends Error {
@@ -269,6 +287,45 @@ export function collectAgentPresetPreparedInputs(
   let remaining = maxInputChars
   const sections: AgentPresetPreparedInputSection[] = []
   const diagnostics: AgentPresetPreparedInputDiagnostic[] = []
+
+  // Explicit named inputs take priority over broad prepared-input scopes. A
+  // required input must not disappear merely because a chat-history scope
+  // consumed the step's complete input budget first.
+  for (const definition of referencedAgentLorebookInputs(step)) {
+    const sourceLabel = `Agent-only lorebook “${definition.displayName}”`
+    if (remaining <= 0) {
+      diagnostics.push({
+        scope: 'agentLorebookInput',
+        inputKey: definition.key,
+        sourceLabel,
+        reason: 'max_input_exhausted',
+        message: `Skipped ${sourceLabel}; max input budget is exhausted.`,
+      })
+      continue
+    }
+    const resolution = resolveAgentLorebookInput(definition, context.currentChar, context.currentChat)
+    if (resolution.status !== 'resolved') {
+      diagnostics.push({
+        scope: 'agentLorebookInput',
+        inputKey: definition.key,
+        sourceLabel,
+        reason: resolution.status === 'optional_missing' ? 'unavailable' : 'collector_error',
+        message: 'message' in resolution ? resolution.message : `${sourceLabel} is unavailable.`,
+      })
+      continue
+    }
+    const bounded = boundText(resolution.content.trim(), remaining)
+    sections.push({
+      scope: 'agentLorebookInput',
+      inputKey: definition.key,
+      label: definition.displayName,
+      sourceLabel: `${resolution.scope} lorebook`,
+      content: bounded.text,
+      charCount: bounded.text.length,
+      truncated: bounded.truncated,
+    })
+    remaining -= bounded.text.length
+  }
 
   for (const scope of orderedScopes(step.inputScopes)) {
     const sourceLabel = sourceLabelForScope(scope)
@@ -326,8 +383,22 @@ export function collectAgentPresetPreparedInputs(
   }
 }
 
-export function buildAgentPresetStepMessages(input: BuildAgentPresetStepMessagesInput): OpenAIChat[] {
-  const { step, preparedInputs, agentOutputs } = input
+export function buildAgentPresetStepMessages(input: BuildAgentPresetStepMessagesInput): PromptMessage[] {
+  const { step, preparedInputs, agentOutputs, toggleValues, expandChatMLContent } = input
+  if (step.useChatML) {
+    const messages = parseChatMLRows(step.instruction)
+    if (!messages) throw new Error('A ChatML Agent instruction must start with <|im_start|>')
+    return messages.map((message) => ({
+      ...message,
+      content: expandAgentInstructionContent(
+        expandChatMLContent?.(message.content) ?? message.content,
+        preparedInputs,
+        agentOutputs,
+        toggleValues ?? {},
+      ),
+    }))
+  }
+
   const system = [
     'You are executing one RisuAI Agent Preset helper step.',
     `Step name: ${step.name}`,
@@ -341,15 +412,32 @@ export function buildAgentPresetStepMessages(input: BuildAgentPresetStepMessages
     'Use only the context embedded in the author instruction. Do not include tool calls.',
   ].join('\n')
 
-  const authorInstruction = expandAgentPresetOutputCbs(
-    expandPreparedInputCbs(step.instruction, preparedInputs),
-    (key) => (agentOutputs && Object.prototype.hasOwnProperty.call(agentOutputs, key) ? agentOutputs[key] : ''),
+  const authorInstruction = expandAgentInstructionContent(
+    step.instruction,
+    preparedInputs,
+    agentOutputs,
+    toggleValues ?? {},
   ).trim()
 
   return [
     { role: 'system', content: system },
     { role: 'user', content: `Author instruction:\n${authorInstruction}` },
   ]
+}
+
+function expandAgentInstructionContent(
+  instruction: string,
+  preparedInputs: AgentPresetPreparedInputCollection,
+  agentOutputs: Readonly<Record<string, string>> | undefined,
+  toggleValues: Readonly<Record<string, string>>,
+): string {
+  return expandAgentPresetOutputCbs(
+    expandAgentToggleCbs(
+      expandAgentInputCbs(expandPreparedInputCbs(instruction, preparedInputs), preparedInputs),
+      toggleValues,
+    ),
+    (key) => (agentOutputs && Object.prototype.hasOwnProperty.call(agentOutputs, key) ? agentOutputs[key] : ''),
+  )
 }
 
 export function resolveAgentPresetStepProfile(input: {
@@ -375,6 +463,34 @@ function expandPreparedInputCbs(instruction: string, preparedInputs: AgentPreset
   })
 }
 
+function expandAgentInputCbs(instruction: string, preparedInputs: AgentPresetPreparedInputCollection): string {
+  const contentByKey = new Map(
+    preparedInputs.sections.flatMap((section) =>
+      section.scope === 'agentLorebookInput' && section.inputKey ? [[section.inputKey, section.content] as const] : [],
+    ),
+  )
+  return instruction.replace(AGENT_INPUT_CBS_RE, (_match, key: string) => contentByKey.get(key) ?? '')
+}
+
+function expandAgentToggleCbs(instruction: string, toggleValues: Readonly<Record<string, string>>): string {
+  return instruction.replace(AGENT_TOGGLE_CBS_RE, (_match, key: string) => toggleValues[key] ?? '')
+}
+
+function referencedAgentLorebookInputs(step: AgentPresetStepRecord): AgentLorebookInput[] {
+  const inputsByKey = new Map((step.lorebookInputs ?? []).map((input) => [input.key, input]))
+  const referenced = new Set<string>()
+  for (const match of step.instruction.matchAll(AGENT_INPUT_CBS_RE)) referenced.add(match[1])
+  return (step.lorebookInputs ?? []).filter((input) => referenced.has(input.key) && inputsByKey.has(input.key))
+}
+
+function agentToggleValuesForStep(step: AgentPresetStepRecord, chat: Chat): Record<string, string> {
+  if (!step.agentId) return {}
+  const stored = chat.generationSettings?.sidebarToggles ?? {}
+  return Object.fromEntries(
+    (step.toggles ?? []).map((toggle) => [toggle.key, stored[agentToggleStorageKey(step.agentId!, toggle.key)] ?? '']),
+  )
+}
+
 function stepWithReferencedPreparedInputScopes(step: AgentPresetStepRecord): AgentPresetStepRecord {
   const inputScopes = referencedPreparedInputScopes(step)
   return inputScopes.length === step.inputScopes.length ? step : { ...step, inputScopes }
@@ -396,6 +512,25 @@ function isPreparedInputScopeName(value: string): value is AgentPresetStepInputS
   return PREPARED_INPUT_SCOPE_NAMES.has(value)
 }
 
+function agentPromptLocation(input: AgentPresetPreparedInputContext): { selectedCharID?: number; chatPage?: number } {
+  const characters = input.database.characters
+  const selectedCharID = characters.findIndex(
+    (candidate) => candidate === input.currentChar || candidate.chaId === input.currentChar.chaId,
+  )
+  if (selectedCharID < 0) return {}
+
+  const character = characters[selectedCharID]
+  const chatPage = character.chats.findIndex(
+    (candidate) =>
+      candidate === input.currentChat ||
+      (typeof candidate.id === 'string' && candidate.id !== '' && candidate.id === input.currentChat.id),
+  )
+  return {
+    selectedCharID,
+    ...(chatPage >= 0 ? { chatPage } : {}),
+  }
+}
+
 export async function executeAgentPresetStep(
   input: ExecuteAgentPresetStepInput,
 ): Promise<AgentPresetStepExecutionResult> {
@@ -406,6 +541,9 @@ export async function executeAgentPresetStep(
   if (input.dependencySkippedReason) {
     return skippedResult(input.step, 'dependency_skipped', startedAt, emptyCollection(input.step))
   }
+  throwIfAgentPresetAborted(input.signal)
+
+  await ensureTokenizerLoadedForDb(input.database)
 
   const preparedInputStep = stepWithReferencedPreparedInputScopes(input.step)
   const preparedInputs = collectAgentPresetPreparedInputs(preparedInputStep, input)
@@ -413,6 +551,16 @@ export async function executeAgentPresetStep(
     step: input.step,
     preparedInputs,
     agentOutputs: input.agentOutputs,
+    toggleValues: agentToggleValuesForStep(input.step, input.currentChat),
+    expandChatMLContent: input.step.useChatML
+      ? (content) =>
+          expandVariables(content, {
+            database: input.database,
+            ...agentPromptLocation(input),
+            chara: input.currentChar,
+            ...(input.agentOutputs ? { agentOutputs: { ...input.agentOutputs } } : {}),
+          }).text
+      : undefined,
   })
   const profile = resolveAgentPresetStepProfile(input)
   if (!profile) {
@@ -452,8 +600,9 @@ export async function executeAgentPresetStep(
 
   const controller = new AbortController()
   const timeoutMs = timeoutMsForStep(input.step)
-  const parentAbort = (): void => controller.abort()
-  input.signal?.addEventListener('abort', parentAbort, { once: true })
+  const parentAbort = (): void => controller.abort(input.signal?.reason)
+  if (input.signal?.aborted) parentAbort()
+  else input.signal?.addEventListener('abort', parentAbort, { once: true })
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
@@ -464,11 +613,37 @@ export async function executeAgentPresetStep(
         outputTokens: maxOutputCharsForStep(input.step),
         profile,
         signal: controller.signal,
+        ...(input.requestHistoryDb
+          ? {
+              history: {
+                db: input.requestHistoryDb,
+                source: 'agent-preset',
+                context: {
+                  characterId: input.currentChar.chaId,
+                  characterName: input.currentChar.name,
+                  ...(input.currentChat.id ? { chatId: input.currentChat.id } : {}),
+                  ...(input.currentChat.name ? { chatName: input.currentChat.name } : {}),
+                },
+                ...(input.currentChat.generationSettings?.sidebarToggles
+                  ? { toggles: { ...input.currentChat.generationSettings.sidebarToggles } }
+                  : {}),
+                metadata: {
+                  agentPresetStepId: input.step.id,
+                  agentPresetStepName: input.step.name,
+                  agentPresetPhase: input.step.phase,
+                  agentPresetOutputKey: input.step.outputKey,
+                },
+              },
+            }
+          : {}),
         dispatchProvider: input.dispatchProvider ?? defaultAgentPresetProviderDispatcher,
       }),
       timeoutMs,
     )
-    const bounded = boundText(output.trim(), maxOutputCharsForStep(input.step))
+    // Provider dispatch records the unmodified response in request history.
+    // Only the externally usable Agent output is scrubbed so private reasoning
+    // cannot flow into a later Agent, the main prompt, or the persisted reply.
+    const bounded = boundText(stripInternalReasoning(output), maxOutputCharsForStep(input.step))
     if (!bounded.text) {
       return failureResult({
         step: input.step,
@@ -516,6 +691,7 @@ export async function executeAgentPresetStep(
       parseStatus: 'not_applicable',
     })
   } catch (err) {
+    throwIfAgentPresetAborted(input.signal)
     const timeoutFailure = err instanceof AgentPresetTimeoutError || controller.signal.aborted
     return failureResult({
       step: input.step,
@@ -529,6 +705,14 @@ export async function executeAgentPresetStep(
     clearTimeout(timeout)
     input.signal?.removeEventListener('abort', parentAbort)
   }
+}
+
+function throwIfAgentPresetAborted(signal: AbortSignal | undefined): void {
+  if (!signal?.aborted) return
+  if (signal.reason instanceof Error) throw signal.reason
+  const error = new Error('Agent Preset step aborted.')
+  error.name = 'AbortError'
+  throw error
 }
 
 export async function executeAgentPresetPhase(
@@ -578,6 +762,7 @@ export async function executeAgentPresetPhase(
         try {
           return await executeStep({
             database: input.database,
+            requestHistoryDb: input.requestHistoryDb,
             currentChar: input.currentChar,
             currentChat: input.currentChat,
             currentUserMessage: input.currentUserMessage,
@@ -772,6 +957,7 @@ async function defaultAgentPresetProviderDispatcher(
     outputTokens: args.outputTokens,
     profile: args.profile,
     signal: args.signal,
+    history: args.history,
   })
 }
 
@@ -795,7 +981,8 @@ async function collectProviderOutput(
 }
 
 function prepareDatabaseForStep(database: Database, step: AgentPresetStepRecord): Database {
-  const copy = structuredClone(database) as Database
+  const copy: Database = { ...database }
+  copy.halfStreaming = false
   copy.useStreaming = false
   copy.maxResponse = maxOutputCharsForStep(step)
   copy.temperature = temperatureForStep(step)
@@ -1094,7 +1281,6 @@ function lorebookContext(context: AgentPresetPreparedInputContext): string {
     database: context.database,
     currentChar: structuredClone(context.currentChar) as character,
     currentChat: structuredClone(context.currentChat) as Chat,
-    model: context.database.aiModel,
   })
   return report.actives.map((entry, index) => `${index + 1}. ${entry.source}: ${entry.prompt}`).join('\n')
 }
@@ -1128,7 +1314,7 @@ function characterSummary(char: character): string {
 }
 
 function personaSummary(database: Database): string {
-  const selectedIndex = typeof database.selectedPersona === 'number' ? database.selectedPersona : -1
+  const selectedIndex = selectedPersonaIndexFromStableId(database)
   const selectedPersona = selectedIndex >= 0 ? database.personas?.[selectedIndex] : undefined
   return labeledFields([
     ['selectedPersona', selectedPersona?.name ?? selectedPersona?.displayName],

@@ -65,6 +65,7 @@ function makeChar(globalLore: LoreEntry[] = []): character {
     chatFolders: [],
     chats: [
       {
+        id: 'chat-1',
         name: 'main',
         note: '',
         localLore: [],
@@ -80,6 +81,7 @@ function seedWithLore(globalLore: LoreEntry[] = []) {
   setDatabase({
     aiModel: 'gpt-4o',
     subModel: 'gpt-4o',
+    currentChar: 0,
     characters: [makeChar(globalLore)],
   } as unknown as Database)
   selectedCharID.set(0)
@@ -179,6 +181,43 @@ describe('buildLorebookContext - positionParser', () => {
     seedWithLore()
     const lore = await buildLorebookContext(makeChar(), emptySlots())
     expect(lore.positionParser('hello', 'unknown_location')).toBe('hello')
+  })
+
+  it.each([
+    {
+      operation: 'append',
+      directive: '',
+      input: 'BASE',
+      expected: 'BASE INJECTED',
+    },
+    {
+      operation: 'prepend',
+      directive: '@@inject_prepend\n',
+      input: 'BASE',
+      expected: 'INJECTED BASE',
+    },
+    {
+      operation: 'replace',
+      directive: '@@inject_replace SLOT\n',
+      input: 'left SLOT right',
+      expected: 'left INJECTED right',
+    },
+  ])('applies $operation injection at its named location', async ({ directive, input, expected }) => {
+    seedWithLore([{ content: `@@inject_at description\n${directive}INJECTED` }])
+    const lore = await buildLorebookContext(makeChar(), emptySlots())
+    expect(lore.positionParser(input, 'description')).toBe(expected)
+    expect(lore.positionParser(input, 'other')).toBe(input)
+  })
+
+  it('applies multiple injectors in activation order before resolving named positions', async () => {
+    seedWithLore([
+      { content: '@@inject_at description\nAPPEND' },
+      { content: '@@inject_at description\n@@inject_prepend\nPREPEND' },
+      { content: '@@inject_at description\n@@inject_replace SLOT\nREPLACED {{position::slot}}' },
+      { content: '@@position pt_slot\nPOSITION' },
+    ])
+    const lore = await buildLorebookContext(makeChar(), emptySlots())
+    expect(lore.positionParser('BASE SLOT', 'description')).toBe('PREPEND BASE REPLACED POSITION APPEND')
   })
 })
 

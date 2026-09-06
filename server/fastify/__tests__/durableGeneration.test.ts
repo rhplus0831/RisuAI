@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { randomUUID } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -7,15 +8,19 @@ import type { FastifyInstance } from 'fastify'
 import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
-import { openDatabase } from '../src/db.js'
+import { bumpRevision, getSchemaState, openDatabase } from '../src/db.js'
 import { MessageTranslationJobRegistry } from '../src/messageTranslationJobs.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import {
+  GENERATION_FINALIZATION_RETRY_MAX_DELAY_MS,
   enqueueGenerationFinalizationRetry,
   markGenerationFinalizationRetryFailure,
-  pruneTerminalGenerationFinalizationRetries,
 } from '../src/generationFinalizationRetry.js'
-import { retryQueuedGenerationFinalizations, type ChatProviderDispatcher } from '../src/routes/generationChat.js'
+import {
+  retryQueuedGenerationFinalizations,
+  type ChatProviderDispatcher,
+  type GenerationChatRouteOptions,
+} from '../src/routes/generationChat.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import { readResourceDatabaseFromFetch, type RuntimeBootstrap } from './helpers/resourceDatabase.js'
 
@@ -40,6 +45,7 @@ let providerImpl: ChatProviderDispatcher = () => {
   return g()
 }
 let failNextGenerationPersistEvent = false
+let durableLifecycleHook: GenerationChatRouteOptions['onDurableLifecycleTransition']
 
 const DURABLE_PERSONA_ID = 'durable-persona'
 const DURABLE_MODEL_PRESET_ID = 'durable-model-preset'
@@ -60,9 +66,12 @@ function newController(): AbortController {
   return controller
 }
 
-async function startHarness(generationChatOverrides: Record<string, unknown> = {}): Promise<Harness> {
+async function startHarness(
+  generationChatOverrides: Record<string, unknown> = {},
+  existingDataDir?: string,
+): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
-  const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-durable-'))
+  const dataDir = existingDataDir ?? mkdtempSync(path.join(tmpdir(), 'risu-durable-'))
   const commandEvents = createRetryTestCommandSink()
   const { app } = await buildApp({
     config: {
@@ -76,7 +85,8 @@ async function startHarness(generationChatOverrides: Record<string, unknown> = {
     },
     generationChat: {
       dispatchProvider: (ctx) => providerImpl(ctx),
-      finalizationRetry: { intervalMs: 10 },
+      finalizationRetry: { intervalMs: 10, baseDelayMs: 10, maxDelayMs: 40 },
+      onDurableLifecycleTransition: (transition, job) => durableLifecycleHook?.(transition, job),
       ...generationChatOverrides,
     },
     commandEvents,
@@ -192,6 +202,7 @@ interface GenerationFinalizationRetryTestRow {
 
 beforeEach(async () => {
   failNextGenerationPersistEvent = false
+  durableLifecycleHook = undefined
   providerImpl = () => {
     async function* g(): AsyncGenerator<CompletionStreamFrame> {
       yield { kind: 'done', finishReason: 'stop' }
@@ -204,14 +215,30 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  durableLifecycleHook = undefined
   for (const controller of openControllers) controller.abort()
   openControllers.clear()
+  harness.app.server.closeAllConnections()
   await harness.app.close()
   rmSync(harness.dataDir, { recursive: true, force: true })
 })
 
 async function seedDatabase(database: unknown): Promise<void> {
   await seedDatabaseForHarness(harness, assertion, database)
+}
+
+async function resetHarness(generationChatOverrides: Record<string, unknown> = {}): Promise<void> {
+  await harness.app.close()
+  rmSync(harness.dataDir, { recursive: true, force: true })
+  harness = await startHarness(generationChatOverrides)
+  ;({ assertion } = await setupAuthedClient(harness.app))
+  await seedDatabase(fixtureDatabase)
+}
+
+async function restartHarness(generationChatOverrides: Record<string, unknown> = {}): Promise<void> {
+  const dataDir = harness.dataDir
+  await harness.app.close()
+  harness = await startHarness(generationChatOverrides, dataDir)
 }
 
 async function seedDatabaseForHarness(target: Harness, targetAssertion: string, database: unknown): Promise<number> {
@@ -349,6 +376,10 @@ async function readSse(res: Response, until: (ev: ParsedEvent) => boolean): Prom
     }
   } catch {
     // reader aborted / connection dropped
+  } finally {
+    // The caller owns connection lifetime, but the reader lock must not keep an
+    // aborted or naturally completed fetch alive until garbage collection.
+    reader.releaseLock()
   }
   return events
 }
@@ -372,6 +403,107 @@ function postDurable(
     }),
     signal: init.signal,
   })
+}
+
+interface OperationProtocolAuthority extends JsonRecord {
+  revision: number
+  databaseLineage: string
+  generationOperationProjectionEpoch: number
+  generationOperations: JsonRecord[]
+  activeGenerationJobs: JsonRecord[]
+  generationFinalizations?: JsonRecord[]
+}
+
+interface AtomicOperationResponse extends JsonRecord {
+  operation: JsonRecord & {
+    operationId: string
+    state: string
+    stateVersion: number
+    projectionEpoch: number
+    currentAttempt?: JsonRecord & { attemptNo: number; jobId: string }
+  }
+  append?: JsonRecord
+  stream?: { href: string }
+}
+
+async function operationAuthority(writerSession = 'writer-a'): Promise<OperationProtocolAuthority> {
+  const response = await fetch(`${harness.baseUrl}/api/v1/bootstrap`, {
+    headers: authHeaders({ 'risu-writer-session': writerSession }),
+  })
+  expect(response.status).toBe(200)
+  return (await response.json()) as OperationProtocolAuthority
+}
+
+function atomicSendRequest(args: {
+  operationId: string
+  acceptedMessageId: string
+  baseRevision: number
+  text?: string
+}): JsonRecord {
+  return {
+    protocolVersion: 1,
+    operationId: args.operationId,
+    baseRevision: args.baseRevision,
+    characterId: 'char-1',
+    chatId: 'chat-1',
+    mode: 'send',
+    acceptedMessageId: args.acceptedMessageId,
+    message: { role: 'user', data: args.text ?? 'atomic hello', chatId: args.acceptedMessageId },
+    draftGeneration: 1,
+    generation: {
+      syntheticSayNothing: false,
+      resetMessages: false,
+      inlayAssetRefs: [],
+      clientContext: {},
+      clientCapabilities: {},
+    },
+  }
+}
+
+function atomicTargetedRequest(args: {
+  operationId: string
+  baseRevision: number
+  mode: 'continue' | 'regenerate'
+  targetMessageId: string
+  clientCapabilities?: JsonRecord
+}): JsonRecord {
+  return {
+    protocolVersion: 1,
+    operationId: args.operationId,
+    baseRevision: args.baseRevision,
+    characterId: 'char-1',
+    chatId: 'chat-1',
+    mode: args.mode,
+    targetMessageId: args.targetMessageId,
+    draftGeneration: 1,
+    generation: {
+      syntheticSayNothing: false,
+      resetMessages: false,
+      inlayAssetRefs: [],
+      clientContext: {},
+      clientCapabilities: args.clientCapabilities ?? {},
+    },
+  }
+}
+
+function postAtomicOperation(databaseLineage: string, body: JsonRecord, writerSession = 'writer-a'): Promise<Response> {
+  return fetch(`${harness.baseUrl}/api/v1/generation-operations`, {
+    method: 'POST',
+    headers: authHeaders({
+      'content-type': 'application/json',
+      'risu-database-lineage': databaseLineage,
+      'risu-writer-session': writerSession,
+    }),
+    body: JSON.stringify(body),
+  })
+}
+
+async function operationStatus(operationId: string): Promise<AtomicOperationResponse> {
+  const response = await fetch(`${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}`, {
+    headers: authHeaders(),
+  })
+  expect(response.status).toBe(200)
+  return (await response.json()) as AtomicOperationResponse
 }
 
 /**
@@ -412,18 +544,40 @@ function makeGatedProvider(opts: { before: string; after?: string }): {
   return { dispatchProvider, release }
 }
 
+function makeReplayCapProvider(tokens: readonly string[]): {
+  dispatchProvider: ChatProviderDispatcher
+  release: () => void
+} {
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const dispatchProvider: ChatProviderDispatcher = () => {
+    async function* gen(): AsyncGenerator<CompletionStreamFrame> {
+      await gate
+      for (const content of tokens) yield { kind: 'token', content }
+      yield { kind: 'done', finishReason: 'stop' }
+    }
+    return gen()
+  }
+  return { dispatchProvider, release }
+}
+
 async function bootstrap(): Promise<{
   activeGenerationJobs: Array<{
     chatId: string
     jobId: string
     mode?: 'send' | 'continue' | 'regenerate'
+    continueDisposition?: 'append' | 'extend'
     regenerateMessageId?: string
   }>
   database: {
     characters: Array<{
+      firstMessage?: string
       chats: Array<{
         message: Array<Record<string, unknown>>
         scriptstate?: Record<string, unknown>
+        localLore?: Array<Record<string, unknown>>
       }>
     }>
   }
@@ -438,11 +592,14 @@ async function bootstrap(): Promise<{
   } as never
 }
 
-async function chatHydration(_boot: Awaited<ReturnType<typeof bootstrap>>): Promise<{
+async function chatHydration(
+  _boot: Awaited<ReturnType<typeof bootstrap>>,
+  chatId = 'chat-1',
+): Promise<{
   message: Array<Record<string, unknown>>
   alternates: Array<Record<string, unknown>>
 }> {
-  const res = await fetch(`${harness.baseUrl}/api/v1/chats/chat-1/messages`, {
+  const res = await fetch(`${harness.baseUrl}/api/v1/chats/${encodeURIComponent(chatId)}/messages`, {
     headers: authHeaders(),
   })
   expect(res.status).toBe(200)
@@ -452,8 +609,11 @@ async function chatHydration(_boot: Awaited<ReturnType<typeof bootstrap>>): Prom
   }
 }
 
-async function chatMessages(boot: Awaited<ReturnType<typeof bootstrap>>): Promise<Array<Record<string, unknown>>> {
-  return (await chatHydration(boot)).message
+async function chatMessages(
+  boot: Awaited<ReturnType<typeof bootstrap>>,
+  chatId = 'chat-1',
+): Promise<Array<Record<string, unknown>>> {
+  return (await chatHydration(boot, chatId)).message
 }
 
 async function waitFor<T>(fn: () => Promise<T | undefined>, timeoutMs = 5000): Promise<T> {
@@ -474,9 +634,13 @@ async function waitForAssistantMessage(): Promise<Record<string, unknown>> {
 }
 
 /** Re-seed the fixture chat with an explicit transcript (for continue / regenerate). */
-async function seedChatWithMessages(messages: Array<Record<string, unknown>>): Promise<void> {
+async function seedChatWithMessages(
+  messages: Array<Record<string, unknown>>,
+  databaseOverrides: Record<string, unknown> = {},
+): Promise<void> {
   await seedDatabase({
     ...fixtureDatabase,
+    ...databaseOverrides,
     characters: [
       {
         ...fixtureDatabase.characters[0],
@@ -486,13 +650,30 @@ async function seedChatWithMessages(messages: Array<Record<string, unknown>>): P
   })
 }
 
+async function configureChatForDurableGeneration(chatId: string): Promise<void> {
+  const boot = await bootstrap()
+  const res = await fetch(
+    `${harness.baseUrl}/api/v1/commands/chats/${encodeURIComponent(chatId)}/generation-settings`,
+    {
+      method: 'PUT',
+      headers: authHeaders({ 'content-type': 'application/json' }),
+      body: JSON.stringify({
+        baseRevision: boot.revision,
+        generationSettings: durableGenerationSettings(),
+      }),
+    },
+  )
+  expect(res.status).toBe(200)
+}
+
 /** Cancel a running durable job over the DELETE route. */
 async function cancelJob(jobId: string): Promise<void> {
   const del = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
     method: 'DELETE',
     headers: authHeaders(),
   })
-  expect(del.status).toBe(200)
+  expect(del.status).toBe(202)
+  expect(await del.json()).toMatchObject({ disposition: 'cancelling', jobId })
 }
 
 function generationFinalizationRetryRows(): GenerationFinalizationRetryTestRow[] {
@@ -512,6 +693,38 @@ function generationFinalizationRetryRows(): GenerationFinalizationRetryTestRow[]
   }
 }
 
+function executeDatabase(sql: string): void {
+  const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+  try {
+    db.exec(sql)
+  } finally {
+    db.close()
+  }
+}
+
+async function captureProtocolMetrics<T>(run: () => Promise<T>): Promise<{
+  result: T
+  metrics: Array<Record<string, unknown>>
+}> {
+  const previous = process.env.RISU_PROTOCOL_METRICS
+  process.env.RISU_PROTOCOL_METRICS = '1'
+  const metrics: Array<Record<string, unknown>> = []
+  const infoSpy = vi.spyOn(console, 'info').mockImplementation((message: unknown) => {
+    if (typeof message !== 'string' || !message.startsWith('[protocol-metric] ')) return
+    metrics.push(JSON.parse(message.slice('[protocol-metric] '.length)) as Record<string, unknown>)
+  })
+  try {
+    return { result: await run(), metrics }
+  } finally {
+    infoSpy.mockRestore()
+    if (previous === undefined) {
+      delete process.env.RISU_PROTOCOL_METRICS
+    } else {
+      process.env.RISU_PROTOCOL_METRICS = previous
+    }
+  }
+}
+
 function commandEventTypeCount(type: string): number {
   const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
   try {
@@ -524,14 +737,19 @@ function commandEventTypeCount(type: string): number {
   }
 }
 
-function retryQueuedFinalizationsOnce(): ReturnType<typeof retryQueuedGenerationFinalizations> {
+function retryQueuedFinalizationsOnce(logger?: {
+  warn(obj: Record<string, unknown>, msg: string): void
+  error(obj: Record<string, unknown>, msg: string): void
+}): ReturnType<typeof retryQueuedGenerationFinalizations> {
   const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
   try {
     return retryQueuedGenerationFinalizations({
       db,
       dataDir: harness.dataDir,
       eventSink: createCommandEventSink(),
+      logger,
       maxPerSweep: 10,
+      now: new Date(Date.now() + GENERATION_FINALIZATION_RETRY_MAX_DELAY_MS + 1_000),
       messageTranslationJobs: new MessageTranslationJobRegistry(),
     })
   } finally {
@@ -562,12 +780,42 @@ async function patchMessage(messageId: string, patch: Record<string, unknown>): 
   expect(res.status).toBe(200)
 }
 
+async function deleteMessage(messageId: string): Promise<void> {
+  const boot = await bootstrap()
+  const res = await fetch(`${harness.baseUrl}/api/v1/commands/messages/${encodeURIComponent(messageId)}`, {
+    method: 'DELETE',
+    headers: authHeaders({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ baseRevision: boot.revision }),
+  })
+  expect(res.status).toBe(200)
+}
+
 async function patchChatScriptstate(patch: Record<string, string | number | boolean>): Promise<void> {
   const boot = await bootstrap()
   const res = await fetch(`${harness.baseUrl}/api/v1/commands/chats/chat-1/scriptstate`, {
     method: 'PATCH',
     headers: authHeaders({ 'content-type': 'application/json' }),
     body: JSON.stringify({ baseRevision: boot.revision, patch }),
+  })
+  expect(res.status).toBe(200)
+}
+
+async function patchCharacterFirstMessage(firstMessage: string): Promise<void> {
+  const boot = await bootstrap()
+  const res = await fetch(`${harness.baseUrl}/api/v1/commands/characters/char-1`, {
+    method: 'PATCH',
+    headers: authHeaders({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ baseRevision: boot.revision, patch: { firstMessage } }),
+  })
+  expect(res.status).toBe(200)
+}
+
+async function replaceChatLocalLore(entries: Array<Record<string, unknown>>): Promise<void> {
+  const boot = await bootstrap()
+  const res = await fetch(`${harness.baseUrl}/api/v1/commands/chats/chat-1/lorebooks`, {
+    method: 'PUT',
+    headers: authHeaders({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ baseRevision: boot.revision, entries }),
   })
   expect(res.status).toBe(200)
 }
@@ -618,7 +866,925 @@ function seedGenerationFinalizationRetryRow(
   )
 }
 
-describe('Durable generation (Milestone 1)', () => {
+describe('Durable generation', () => {
+  it('accepts a targeted regenerate while the assistant remains authoritative through admission', async () => {
+    await seedChatWithMessages([
+      { role: 'user', data: 'greet me', chatId: 'msg-user-1' },
+      { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-1' },
+    ])
+    providerImpl = () =>
+      (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'a brand new reply' }
+        yield { kind: 'done', finishReason: 'stop' }
+      })()
+
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const submitted = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicTargetedRequest({
+        operationId,
+        baseRevision: authority.revision,
+        mode: 'regenerate',
+        targetMessageId: 'msg-char-1',
+      }),
+    )
+    expect(submitted.status).toBe(201)
+    expect(await submitted.json()).toMatchObject({
+      operation: {
+        operationId,
+        mode: 'regenerate',
+        targetMessageId: 'msg-char-1',
+        state: 'owned_by_job',
+      },
+    })
+
+    await waitFor(async () => {
+      const status = await operationStatus(operationId)
+      return status.operation.state === 'completed' ? status : undefined
+    })
+    const hydration = await chatHydration(await bootstrap())
+    expect(hydration.message).toHaveLength(2)
+    expect(hydration.message[0]).toMatchObject({ role: 'user', chatId: 'msg-user-1' })
+    expect(hydration.message[1]).toMatchObject({ role: 'char', data: 'a brand new reply' })
+    expect(hydration.message[1].chatId).not.toBe('msg-char-1')
+    expect(hydration.alternates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ role: 'char', data: 'old reply', chatId: 'msg-char-1' }),
+        expect.objectContaining({ role: 'char', data: 'a brand new reply' }),
+      ]),
+    )
+  })
+
+  it('keeps a negotiated regenerate target authoritative while streaming its in-place projection', async () => {
+    await seedChatWithMessages([
+      { role: 'user', data: 'greet me', chatId: 'msg-user-1' },
+      { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-1' },
+    ])
+    const gated = makeGatedProvider({ before: 'projected', after: ' replacement' })
+    providerImpl = gated.dispatchProvider
+
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const submitted = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicTargetedRequest({
+        operationId,
+        baseRevision: authority.revision,
+        mode: 'regenerate',
+        targetMessageId: 'msg-char-1',
+        clientCapabilities: {
+          compactPromptEvent: true,
+          promptMetadataOnly: true,
+          regenerateTargetProjection: 1,
+        },
+      }),
+    )
+    expect(submitted.status).toBe(201)
+    const accepted = (await submitted.json()) as AtomicOperationResponse
+    expect(accepted.stream?.href).toBeTypeOf('string')
+    const currentOperation = await operationStatus(operationId)
+    expect(currentOperation.operation.currentAttempt).toBeDefined()
+    const currentAttempt = currentOperation.operation.currentAttempt!
+    const currentStreamHref =
+      `/api/v1/generation-operations/${encodeURIComponent(operationId)}/stream` +
+      `?attemptNo=${currentAttempt.attemptNo}&jobId=${encodeURIComponent(currentAttempt.jobId)}` +
+      `&projectionEpoch=${currentOperation.operation.projectionEpoch}`
+
+    const stream = await fetch(`${harness.baseUrl}${currentStreamHref}`, {
+      headers: authHeaders({ 'risu-writer-session': 'writer-a' }),
+    })
+    expect(stream.status).toBe(200)
+    const events = await readSse(stream, (event) => event.type === 'token')
+    expect(events.some((event) => event.type === 'message_patch')).toBe(false)
+    const info = events.find((event) => event.type === 'info')
+    expect(info, JSON.stringify(events)).toBeDefined()
+    expect(info?.data).toMatchObject({
+      generationDisplayProjection: {
+        version: 1,
+        mode: 'regenerate',
+        targetMessageId: 'msg-char-1',
+        operationId,
+        attemptNo: 1,
+        projectionEpoch: expect.any(Number),
+        generationId: expect.any(String),
+      },
+    })
+    expect(await chatMessages(await bootstrap())).toEqual([
+      expect.objectContaining({ role: 'user', chatId: 'msg-user-1' }),
+      expect.objectContaining({ role: 'char', chatId: 'msg-char-1', data: 'old reply' }),
+    ])
+
+    gated.release()
+    await waitFor(async () => {
+      const status = await operationStatus(operationId)
+      return status.operation.state === 'completed' ? status : undefined
+    })
+    expect(await chatMessages(await bootstrap())).toEqual([
+      expect.objectContaining({ role: 'user', chatId: 'msg-user-1' }),
+      expect.objectContaining({ role: 'char', data: 'projected replacement' }),
+    ])
+  })
+
+  it('atomically replays one accepted send and carries exact lineage through SSE, bootstrap, journal, result, and events', async () => {
+    const gated = makeGatedProvider({ before: 'lineage', after: ' result' })
+    let providerCalls = 0
+    providerImpl = (context) => {
+      providerCalls += 1
+      return gated.dispatchProvider(context)
+    }
+
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const acceptedMessageId = randomUUID()
+    const request = atomicSendRequest({
+      operationId,
+      acceptedMessageId,
+      baseRevision: authority.revision,
+    })
+
+    const first = await postAtomicOperation(authority.databaseLineage, request)
+    expect(first.status).toBe(201)
+    const accepted = (await first.json()) as AtomicOperationResponse
+    expect(accepted.operation).toMatchObject({
+      operationId,
+      state: 'owned_by_job',
+      acceptedMessageId,
+      currentAttempt: { attemptNo: 1, jobId: expect.any(String) },
+    })
+    expect(accepted.append).toMatchObject({
+      disposition: 'accepted',
+      messageId: acceptedMessageId,
+      event: {
+        type: 'message.appended',
+        databaseLineage: authority.databaseLineage,
+        operationId,
+        sourceMessageId: acceptedMessageId,
+      },
+    })
+    expect((accepted.append?.event as JsonRecord).origin).toBeUndefined()
+    const jobId = accepted.operation.currentAttempt!.jobId
+
+    const replay = await postAtomicOperation(authority.databaseLineage, {
+      ...request,
+      baseRevision: authority.revision + 999,
+    })
+    expect(replay.status).toBe(200)
+    const replayed = (await replay.json()) as AtomicOperationResponse
+    expect(replayed.operation.currentAttempt).toMatchObject({ attemptNo: 1, jobId })
+    expect(replayed.append).toMatchObject({ disposition: 'accepted', messageId: acceptedMessageId })
+    const conflictingReplay = await postAtomicOperation(authority.databaseLineage, {
+      ...request,
+      message: { ...(request.message as JsonRecord), data: 'changed immutable message' },
+    })
+    expect(conflictingReplay.status).toBe(409)
+    expect(await conflictingReplay.json()).toEqual({ error: 'operation_id_conflict' })
+    expect(providerCalls).toBe(1)
+
+    const running = await operationAuthority()
+    const active = running.activeGenerationJobs.find((entry) => entry.operationId === operationId)
+    expect(active).toMatchObject({
+      databaseLineage: authority.databaseLineage,
+      operationId,
+      writerSessionId: 'writer-a',
+      attemptNo: 1,
+      jobId,
+      acceptedMessageId,
+      operationStateVersion: expect.any(Number),
+      projectionEpoch: expect.any(Number),
+    })
+    expect(running.generationOperations).toContainEqual(
+      expect.objectContaining({
+        operationId,
+        state: 'owned_by_job',
+        acceptedMessageId,
+        currentAttempt: expect.objectContaining({ attemptNo: 1, jobId }),
+      }),
+    )
+
+    const staleStream = await fetch(
+      `${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}/stream` +
+        `?attemptNo=1&jobId=${encodeURIComponent(jobId)}&projectionEpoch=0`,
+      { headers: authHeaders() },
+    )
+    expect(staleStream.status).toBe(409)
+    expect(await staleStream.json()).toMatchObject({
+      error: 'stale_generation_attempt',
+      operation: {
+        operationId,
+        projectionEpoch: active!.projectionEpoch,
+        currentAttempt: { attemptNo: 1, jobId },
+      },
+    })
+
+    const streamController = newController()
+    const stream = await fetch(
+      `${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}/stream` +
+        `?attemptNo=1&jobId=${encodeURIComponent(jobId)}&projectionEpoch=${active!.projectionEpoch}`,
+      { headers: authHeaders(), signal: streamController.signal },
+    )
+    expect(stream.status).toBe(200)
+    const initialEvents = await readSse(stream, (event) => event.type === 'token')
+    streamController.abort()
+    expect(initialEvents.some((event) => event.type === 'job_accepted')).toBe(true)
+    for (const event of initialEvents) {
+      expect(event.data).toMatchObject({
+        databaseLineage: authority.databaseLineage,
+        operationId,
+        writerSessionId: 'writer-a',
+        writerEpoch: expect.any(Number),
+        operationStateVersion: expect.any(Number),
+        projectionEpoch: expect.any(Number),
+        attemptNo: 1,
+        jobId,
+        acceptedMessageId,
+      })
+    }
+
+    executeDatabase(`
+      CREATE TRIGGER fail_protocol_generation_message_insert
+      BEFORE INSERT ON messages
+      WHEN NEW.role = 'char'
+      BEGIN
+        SELECT RAISE(FAIL, 'injected protocol finalization failure');
+      END;
+    `)
+    const beforeFinalization = await operationStatus(operationId)
+    const terminalStream = await fetch(
+      `${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}/stream` +
+        `?attemptNo=1&jobId=${encodeURIComponent(jobId)}` +
+        `&projectionEpoch=${beforeFinalization.operation.projectionEpoch}`,
+      { headers: authHeaders() },
+    )
+    expect(terminalStream.status).toBe(200)
+    const terminalPromise = readSse(terminalStream, (event) => event.type === 'error')
+    gated.release()
+    const terminalEvents = await terminalPromise
+    const terminalError = terminalEvents.find((event) => event.type === 'error')
+    expect(terminalError?.data).toMatchObject({
+      reason: 'generation_persistence_failed',
+      persistenceDisposition: 'queued',
+      databaseLineage: authority.databaseLineage,
+      operationId,
+      attemptNo: 1,
+      jobId,
+      acceptedMessageId,
+    })
+
+    const journalDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(
+        journalDb
+          .prepare(
+            `SELECT database_lineage AS databaseLineage, operation_id AS operationId,
+                    operation_attempt_no AS attemptNo,
+                    actor_writer_session_id AS writerSessionId,
+                    accepted_message_id AS acceptedMessageId,
+                    generation_id AS jobId, terminal_outcome AS terminalOutcome
+             FROM generation_finalization_retries WHERE generation_id = ?`,
+          )
+          .get(jobId),
+      ).toEqual({
+        databaseLineage: authority.databaseLineage,
+        operationId,
+        attemptNo: 1,
+        writerSessionId: 'writer-a',
+        acceptedMessageId,
+        jobId,
+        terminalOutcome: 'completed',
+      })
+    } finally {
+      journalDb.close()
+    }
+    const queuedAuthority = await operationAuthority()
+    expect(queuedAuthority.generationFinalizations).toContainEqual(
+      expect.objectContaining({
+        generationId: jobId,
+        databaseLineage: authority.databaseLineage,
+        operationId,
+        operationAttemptNo: 1,
+        acceptedMessageId,
+        terminalOutcome: 'completed',
+      }),
+    )
+
+    executeDatabase('DROP TRIGGER fail_protocol_generation_message_insert')
+    await waitFor(async () => {
+      const status = await operationStatus(operationId)
+      return status.operation.state === 'completed' ? status : undefined
+    })
+    expect(providerCalls).toBe(1)
+
+    const assistant = (await chatMessages(await bootstrap())).find((message) => message.role === 'char')
+    expect(assistant?.generationInfo).toMatchObject({
+      databaseLineage: authority.databaseLineage,
+      operationId,
+      acceptedMessageId,
+      attemptNo: 1,
+      jobId,
+    })
+    const eventDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(
+        eventDb
+          .prepare(
+            `SELECT type, database_lineage AS databaseLineage, operation_id AS operationId,
+                    source_message_id AS sourceMessageId, job_id AS jobId
+             FROM command_events WHERE operation_id = ? ORDER BY revision`,
+          )
+          .all(operationId),
+      ).toEqual([
+        {
+          type: 'message.appended',
+          databaseLineage: authority.databaseLineage,
+          operationId,
+          sourceMessageId: acceptedMessageId,
+          jobId: null,
+        },
+        {
+          type: 'generation.persisted',
+          databaseLineage: authority.databaseLineage,
+          operationId,
+          sourceMessageId: acceptedMessageId,
+          jobId,
+        },
+      ])
+    } finally {
+      eventDb.close()
+    }
+  })
+
+  it('binds a cancel-before-submit tombstone without appending or dispatching', async () => {
+    let providerCalls = 0
+    providerImpl = () => {
+      providerCalls += 1
+      return (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'done', finishReason: 'stop' }
+      })()
+    }
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const acceptedMessageId = randomUUID()
+    const cancellation = await fetch(
+      `${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}/cancellation`,
+      {
+        method: 'PUT',
+        headers: authHeaders({
+          'content-type': 'application/json',
+          'risu-database-lineage': authority.databaseLineage,
+          'risu-writer-session': 'writer-a',
+        }),
+        body: JSON.stringify({ reason: 'user_stop' }),
+      },
+    )
+    expect(cancellation.status).toBe(200)
+    expect(await cancellation.json()).toMatchObject({
+      disposition: 'cancelled_before_acceptance',
+      operation: { operationId, state: 'cancel_requested' },
+    })
+
+    const submit = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({ operationId, acceptedMessageId, baseRevision: authority.revision }),
+    )
+    expect(submit.status).toBe(200)
+    expect(await submit.json()).toMatchObject({
+      operation: { operationId, state: 'cancelled', acceptedMessageId },
+      append: { disposition: 'not_appended', messageId: acceptedMessageId },
+    })
+    expect(providerCalls).toBe(0)
+
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(db.prepare('SELECT COUNT(*) AS count FROM messages WHERE uid = ?').get(acceptedMessageId)).toEqual({
+        count: 0,
+      })
+      expect(
+        db
+          .prepare('SELECT COUNT(*) AS count FROM generation_operation_attempts WHERE operation_id = ?')
+          .get(operationId),
+      ).toEqual({ count: 0 })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('converges a submit/cancel arrival race on the same operation without an escaping runner', async () => {
+    const gated = makeGatedProvider({ before: 'racing partial' })
+    let providerCalls = 0
+    providerImpl = (context) => {
+      providerCalls += 1
+      return gated.dispatchProvider(context)
+    }
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const acceptedMessageId = randomUUID()
+    const submitPromise = postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({ operationId, acceptedMessageId, baseRevision: authority.revision }),
+    )
+    const cancellationPromise = fetch(
+      `${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}/cancellation`,
+      {
+        method: 'PUT',
+        headers: authHeaders({
+          'content-type': 'application/json',
+          'risu-database-lineage': authority.databaseLineage,
+          'risu-writer-session': 'writer-a',
+        }),
+        body: JSON.stringify({ reason: 'user_stop' }),
+      },
+    )
+    const [submit, cancellation] = await Promise.all([submitPromise, cancellationPromise])
+    expect([200, 201]).toContain(submit.status)
+    expect([200, 202]).toContain(cancellation.status)
+    expect(await cancellation.json()).toMatchObject({
+      disposition: expect.stringMatching(/^(cancelled_before_acceptance|cancelled|cancelling)$/),
+      operation: { operationId },
+    })
+    const terminal = await waitFor(async () => {
+      const status = await operationStatus(operationId)
+      return status.operation.state === 'cancelled' ? status : undefined
+    })
+    expect(terminal.operation.currentAttempt).toBeUndefined()
+    expect(providerCalls).toBeLessThanOrEqual(1)
+  })
+
+  it('rejects synchronous generation-settings readiness before append or intent commit', async () => {
+    await seedDatabase({
+      ...fixtureDatabase,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          chats: [{ ...durableChat(), generationSettings: undefined }],
+        },
+      ],
+    })
+    let providerCalls = 0
+    providerImpl = () => {
+      providerCalls += 1
+      return (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'done', finishReason: 'stop' }
+      })()
+    }
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const acceptedMessageId = randomUUID()
+    const response = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({ operationId, acceptedMessageId, baseRevision: authority.revision }),
+    )
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({
+      error: 'chat_generation_settings_incomplete',
+      chatId: 'chat-1',
+    })
+    expect(providerCalls).toBe(0)
+
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(
+        db.prepare('SELECT COUNT(*) AS count FROM generation_operations WHERE operation_id = ?').get(operationId),
+      ).toEqual({
+        count: 0,
+      })
+      expect(db.prepare('SELECT COUNT(*) AS count FROM messages WHERE uid = ?').get(acceptedMessageId)).toEqual({
+        count: 0,
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('rejects a malformed known configuration before accepting a user message or operation', async () => {
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      db.prepare("UPDATE settings SET data_json = json_set(data_json, '$.temperature', ?) WHERE id = 1").run(
+        'malformed-private-fixture-value',
+      )
+    } finally {
+      db.close()
+    }
+    let providerCalls = 0
+    providerImpl = () => {
+      providerCalls += 1
+      return (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'done', finishReason: 'stop' }
+      })()
+    }
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const acceptedMessageId = randomUUID()
+    const response = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({
+        operationId,
+        acceptedMessageId,
+        baseRevision: authority.revision,
+      }),
+    )
+    expect(response.status).toBe(400)
+    const body = (await response.json()) as { error: string }
+    expect(body.error).toContain('/database/temperature')
+    expect(body.error).not.toContain('malformed-private-fixture-value')
+    expect(providerCalls).toBe(0)
+    const stored = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(
+        stored.prepare('SELECT COUNT(*) AS count FROM generation_operations WHERE operation_id = ?').get(operationId),
+      ).toEqual({ count: 0 })
+      expect(stored.prepare('SELECT COUNT(*) AS count FROM messages WHERE uid = ?').get(acceptedMessageId)).toEqual({
+        count: 0,
+      })
+      expect(getSchemaState(stored).revision).toBe(authority.revision)
+    } finally {
+      stored.close()
+    }
+  })
+
+  it('loads configuration and the accepted message freshly after preflight and append', async () => {
+    await seedDatabase({
+      ...fixtureDatabase,
+      promptPresets: [
+        { ...fixtureDatabase.promptPresets[0], formatingOrder: ['main', 'description', 'chats', 'lastChat'] },
+      ],
+    })
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const acceptedMessageId = randomUUID()
+    const acceptedText = 'Accepted text must enter the new assembly snapshot'
+    const updatedPrompt = 'Selected prompt changed after acceptance'
+    let configurationRevision = 0
+    let dispatchedPrompt = ''
+    let dispatchedSetting: unknown
+    // This synchronous boundary is after acceptance committed and before the
+    // detached runner assembles. Model an intervening committed config edit.
+    durableLifecycleHook = (transition) => {
+      if (transition !== 'registered') return
+      const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+      try {
+        expect(db.prepare('SELECT COUNT(*) AS count FROM messages WHERE uid = ?').get(acceptedMessageId)).toEqual({
+          count: 1,
+        })
+        db.exec('BEGIN IMMEDIATE')
+        db.prepare(
+          "UPDATE prompt_presets SET data_json = json_set(data_json, '$.mainPrompt', ?) WHERE json_extract(data_json, '$.id') = ?",
+        ).run(updatedPrompt, DURABLE_PROMPT_PRESET_ID)
+        configurationRevision = bumpRevision(db)
+        db.exec('COMMIT')
+      } finally {
+        db.close()
+      }
+    }
+    providerImpl = (context) => {
+      dispatchedPrompt = JSON.stringify(context.result.formated)
+      dispatchedSetting = context.database.mainPrompt
+      return (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'Fresh preparation reply' }
+        yield { kind: 'done', finishReason: 'stop' }
+      })()
+    }
+    const response = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({
+        operationId,
+        acceptedMessageId,
+        baseRevision: authority.revision,
+        text: acceptedText,
+      }),
+    )
+    expect(response.status).toBe(201)
+    await waitFor(async () => {
+      const status = await operationStatus(operationId)
+      return status.operation.state === 'completed' ? status : undefined
+    })
+    expect(configurationRevision).toBe(authority.revision + 2)
+    expect(dispatchedSetting).toBe(updatedPrompt)
+    expect(dispatchedPrompt).toContain(updatedPrompt)
+    expect(dispatchedPrompt).toContain(acceptedText)
+  })
+
+  it('shares one SQLite same-chat claim across protocol operations and the compatibility route', async () => {
+    const firstGate = makeGatedProvider({ before: 'first', after: ' result' })
+    providerImpl = firstGate.dispatchProvider
+    let authority = await operationAuthority()
+    const firstOperationId = randomUUID()
+    const firstMessageId = randomUUID()
+    const first = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({
+        operationId: firstOperationId,
+        acceptedMessageId: firstMessageId,
+        baseRevision: authority.revision,
+      }),
+    )
+    expect(first.status).toBe(201)
+
+    authority = await operationAuthority()
+    const blockedOperationId = randomUUID()
+    const blockedMessageId = randomUUID()
+    const blocked = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({
+        operationId: blockedOperationId,
+        acceptedMessageId: blockedMessageId,
+        baseRevision: 0,
+      }),
+    )
+    expect(blocked.status).toBe(409)
+    expect(await blocked.json()).toMatchObject({ error: 'generation_in_progress', operationId: firstOperationId })
+    const legacyBlocked = await postDurable({}, { writerSession: 'writer-a' })
+    expect(legacyBlocked.status).toBe(409)
+
+    firstGate.release()
+    await waitFor(async () => {
+      const status = await operationStatus(firstOperationId)
+      return status.operation.state === 'completed' ? status : undefined
+    })
+
+    const legacyGate = makeGatedProvider({ before: 'legacy', after: ' result' })
+    providerImpl = legacyGate.dispatchProvider
+    const legacyController = newController()
+    const legacy = await postDurable({}, { signal: legacyController.signal, writerSession: 'writer-a' })
+    expect(legacy.status).toBe(200)
+    await readSse(legacy, (event) => event.type === 'token')
+    legacyController.abort()
+
+    const claimDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(
+        claimDb
+          .prepare(
+            "SELECT request_origin AS requestOrigin, state FROM generation_operations WHERE chat_id = 'chat-1' AND request_origin = 'legacy' ORDER BY created_at DESC LIMIT 1",
+          )
+          .get(),
+      ).toEqual({ requestOrigin: 'legacy', state: 'owned_by_job' })
+    } finally {
+      claimDb.close()
+    }
+
+    authority = await operationAuthority()
+    const blockedByLegacyOperationId = randomUUID()
+    const blockedByLegacyMessageId = randomUUID()
+    const blockedByLegacy = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({
+        operationId: blockedByLegacyOperationId,
+        acceptedMessageId: blockedByLegacyMessageId,
+        baseRevision: authority.revision,
+      }),
+    )
+    expect(blockedByLegacy.status).toBe(409)
+    expect(await blockedByLegacy.json()).toMatchObject({ error: 'generation_in_progress' })
+
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(
+        db
+          .prepare('SELECT COUNT(*) AS count FROM messages WHERE uid IN (?, ?)')
+          .get(blockedMessageId, blockedByLegacyMessageId),
+      ).toEqual({ count: 0 })
+    } finally {
+      db.close()
+    }
+    legacyGate.release()
+  })
+
+  it('cancels only the authoritative current attempt despite stale advisory fields', async () => {
+    const gated = makeGatedProvider({ before: 'partial cancellation' })
+    let providerCalls = 0
+    providerImpl = (context) => {
+      providerCalls += 1
+      return gated.dispatchProvider(context)
+    }
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const acceptedMessageId = randomUUID()
+    const submit = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({ operationId, acceptedMessageId, baseRevision: authority.revision }),
+    )
+    expect(submit.status).toBe(201)
+    const submitted = (await submit.json()) as AtomicOperationResponse
+    const attempt = submitted.operation.currentAttempt!
+    await waitFor(async () => (providerCalls === 1 ? true : undefined))
+
+    const cancellation = await fetch(
+      `${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}/cancellation`,
+      {
+        method: 'PUT',
+        headers: authHeaders({
+          'content-type': 'application/json',
+          'risu-database-lineage': authority.databaseLineage,
+          'risu-writer-session': 'writer-a',
+        }),
+        body: JSON.stringify({
+          reason: 'user_stop',
+          knownStateVersion: 1,
+          knownAttemptNo: attempt.attemptNo + 99,
+          knownJobId: randomUUID(),
+        }),
+      },
+    )
+    expect(cancellation.status).toBe(202)
+    expect(await cancellation.json()).toMatchObject({
+      disposition: 'cancelling',
+      knownAttemptMatched: false,
+      operation: {
+        operationId,
+        state: 'stopping',
+        currentAttempt: { attemptNo: attempt.attemptNo, jobId: attempt.jobId },
+      },
+    })
+    await waitFor(async () => {
+      const status = await operationStatus(operationId)
+      return status.operation.state === 'cancelled' ? status : undefined
+    })
+    expect(providerCalls).toBe(1)
+
+    const replay = await fetch(
+      `${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}/cancellation`,
+      {
+        method: 'PUT',
+        headers: authHeaders({
+          'content-type': 'application/json',
+          'risu-database-lineage': authority.databaseLineage,
+          'risu-writer-session': 'writer-a',
+        }),
+        body: JSON.stringify({ reason: 'user_stop' }),
+      },
+    )
+    expect(replay.status).toBe(200)
+    expect(await replay.json()).toMatchObject({ disposition: 'already_cancelled' })
+  })
+
+  it('reports an already-completed operation without rewriting its terminal outcome', async () => {
+    providerImpl = () =>
+      (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'completed before stop' }
+        yield { kind: 'done', finishReason: 'stop' }
+      })()
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const acceptedMessageId = randomUUID()
+    const submit = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({ operationId, acceptedMessageId, baseRevision: authority.revision }),
+    )
+    expect(submit.status).toBe(201)
+    await waitFor(async () => {
+      const status = await operationStatus(operationId)
+      return status.operation.state === 'completed' ? status : undefined
+    })
+
+    const cancellation = await fetch(
+      `${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}/cancellation`,
+      {
+        method: 'PUT',
+        headers: authHeaders({
+          'content-type': 'application/json',
+          'risu-database-lineage': authority.databaseLineage,
+          'risu-writer-session': 'writer-a',
+        }),
+        body: JSON.stringify({ reason: 'user_stop' }),
+      },
+    )
+    expect(cancellation.status).toBe(200)
+    expect(await cancellation.json()).toMatchObject({
+      disposition: 'already_completed',
+      operation: { operationId, state: 'completed', resultMessageId: expect.any(String) },
+      result: { messageId: expect.any(String), revision: expect.any(Number) },
+    })
+  })
+
+  it('replays one explicit retry without re-appending or re-running committed submit transforms', async () => {
+    const database = structuredClone(fixtureDatabase) as JsonRecord
+    const character = (database.characters as JsonRecord[])[0]!
+    character.triggerscript = [
+      {
+        comment: '',
+        type: 'input',
+        conditions: [],
+        effect: [
+          {
+            type: 'triggerlua',
+            code: `
+              function onInput(id)
+                addChat(id, 'char', 'INPUT-ONCE')
+              end
+              listenEdit('editInput', function(id, data)
+                return data .. ' [EDIT-ONCE]'
+              end)
+            `,
+          },
+        ],
+      },
+    ]
+    await seedDatabase(database)
+    let providerCalls = 0
+    providerImpl = () => {
+      providerCalls += 1
+      return (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'error', error: 'injected provider failure', nonRetryable: true }
+      })()
+    }
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const acceptedMessageId = randomUUID()
+    const submit = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({ operationId, acceptedMessageId, baseRevision: authority.revision }),
+    )
+    expect(submit.status).toBe(201)
+    const retryable = await waitFor(async () => {
+      const status = await operationStatus(operationId)
+      return status.operation.state === 'retryable' ? status : undefined
+    })
+    expect(providerCalls).toBe(1)
+    expect(
+      (await chatMessages(await bootstrap())).map((message) => [message.role, message.data, message.chatId]),
+    ).toEqual([
+      ['char', 'INPUT-ONCE', expect.any(String)],
+      ['user', 'atomic hello [EDIT-ONCE]', acceptedMessageId],
+    ])
+
+    const retryGate = makeGatedProvider({ before: 'retried', after: ' once' })
+    providerImpl = (context) => {
+      providerCalls += 1
+      return retryGate.dispatchProvider(context)
+    }
+    const retryRequestId = randomUUID()
+    const retryBody = {
+      retryRequestId,
+      expectedStateVersion: retryable.operation.stateVersion,
+    }
+    const retry = await fetch(
+      `${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}/retries`,
+      {
+        method: 'POST',
+        headers: authHeaders({
+          'content-type': 'application/json',
+          'risu-database-lineage': authority.databaseLineage,
+          'risu-writer-session': 'writer-a',
+        }),
+        body: JSON.stringify(retryBody),
+      },
+    )
+    expect(retry.status).toBe(202)
+    const retried = (await retry.json()) as AtomicOperationResponse
+    expect(retried.operation).toMatchObject({
+      operationId,
+      state: 'owned_by_job',
+      acceptedMessageId,
+      currentAttempt: { attemptNo: 2, retryRequestId, jobId: expect.any(String) },
+    })
+    const retryJobId = retried.operation.currentAttempt!.jobId
+
+    const retryReplay = await fetch(
+      `${harness.baseUrl}/api/v1/generation-operations/${encodeURIComponent(operationId)}/retries`,
+      {
+        method: 'POST',
+        headers: authHeaders({
+          'content-type': 'application/json',
+          'risu-database-lineage': authority.databaseLineage,
+          'risu-writer-session': 'writer-a',
+        }),
+        body: JSON.stringify(retryBody),
+      },
+    )
+    expect(retryReplay.status).toBe(200)
+    expect(await retryReplay.json()).toMatchObject({
+      operation: { currentAttempt: { attemptNo: 2, retryRequestId, jobId: retryJobId } },
+    })
+    expect(providerCalls).toBe(2)
+    expect(
+      (await chatMessages(await bootstrap())).map((message) => [message.role, message.data, message.chatId]),
+    ).toEqual([
+      ['char', 'INPUT-ONCE', expect.any(String)],
+      ['user', 'atomic hello [EDIT-ONCE]', acceptedMessageId],
+    ])
+
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(
+        db
+          .prepare('SELECT COUNT(*) AS count FROM generation_operation_attempts WHERE operation_id = ?')
+          .get(operationId),
+      ).toEqual({ count: 2 })
+      expect(db.prepare('SELECT COUNT(*) AS count FROM messages WHERE uid = ?').get(acceptedMessageId)).toEqual({
+        count: 1,
+      })
+    } finally {
+      db.close()
+    }
+    retryGate.release()
+    await waitFor(async () => {
+      const status = await operationStatus(operationId)
+      return status.operation.state === 'completed' ? status : undefined
+    })
+    expect(providerCalls).toBe(2)
+  })
+
   it('exposes the accepted durable job id before the SSE body is consumed', async () => {
     const res = await postDurable({})
     const headerJobId = res.headers.get('x-risu-generation-job-id')
@@ -628,8 +1794,49 @@ describe('Durable generation (Milestone 1)', () => {
     expect(jobIdFromEvents(events)).toBe(headerJobId)
   })
 
+  it.each(['registered', 'viewer_write_started', 'viewer_attached', 'runner_tracked'] as const)(
+    'cleans up the job and chat slot when startup fails after %s',
+    async (transition) => {
+      let failedJobId = ''
+      let failedJobSignal: AbortSignal | undefined
+      durableLifecycleHook = (current, job) => {
+        if (current !== transition) return
+        failedJobId = job.id
+        failedJobSignal = job.abortController.signal
+        throw new Error(`injected durable lifecycle failure after ${transition}`)
+      }
+
+      const failed = await postDurable({})
+      if (transition === 'registered') {
+        expect(failed.status).toBe(500)
+        await expect(failed.json()).resolves.toEqual({ error: 'generation_job_start_failed' })
+      } else {
+        expect(failed.status).toBe(200)
+        await failed.text()
+      }
+
+      expect(failedJobId).not.toBe('')
+      expect(failedJobSignal?.aborted).toBe(true)
+      await waitFor(async () => {
+        const state = await bootstrap()
+        return state.activeGenerationJobs.length === 0 ? true : undefined
+      })
+
+      const missing = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(failedJobId)}/stream`, {
+        headers: authHeaders(),
+      })
+      expect(missing.status).toBe(404)
+
+      durableLifecycleHook = undefined
+      const retry = await postDurable({})
+      expect(retry.status).toBe(200)
+      const events = await readSse(retry, (event) => event.type === 'done')
+      expect(events.at(-1)?.type).toBe('done')
+    },
+  )
+
   // The generation survives the client drop and persists with no client present.
-  it('keeps generating after the client drops mid-stream and persists the result (EC-D1)', async () => {
+  it('keeps generating after the client drops mid-stream and persists the result', async () => {
     const gated = makeGatedProvider({ before: 'Hel', after: 'lo' })
     providerImpl = gated.dispatchProvider
 
@@ -747,7 +1954,7 @@ describe('Durable generation (Milestone 1)', () => {
     expect(generationFinalizationRetryRows()).toEqual([])
   })
 
-  it('retries a transient finalization failure without duplicating the assistant row', async () => {
+  it('reports committed success when live event bookkeeping fails after the authoritative commit', async () => {
     failNextGenerationPersistEvent = true
     providerImpl = () => {
       async function* g(): AsyncGenerator<CompletionStreamFrame> {
@@ -758,20 +1965,253 @@ describe('Durable generation (Milestone 1)', () => {
     }
 
     const controller = newController()
-    const res = await postDurable({}, { signal: controller.signal })
-    const events = await readSse(res, (ev) => ev.type === 'error' || ev.type === 'done')
-    expect(events.some((e) => e.type === 'error')).toBe(true)
-
-    await waitFor(async () => {
-      const rows = generationFinalizationRetryRows()
-      return rows.length === 0 ? true : undefined
+    const { result: events, metrics } = await captureProtocolMetrics(async () => {
+      const res = await postDurable({}, { signal: controller.signal })
+      return readSse(res, () => false)
     })
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+    expect(events.at(-1)?.type).toBe('done')
+    expect(generationFinalizationRetryRows()).toEqual([])
     const hydration = await chatHydration(await bootstrap())
     const assistantMessages = hydration.message.filter((m) => m.role === 'char')
     expect(assistantMessages).toHaveLength(1)
     expect(assistantMessages[0].data).toBe('retry me')
     expect(hydration.alternates.map((message) => message.data).sort()).toEqual(['retry alternate', 'retry me'])
+    expect(metrics.find((metric) => metric.metric === 'generation_persistence')).toMatchObject({
+      status: 'bookkeeping_error',
+      phase: 'bookkeeping',
+      journalConfirmed: true,
+      authoritativeCommitted: true,
+      cleanupComplete: true,
+    })
     controller.abort()
+  })
+
+  it('reports an unconfirmed disposition when finalization journal insertion fails', async () => {
+    await resetHarness({ finalizationRetry: false })
+    await seedDatabase({
+      ...fixtureDatabase,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          triggerscript: [
+            {
+              comment: '',
+              type: 'output',
+              conditions: [],
+              effect: [{ type: 'setvar', operator: '=', var: 'journalMutation', value: 'must-not-commit' }],
+            },
+          ],
+        },
+      ],
+    })
+    const gated = makeGatedProvider({ before: 'unjournaled', after: ' result' })
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const response = await postDurable({}, { signal: controller.signal })
+    const initialEvents = await readSse(response, (event) => event.type === 'token')
+    const jobId = jobIdFromEvents(initialEvents)
+    const replay = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+      headers: authHeaders(),
+    })
+    executeDatabase(`
+      CREATE TRIGGER fail_generation_retry_insert
+      BEFORE INSERT ON generation_finalization_retries
+      BEGIN
+        SELECT RAISE(FAIL, 'injected generation journal failure');
+      END;
+    `)
+
+    const { result: events, metrics } = await captureProtocolMetrics(async () => {
+      gated.release()
+      return readSse(replay, () => false)
+    })
+
+    expect(events.filter((event) => event.type === 'error')).toHaveLength(1)
+    expect(events.some((event) => event.type === 'done')).toBe(false)
+    expect(events.find((event) => event.type === 'error')?.data).toMatchObject({
+      reason: 'generation_persistence_failed',
+      persistenceDisposition: 'unconfirmed',
+      generationProjection: {
+        characterId: 'char-1',
+        chatId: 'chat-1',
+        generationId: jobId,
+        mode: 'send',
+      },
+    })
+    expect(generationFinalizationRetryRows()).toEqual([])
+    const failedBootstrap = await bootstrap()
+    const hydration = await chatHydration(failedBootstrap)
+    expect(hydration.message.some((message) => message.role === 'char')).toBe(false)
+    expect(hydration.alternates).toEqual([])
+    expect(failedBootstrap.database.characters[0].chats[0].scriptstate).toBeUndefined()
+    expect(metrics.find((metric) => metric.metric === 'generation_persistence')).toMatchObject({
+      status: 'journal_error',
+      phase: 'journal',
+      journalConfirmed: false,
+      authoritativeCommitted: false,
+      cleanupComplete: false,
+    })
+    expect(
+      metrics.some((metric) => metric.metric === 'generation_persistence' && metric.status === 'retry_queued'),
+    ).toBe(false)
+    controller.abort()
+    executeDatabase('DROP TRIGGER fail_generation_retry_insert')
+    await restartHarness()
+    expect(generationFinalizationRetryRows()).toEqual([])
+    expect((await chatMessages(await bootstrap())).some((message) => message.role === 'char')).toBe(false)
+  })
+
+  it('does not claim queued when SQLite is busy at journal insertion', async () => {
+    await resetHarness({ finalizationRetry: false })
+    const gated = makeGatedProvider({ before: 'locked', after: ' result' })
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const response = await postDurable({}, { signal: controller.signal })
+    const initialEvents = await readSse(response, (event) => event.type === 'token')
+    const jobId = jobIdFromEvents(initialEvents)
+    const replay = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+      headers: authHeaders(),
+    })
+    const locker = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      locker.exec('BEGIN IMMEDIATE')
+      gated.release()
+      const events = await readSse(replay, () => false)
+      expect(events.find((event) => event.type === 'error')?.data.persistenceDisposition).toBe('unconfirmed')
+      expect(events.some((event) => event.type === 'done')).toBe(false)
+    } finally {
+      locker.exec('ROLLBACK')
+      locker.close()
+    }
+    expect(generationFinalizationRetryRows()).toEqual([])
+    expect((await chatMessages(await bootstrap())).some((message) => message.role === 'char')).toBe(false)
+    controller.abort()
+  })
+
+  it('confirms the exact pending journal row before reporting a retryable persistence failure as queued', async () => {
+    await resetHarness({ finalizationRetry: false })
+    const gated = makeGatedProvider({ before: 'queued', after: ' result' })
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const response = await postDurable({}, { signal: controller.signal })
+    const initialEvents = await readSse(response, (event) => event.type === 'token')
+    const jobId = jobIdFromEvents(initialEvents)
+    const replay = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+      headers: authHeaders(),
+    })
+    executeDatabase(`
+      CREATE TRIGGER fail_generation_message_insert
+      BEFORE INSERT ON messages
+      WHEN NEW.role = 'char'
+      BEGIN
+        SELECT RAISE(FAIL, 'injected authoritative persistence failure');
+      END;
+    `)
+
+    const { result: events, metrics } = await captureProtocolMetrics(async () => {
+      gated.release()
+      return readSse(replay, () => false)
+    })
+    expect(events.find((event) => event.type === 'error')?.data.persistenceDisposition).toBe('queued')
+    expect(events.some((event) => event.type === 'done')).toBe(false)
+    expect(generationFinalizationRetryRows()).toEqual([
+      expect.objectContaining({ generation_id: jobId, status: 'pending', failure_count: 1 }),
+    ])
+    expect((await chatMessages(await bootstrap())).some((message) => message.role === 'char')).toBe(false)
+    expect(metrics.find((metric) => metric.metric === 'generation_persistence')).toMatchObject({
+      status: 'retry_queued',
+      phase: 'authoritative_commit',
+      journalConfirmed: true,
+      authoritativeCommitted: false,
+    })
+
+    controller.abort()
+    executeDatabase('DROP TRIGGER fail_generation_message_insert')
+    await restartHarness()
+    expect(generationFinalizationRetryRows()).toEqual([])
+    const messages = await chatMessages(await bootstrap())
+    expect(messages.filter((message) => message.role === 'char')).toHaveLength(1)
+    expect(messages.find((message) => message.role === 'char')?.data).toBe('queued result')
+    expect(commandEventTypeCount('generation.persisted')).toBe(1)
+  })
+
+  it('preserves the confirmed queue and original persistence error when retry bookkeeping fails', async () => {
+    await resetHarness({ finalizationRetry: false })
+    const gated = makeGatedProvider({ before: 'bookkeeping', after: ' result' })
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const response = await postDurable({}, { signal: controller.signal })
+    const initialEvents = await readSse(response, (event) => event.type === 'token')
+    const jobId = jobIdFromEvents(initialEvents)
+    const replay = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+      headers: authHeaders(),
+    })
+    executeDatabase(`
+      CREATE TRIGGER fail_generation_message_insert
+      BEFORE INSERT ON messages
+      WHEN NEW.role = 'char'
+      BEGIN
+        SELECT RAISE(FAIL, 'original authoritative failure');
+      END;
+      CREATE TRIGGER fail_generation_retry_update
+      BEFORE UPDATE ON generation_finalization_retries
+      BEGIN
+        SELECT RAISE(FAIL, 'injected retry bookkeeping failure');
+      END;
+    `)
+
+    const { result: events, metrics } = await captureProtocolMetrics(async () => {
+      gated.release()
+      return readSse(replay, () => false)
+    })
+    const error = events.find((event) => event.type === 'error')?.data
+    expect(error).toMatchObject({ persistenceDisposition: 'queued' })
+    expect(String(error?.error)).toContain('original authoritative failure')
+    expect(generationFinalizationRetryRows()).toEqual([
+      expect.objectContaining({ generation_id: jobId, status: 'pending', failure_count: 0 }),
+    ])
+    expect(metrics.find((metric) => metric.metric === 'generation_persistence')).toMatchObject({
+      status: 'retry_queued',
+      phase: 'bookkeeping',
+      journalConfirmed: true,
+      authoritativeCommitted: false,
+      bookkeepingError: expect.stringContaining('injected retry bookkeeping failure'),
+    })
+    controller.abort()
+  })
+
+  it('rejects a serialization failure before persistence and leaves no journal row', () => {
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      const circularMessage: Record<string, unknown> = {
+        role: 'char',
+        data: 'cannot serialize',
+        chatId: 'serialization-generation',
+      }
+      circularMessage.circular = circularMessage
+      expect(() =>
+        enqueueGenerationFinalizationRetry(db, {
+          generationId: 'serialization-generation',
+          chatId: 'chat-1',
+          mode: 'send',
+          message: circularMessage as never,
+          chatVarMutations: [],
+        }),
+      ).toThrow(/circular/i)
+      expect(
+        db
+          .prepare('SELECT generation_id FROM generation_finalization_retries WHERE generation_id = ?')
+          .get('serialization-generation'),
+      ).toBeUndefined()
+      expect(db.prepare("SELECT COUNT(*) AS count FROM messages WHERE role = 'char'").get()).toEqual({ count: 0 })
+    } finally {
+      db.close()
+    }
   })
 
   it('replays an already-persisted chat-var finalization retry as a no-op', async () => {
@@ -779,7 +2219,6 @@ describe('Durable generation (Milestone 1)', () => {
     rmSync(harness.dataDir, { recursive: true, force: true })
     harness = await startHarness({ finalizationRetry: false })
     ;({ assertion } = await setupAuthedClient(harness.app))
-    failNextGenerationPersistEvent = true
     providerImpl = () => {
       async function* g(): AsyncGenerator<CompletionStreamFrame> {
         yield { kind: 'token', content: 'reply text' }
@@ -803,11 +2242,29 @@ describe('Durable generation (Milestone 1)', () => {
         },
       ],
     })
+    executeDatabase(`
+      CREATE TRIGGER fail_generation_retry_cleanup
+      BEFORE DELETE ON generation_finalization_retries
+      BEGIN
+        SELECT RAISE(FAIL, 'injected generation retry cleanup failure');
+      END;
+    `)
 
     const controller = newController()
-    const res = await postDurable({}, { signal: controller.signal })
-    const events = await readSse(res, (ev) => ev.type === 'error' || ev.type === 'done')
-    expect(events.some((event) => event.type === 'error')).toBe(true)
+    const { result: events, metrics } = await captureProtocolMetrics(async () => {
+      const res = await postDurable({}, { signal: controller.signal })
+      return readSse(res, (ev) => ev.type === 'error' || ev.type === 'done')
+    })
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+    expect(events.find((event) => event.type === 'done')?.data.persistenceDisposition).toBe('committed_cleanup_pending')
+    expect(metrics.find((metric) => metric.metric === 'generation_persistence')).toMatchObject({
+      status: 'cleanup_pending',
+      phase: 'cleanup',
+      journalConfirmed: true,
+      authoritativeCommitted: true,
+      cleanupComplete: false,
+      cleanupError: expect.stringContaining('injected generation retry cleanup failure'),
+    })
     const jobId = jobIdFromEvents(events)
 
     await waitFor(async () => {
@@ -824,6 +2281,7 @@ describe('Durable generation (Milestone 1)', () => {
     const revisionBeforeRetry = editedBoot.revision
     expect(editedBoot.database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'user-edited' })
 
+    executeDatabase('DROP TRIGGER fail_generation_retry_cleanup')
     expect(retryQueuedFinalizationsOnce()).toEqual({
       attempted: 1,
       persisted: 1,
@@ -842,7 +2300,84 @@ describe('Durable generation (Milestone 1)', () => {
     controller.abort()
   })
 
-  it('L2: prunes only terminal finalization retries older than retention', () => {
+  it('a durable retry replay drops a newly stale chat-var write and persists the assistant row', async () => {
+    await harness.app.close()
+    rmSync(harness.dataDir, { recursive: true, force: true })
+    harness = await startHarness({ finalizationRetry: false })
+    ;({ assertion } = await setupAuthedClient(harness.app))
+    await seedDatabase(fixtureDatabase)
+
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      enqueueGenerationFinalizationRetry(db, {
+        generationId: 'retry-stale-script',
+        chatId: 'chat-1',
+        mode: 'send',
+        message: {
+          role: 'char',
+          data: 'retry conflict-safe reply',
+          chatId: 'retry-stale-script',
+        } as never,
+        chatVarMutations: [{ key: '$mood', before: null, after: 'script-value' }],
+      })
+    } finally {
+      db.close()
+    }
+    await patchChatScriptstate({ $mood: 'user-value' })
+
+    const previousMetrics = process.env.RISU_PROTOCOL_METRICS
+    process.env.RISU_PROTOCOL_METRICS = '1'
+    const metrics: Array<Record<string, unknown>> = []
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation((message: unknown) => {
+      if (typeof message !== 'string' || !message.startsWith('[protocol-metric] ')) return
+      metrics.push(JSON.parse(message.slice('[protocol-metric] '.length)) as Record<string, unknown>)
+    })
+    const logger = { warn: vi.fn(), error: vi.fn() }
+    try {
+      expect(retryQueuedFinalizationsOnce(logger)).toEqual({
+        attempted: 1,
+        persisted: 1,
+        terminal: 0,
+        retryable: 0,
+      })
+    } finally {
+      infoSpy.mockRestore()
+      if (previousMetrics === undefined) {
+        delete process.env.RISU_PROTOCOL_METRICS
+      } else {
+        process.env.RISU_PROTOCOL_METRICS = previousMetrics
+      }
+    }
+
+    expect(generationFinalizationRetryRows()).toEqual([])
+    const boot = await bootstrap()
+    expect(boot.database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'user-value' })
+    expect((await chatMessages(boot)).at(-1)).toMatchObject({
+      role: 'char',
+      data: 'retry conflict-safe reply',
+      chatId: 'retry-stale-script',
+    })
+    expect(metrics.find((metric) => metric.metric === 'generation_script_mutation_conflict')).toMatchObject({
+      status: 'dropped',
+      chatId: 'chat-1',
+      droppedMutationCount: 1,
+      droppedMutations: [{ scope: 'chat_variable', key: '$mood' }],
+    })
+    expect(metrics.find((metric) => metric.metric === 'generation_persistence_retry')).toMatchObject({
+      status: 'persisted',
+      droppedScriptMutationCount: 1,
+      droppedScriptMutations: [{ scope: 'chat_variable', key: '$mood' }],
+    })
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generationId: 'retry-stale-script',
+        droppedScriptMutations: [{ scope: 'chat_variable', key: '$mood' }],
+      }),
+      'generation finalization retry dropped stale script mutations',
+    )
+  })
+
+  it('replay selection never silently deletes retained terminal finalization history', () => {
     const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-generation-retention-'))
     const db = openDatabase(dataDir)
     try {
@@ -850,12 +2385,14 @@ describe('Durable generation (Milestone 1)', () => {
       seedGenerationFinalizationRetryRow(db, 'terminal-recent', 'terminal', '2026-06-05T12:00:00.000Z')
       seedGenerationFinalizationRetryRow(db, 'pending-old', 'pending', '2026-06-01T00:00:00.000Z')
 
-      expect(
-        pruneTerminalGenerationFinalizationRetries(db, {
-          now: '2026-06-06T00:00:00.000Z',
-          retentionMs: 24 * 60 * 60 * 1000,
-        }),
-      ).toBe(1)
+      const replay = retryQueuedGenerationFinalizations({
+        db,
+        dataDir,
+        eventSink: createCommandEventSink(),
+        now: '2026-06-06T00:00:00.000Z',
+        messageTranslationJobs: new MessageTranslationJobRegistry(),
+      })
+      expect(replay.attempted).toBe(1)
 
       expect(
         (
@@ -869,33 +2406,40 @@ describe('Durable generation (Milestone 1)', () => {
             )
             .all() as Array<{ generation_id: string }>
         ).map((row) => row.generation_id),
-      ).toEqual(['pending-old', 'terminal-recent'])
+      ).toEqual(['pending-old', 'terminal-old', 'terminal-recent'])
+      expect(
+        db.prepare('SELECT status FROM generation_finalization_retries WHERE generation_id = ?').get('pending-old'),
+      ).toEqual({ status: 'pending' })
     } finally {
       db.close()
       rmSync(dataDir, { recursive: true, force: true })
     }
   })
 
-  it('L2: app finalization retry sweep also removes retained terminal history', async () => {
+  it('app retry sweeps retain terminal history after processing due work', async () => {
     const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
     try {
       seedGenerationFinalizationRetryRow(db, 'terminal-app-old', 'terminal', '2020-01-01T00:00:00.000Z')
       seedGenerationFinalizationRetryRow(db, 'terminal-app-recent', 'terminal', new Date().toISOString())
+      seedGenerationFinalizationRetryRow(db, 'pending-sweep-barrier', 'pending', '2020-01-01T00:00:00.000Z')
     } finally {
       db.close()
     }
 
     await waitFor(async () => {
       const rows = generationFinalizationRetryRows()
-      return rows.some((row) => row.generation_id === 'terminal-app-old') ? undefined : rows
+      return rows.some((row) => row.generation_id === 'pending-sweep-barrier') ? undefined : rows
     })
 
-    expect(generationFinalizationRetryRows().map((row) => row.generation_id)).toEqual(['terminal-app-recent'])
+    expect(generationFinalizationRetryRows().map((row) => row.generation_id)).toEqual([
+      'terminal-app-old',
+      'terminal-app-recent',
+    ])
   })
 
   // Drop the initial connection after it received prompt/info, reattach to the
   // still-running job, then let it produce the remaining tokens and terminal done.
-  it('reattaches to an in-flight generation with prompt/info replayed (EC-D3)', async () => {
+  it('reattaches to an in-flight generation with prompt/info replayed', async () => {
     const gated = makeGatedProvider({ before: 'Hel', after: 'lo' })
     providerImpl = gated.dispatchProvider
 
@@ -939,6 +2483,76 @@ describe('Durable generation (Milestone 1)', () => {
     expect(message.data).toBe('Hello')
   })
 
+  it.each([
+    {
+      cap: 'event',
+      tokens: Array.from({ length: 600 }, (_, index) => `[${index}]`),
+      expectGap: false,
+      expectSnapshot: false,
+    },
+    {
+      cap: 'byte',
+      tokens: Array.from({ length: 256 }, (_, index) => `${index}:${'한'.repeat(2_048)}`),
+      expectGap: false,
+      expectSnapshot: true,
+    },
+    {
+      cap: 'oversized-terminal',
+      tokens: ['x'.repeat(2 * 1024 * 1024 + 16 * 1024)],
+      expectGap: true,
+      expectSnapshot: true,
+    },
+  ])(
+    'keeps replay bounded with compaction, gap signaling, and terminal recovery at the durable $cap cap',
+    async ({ tokens, expectGap, expectSnapshot }) => {
+      const provider = makeReplayCapProvider(tokens)
+      providerImpl = provider.dispatchProvider
+      const fullResult = tokens.join('')
+
+      const controller = newController()
+      const response = await postDurable({}, { signal: controller.signal })
+      const jobId = response.headers.get('x-risu-generation-job-id') ?? ''
+      expect(jobId).not.toBe('')
+
+      // Detach before any token frames are emitted, then let the durable runner
+      // overflow its replay window and finish without a viewer.
+      controller.abort()
+      provider.release()
+      const persisted = await waitForAssistantMessage()
+      expect(persisted.data).toBe(fullResult)
+
+      const replayController = newController()
+      const replay = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+        headers: authHeaders(),
+        signal: replayController.signal,
+      })
+      expect(replay.status).toBe(200)
+      const events = await readSse(replay, (event) => event.type === 'done')
+      const replayedTokens = events
+        .filter((event) => event.type === 'token')
+        .map((event) => (typeof event.data.content === 'string' ? event.data.content : ''))
+        .join('')
+      const done = events.find((event) => event.type === 'done')
+
+      expect(events.some((event) => event.type === 'replay_gap')).toBe(expectGap)
+      expect(replayedTokens).toBe(expectGap ? '' : fullResult)
+      if (expectSnapshot) {
+        const terminalSnapshot = done?.data.terminalSnapshot as { href?: unknown } | undefined
+        expect(terminalSnapshot?.href).toBe(`/api/v1/generate/chat/${encodeURIComponent(jobId)}/terminal-snapshot`)
+        const snapshotResponse = await fetch(`${harness.baseUrl}${terminalSnapshot?.href}`, {
+          headers: authHeaders(),
+        })
+        expect(snapshotResponse.status).toBe(200)
+        expect((await snapshotResponse.json()) as Record<string, unknown>).toMatchObject({ result: fullResult })
+      } else {
+        expect(done?.data.result).toBe(fullResult)
+      }
+      expect((await waitForAssistantMessage()).data).toBe(fullResult)
+      replayController.abort()
+    },
+    15_000,
+  )
+
   // Resume-after-reload: a fresh client (no in-memory jobId) discovers the running
   // job from bootstrap `activeGenerationJobs` and reattaches.
   it('surfaces a running generation in bootstrap activeGenerationJobs and frees it at completion', async () => {
@@ -955,7 +2569,7 @@ describe('Durable generation (Milestone 1)', () => {
 
     const boot = await bootstrap()
     // The runtime payload carries the generating mode so reload-resume renders correctly.
-    expect(boot.activeGenerationJobs).toContainEqual({ chatId: 'chat-1', jobId, mode: 'send' })
+    expect(boot.activeGenerationJobs).toContainEqual(expect.objectContaining({ chatId: 'chat-1', jobId, mode: 'send' }))
 
     // A fresh client reattaches via the discovered id.
     const reController = newController()
@@ -1009,9 +2623,9 @@ describe('Durable generation (Milestone 1)', () => {
     reController.abort()
   }, 8000)
 
-  // Explicit cancel must push a terminal frame so a reattached observer's stream
-  // ends cleanly.
-  it('emits a terminal done to a reattached observer when the job is cancelled', async () => {
+  // Explicit cancel must leave a truthful protected terminal frame so the same
+  // writer can suspend/reload and reconcile the persisted partial row.
+  it('reattaches to a cancelled job with a non-success terminal disposition', async () => {
     const gated = makeGatedProvider({ before: 'partial' }) // never released
     providerImpl = gated.dispatchProvider
 
@@ -1023,39 +2637,119 @@ describe('Durable generation (Milestone 1)', () => {
       return ev.type === 'token'
     })
 
+    const del = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    })
+    expect(del.status).toBe(202)
+
+    controllerA.abort()
+    const persisted = await waitForAssistantMessage()
+    expect(persisted.data).toBe('partial')
+
     const obsController = newController()
     const obs = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
       headers: authHeaders(),
       signal: obsController.signal,
     })
-    const obsEventsPromise = readSse(obs, (ev) => ev.type === 'done')
-
-    const del = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
-      method: 'DELETE',
-      headers: authHeaders(),
+    const obsEvents = await readSse(obs, (ev) => ev.type === 'done')
+    expect(obsEvents.at(-1)).toMatchObject({
+      type: 'done',
+      data: {
+        outcome: 'cancelled',
+        result: 'partial',
+        generationId: jobId,
+        postGeneration: { messageId: jobId, revision: expect.any(Number), finalText: 'partial' },
+      },
     })
-    expect(del.status).toBe(200)
-
-    const obsEvents = await obsEventsPromise
-    expect(obsEvents.at(-1)?.type).toBe('done')
     controllerA.abort()
     obsController.abort()
   }, 8000)
 
-  it('rejects a second durable send while a generation is running for the chat (409)', async () => {
+  it('keeps an accepted append when its durable generation hits the same-chat lock (409)', async () => {
     const gated = makeGatedProvider({ before: 'one' })
     providerImpl = gated.dispatchProvider
 
     const controller = newController()
     const res1 = await postDurable({}, { signal: controller.signal })
-    await readSse(res1, (ev) => ev.type === 'token')
+    const firstEvents = await readSse(res1, (ev) => ev.type === 'token')
+    const firstJobId = jobIdFromEvents(firstEvents)
 
-    const res2 = await postDurable({})
+    await appendMessage({
+      role: 'user',
+      data: 'accepted while the remote job runs',
+      chatId: 'accepted-user-message',
+    })
+    expect(
+      (await chatMessages(await bootstrap())).filter((message) => message.chatId === 'accepted-user-message'),
+    ).toEqual([expect.objectContaining({ role: 'user', data: 'accepted while the remote job runs' })])
+
+    const res2 = await postDurable({ userMessage: 'accepted while the remote job runs' })
     expect(res2.status).toBe(409)
     expect((await res2.json()).error).toBe('generation_in_progress')
 
+    const running = await bootstrap()
+    expect(running.activeGenerationJobs).toHaveLength(1)
+    expect(running.activeGenerationJobs[0]).toMatchObject({ chatId: 'chat-1', jobId: firstJobId, mode: 'send' })
+    expect((await chatMessages(running)).filter((message) => message.chatId === 'accepted-user-message')).toEqual([
+      expect.objectContaining({ role: 'user', data: 'accepted while the remote job runs' }),
+    ])
+
     gated.release()
     controller.abort()
+  })
+
+  it('runs durable generations for two different chats concurrently and persists both', async () => {
+    await seedDatabase({
+      ...fixtureDatabase,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          chats: [durableChat(), { ...durableChat(), id: 'chat-2', name: 'Chat 2' }],
+        },
+      ],
+    })
+    await configureChatForDurableGeneration('chat-2')
+
+    const chatOne = makeGatedProvider({ before: 'one', after: ' complete' })
+    const chatTwo = makeGatedProvider({ before: 'two', after: ' complete' })
+    providerImpl = (context) =>
+      context.input.chatId === 'chat-2' ? chatTwo.dispatchProvider(context) : chatOne.dispatchProvider(context)
+
+    const controllerOne = newController()
+    const responseOne = await postDurable({}, { signal: controllerOne.signal })
+    const eventsOne = await readSse(responseOne, (event) => event.type === 'token')
+    const jobOne = jobIdFromEvents(eventsOne)
+
+    const controllerTwo = newController()
+    const responseTwo = await postDurable({ chatId: 'chat-2' }, { signal: controllerTwo.signal })
+    const eventsTwo = await readSse(responseTwo, (event) => event.type === 'token')
+    const jobTwo = jobIdFromEvents(eventsTwo)
+
+    const running = await bootstrap()
+    expect(running.activeGenerationJobs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ chatId: 'chat-1', jobId: jobOne }),
+        expect.objectContaining({ chatId: 'chat-2', jobId: jobTwo }),
+      ]),
+    )
+    expect(running.activeGenerationJobs).toHaveLength(2)
+
+    chatOne.release()
+    chatTwo.release()
+
+    await waitFor(async () => {
+      const boot = await bootstrap()
+      const [messagesOne, messagesTwo] = await Promise.all([chatMessages(boot, 'chat-1'), chatMessages(boot, 'chat-2')])
+      const resultOne = messagesOne.find((message) => message.role === 'char')
+      const resultTwo = messagesTwo.find((message) => message.role === 'char')
+      if (resultOne?.data !== 'one complete' || resultTwo?.data !== 'two complete') return undefined
+      if (boot.activeGenerationJobs.length !== 0) return undefined
+      return true
+    })
+
+    controllerOne.abort()
+    controllerTwo.abort()
   })
 
   it('rejects a durable send from a stale (non-active) writer with 423', async () => {
@@ -1075,29 +2769,162 @@ describe('Durable generation (Milestone 1)', () => {
     expect(await chatMessages(boot)).toEqual([])
   })
 
-  // Explicit cancel aborts dispatch; a streaming cancel persists the
-  // accumulated-so-far text raw.
-  it('cancels a running generation via DELETE and persists the streamed-so-far text', async () => {
-    const gated = makeGatedProvider({ before: 'partial reply' }) // never released
+  it('reports an unconfirmed cancelled partial when its journal insert fails', async () => {
+    await resetHarness({ finalizationRetry: false })
+    const gated = makeGatedProvider({ before: 'unsaved cancelled partial' })
     providerImpl = gated.dispatchProvider
 
     const controller = newController()
-    const res = await postDurable({}, { signal: controller.signal })
-    let jobId = ''
-    await readSse(res, (ev) => {
-      if (ev.type === 'job_accepted') jobId = ev.data.jobId as string
-      return ev.type === 'token'
-    })
-
-    const del = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
-      method: 'DELETE',
+    const response = await postDurable({}, { signal: controller.signal })
+    const initialEvents = await readSse(response, (event) => event.type === 'token')
+    const jobId = jobIdFromEvents(initialEvents)
+    const operationId = initialEvents.find((event) => event.type === 'job_accepted')?.data.operationId as string
+    const observer = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
       headers: authHeaders(),
     })
-    expect(del.status).toBe(200)
-    expect((await del.json()).success).toBe(true)
+    const observerEvents = readSse(observer, () => false)
+    executeDatabase(`
+      CREATE TRIGGER fail_cancel_retry_insert
+      BEFORE INSERT ON generation_finalization_retries
+      BEGIN
+        SELECT RAISE(FAIL, 'injected cancelled-result journal failure');
+      END;
+    `)
 
-    const message = await waitForAssistantMessage()
-    expect(message.data).toBe('partial reply')
+    const { result: events, metrics } = await captureProtocolMetrics(async () => {
+      await cancelJob(jobId)
+      return observerEvents
+    })
+    expect(events.filter((event) => event.type === 'error')).toHaveLength(1)
+    expect(events.some((event) => event.type === 'done')).toBe(false)
+    expect(events.find((event) => event.type === 'error')?.data).toMatchObject({
+      reason: 'generation_cancel_persistence_failed',
+      persistenceDisposition: 'unconfirmed',
+      generationProjection: {
+        characterId: 'char-1',
+        chatId: 'chat-1',
+        generationId: jobId,
+        mode: 'send',
+      },
+    })
+    expect(generationFinalizationRetryRows()).toEqual([])
+    expect((await chatMessages(await bootstrap())).some((message) => message.role === 'char')).toBe(false)
+    expect(metrics.find((metric) => metric.metric === 'generation_cancel_persistence')).toMatchObject({
+      status: 'journal_error',
+      phase: 'journal',
+      journalConfirmed: false,
+      authoritativeCommitted: false,
+    })
+    const operationDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(
+        operationDb
+          .prepare('SELECT state, failure_code AS failureCode FROM generation_operations WHERE operation_id = ?')
+          .get(operationId),
+      ).toEqual({ state: 'abandoned', failureCode: 'cancel_finalization_journal_unconfirmed' })
+    } finally {
+      operationDb.close()
+    }
+    controller.abort()
+  })
+
+  it('reports a cancelled partial as queued only when its retry row is replayable', async () => {
+    await resetHarness({ finalizationRetry: false })
+    const gated = makeGatedProvider({ before: 'queued cancelled partial' })
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const response = await postDurable({}, { signal: controller.signal })
+    const initialEvents = await readSse(response, (event) => event.type === 'token')
+    const jobId = jobIdFromEvents(initialEvents)
+    const observer = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+      headers: authHeaders(),
+    })
+    const observerEvents = readSse(observer, () => false)
+    executeDatabase(`
+      CREATE TRIGGER fail_cancel_message_insert
+      BEFORE INSERT ON messages
+      WHEN NEW.role = 'char'
+      BEGIN
+        SELECT RAISE(FAIL, 'injected cancelled-result persistence failure');
+      END;
+    `)
+
+    await cancelJob(jobId)
+    const events = await observerEvents
+    expect(events.find((event) => event.type === 'error')?.data.persistenceDisposition).toBe('queued')
+    expect(events.some((event) => event.type === 'done')).toBe(false)
+    expect(generationFinalizationRetryRows()).toEqual([
+      expect.objectContaining({ generation_id: jobId, status: 'pending', failure_count: 1 }),
+    ])
+    expect((await chatMessages(await bootstrap())).some((message) => message.role === 'char')).toBe(false)
+
+    const blockedAuthority = await operationAuthority()
+    const blockedOperationId = randomUUID()
+    const blockedMessageId = randomUUID()
+    const blocked = await postAtomicOperation(
+      blockedAuthority.databaseLineage,
+      atomicSendRequest({
+        operationId: blockedOperationId,
+        acceptedMessageId: blockedMessageId,
+        baseRevision: blockedAuthority.revision,
+        text: 'must wait for the previous reply',
+      }),
+    )
+    expect(blocked.status).toBe(409)
+    expect(await blocked.json()).toMatchObject({
+      error: 'generation_finalization_pending',
+      generationId: jobId,
+      message: expect.stringContaining('reply is still saving'),
+    })
+    const legacyBlocked = await postDurable(
+      { userMessage: 'legacy send must also wait' },
+      { writerSession: 'writer-a' },
+    )
+    expect(legacyBlocked.status).toBe(409)
+    expect(await legacyBlocked.json()).toMatchObject({
+      error: 'generation_finalization_pending',
+      generationId: jobId,
+      reason: expect.stringContaining('reply is still saving'),
+    })
+    const blockedDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(blockedDb.prepare('SELECT COUNT(*) AS count FROM messages WHERE uid = ?').get(blockedMessageId)).toEqual({
+        count: 0,
+      })
+    } finally {
+      blockedDb.close()
+    }
+
+    executeDatabase('DROP TRIGGER fail_cancel_message_insert')
+    expect(retryQueuedFinalizationsOnce()).toEqual({ attempted: 1, persisted: 1, terminal: 0, retryable: 0 })
+    expect(generationFinalizationRetryRows()).toEqual([])
+    expect((await chatMessages(await bootstrap())).find((message) => message.role === 'char')?.data).toBe(
+      'queued cancelled partial',
+    )
+
+    providerImpl = () =>
+      (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'next reply' }
+        yield { kind: 'done', finishReason: 'stop' }
+      })()
+    const releasedAuthority = await operationAuthority()
+    const releasedOperationId = randomUUID()
+    const releasedMessageId = randomUUID()
+    const released = await postAtomicOperation(
+      releasedAuthority.databaseLineage,
+      atomicSendRequest({
+        operationId: releasedOperationId,
+        acceptedMessageId: releasedMessageId,
+        baseRevision: releasedAuthority.revision,
+        text: 'now the next send can start',
+      }),
+    )
+    expect(released.status).toBe(201)
+    await waitFor(async () => {
+      const status = await operationStatus(releasedOperationId)
+      return status.operation.state === 'completed' ? status : undefined
+    })
     controller.abort()
   })
 
@@ -1125,7 +2952,7 @@ describe('Durable generation (Milestone 1)', () => {
       method: 'DELETE',
       headers: authHeaders({ 'risu-writer-session': 'writer-b' }),
     })
-    expect(del.status).toBe(200)
+    expect(del.status).toBe(202)
 
     // After cancel the chat accepts a new generation (the slot is free).
     await waitFor(async () => {
@@ -1136,7 +2963,7 @@ describe('Durable generation (Milestone 1)', () => {
 
   // The durable path runs the post-gen pass, persists the scriptstate delta and
   // assistant message, and folds the bumped revision onto done.postGeneration.
-  it('runs the A2 post-gen pass on the durable path and persists the derived result (EC-D1/A2)', async () => {
+  it('runs the post-generation pass on the durable path and persists the derived result', async () => {
     providerImpl = () => {
       async function* g(): AsyncGenerator<CompletionStreamFrame> {
         yield { kind: 'token', content: 'reply text' }
@@ -1180,6 +3007,130 @@ describe('Durable generation (Milestone 1)', () => {
     expect(assistant?.data).toBe('reply text')
     controller.abort()
   })
+
+  it.each([
+    { scope: 'character_field', key: 'firstMessage' },
+    { scope: 'local_lore', key: undefined },
+    { scope: 'chat_variable', key: '$mood' },
+  ] as const)(
+    'durable finalization reconciles a concurrent $scope mutation without losing the generated message',
+    async (testCase) => {
+      const gated = makeGatedProvider({ before: 'durable conflict-safe', after: ' reply' })
+      providerImpl = gated.dispatchProvider
+      const outputEffect =
+        testCase.scope === 'chat_variable'
+          ? [{ type: 'setvar', operator: '=', var: 'mood', value: 'script-value' }]
+          : [
+              {
+                type: 'triggerlua',
+                code:
+                  testCase.scope === 'character_field'
+                    ? `function onOutput(id) setCharacterFirstMessage(id, 'script greeting') end`
+                    : `function onOutput(id) upsertLocalLoreBook(id, 'script-lore', 'script lore') end`,
+              },
+            ]
+      await seedDatabase({
+        ...fixtureDatabase,
+        characters: [
+          {
+            ...fixtureDatabase.characters[0],
+            triggerscript: [
+              {
+                comment: '',
+                type: 'output',
+                conditions: [],
+                effect: outputEffect,
+              },
+            ],
+          },
+        ],
+      })
+
+      const controller = newController()
+      const response = await postDurable({}, { signal: controller.signal })
+      const initialEvents = await readSse(response, (event) => event.type === 'token')
+      const jobId = jobIdFromEvents(initialEvents)
+      const replay = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+        headers: authHeaders(),
+      })
+      expect(replay.status).toBe(200)
+
+      if (testCase.scope === 'character_field') {
+        await patchCharacterFirstMessage('user greeting')
+      } else if (testCase.scope === 'local_lore') {
+        await replaceChatLocalLore([
+          {
+            id: 'user-lore-id',
+            key: 'user',
+            secondkey: '',
+            insertorder: 100,
+            comment: 'user-lore',
+            content: 'user lore',
+            mode: 'normal',
+            alwaysActive: false,
+            selective: false,
+          },
+        ])
+      } else {
+        await patchChatScriptstate({ $mood: 'user-value' })
+      }
+      gated.release()
+
+      const terminalEvents = await readSse(replay, (event) => event.type === 'done')
+      expect(terminalEvents.find((event) => event.type === 'error')).toBeUndefined()
+      if (testCase.scope === 'local_lore') {
+        expect(terminalEvents.find((event) => event.type === 'warning')).toBeUndefined()
+      } else {
+        expect(terminalEvents.find((event) => event.type === 'warning')?.data).toMatchObject({
+          message: 'Some server script updates were skipped because their targets changed during generation.',
+          context: {
+            kind: 'stale_generation_script_mutations',
+            droppedMutations: [{ scope: testCase.scope, key: testCase.key }],
+          },
+        })
+      }
+      const done = terminalEvents.find((event) => event.type === 'done')
+      const postGeneration = done?.data.postGeneration as
+        | {
+            messagePatch?: {
+              chatVarMutations?: unknown[]
+              characterFieldMutations?: unknown[]
+              localLoreMutation?: unknown
+            }
+          }
+        | undefined
+      if (testCase.scope === 'character_field') {
+        expect(postGeneration?.messagePatch?.characterFieldMutations).toBeUndefined()
+      } else if (testCase.scope === 'local_lore') {
+        expect(postGeneration?.messagePatch?.localLoreMutation).toMatchObject({
+          after: [
+            expect.objectContaining({ id: 'user-lore-id', content: 'user lore' }),
+            expect.objectContaining({ comment: 'script-lore', content: 'script lore' }),
+          ],
+        })
+      } else {
+        expect(postGeneration?.messagePatch?.chatVarMutations ?? []).toEqual([])
+      }
+
+      const boot = await bootstrap()
+      expect((await chatMessages(boot)).at(-1)).toMatchObject({
+        role: 'char',
+        data: 'durable conflict-safe reply',
+      })
+      if (testCase.scope === 'character_field') {
+        expect(boot.database.characters[0].firstMessage).toBe('user greeting')
+      } else if (testCase.scope === 'local_lore') {
+        expect(boot.database.characters[0].chats[0].localLore).toEqual([
+          expect.objectContaining({ id: 'user-lore-id', content: 'user lore' }),
+          expect.objectContaining({ comment: 'script-lore', content: 'script lore' }),
+        ])
+      } else {
+        expect(boot.database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'user-value' })
+      }
+      expect(generationFinalizationRetryRows()).toEqual([])
+      controller.abort()
+    },
+  )
 
   it('rejects stale durable send finalization when the submitted user tail is truncated', async () => {
     await seedChatWithMessages([{ role: 'user', data: 'hi', chatId: 'msg-user-1' }])
@@ -1300,13 +3251,69 @@ describe('Durable generation (Milestone 1)', () => {
     controller.abort()
   })
 
-  // Durable continue / regenerate.
-  // The durable job finalizes all three generating modes: continue extends the
-  // last char row in place, regenerate replaces the target, and send appends.
-  // Each survives a mid-stream disconnect, and streaming-cancel persistence is
-  // mode-aware too.
+  it.each(['continue', 'regenerate'] as const)(
+    'rejects stale durable %s finalization when the admitted target assistant is deleted',
+    async (mode) => {
+      await seedChatWithMessages(
+        [
+          { role: 'user', data: mode === 'continue' ? 'story' : 'greet me', chatId: 'msg-user-1' },
+          {
+            role: 'char',
+            data: mode === 'continue' ? 'Once upon a time' : 'old reply',
+            chatId: 'msg-char-1',
+            saying: 'char-1',
+          },
+        ],
+        { useSayNothing: false },
+      )
+      const gated = makeGatedProvider({ before: 'partial', after: ' completion' })
+      providerImpl = gated.dispatchProvider
 
-  it('survives a disconnect on a durable continue and extends the row in place (Phase 6b)', async () => {
+      const controller = newController()
+      const res = await postDurable(
+        mode === 'continue'
+          ? { mode, userMessage: undefined }
+          : { mode, regenerateMessageId: 'msg-char-1', userMessage: undefined },
+        { signal: controller.signal },
+      )
+      const events = await readSse(res, (event) => event.type === 'token')
+      const jobId = jobIdFromEvents(events)
+
+      await deleteMessage('msg-char-1')
+      gated.release()
+
+      const terminal = await waitForTerminalFinalization(jobId)
+      expect(terminal.terminal_error).toContain('stale')
+      expect(await chatMessages(await bootstrap())).toEqual([
+        expect.objectContaining({ role: 'user', chatId: 'msg-user-1' }),
+      ])
+      expect((await chatHydration(await bootstrap())).alternates).toEqual([])
+
+      const replay = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+        headers: authHeaders(),
+      })
+      const replayEvents = await readSse(replay, (event) => event.type === 'error')
+      expect(replayEvents.find((event) => event.type === 'error')?.data).toMatchObject({
+        reason: 'generation_persistence_failed',
+        persistenceDisposition: 'rejected',
+        generationProjection: {
+          characterId: 'char-1',
+          chatId: 'chat-1',
+          generationId: jobId,
+          mode,
+          ...(mode === 'regenerate' ? { targetMessageId: 'msg-char-1' } : {}),
+        },
+      })
+      controller.abort()
+    },
+  )
+
+  // Durable continue / regenerate.
+  // The durable job finalizes all three generating modes: Continue follows its
+  // append/extend disposition, regenerate replaces the target, and send appends.
+  // Each survives a mid-stream disconnect, and streaming-cancel persistence is mode-aware too.
+
+  it('survives a disconnect on an append-style durable continue without replacing the prior assistant', async () => {
     await seedChatWithMessages([
       { role: 'user', data: 'tell me a story', chatId: 'msg-user-1' },
       { role: 'char', data: 'Once upon a time', chatId: 'msg-char-1', saying: 'char-1' },
@@ -1319,19 +3326,24 @@ describe('Durable generation (Milestone 1)', () => {
     await readSse(res, (ev) => ev.type === 'token')
     controller.abort() // disconnect mid-stream — the job must keep running
 
+    const running = await bootstrap()
+    expect(running.activeGenerationJobs).toContainEqual(
+      expect.objectContaining({ chatId: 'chat-1', mode: 'continue', continueDisposition: 'append' }),
+    )
+
     gated.release()
-    const extended = await waitFor(async () => {
-      const row = (await chatMessages(await bootstrap())).find((m) => m.chatId === 'msg-char-1')
+    const appended = await waitFor(async () => {
+      const row = (await chatMessages(await bootstrap())).find((m) => m.role === 'char' && m.chatId !== 'msg-char-1')
       return typeof row?.data === 'string' && row.data.includes('lived happily') ? row : undefined
     })
-    expect(extended.data).toBe('Once upon a time and they lived happily.')
-    // Extended the SAME row (id preserved); no duplicate appended.
+    expect(appended.data).toBe('*says nothing* and they lived happily.')
     const messages = await chatMessages(await bootstrap())
-    expect(messages).toHaveLength(2)
-    expect(messages[1].chatId).toBe('msg-char-1')
+    expect(messages).toHaveLength(3)
+    expect(messages[1]).toMatchObject({ chatId: 'msg-char-1', data: 'Once upon a time' })
+    expect(messages[2].chatId).not.toBe('msg-char-1')
   })
 
-  it('survives a disconnect on a durable regenerate and replaces the target (Phase 6b)', async () => {
+  it('survives a disconnect on a durable regenerate and replaces the target', async () => {
     await seedChatWithMessages([
       { role: 'user', data: 'greet me', chatId: 'msg-user-1' },
       { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-1' },
@@ -1362,7 +3374,7 @@ describe('Durable generation (Milestone 1)', () => {
     expect(messages.some((m) => m.data === 'old reply')).toBe(false)
   })
 
-  it('appends a durable regenerate when the requested target was already truncated', async () => {
+  it('rejects a durable regenerate when the requested target is no longer authoritative', async () => {
     await seedChatWithMessages([{ role: 'user', data: 'greet me', chatId: 'msg-user-1' }])
     providerImpl = () => {
       async function* gen(): AsyncGenerator<CompletionStreamFrame> {
@@ -1378,22 +3390,14 @@ describe('Durable generation (Milestone 1)', () => {
       userMessage: undefined,
     })
     const events = await readSse(res, (ev) => ev.type === 'done')
-    expect(events.some((ev) => ev.type === 'error')).toBe(false)
-
-    const appended = await waitFor(async () => {
-      const row = (await chatMessages(await bootstrap())).find((m) => m.role === 'char')
-      return row?.data === 'a brand new reply' ? row : undefined
-    })
-    expect(appended.chatId).not.toBe('stale-msg-char-1')
+    expect(String(events.find((event) => event.type === 'error')?.data.error)).toMatch(/regenerate message not found/)
 
     const messages = await chatMessages(await bootstrap())
-    expect(messages).toHaveLength(2)
-    expect(messages[0]).toMatchObject({ role: 'user', chatId: 'msg-user-1' })
-    expect(messages[1]).toMatchObject({ role: 'char', data: 'a brand new reply' })
+    expect(messages).toEqual([expect.objectContaining({ role: 'user', chatId: 'msg-user-1' })])
     expect(generationFinalizationRetryRows()).toEqual([])
   })
 
-  it('preserves reroll alternates when durable regenerate follows client-side truncate', async () => {
+  it('preserves reroll alternates while durable regenerate keeps its target authoritative', async () => {
     await seedChatWithMessages([
       { role: 'user', data: 'greet me', chatId: 'msg-user-1' },
       { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-1' },
@@ -1405,18 +3409,6 @@ describe('Durable generation (Milestone 1)', () => {
       }
       return gen()
     }
-
-    const boot = await bootstrap()
-    const truncated = await fetch(`${harness.baseUrl}/api/v1/commands/chats/chat-1/messages/truncate`, {
-      method: 'POST',
-      headers: authHeaders({ 'content-type': 'application/json' }),
-      body: JSON.stringify({
-        baseRevision: boot.revision,
-        afterMessageId: 'msg-user-1',
-        preserveRemovedAsAlternates: true,
-      }),
-    })
-    expect(truncated.status).toBe(200)
 
     const res = await postDurable({
       mode: 'regenerate',
@@ -1437,7 +3429,7 @@ describe('Durable generation (Milestone 1)', () => {
     ).toBe(true)
   })
 
-  it('cancels a durable continue and extends the row with the streamed-so-far text (Phase 6b)', async () => {
+  it('cancels an append-style durable continue without replacing the prior assistant', async () => {
     await seedChatWithMessages([
       { role: 'user', data: 'story', chatId: 'msg-user-1' },
       { role: 'char', data: 'Once upon a time', chatId: 'msg-char-1', saying: 'char-1' },
@@ -1454,16 +3446,95 @@ describe('Durable generation (Milestone 1)', () => {
     })
     await cancelJob(jobId)
 
-    const extended = await waitFor(async () => {
-      const row = (await chatMessages(await bootstrap())).find((m) => m.chatId === 'msg-char-1')
+    const appended = await waitFor(async () => {
+      const row = (await chatMessages(await bootstrap())).find((m) => m.role === 'char' && m.chatId !== 'msg-char-1')
       return typeof row?.data === 'string' && row.data.includes('and then') ? row : undefined
     })
-    expect(extended.data).toBe('Once upon a time and then')
-    expect(await chatMessages(await bootstrap())).toHaveLength(2) // extended in place
+    expect(appended.data).toBe('*says nothing* and then')
+    const messages = await chatMessages(await bootstrap())
+    expect(messages).toHaveLength(3)
+    expect(messages[1]).toMatchObject({ chatId: 'msg-char-1', data: 'Once upon a time' })
+    const replayController = newController()
+    const replay = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+      headers: authHeaders(),
+      signal: replayController.signal,
+    })
+    const replayEvents = await readSse(replay, (event) => event.type === 'done')
+    expect(replayEvents.at(-1)).toMatchObject({
+      type: 'done',
+      data: {
+        outcome: 'cancelled',
+        result: ' and then',
+        generationId: jobId,
+        postGeneration: {
+          messageId: appended.chatId,
+          revision: expect.any(Number),
+          finalText: '*says nothing* and then',
+        },
+      },
+    })
     controller.abort()
+    replayController.abort()
   })
 
-  it('cancels a durable regenerate and replaces the target with the streamed-so-far text (Phase 6b)', async () => {
+  it('cancels an extend-style durable continue by persisting the partial on the original assistant row', async () => {
+    await seedChatWithMessages(
+      [
+        { role: 'user', data: 'story', chatId: 'msg-user-1' },
+        { role: 'char', data: 'Once upon a time', chatId: 'msg-char-1', saying: 'char-1' },
+      ],
+      { useSayNothing: false },
+    )
+    const gated = makeGatedProvider({ before: ' and then' }) // never released
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const res = await postDurable({ mode: 'continue', userMessage: undefined }, { signal: controller.signal })
+    let jobId = ''
+    await readSse(res, (event) => {
+      if (event.type === 'job_accepted') jobId = event.data.jobId as string
+      return event.type === 'token'
+    })
+    await cancelJob(jobId)
+
+    await waitFor(async () => {
+      const row = (await chatMessages(await bootstrap())).find((message) => message.chatId === 'msg-char-1')
+      return row?.data === 'Once upon a time and then' ? row : undefined
+    })
+    const hydration = await chatHydration(await bootstrap())
+    expect(hydration.message).toEqual([
+      expect.objectContaining({ role: 'user', data: 'story', chatId: 'msg-user-1' }),
+      expect.objectContaining({ role: 'char', data: 'Once upon a time and then', chatId: 'msg-char-1' }),
+    ])
+    expect(hydration.alternates).toEqual([])
+    expect(generationFinalizationRetryRows()).toEqual([])
+
+    const replayController = newController()
+    const replay = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+      headers: authHeaders(),
+      signal: replayController.signal,
+    })
+    const replayEvents = await readSse(replay, (event) => event.type === 'done')
+    expect(replayEvents.at(-1)).toMatchObject({
+      type: 'done',
+      data: {
+        outcome: 'cancelled',
+        result: ' and then',
+        generationId: jobId,
+        continueDisposition: 'extend',
+        continueBase: 'Once upon a time',
+        postGeneration: {
+          messageId: 'msg-char-1',
+          revision: expect.any(Number),
+          finalText: 'Once upon a time and then',
+        },
+      },
+    })
+    controller.abort()
+    replayController.abort()
+  })
+
+  it('cancels a durable regenerate and replaces the target with the streamed-so-far text', async () => {
     await seedChatWithMessages([
       { role: 'user', data: 'greet me', chatId: 'msg-user-1' },
       { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-1' },
@@ -1495,7 +3566,7 @@ describe('Durable generation (Milestone 1)', () => {
     controller.abort()
   })
 
-  it('surfaces the generating mode + regenerate target on activeGenerationJobs (Phase 6b reattach)', async () => {
+  it('surfaces the generating mode + regenerate target on activeGenerationJobs', async () => {
     await seedChatWithMessages([
       { role: 'user', data: 'greet me', chatId: 'msg-user-1' },
       { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-1' },
@@ -1515,12 +3586,14 @@ describe('Durable generation (Milestone 1)', () => {
     })
 
     const boot = await bootstrap()
-    expect(boot.activeGenerationJobs).toContainEqual({
-      chatId: 'chat-1',
-      jobId,
-      mode: 'regenerate',
-      regenerateMessageId: 'msg-char-1',
-    })
+    expect(boot.activeGenerationJobs).toContainEqual(
+      expect.objectContaining({
+        chatId: 'chat-1',
+        jobId,
+        mode: 'regenerate',
+        regenerateMessageId: 'msg-char-1',
+      }),
+    )
     gated.release()
     controller.abort()
   })
@@ -1578,6 +3651,8 @@ describe('Durable generation (Milestone 1)', () => {
         }
       } catch {
         /* dropped */
+      } finally {
+        reader.releaseLock()
       }
     })()
 
@@ -1610,12 +3685,33 @@ describe('Durable generation (Milestone 1)', () => {
 
     const controller = newController()
     const res = await postDurable({}, { signal: controller.signal })
-    await readSse(res, (ev) => ev.type === 'token')
+    const events = await readSse(res, (ev) => ev.type === 'token')
+    const jobId = jobIdFromEvents(events)
     controller.abort() // disconnect only — no DELETE
 
     gated.release()
     const message = await waitForAssistantMessage()
     expect(message.data).toBe('Hello')
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(
+        db
+          .prepare(
+            `SELECT key_type AS keyType, key_id AS keyId, COUNT(*) AS count
+             FROM generation_effects WHERE generation_id = ? GROUP BY key_type, key_id`,
+          )
+          .get(jobId),
+      ).toEqual({ keyType: 'generation', keyId: jobId, count: 7 })
+      expect(
+        db
+          .prepare(
+            "SELECT status FROM generation_effects WHERE generation_id = ? AND effect_kind = 'generated_translation'",
+          )
+          .get(jobId),
+      ).toEqual({ status: 'skipped' })
+    } finally {
+      db.close()
+    }
   })
 
   it('returns 404 reattaching/cancelling an unknown job', async () => {
@@ -1628,6 +3724,7 @@ describe('Durable generation (Milestone 1)', () => {
       headers: authHeaders(),
     })
     expect(del.status).toBe(404)
+    expect(await del.json()).toMatchObject({ disposition: 'not_found', error: 'generation_job_not_found' })
   })
 
   // A non-durable send (no durable flag) keeps the inline connection-scoped flow and
@@ -1648,9 +3745,9 @@ describe('Durable generation (Milestone 1)', () => {
     expect(boot.activeGenerationJobs).toEqual([])
   })
 
-  // Shutdown must settle detached runners BEFORE closing the SQLite handle, so
-  // the aborted runner's cancel-persist lands in an open database (audit L13).
-  it('settles detached runners before closing the database on shutdown (L13)', async () => {
+  // Shutdown records system abandonment before aborting the detached runner.
+  // It must not reinterpret a server shutdown as a user-cancelled partial.
+  it('abandons detached runners before closing the database on shutdown', async () => {
     const gated = makeGatedProvider({ before: 'partial shutdown text' }) // never released
     providerImpl = gated.dispatchProvider
     const local = await startHarness()
@@ -1672,11 +3769,11 @@ describe('Durable generation (Milestone 1)', () => {
         }),
         signal: controller.signal,
       })
-      await readSse(res, (ev) => ev.type === 'token')
+      const initialEvents = await readSse(res, (ev) => ev.type === 'token')
+      const operationId = initialEvents.find((event) => event.type === 'job_accepted')?.data.operationId as string
       controller.abort() // bare disconnect; the job keeps running
 
-      // Shutdown aborts the job; the runner's cancel path persists the
-      // streamed-so-far text — it must land before db.close(), not race it.
+      // Shutdown aborts the job after committing explicit system abandonment.
       await local.app.close()
 
       const db = new DatabaseSync(path.join(local.dataDir, 'risu.db'), { readOnly: true })
@@ -1684,7 +3781,11 @@ describe('Durable generation (Milestone 1)', () => {
         const rows = db
           .prepare("SELECT data FROM messages WHERE chat_id = 'chat-1' AND alternate = 0 ORDER BY seq")
           .all() as Array<{ data: string }>
-        expect(rows.map((row) => row.data)).toContain('partial shutdown text')
+        expect(rows.map((row) => row.data)).not.toContain('partial shutdown text')
+        const operation = db
+          .prepare('SELECT state, failure_code AS failureCode FROM generation_operations WHERE operation_id = ?')
+          .get(operationId) as { state: string; failureCode: string }
+        expect(operation).toEqual({ state: 'abandoned', failureCode: 'server_shutdown' })
       } finally {
         db.close()
       }
@@ -1694,10 +3795,85 @@ describe('Durable generation (Milestone 1)', () => {
     }
   })
 
+  it('lets an acknowledged stopping runner persist its partial before graceful shutdown closes SQLite', async () => {
+    const gated = makeGatedProvider({ before: 'partial stopped during shutdown' })
+    providerImpl = gated.dispatchProvider
+    let markCancelPersistenceStarted!: () => void
+    const cancelPersistenceStarted = new Promise<void>((resolve) => {
+      markCancelPersistenceStarted = resolve
+    })
+    let releaseCancelPersistence!: () => void
+    const cancelPersistenceGate = new Promise<void>((resolve) => {
+      releaseCancelPersistence = resolve
+    })
+    durableLifecycleHook = async (transition) => {
+      if (transition !== 'cancel_persistence_started') return
+      markCancelPersistenceStarted()
+      await cancelPersistenceGate
+    }
+
+    const local = await startHarness()
+    let localClosed = false
+    try {
+      const { assertion: localAssertion } = await setupAuthedClient(local.app)
+      await seedDatabaseForHarness(local, localAssertion, fixtureDatabase)
+      const controller = newController()
+      const response = await fetch(`${local.baseUrl}/api/v1/generate/chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'risu-auth': localAssertion },
+        body: JSON.stringify({
+          chatId: 'chat-1',
+          characterId: 'char-1',
+          mode: 'send',
+          userMessage: 'hi',
+          durable: true,
+        }),
+        signal: controller.signal,
+      })
+      const initialEvents = await readSse(response, (event) => event.type === 'token')
+      const jobId = jobIdFromEvents(initialEvents)
+      const operationId = initialEvents.find((event) => event.type === 'job_accepted')?.data.operationId as string
+
+      const cancellation = await fetch(`${local.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
+        method: 'DELETE',
+        headers: { 'risu-auth': localAssertion },
+      })
+      expect(cancellation.status).toBe(202)
+      await cancelPersistenceStarted
+
+      const close = local.app.close()
+      releaseCancelPersistence()
+      await close
+      localClosed = true
+
+      const db = new DatabaseSync(path.join(local.dataDir, 'risu.db'), { readOnly: true })
+      try {
+        expect(
+          db
+            .prepare("SELECT data FROM messages WHERE chat_id = 'chat-1' AND role = 'char' ORDER BY seq DESC LIMIT 1")
+            .get(),
+        ).toEqual({ data: 'partial stopped during shutdown' })
+        expect(
+          db
+            .prepare(
+              'SELECT state, result_message_id AS resultMessageId FROM generation_operations WHERE operation_id = ?',
+            )
+            .get(operationId),
+        ).toEqual({ state: 'cancelled', resultMessageId: jobId })
+      } finally {
+        db.close()
+      }
+    } finally {
+      releaseCancelPersistence?.()
+      if (!localClosed) await local.app.close()
+      rmSync(local.dataDir, { recursive: true, force: true })
+    }
+  })
+
   // A long silent window (slow assembly / provider connect) must not look idle
   // to intermediary proxies: the viewer gets SSE comment heartbeats, which are
   // invisible to the frame parser and never enter the replay buffer (audit L14).
-  it('heartbeats the durable SSE viewer during silent windows (L14)', async () => {
+  it('heartbeats the durable SSE viewer during silent windows', async () => {
     const gated = makeGatedProvider({ before: 'Hel', after: 'lo' })
     providerImpl = gated.dispatchProvider
     const local = await startHarness({ viewerHeartbeatMs: 25 })
@@ -1737,6 +3913,7 @@ describe('Durable generation (Milestone 1)', () => {
       expect(raw).toContain(': heartbeat\n\n')
       expect(jobId).not.toBe('')
       controller.abort()
+      reader.releaseLock()
 
       // Heartbeats are per-viewer keep-alives: the reattach replay buffer must
       // not contain them.
@@ -1747,6 +3924,7 @@ describe('Durable generation (Milestone 1)', () => {
       const replayEvents = await readSse(re, (ev) => ev.type === 'done')
       expect(replayEvents.at(-1)?.type).toBe('done')
     } finally {
+      local.app.server.closeAllConnections()
       await local.app.close()
       rmSync(local.dataDir, { recursive: true, force: true })
     }

@@ -15,8 +15,8 @@ import {
   resolveModelPresetMaskedSecrets,
 } from '../src/commands/splitPresets.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
-import { MODEL_ROLES } from '../../../src/ts/model/modelRoles.js'
-import { LLMFlags } from '../../../src/ts/model/types.js'
+import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
+import { LLMFlags } from '@risuai/shared-core/model-types'
 import { setupAuthedClient } from './helpers/auth.js'
 
 const normalizedModelRoles = (overrides: Record<string, string> = {}) => ({
@@ -79,7 +79,12 @@ describe('split preset command normalization', () => {
           id: ' profile-a ',
           name: ' Primary ',
           modelId: ' gpt-5 ',
-          providerOptions: { requestModel: ' wire-model ', apiKey: ' profile-secret ', openAIKey: 'must-drop' },
+          providerOptions: {
+            credentialId: ' credential-a ',
+            requestModel: ' wire-model ',
+            apiKey: ' profile-secret ',
+            openAIKey: 'must-drop',
+          },
         },
         { id: 'profile-a', name: 'Duplicate' },
         { id: 'profile-b', name: 'Secondary', modelId: '   ' },
@@ -111,7 +116,7 @@ describe('split preset command normalization', () => {
           id: 'profile-a',
           name: 'Primary',
           modelId: 'gpt-5',
-          providerOptions: { requestModel: 'wire-model', apiKey: 'profile-secret' },
+          providerOptions: { credentialId: 'credential-a', requestModel: 'wire-model' },
         },
         { id: 'profile-b', name: 'Secondary' },
       ],
@@ -144,7 +149,12 @@ describe('split preset command normalization', () => {
           id: ' dirty-profile ',
           name: ' Dirty Profile ',
           modelId: ' dirty-model ',
-          providerOptions: { requestModel: ' dirty-wire ', apiKey: ' dirty-secret ', openAIKey: 'must-drop' },
+          providerOptions: {
+            credentialId: ' dirty-credential ',
+            requestModel: ' dirty-wire ',
+            apiKey: ' dirty-secret ',
+            openAIKey: 'must-drop',
+          },
         },
       ],
       modelRoleProfiles: { scriptMain: { mode: 'profile', profileId: ' dirty-profile ' } },
@@ -164,7 +174,7 @@ describe('split preset command normalization', () => {
           id: 'dirty-profile',
           name: 'Dirty Profile',
           modelId: 'dirty-model',
-          providerOptions: { requestModel: 'dirty-wire', apiKey: 'dirty-secret' },
+          providerOptions: { credentialId: 'dirty-credential', requestModel: 'dirty-wire' },
         },
       ],
       modelRoleProfiles: normalizedModelRoleProfiles({
@@ -305,9 +315,9 @@ describe('split preset command normalization', () => {
       id: 'prompt-template-a',
       name: 'Prompt Template A',
       promptTemplate: [
-        { type: 'plain', text: 'missing id' },
+        { type: 'plain', text: 'missing id', role: 'assistant' },
         { id: 'duplicate-row', type: 'plain', text: 'first duplicate' },
-        { id: 'duplicate-row', type: 'plain', text: 'second duplicate' },
+        { id: 'duplicate-row', type: 'description', text: 'second duplicate', role2: 'char' },
       ],
     })
 
@@ -316,18 +326,59 @@ describe('split preset command normalization', () => {
     expect(presetIds[1]).toBe('duplicate-row')
     expect(presetIds[2]).toEqual(expect.any(String))
     expect(new Set(presetIds).size).toBe(3)
+    expect((preset.promptTemplate as Array<Record<string, unknown>>)[0].role).toBe('bot')
+    expect((preset.promptTemplate as Array<Record<string, unknown>>)[2].role2).toBe('bot')
 
     const patch = readPromptPresetPatch({
-      promptTemplate: [{ type: 'plain', text: 'patched missing id' }],
+      promptTemplate: [{ type: 'memory', text: 'patched missing id', role2: 'assistant' }],
     })
     expect((patch.promptTemplate as Array<{ id?: string }>)[0].id).toEqual(expect.any(String))
+    expect((patch.promptTemplate as Array<Record<string, unknown>>)[0].role2).toBe('bot')
 
     const database: Record<string, unknown> = {}
     applyPromptPreset(database, {
       id: 'dirty-prompt-template',
-      promptTemplate: [{ type: 'plain', text: 'applied missing id' }],
+      promptTemplate: [{ type: 'authornote', text: 'applied missing id', role2: 'char' }],
     })
     expect((database.promptTemplate as Array<{ id?: string }>)[0].id).toEqual(expect.any(String))
+    expect((database.promptTemplate as Array<Record<string, unknown>>)[0].role2).toBe('bot')
+  })
+
+  it('preserves boolean prompt preset archive metadata and rejects invalid values', () => {
+    expect(
+      createPromptPresetRecord({
+        id: 'prompt-archived',
+        name: 'Archived Prompt',
+        archived: true,
+      }),
+    ).toMatchObject({ archived: true })
+    expect(readPromptPresetPatch({ archived: false })).toEqual({ archived: false })
+
+    expect(() =>
+      createPromptPresetRecord({
+        id: 'prompt-invalid-archive',
+        archived: 'true',
+      }),
+    ).toThrow('promptPreset.archived must be a boolean')
+    expect(() => readPromptPresetPatch({ archived: 1 })).toThrow('promptPreset.archived must be a boolean')
+  })
+
+  it('preserves null prompt templates through create, patch, and apply', () => {
+    const preset = createPromptPresetRecord({
+      id: 'prompt-template-disabled',
+      name: 'Prompt Template Disabled',
+      promptTemplate: null,
+    })
+    expect(preset.promptTemplate).toBeNull()
+
+    const patch = readPromptPresetPatch({ promptTemplate: null })
+    expect(patch.promptTemplate).toBeNull()
+
+    const database: Record<string, unknown> = {
+      promptTemplate: [{ id: 'existing', type: 'description' }],
+    }
+    applyPromptPreset(database, preset)
+    expect(database.promptTemplate).toBeNull()
   })
 })
 
@@ -479,7 +530,12 @@ describe('split preset command routes', () => {
     revision = reorderedModels.revision as number
 
     const createdPrompt = await runCommand('/api/v1/commands/prompt-presets', revision, {
-      preset: { id: 'prompt-created', name: 'Prompt Created', mainPrompt: 'created prompt' },
+      preset: {
+        id: 'prompt-created',
+        name: 'Prompt Created',
+        mainPrompt: 'created prompt',
+        recommendedModelPresetId: 'model-created',
+      },
     })
     expect(createdPrompt).toMatchObject({
       promptPresetId: 'prompt-created',
@@ -488,7 +544,12 @@ describe('split preset command routes', () => {
     revision = createdPrompt.revision as number
 
     const importedPrompt = await runCommand('/api/v1/commands/prompt-presets/import', revision, {
-      preset: { id: 'prompt-imported', name: 'Prompt Imported', mainPrompt: 'imported prompt' },
+      preset: {
+        id: 'prompt-imported',
+        name: 'Prompt Imported',
+        mainPrompt: 'imported prompt',
+        recommendedModelPresetId: 'model-imported',
+      },
     })
     expect(importedPrompt).toMatchObject({
       promptPresetId: 'prompt-imported',
@@ -521,6 +582,9 @@ describe('split preset command routes', () => {
       'prompt-base',
       'prompt-created',
     ])
+    expect(persisted.promptPresets[0].recommendedModelPresetId).toBe('model-imported')
+    expect(persisted.promptPresets[2].recommendedModelPresetId).toBe('model-created')
+    expect(persisted.settings).not.toHaveProperty('recommendedModelPresetId')
     expect(persisted.settings).toMatchObject({
       modelPresetsId: 1,
       promptPresetsId: 0,
@@ -529,6 +593,47 @@ describe('split preset command routes', () => {
     })
     expect(persisted.modelPresets[persisted.settings.modelPresetsId as number].id).toBe('model-imported')
     expect(persisted.promptPresets[persisted.settings.promptPresetsId as number].id).toBe('prompt-imported')
+  })
+
+  it('validates and persists prompt recommendation patches as metadata', async () => {
+    let revision = await importPresets({
+      modelPresetsId: 0,
+      promptPresetsId: 0,
+      modelPresets: [
+        { id: 'model-a', name: 'Model A' },
+        { id: 'model-b', name: 'Model B' },
+      ],
+      promptPresets: [{ id: 'prompt-a', name: 'Prompt A', mainPrompt: 'prompt' }],
+      mainPrompt: 'prompt',
+    })
+
+    const patched = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/prompt-presets/prompt-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { recommendedModelPresetId: 'model-b' } },
+    })
+    expect(patched.statusCode, patched.payload).toBe(200)
+    expect(patched.json()).toMatchObject({
+      promptPresetId: 'prompt-a',
+      acknowledgedKeys: ['recommendedModelPresetId'],
+      selectedProjectionApplied: false,
+      ownerProjectionApplied: false,
+    })
+    revision = patched.json().revision
+
+    const persisted = await readPersistedPresetState()
+    expect(persisted.promptPresets[0].recommendedModelPresetId).toBe('model-b')
+    expect(persisted.settings).not.toHaveProperty('recommendedModelPresetId')
+
+    const invalid = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/prompt-presets/prompt-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { recommendedModelPresetId: 'missing-model' } },
+    })
+    expect(invalid.statusCode).toBe(400)
+    expect(invalid.json().error).toContain('Unknown model preset id')
   })
 
   it('commits onboarding settings and both selected preset owners atomically', async () => {
@@ -650,7 +755,7 @@ describe('split preset command routes', () => {
     })
   })
 
-  it('omits the model preset reorder receipt when collection normalization repairs a row', async () => {
+  it('certifies a model preset reorder without repairing an optional missing name', async () => {
     const revision = await importPresets({
       modelPresetsId: 0,
       modelPresets: [
@@ -678,16 +783,15 @@ describe('split preset command routes', () => {
       selectedModelPresetId: 'model-a',
       event: { type: 'modelPreset.reordered' },
     })
-    expect(reordered).not.toHaveProperty('presetReorderCertificate')
-    expect(reordered).not.toHaveProperty('presetKind')
-    expect(reordered).not.toHaveProperty('presetIds')
-    expect(reordered).not.toHaveProperty('settingsWritten')
+    expect(reordered).toMatchObject({
+      presetReorderCertificate: 'preset-reorder-v1',
+      presetKind: 'model',
+      presetIds: ['model-b', 'model-a'],
+      settingsWritten: true,
+    })
 
     const persisted = await readPersistedPresetState()
-    expect(persisted.modelPresets).toEqual([
-      { id: 'model-b', name: 'Model B' },
-      { id: 'model-a', name: 'Preset 1' },
-    ])
+    expect(persisted.modelPresets).toEqual([{ id: 'model-b', name: 'Model B' }, { id: 'model-a' }])
     expect(persisted.settings.modelPresetsId).toBe(1)
   })
 

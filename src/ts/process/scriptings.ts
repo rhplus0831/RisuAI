@@ -4,17 +4,7 @@ import { getChatVar, getGlobalChatVar, setChatVar } from '../parser/chatVar.svel
 import { hasher, type simpleCharacterArgument, risuChatParser } from '../parser/parser.svelte'
 import { LuaEngine, LuaFactory } from 'wasmoon'
 import { get } from 'svelte/store'
-import {
-  getCharacterByIndex,
-  getCurrentCharacter,
-  getCurrentChat,
-  getDatabase,
-  setCharacterByIndex,
-  setDatabase,
-  type Chat,
-  type character,
-  type triggerscript,
-} from '../storage/database.svelte'
+import { type Chat, type character, type triggerscript } from '../storage/database.svelte'
 import { reloadChatAt, reloadGuiDisplay, selectedCharID } from '../stores.svelte'
 import { alertSelect, alertError, alertInput, alertNormal, alertConfirm } from '../alert'
 import { HypaProcesser } from './memory/hypamemory'
@@ -22,9 +12,14 @@ import { generateAIImage } from './stableDiff'
 import { writeInlayImage, getInlayAsset } from './files/inlays'
 import type { OpenAIChat, MultiModal } from './index.svelte'
 import { requestChatData, type StreamResponseChunk } from './request/request'
+import {
+  normalizeScriptModelOverrides,
+  scriptModelOverrideProfileId,
+  type ScriptModelOverrides,
+} from '@risuai/shared-core/script-model-overrides'
 import { v4 } from 'uuid'
 import { createNonSecurityUuid } from '../nonSecurityUuid'
-import { getModuleLorebooks, getModuleTriggers } from './modules'
+import { getModuleLorebooks, getModuleTriggerOwner, getModuleTriggers } from './modules'
 import { Mutex } from '../mutex'
 import { tokenize } from '../tokenizer'
 import { fetchNative, readImage } from '../globalApi.svelte'
@@ -32,6 +27,8 @@ import { loadLoreBookV3Prompt } from './lorebook.svelte'
 import { parseKeyValue } from '../util'
 import { getPersonaPrompt, getUserIcon, getUserName } from '../utilState'
 import { safeStructuredClone } from '../polyfill'
+import { resolveModelProfile } from '../model/modelProfileResolver'
+import { getSelectedCharacterOwner } from '../characterState'
 import type { PyWorkerRequest, PyWorkerResponse } from './pyworker'
 import {
   captureActiveChatTarget,
@@ -41,20 +38,40 @@ import {
   type ChatScopedSnapshot,
 } from '../chatCommands'
 import { canUseServerCommands } from '../server/commands'
-import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import {
   dispatchReplaceChatLorebooks,
   ensureClientLorebookEntryIds,
   scopedLorebookStateSnapshot,
-} from '../server/lorebookBridge.svelte'
+} from '../server/lorebookOwner.svelte'
+import {
+  charactersResourceState,
+  getCharacterResourceOwner,
+  settingsResourceState,
+} from '../server/resourceState.svelte'
+import { applyCharacterRowMutationScoped } from '../characterCommands'
+import { resolveActiveChatGenerationSettings } from '../activeChatGenerationSettings'
 let luaFactory: LuaFactory
 let ScriptingSafeIds = new Set<string>()
 let ScriptingEditDisplayIds = new Set<string>()
+
+function scriptingSettings() {
+  return settingsResourceState.status === 'error' ? {} : settingsResourceState.value
+}
+
+function applySelectedCharacterScriptingMutation(mutate: (owner: character) => void): boolean {
+  if (charactersResourceState.status !== 'ready') return false
+  const index = get(selectedCharID)
+  const candidate = charactersResourceState.characters[index]
+  if (!candidate?.chaId) return false
+  return applyCharacterRowMutationScoped(index, candidate.chaId, mutate)
+}
 let ScriptingLowLevelIds = new Set<string>()
 let lastRequestResetTime = 0
 let lastRequestsCount = 0
 
 export const DEFAULT_CLIENT_LUA_EXEC_TIMEOUT_MS = 3_000
+export const DEFAULT_CLIENT_PYTHON_EXEC_TIMEOUT_MS = 3_000
+export const DEFAULT_CLIENT_PYTHON_INIT_TIMEOUT_MS = 60_000
 export const CLIENT_LUA_ENGINE_CACHE_PER_MODE = 4
 const CLIENT_LUA_CODE_HASH_MEMO_LIMIT = 128
 
@@ -65,8 +82,9 @@ interface BasicScriptingEngineState {
   activeRuns?: number
   mutex: Mutex
   chat?: Chat
-  setVar?: (key: string, value: string) => void
+  setVar?: (key: string, value: string) => boolean | void
   getVar?: (key: string) => string
+  scriptModelOverrides: ScriptModelOverrides
   currentRun?: {
     char?: character | simpleCharacterArgument
     stopChat: () => void
@@ -81,6 +99,8 @@ interface LuaScriptingEngineState extends BasicScriptingEngineState {
 
 interface PythonScriptingEngineState extends BasicScriptingEngineState {
   pyodide?: PyodideContext
+  execTimeoutMs?: number
+  initTimeoutMs?: number
   type: 'py'
 }
 
@@ -98,25 +118,42 @@ export async function runScripted(
     char?: character | simpleCharacterArgument
     chat?: Chat
     data?: string | OpenAIChat[]
-    setVar?: (key: string, value: string) => void
+    setVar?: (key: string, value: string) => boolean | void
     getVar?: (key: string) => string
     lowLevelAccess?: boolean
     meta?: object
     mode?: string
     type?: 'lua' | 'py'
     luaExecTimeoutMs?: number
+    pythonExecTimeoutMs?: number
+    pythonInitTimeoutMs?: number
+    /** Explicit script owner selection. Pass `{}` for a module with no override
+     * so it does not inherit the active character's local selection. */
+    scriptModelOverrides?: ScriptModelOverrides
   },
 ) {
   const type: 'lua' | 'py' = arg.type ?? 'lua'
-  const char = arg.char ?? getCurrentCharacter()
+  const char = arg.char ?? getSelectedCharacterOwner()
+  if (!char) {
+    throw new Error('character owner unavailable')
+  }
   const data = arg.data ?? ''
   const setVar = arg.setVar ?? setChatVar
   const getVar = arg.getVar ?? getChatVar
   const meta = arg.meta ?? {}
   const mode = arg.mode ?? 'manual'
   const luaExecTimeoutMs = arg.luaExecTimeoutMs ?? DEFAULT_CLIENT_LUA_EXEC_TIMEOUT_MS
+  const pythonExecTimeoutMs = arg.pythonExecTimeoutMs ?? DEFAULT_CLIENT_PYTHON_EXEC_TIMEOUT_MS
+  const pythonInitTimeoutMs = arg.pythonInitTimeoutMs ?? DEFAULT_CLIENT_PYTHON_INIT_TIMEOUT_MS
+  const scriptModelOverrides = normalizeScriptModelOverrides(
+    Object.prototype.hasOwnProperty.call(arg, 'scriptModelOverrides')
+      ? arg.scriptModelOverrides
+      : char.type === 'simple'
+        ? undefined
+        : char.scriptModelOverrides,
+  )
 
-  let chat = arg.chat ?? getCurrentChat()
+  let chat = arg.chat ?? (char.type === 'character' ? char.chats?.[char.chatPage] : undefined)
   let stopSending = false
   let lowLevelAccess = arg.lowLevelAccess ?? false
 
@@ -131,12 +168,20 @@ export async function runScripted(
     ScriptingEngineState.chat = chat
     ScriptingEngineState.setVar = setVar
     ScriptingEngineState.getVar = getVar
+    ScriptingEngineState.scriptModelOverrides = scriptModelOverrides
     const shouldRecreateLuaEngine =
       ScriptingEngineState.type === 'lua' &&
       (code !== ScriptingEngineState.code || ScriptingEngineState.execTimeoutMs !== luaExecTimeoutMs)
+    const shouldRecreatePythonContext =
+      ScriptingEngineState.type === 'py' &&
+      (code !== ScriptingEngineState.code ||
+        ScriptingEngineState.execTimeoutMs !== pythonExecTimeoutMs ||
+        ScriptingEngineState.initTimeoutMs !== pythonInitTimeoutMs ||
+        ScriptingEngineState.pyodide?.isClosed === true)
     if (
       code !== ScriptingEngineState.code ||
       shouldRecreateLuaEngine ||
+      shouldRecreatePythonContext ||
       (ScriptingEngineState.type === 'py' && !ScriptingEngineState.pyodide)
     ) {
       let declareAPI: (name: string, func: Function) => void
@@ -144,12 +189,18 @@ export async function runScripted(
       if (ScriptingEngineState.type === 'lua') {
         console.log('Creating new Lua engine for mode:', mode)
         ScriptingEngineState.engine?.global.close()
-        ScriptingEngineState.code = code
+        ScriptingEngineState.engine = undefined
+        ScriptingEngineState.code = undefined
         ScriptingEngineState.execTimeoutMs = luaExecTimeoutMs
-        ScriptingEngineState.engine = await luaFactory.createEngine({
-          injectObjects: true,
-          functionTimeout: luaExecTimeoutMs,
-        })
+        try {
+          ScriptingEngineState.engine = await luaFactory.createEngine({
+            injectObjects: true,
+            functionTimeout: luaExecTimeoutMs,
+          })
+        } catch (error) {
+          evictScriptingEngineState(ScriptingEngineState)
+          throw error
+        }
         const luaEngine = ScriptingEngineState.engine
         declareAPI = (name: string, func: Function) => {
           luaEngine.global.set(name, func)
@@ -158,7 +209,9 @@ export async function runScripted(
       if (ScriptingEngineState.type === 'py') {
         console.log('Creating new Pyodide context for mode:', mode)
         ScriptingEngineState.pyodide?.close()
-        ScriptingEngineState.pyodide = new PyodideContext()
+        ScriptingEngineState.pyodide = new PyodideContext(pythonExecTimeoutMs, pythonInitTimeoutMs)
+        ScriptingEngineState.execTimeoutMs = pythonExecTimeoutMs
+        ScriptingEngineState.initTimeoutMs = pythonInitTimeoutMs
         declareAPI = (name: string, func: Function) => {
           ScriptingEngineState.pyodide?.declareAPI(name, func as any)
         }
@@ -171,6 +224,14 @@ export async function runScripted(
           return
         }
         ScriptingEngineState.setVar(key, value)
+      })
+      declareAPI('setChatVarChanged', (id: string, key: string, value: string) => {
+        if (!ScriptingSafeIds.has(id) && !ScriptingEditDisplayIds.has(id)) {
+          return
+        }
+        if (ScriptingEngineState.setVar(key, value) === true) {
+          return true
+        }
       })
       declareAPI('getGlobalVar', (id: string, key: string) => {
         return getGlobalChatVar(key)
@@ -223,6 +284,29 @@ export async function runScripted(
           time: chat.time ?? 0,
         }
         return JSON.stringify(data)
+      })
+
+      declareAPI('getChatData', (id: string, index: number) => {
+        const chat = ScriptingEngineState.chat.message.at(index)
+        return chat?.data ?? ''
+      })
+
+      declareAPI('getChatRole', (id: string, index: number) => {
+        const chat = ScriptingEngineState.chat.message.at(index)
+        return chat?.role ?? ''
+      })
+
+      declareAPI('getRecentChatsMain', (id: string, count: number) => {
+        const chats = ScriptingEngineState.chat.message
+        const safeCount = Math.max(0, Math.floor(count || 0))
+        const start = Math.max(0, chats.length - safeCount)
+        return JSON.stringify(
+          chats.slice(start).map((message) => ({
+            role: message.role,
+            data: message.data,
+            time: message.time ?? 0,
+          })),
+        )
       })
 
       declareAPI('setChat', (id: string, index: number, value: string) => {
@@ -306,7 +390,8 @@ export async function runScripted(
       })
 
       declareAPI('cbs', (value) => {
-        return risuChatParser(value, { chara: getCurrentCharacter() })
+        const currentCharacter = ScriptingEngineState.currentRun?.char
+        return risuChatParser(value, { chara: currentCharacter?.type === 'character' ? currentCharacter : undefined })
       })
 
       declareAPI('setFullChatMain', (id: string, value: string) => {
@@ -434,16 +519,9 @@ export async function runScripted(
 
       declareAPI('getCharacterImageMain', async (id: string) => {
         try {
-          const db = getDatabase()
-          const selectedChar = get(selectedCharID)
+          const character = ScriptingEngineState.currentRun?.char
 
-          if (selectedChar < 0 || selectedChar >= db.characters.length) {
-            return ''
-          }
-
-          const character = db.characters[selectedChar]
-
-          if (!character || !character.image) {
+          if (!character || character.type !== 'character' || !character.image) {
             return ''
           }
 
@@ -622,6 +700,15 @@ export async function runScripted(
               useStreaming: options.streaming === true,
               forceStreaming: options.streaming === true,
               noMultiGen: true,
+              ...(scriptModelOverrideProfileId(ScriptingEngineState.scriptModelOverrides, 'scriptMain')
+                ? {
+                    profileIdOverride: scriptModelOverrideProfileId(
+                      ScriptingEngineState.scriptModelOverrides,
+                      'scriptMain',
+                    ),
+                    strictProfileIdOverride: true,
+                  }
+                : {}),
             },
             'scriptMain',
           )
@@ -676,6 +763,15 @@ export async function runScripted(
             bias: {},
             useStreaming: false,
             noMultiGen: true,
+            ...(scriptModelOverrideProfileId(ScriptingEngineState.scriptModelOverrides, 'scriptMain')
+              ? {
+                  profileIdOverride: scriptModelOverrideProfileId(
+                    ScriptingEngineState.scriptModelOverrides,
+                    'scriptMain',
+                  ),
+                  strictProfileIdOverride: true,
+                }
+              : {}),
           },
           'scriptMain',
         )
@@ -701,64 +797,57 @@ export async function runScripted(
       })
 
       declareAPI('getName', (id: string) => {
-        const db = getDatabase()
-        const selectedChar = get(selectedCharID)
-        const char = db.characters[selectedChar]
-        return char.name
+        const currentCharacter = ScriptingEngineState.currentRun?.char
+        return currentCharacter?.type === 'character' ? currentCharacter.name : ''
       })
 
       declareAPI('setName', (id: string, name: string) => {
         if (!ScriptingSafeIds.has(id)) {
           return
         }
-        const selectedChar = get(selectedCharID)
         if (typeof name !== 'string') {
           throw 'Invalid data type'
         }
-        const char = getCharacterByIndex(selectedChar, { snapshot: true })
-        char.name = name
-        setCharacterByIndex(selectedChar, char)
+        applySelectedCharacterScriptingMutation((owner) => {
+          owner.name = name
+        })
       })
 
       declareAPI('getDescription', (id: string) => {
         if (!ScriptingSafeIds.has(id)) {
           return
         }
-        const selectedChar = get(selectedCharID)
-        const char = getDatabase().characters[selectedChar]
-        return char.desc
+        const currentCharacter = ScriptingEngineState.currentRun?.char
+        return currentCharacter?.type === 'character' ? currentCharacter.desc : undefined
       })
 
       declareAPI('setDescription', (id: string, desc: string) => {
         if (!ScriptingSafeIds.has(id)) {
           return
         }
-        const selectedChar = get(selectedCharID)
-        const char = getCharacterByIndex(selectedChar, { snapshot: true })
         if (typeof desc !== 'string') {
           throw 'Invalid data type'
         }
-        char.desc = desc
-        setCharacterByIndex(selectedChar, char)
+        applySelectedCharacterScriptingMutation((owner) => {
+          owner.desc = desc
+        })
       })
 
       declareAPI('getCharacterFirstMessage', (id: string) => {
-        const selectedChar = get(selectedCharID)
-        const char = getDatabase().characters[selectedChar]
-        return char.firstMessage
+        const currentCharacter = ScriptingEngineState.currentRun?.char
+        return currentCharacter?.type === 'character' ? currentCharacter.firstMessage : ''
       })
 
       declareAPI('setCharacterFirstMessage', (id: string, data: string) => {
         if (!ScriptingSafeIds.has(id)) {
           return
         }
-        const selectedChar = get(selectedCharID)
-        const char = getCharacterByIndex(selectedChar, { snapshot: true })
         if (typeof data !== 'string') {
           return false
         }
-        char.firstMessage = data
-        setCharacterByIndex(selectedChar, char)
+        applySelectedCharacterScriptingMutation((owner) => {
+          owner.firstMessage = data
+        })
         return true
       })
 
@@ -767,11 +856,10 @@ export async function runScripted(
       })
 
       declareAPI('getPersonaDescription', (id: string) => {
-        const db = getDatabase()
-        const selectedChar = get(selectedCharID)
-        const char = db.characters[selectedChar]
-
-        return risuChatParser(getPersonaPrompt(), { chara: char })
+        const currentCharacter = ScriptingEngineState.currentRun?.char
+        return risuChatParser(getPersonaPrompt(), {
+          chara: currentCharacter?.type === 'character' ? currentCharacter : undefined,
+        })
       })
 
       declareAPI('getAuthorsNote', (id: string) => {
@@ -782,38 +870,37 @@ export async function runScripted(
         if (!ScriptingSafeIds.has(id)) {
           return
         }
-        const db = getDatabase()
-        const selectedChar = get(selectedCharID)
-        const char = db.characters[selectedChar]
-        return char.backgroundHTML
+        const currentCharacter = ScriptingEngineState.currentRun?.char
+        return currentCharacter?.type === 'character' ? currentCharacter.backgroundHTML : undefined
       })
 
       declareAPI('setBackgroundEmbedding', (id: string, data: string) => {
         if (!ScriptingSafeIds.has(id)) {
           return
         }
-        const selectedChar = get(selectedCharID)
         if (typeof data !== 'string') {
           return false
         }
-        const char = getCharacterByIndex(selectedChar, { snapshot: true })
-        char.backgroundHTML = data
-        setCharacterByIndex(selectedChar, char)
+        applySelectedCharacterScriptingMutation((owner) => {
+          owner.backgroundHTML = data
+        })
         return true
       })
 
       // Lore books
       declareAPI('getLoreBooksMain', (id: string, search: string) => {
-        const db = getDatabase()
-        const selectedChar = db.characters[get(selectedCharID)]
-        if (selectedChar.type !== 'character') {
+        const selectedChar = ScriptingEngineState.currentRun?.char
+        if (!selectedChar || selectedChar.type !== 'character') {
           return
         }
 
         const loreSources = [
           selectedChar.chats[selectedChar.chatPage]?.localLore ?? [],
           selectedChar.globalLore,
-          getModuleLorebooks(),
+          getModuleLorebooks({
+            character: selectedChar,
+            chat: selectedChar.chats[selectedChar.chatPage],
+          }),
         ]
 
         const found = []
@@ -870,16 +957,28 @@ export async function runScripted(
           return
         }
 
-        const db = getDatabase()
+        const selectedChar = ScriptingEngineState.currentRun?.char
 
-        const selectedChar = db.characters[get(selectedCharID)]
-
-        if (selectedChar.type !== 'character') {
+        if (!selectedChar || selectedChar.type !== 'character') {
           return
         }
 
-        const fullLoreBooks = (await loadLoreBookV3Prompt()).actives
-        const maxContext = db.maxContext - reserve
+        const generation = resolveActiveChatGenerationSettings()
+        const selectedChat = selectedChar.chats[selectedChar.chatPage]
+        if (
+          generation.character?.chaId !== selectedChar.chaId ||
+          !selectedChat?.id ||
+          generation.chat?.id !== selectedChat.id
+        ) {
+          return
+        }
+        const fullLoreBooks = (
+          await loadLoreBookV3Prompt({ database: generation.db, character: selectedChar, chat: selectedChat })
+        ).actives
+        // This is a low-level scripting API, so its budget follows the scriptMain
+        // execution role (the same owner as LLM/simpleLLM), not chatMain.
+        const scriptProfile = resolveModelProfile({ database: generation.db, role: 'scriptMain' })
+        const maxContext = (scriptProfile.runtimeOptions.maxContext ?? 0) - reserve
         if (maxContext < 0) {
           return JSON.stringify([])
         }
@@ -984,6 +1083,15 @@ export async function runScripted(
               useStreaming: options.streaming === true,
               forceStreaming: options.streaming === true,
               noMultiGen: true,
+              ...(scriptModelOverrideProfileId(ScriptingEngineState.scriptModelOverrides, 'scriptAux')
+                ? {
+                    profileIdOverride: scriptModelOverrideProfileId(
+                      ScriptingEngineState.scriptModelOverrides,
+                      'scriptAux',
+                    ),
+                    strictProfileIdOverride: true,
+                  }
+                : {}),
             },
             'scriptAux',
           )
@@ -1029,9 +1137,6 @@ export async function runScripted(
           return ''
         }
 
-        const db = getDatabase()
-        const selchar = db.characters[get(selectedCharID)]
-
         let pointer = chat.message.length - 1
         while (pointer >= 0) {
           if (chat.message[pointer].role === 'char') {
@@ -1041,7 +1146,9 @@ export async function runScripted(
           pointer--
         }
 
-        return selchar.firstMessage
+        return ScriptingEngineState.currentRun?.char?.type === 'character'
+          ? ScriptingEngineState.currentRun.char.firstMessage
+          : ''
       })
 
       declareAPI('getUserLastMessage', (id: string) => {
@@ -1068,9 +1175,6 @@ export async function runScripted(
           return ''
         }
 
-        const db = getDatabase()
-        const selchar = db.characters[get(selectedCharID)]
-
         let pointer = chat.message.length - 1
         while (pointer >= 0) {
           if (chat.message[pointer].role === 'char') {
@@ -1080,7 +1184,9 @@ export async function runScripted(
           pointer--
         }
 
-        return selchar.firstMessage
+        return ScriptingEngineState.currentRun?.char?.type === 'character'
+          ? ScriptingEngineState.currentRun.char.firstMessage
+          : ''
       })
 
       declareAPI('getUserLastMessage', (id: string) => {
@@ -1100,10 +1206,20 @@ export async function runScripted(
         return ''
       })
       if (ScriptingEngineState.type === 'lua') {
-        await runLuaStringWithTimeout(ScriptingEngineState.engine, luaCodeWrapper(code), luaExecTimeoutMs)
+        try {
+          await runLuaStringWithTimeout(ScriptingEngineState.engine, luaCodeWrapper(code), luaExecTimeoutMs)
+        } catch (error) {
+          evictScriptingEngineState(ScriptingEngineState)
+          throw error
+        }
       }
       if (ScriptingEngineState.type === 'py') {
-        await ScriptingEngineState.pyodide?.init(code)
+        try {
+          await ScriptingEngineState.pyodide?.init(code)
+        } catch (error) {
+          evictScriptingEngineState(ScriptingEngineState)
+          throw error
+        }
       }
       ScriptingEngineState.code = code
     }
@@ -1181,6 +1297,9 @@ export async function runScripted(
           }
         } catch (error) {
           console.error('Lua dispatch failed:', error)
+          if (isLuaTimeoutError(error)) {
+            evictScriptingEngineState(ScriptingEngineState)
+          }
           throw error
         }
       }
@@ -1340,6 +1459,38 @@ function deleteScriptingEngineCacheKey(cacheKey: string): void {
   pendingEngineCreations.delete(cacheKey)
 }
 
+function evictScriptingEngineState(engineState: ScriptingEngineState): void {
+  const cacheKey = engineState.cacheKey
+  if (!cacheKey || ScriptingEngines.get(cacheKey) !== engineState) {
+    closeScriptingEngineState(engineState)
+    return
+  }
+  if ((engineState.activeRuns ?? 0) > 1) {
+    closeScriptingEngineState(engineState)
+    engineState.code = undefined
+    if (engineState.type === 'lua') {
+      engineState.engine = undefined
+    } else {
+      engineState.pyodide = undefined
+    }
+    return
+  }
+  deleteScriptingEngineCacheKey(cacheKey)
+  if (engineState.cacheBucket) {
+    const keys = ScriptingEngineLru.get(engineState.cacheBucket)
+    if (keys) {
+      ScriptingEngineLru.set(
+        engineState.cacheBucket,
+        keys.filter((key) => key !== cacheKey),
+      )
+    }
+  }
+}
+
+function isLuaTimeoutError(error: unknown): boolean {
+  return error instanceof Error && /timeout/i.test(error.message)
+}
+
 function enforceScriptingEngineCacheLimit(bucket?: string): void {
   if (!bucket) {
     return
@@ -1386,6 +1537,7 @@ async function getOrCreateEngineState(
   const creationPromise = (() => {
     const engineState: ScriptingEngineState = {
       mutex: new Mutex(),
+      scriptModelOverrides: {},
       type: type,
       cacheKey,
       cacheBucket,
@@ -1456,6 +1608,10 @@ end
 
 function getFullChat(id)
     return json.decode(getFullChatMain(id))
+end
+
+function getRecentChats(id, count)
+    return json.decode(getRecentChatsMain(id, count))
 end
 
 function setFullChat(id, value)
@@ -1532,6 +1688,11 @@ end
 function setState(id, name, value)
     local escapedName = "__"..name
     setChatVar(id, escapedName, json.encode(value))
+end
+
+function setStateChanged(id, name, value)
+    local escapedName = "__"..name
+    return setChatVarChanged(id, escapedName, json.encode(value))
 end
 
 function async(callback)
@@ -1628,7 +1789,9 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
         lowLevelAccess: false,
       }),
     )
-    const triggers: triggerscript[] = ownTriggers.concat(getModuleTriggers())
+    const triggers: triggerscript[] = ownTriggers.concat(
+      getModuleTriggers(char.type === 'character' ? { character: char, chat: char.chats?.[char.chatPage] } : undefined),
+    )
     const luaTriggerEffects = triggers
       .map((trigger) => trigger?.effect?.[0])
       .filter((effect): effect is { type: 'triggerlua'; code: string } => effect?.type === 'triggerlua')
@@ -1679,7 +1842,8 @@ function createLuaEditTriggerWorkingContext(
 ): LuaEditTriggerWorkingContext {
   const canMutateChatCollections = mode !== 'editDisplay'
   if (char.type !== 'character') {
-    const currentChat = getCurrentChat() ?? createEmptyLuaEditTriggerChat()
+    const currentCharacter = getSelectedCharacterOwner()
+    const currentChat = currentCharacter?.chats?.[currentCharacter.chatPage] ?? createEmptyLuaEditTriggerChat()
     return {
       char,
       chat: cloneLuaEditTriggerChat(currentChat, canMutateChatCollections),
@@ -1687,7 +1851,7 @@ function createLuaEditTriggerWorkingContext(
   }
 
   const target = canUseServerCommands() ? captureActiveChatTarget() : null
-  const activeCharacter = target ? getDatabase().characters?.[target.selectedCharID] : undefined
+  const activeCharacter = target ? getCharacterResourceOwner(target.characterId) : undefined
   const activeChat = activeCharacter?.chats?.[activeCharacter.chatPage]
   const targetChatIndex = target?.chatId ? char.chats.findIndex((candidate) => candidate.id === target.chatId) : -1
   const ownsActiveChat =
@@ -1703,9 +1867,10 @@ function createLuaEditTriggerWorkingContext(
 
   const previousChat = ownsActiveChat ? cloneLuaEditTriggerChat(activeChat, canMutateChatCollections) : undefined
   const characterChat = char.chats[char.chatPage]
+  const currentCharacter = getSelectedCharacterOwner()
   const sourceChat = ownsActiveChat
     ? previousChat
-    : (characterChat ?? getCurrentChat() ?? createEmptyLuaEditTriggerChat())
+    : (characterChat ?? currentCharacter?.chats?.[currentCharacter.chatPage] ?? createEmptyLuaEditTriggerChat())
 
   const workingChat = cloneLuaEditTriggerChat(sourceChat, canMutateChatCollections)
   const workingChatIndex = ownsActiveChat ? targetChatIndex : characterChat ? char.chatPage : char.chats.length
@@ -1785,10 +1950,10 @@ function reconcileLuaEditTriggerWorkingChat(context: LuaEditTriggerWorkingContex
     ? scopedLorebookStateSnapshot(`chat:${reconciliation.target.chatId}`, reconciliation.localLoreSnapshot)
     : null
 
-  const applied = withTrustedResourceWrite(() => {
+  const applied = (() => {
     if (!isActiveChatTargetFresh(reconciliation.target)) return false
 
-    const selectedCharacter = getDatabase().characters?.[reconciliation.target.selectedCharID]
+    const selectedCharacter = getCharacterResourceOwner(reconciliation.target.characterId)
     const liveChat = selectedCharacter?.chats?.[selectedCharacter.chatPage]
     if (
       !selectedCharacter ||
@@ -1813,7 +1978,7 @@ function reconcileLuaEditTriggerWorkingChat(context: LuaEditTriggerWorkingContex
     if (scriptstateChanged) liveChat.scriptstate = safeStructuredClone(nextChat.scriptstate)
     if (nextLocalLore) liveChat.localLore = nextLocalLore
     return true
-  })
+  })()
   if (!applied) return
 
   preparation.dispatch()
@@ -1854,19 +2019,27 @@ export async function runLuaButtonTrigger(
         lowLevelAccess: char.type === 'simple' ? false : (char.lowLevelAccess ?? false),
       }),
     )
-    const triggers = ownTriggers.concat(getModuleTriggers())
+    const triggers = ownTriggers.concat(
+      getModuleTriggers(char.type === 'character' ? { character: char, chat: workingChat } : undefined),
+    )
 
     for (let trigger of triggers) {
       if (!isFresh()) {
         return null
       }
       if (trigger?.effect?.[0]?.type === 'triggerlua') {
+        const moduleOwner = getModuleTriggerOwner(trigger)
         runResult = await runScripted(trigger.effect[0].code, {
           char: char,
           chat: workingChat,
           setVar: setWorkingVar,
           getVar: getWorkingVar,
           lowLevelAccess: trigger.lowLevelAccess,
+          scriptModelOverrides: moduleOwner
+            ? moduleOwner.scriptModelOverrides
+            : char.type === 'simple'
+              ? {}
+              : char.scriptModelOverrides,
           mode: 'onButtonClick',
           data: data,
         })
@@ -1881,10 +2054,13 @@ export async function runLuaButtonTrigger(
   return runResult
 }
 
-function createLuaButtonWorkingSetVar(chat: Chat): (key: string, value: string) => void {
+function createLuaButtonWorkingSetVar(chat: Chat): (key: string, value: string) => boolean {
   return (key: string, value: string) => {
     chat.scriptstate ??= {}
-    chat.scriptstate['$' + key] = value
+    const stateKey = '$' + key
+    if (chat.scriptstate[stateKey] === value) return false
+    chat.scriptstate[stateKey] = value
+    return true
   }
 }
 
@@ -1895,11 +2071,10 @@ function createLuaButtonWorkingGetVar(char: character | simpleCharacterArgument,
       return state.toString()
     }
 
-    const db = getDatabase()
     const defaultVariables =
       char.type === 'simple'
-        ? parseKeyValue(db.templateDefaultVariables)
-        : parseKeyValue(char.defaultVariables).concat(parseKeyValue(db.templateDefaultVariables))
+        ? parseKeyValue(scriptingSettings().templateDefaultVariables ?? '')
+        : parseKeyValue(char.defaultVariables).concat(parseKeyValue(scriptingSettings().templateDefaultVariables ?? ''))
     const defaultVariable = defaultVariables.find((entry) => entry[0] === key)
     return defaultVariable?.[1] ?? 'null'
   }
@@ -1919,7 +2094,10 @@ class PyodideContext {
     }
   >()
 
-  constructor() {
+  constructor(
+    private readonly execTimeoutMs: number,
+    private readonly initTimeoutMs: number,
+  ) {
     this.worker = new Worker(new URL('./pyworker.ts', import.meta.url), {
       type: 'module',
     })
@@ -1992,15 +2170,24 @@ class PyodideContext {
     }
   }
 
-  private request<T>(message: Extract<PyWorkerRequest, { id: string }>): Promise<T> {
+  private request<T>(message: Extract<PyWorkerRequest, { id: string }>, timeoutMs = this.execTimeoutMs): Promise<T> {
     if (this.closed) {
       return Promise.reject(new Error('Python scripting worker is terminated.'))
     }
 
     return new Promise<T>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.terminate(new Error(`Python scripting worker timed out after ${timeoutMs}ms.`))
+      }, timeoutMs)
       this.pending.set(message.id, {
-        resolve: (result) => resolve(result as T),
-        reject,
+        resolve: (result) => {
+          clearTimeout(timeout)
+          resolve(result as T)
+        },
+        reject: (error) => {
+          clearTimeout(timeout)
+          reject(error)
+        },
       })
       try {
         this.worker.postMessage(message)
@@ -2014,16 +2201,23 @@ class PyodideContext {
     this.apis[name] = func
   }
 
+  get isClosed(): boolean {
+    return this.closed
+  }
+
   async init(code: string) {
     if (this.inited) {
       return
     }
-    this.initPromise ??= this.request({
-      type: 'init',
-      code,
-      id: createNonSecurityUuid(),
-      moduleFunctions: Object.keys(this.apis),
-    }).then(() => {
+    this.initPromise ??= this.request(
+      {
+        type: 'init',
+        code,
+        id: createNonSecurityUuid(),
+        moduleFunctions: Object.keys(this.apis),
+      },
+      this.initTimeoutMs,
+    ).then(() => {
       this.inited = true
     })
     try {

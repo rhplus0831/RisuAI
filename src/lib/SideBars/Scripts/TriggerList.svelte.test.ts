@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const triggerListMocks = vi.hoisted(() => ({
   alertConfirm: vi.fn(),
+  settingsResourceState: {
+    value: { showDeprecatedTriggerV1: true },
+    groupStatuses: { advanced: 'ready' },
+  },
 }))
 
 vi.mock('src/lang', () => ({
@@ -17,8 +21,8 @@ vi.mock('src/ts/alert', () => ({
   alertConfirm: triggerListMocks.alertConfirm,
 }))
 
-vi.mock('src/ts/storage/database.svelte', () => ({
-  getDatabase: () => ({ showDeprecatedTriggerV1: true }),
+vi.mock('src/ts/server/resourceState.svelte', () => ({
+  settingsResourceState: triggerListMocks.settingsResourceState,
 }))
 
 vi.mock('src/ts/globalApi.svelte', () => ({ openURL: vi.fn() }))
@@ -81,6 +85,8 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   triggerListMocks.alertConfirm.mockReset()
+  triggerListMocks.settingsResourceState.value.showDeprecatedTriggerV1 = true
+  triggerListMocks.settingsResourceState.groupStatuses.advanced = 'ready'
 })
 
 afterEach(() => {
@@ -92,6 +98,22 @@ afterEach(() => {
 })
 
 describe('TriggerList mode confirmation freshness', () => {
+  it('honors the deprecated V1 toggle only from a ready advanced-settings owner', async () => {
+    component = mount(TriggerListHarness, { target, props: { initialMode: 'v2' } })
+    await settle()
+    expect(modeButton('V1')).toBeTruthy()
+
+    unmount(component)
+    component = undefined
+    triggerListMocks.settingsResourceState.groupStatuses.advanced = 'error'
+    component = mount(TriggerListHarness, { target, props: { initialMode: 'v2' } })
+    await settle()
+
+    expect(Array.from(target.querySelectorAll('button')).some((button) => button.textContent?.trim() === 'V1')).toBe(
+      false,
+    )
+  })
+
   it.each([
     ['v1', 'V2'],
     ['v1', 'Lua'],

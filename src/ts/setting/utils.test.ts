@@ -105,12 +105,12 @@ import {
 import {
   applySettingsResource,
   applySettingsGroupResource,
+  applySettingsPatchLocalEffect,
   captureSettingsGroupProjectionEpoch,
-  getResourceDatabase,
   hasSettingsGroupProjectionEpochChanged,
   replaceResourceDatabase,
 } from '../server/resourceState.svelte'
-import { setResourceWriteGuardEnabled, withServerResourceApply } from '../server/resourceWriteGuard.svelte'
+
 import { notifyServerCommandLocalEffectApplied } from '../server/commandLocalEffectEvents'
 import { createDestructiveRefreshToken } from '../server/staleStateGuards'
 import { language } from 'src/lang'
@@ -139,6 +139,7 @@ import {
   setSettingValue,
 } from './utils'
 import SettingInputDraftHarness from 'src/lib/Setting/testHarness/SettingInputDraftHarness.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface CapturedFetch {
   url: string
@@ -255,7 +256,6 @@ beforeEach(() => {
   writerAccessMocks.report.mockClear()
   clearCachedServerCommandRevision()
   setServerCommandSuccessReconciler(null)
-  setResourceWriteGuardEnabled(false)
   replaceResourceDatabase({ notification: false } as any)
 })
 
@@ -264,7 +264,6 @@ afterEach(() => {
   setServerCommandSuccessReconciler(null)
   vi.unstubAllGlobals()
   vi.useRealTimers()
-  setResourceWriteGuardEnabled(false)
 })
 
 describe('server-backed data-driven settings', () => {
@@ -341,6 +340,44 @@ describe('server-backed data-driven settings', () => {
       helpKey: 'reducedMotion',
       bindKey: 'reducedMotion',
     })
+  })
+
+  it('exposes open-chat-only memory progress under Accessibility', () => {
+    expect(accessibilitySettingsItems.find((item) => item.id === 'acc.hypaV3ProgressOpenChatOnly')).toMatchObject({
+      type: 'check',
+      labelKey: 'hypaV3ProgressOpenChatOnly',
+      helpKey: 'hypaV3ProgressOpenChatOnly',
+      bindKey: 'hypaV3ProgressOpenChatOnly',
+    })
+  })
+
+  it('exposes fixed and default-on floating composer positioning under Accessibility', () => {
+    expect(accessibilitySettingsItems.find((candidate) => candidate.id === 'acc.fixedChatTextarea')).toMatchObject({
+      type: 'check',
+      labelKey: 'fixedChatTextarea',
+      bindKey: 'fixedChatTextarea',
+    })
+    const floatingInput = accessibilitySettingsItems.find((candidate) => candidate.id === 'acc.floatingChatInput')
+    expect(floatingInput).toMatchObject({
+      type: 'check',
+      labelKey: 'floatingChatInput',
+      helpKey: 'floatingChatInput',
+      bindKey: 'floatingChatInput',
+    })
+    expect(floatingInput?.getValue?.({ floatingChatInput: undefined } as never)).toBe(true)
+    expect(floatingInput?.getValue?.({ floatingChatInput: false } as never)).toBe(false)
+  })
+
+  it('exposes the default-off global additional-parameters opt-in under Accessibility', () => {
+    const item = accessibilitySettingsItems.find((candidate) => candidate.id === 'acc.applyAdditionalParamsToAll')
+
+    expect(item).toMatchObject({
+      type: 'check',
+      labelKey: 'applyAdditionalParamsToAll',
+      bindKey: 'applyAdditionalParamsToAll',
+    })
+    expect(item?.getValue?.({ applyAdditionalParamsToAll: undefined } as never)).toBe(false)
+    expect(item?.getValue?.({ applyAdditionalParamsToAll: true } as never)).toBe(true)
   })
 
   it('keeps Display custom-control watchers disjoint from renderer-owned bindings', () => {
@@ -578,9 +615,9 @@ describe('server-backed data-driven settings', () => {
     expect(getResourceDatabase().guiHTML).toBe('local final')
     expect(calls).toEqual([])
 
-    withServerResourceApply(() => {
-      getResourceDatabase().guiHTML = 'server intermediate'
-    })
+    applySettingsGroupResource({ revision: 1, group: 'display', settings: { guiHTML: 'server intermediate' } }, [
+      'guiHTML',
+    ])
     flushSync()
 
     expect(input.value).toBe('local final')
@@ -621,9 +658,7 @@ describe('server-backed data-driven settings', () => {
     expect(getResourceDatabase().guiHTML).toBe('queued')
 
     clearDeferredSettingWrites()
-    withServerResourceApply(() => {
-      applySettingsResource({ revision: 1, settings: { guiHTML: 'restored' } })
-    })
+    applySettingsResource({ revision: 1, settings: { guiHTML: 'restored' } })
     flushSync()
 
     expect(input.value).toBe('restored')
@@ -658,14 +693,10 @@ describe('server-backed data-driven settings', () => {
     setSettingValue(item, true, ctx)
     await vi.waitFor(() => expect(calls.some((call) => call.url === '/api/v1/commands/settings/display')).toBe(true))
 
-    withServerResourceApply(() => {
-      applySettingsResource({ revision: 4, settings: { notification: false } })
-    })
+    applySettingsResource({ revision: 4, settings: { notification: false } })
     expect(getResourceDatabase().notification).toBe(true)
 
-    withServerResourceApply(() => {
-      applySettingsGroupResource({ revision: 4, group: 'display', settings: { notification: false } }, ['notification'])
-    })
+    applySettingsGroupResource({ revision: 4, group: 'display', settings: { notification: false } }, ['notification'])
     expect(getResourceDatabase().notification).toBe(true)
 
     patchResponse.resolve(
@@ -701,23 +732,15 @@ describe('server-backed data-driven settings', () => {
     expect(getResourceDatabase().roundIcons).toBe(true)
     expect(settingAlertMocks.alertError).not.toHaveBeenCalled()
 
-    withServerResourceApply(() => {
-      applySettingsResource({ revision: 4, settings: { roundIcons: false } })
-    })
+    applySettingsResource({ revision: 4, settings: { roundIcons: false } })
     expect(getResourceDatabase().roundIcons).toBe(true)
-    withServerResourceApply(() => {
-      applySettingsGroupResource({ revision: 4, group: 'display', settings: { roundIcons: false } }, ['roundIcons'])
-    })
+    applySettingsGroupResource({ revision: 4, group: 'display', settings: { roundIcons: false } }, ['roundIcons'])
     expect(getResourceDatabase().roundIcons).toBe(true)
 
     const mutationId = durableSettingState.dispatches[0].handle.mutationId
     publishDurableSettingSettlement(mutationId, 'accepted')
-    withServerResourceApply(() => {
-      applySettingsGroupResource({ revision: 5, group: 'display', settings: { roundIcons: true } }, ['roundIcons'])
-    })
-    withServerResourceApply(() => {
-      applySettingsGroupResource({ revision: 6, group: 'display', settings: { roundIcons: false } }, ['roundIcons'])
-    })
+    applySettingsGroupResource({ revision: 5, group: 'display', settings: { roundIcons: true } }, ['roundIcons'])
+    applySettingsGroupResource({ revision: 6, group: 'display', settings: { roundIcons: false } }, ['roundIcons'])
     expect(getResourceDatabase().roundIcons).toBe(false)
   })
 
@@ -771,7 +794,6 @@ describe('server-backed data-driven settings', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }))
     flushSync()
 
-    withServerResourceApply(() => {})
     notifyServerCommandLocalEffectApplied(
       {
         type: 'settings.updated',
@@ -788,9 +810,7 @@ describe('server-backed data-driven settings', () => {
       },
     )
     flushSync()
-    withServerResourceApply(() => {
-      getResourceDatabase().guiHTML = 'B'
-    })
+    applySettingsGroupResource({ revision: 5, group: 'display', settings: { guiHTML: 'B' } }, ['guiHTML'])
     flushSync()
 
     expect(input.value).toBe('C')
@@ -821,8 +841,11 @@ describe('server-backed data-driven settings', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }))
     flushSync()
 
-    withServerResourceApply(() => {
-      getResourceDatabase().deeplOptions = { key: 'canonical key', freeApi: false }
+    applySettingsPatchLocalEffect({
+      revision: 5,
+      group: 'language',
+      attemptedPatch: { deeplOptions: { key: 'attempted key', freeApi: false } },
+      settings: { deeplOptions: { key: 'canonical key', freeApi: false } },
     })
     notifyServerCommandLocalEffectApplied(
       {
@@ -904,15 +927,13 @@ describe('server-backed data-driven settings', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }))
     flushSync()
     unmount(component)
-    withServerResourceApply(() =>
-      applySettingsGroupResource(
-        {
-          revision: 4,
-          group: 'display',
-          settings: { guiHTML: 'server intermediate' },
-        },
-        ['guiHTML'],
-      ),
+    applySettingsGroupResource(
+      {
+        revision: 4,
+        group: 'display',
+        settings: { guiHTML: 'server intermediate' },
+      },
+      ['guiHTML'],
     )
     expect(hasSettingsGroupProjectionEpochChanged('display', intentEpoch)).toBe(true)
     expect(getResourceDatabase().guiHTML).toBe('local final')

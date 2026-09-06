@@ -1,7 +1,8 @@
+import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { normalizeAllCharacterChats, requireChatLocation } from '../commands/chats.js'
 import type { CommandEventSink } from '../commands/events.js'
-import type { MessageTranslationJobRegistry } from '../messageTranslationJobs.js'
+import { safeTranslationError, type MessageTranslationJobRegistry } from '../messageTranslationJobs.js'
 import { resolveActiveMessageLocationById } from '../messageStore.js'
 import {
   chatCompletionNotificationSettingEnabled,
@@ -9,6 +10,7 @@ import {
   type PushNotificationService,
 } from '../pushNotifications.js'
 import { loadPersistedForChatMutation, loadSettingsFromSqlite } from '../repository.js'
+import type { PostGenerationTranslationFrame } from '../prompt/sseEvents.js'
 import { isServerAutoTranslationEligible } from './serverAutoTranslationEligibility.js'
 import { runServerMessageTranslation, type RunServerMessageTranslationInput } from './serverMessageTranslation.js'
 
@@ -27,15 +29,19 @@ export interface GeneratedChatCompletionInput {
   chatId: string
   characterId?: string
   completedAt?: number
-  disconnected: boolean
   pushNotifications?: false | PushNotificationService
   runMessageTranslation?: ServerMessageTranslationRunner
+  onTranslationStarted?: (input: { chatId: string; messageId: string; jobId: string }) => void
 }
 
 export interface GeneratedChatCompletionFollowup {
   translationStarted: boolean
-  translation?: Promise<unknown>
+  /** The provider/persistence promise remains live when the cap wins the race. */
+  translation?: ReturnType<ServerMessageTranslationRunner>
   notification: 'immediate' | 'deferred' | 'disabled'
+  frame?: PostGenerationTranslationFrame
+  /** Latest command revision when the translation persisted before frame release. */
+  revision?: number
 }
 
 export function autoTranslateNotificationDeferCapSeconds(settings: Record<string, unknown>): number {
@@ -73,18 +79,16 @@ function generatedMessageIsEligible(input: GeneratedChatCompletionInput, setting
 }
 
 /**
- * Completes the notification/translation follow-up after a generated message
- * has committed. Connected completions preserve the existing immediate push.
- * A disconnected eligible completion starts a detached translation and, when
- * notifications are enabled, races its settlement against the configured cap.
+ * Starts the server-owned automatic translation after generation persistence,
+ * then holds completion until translation settles or the configured cap wins.
+ * Notification delivery shares that same first-settlement latch. A capped job
+ * remains detached and retains the normal translation-job token fence.
  */
-export function handleGeneratedChatCompletion(input: GeneratedChatCompletionInput): GeneratedChatCompletionFollowup {
+export async function handleGeneratedChatCompletion(
+  input: GeneratedChatCompletionInput,
+): Promise<GeneratedChatCompletionFollowup> {
   const context = { characterId: input.characterId, chatId: input.chatId }
-  if (!input.disconnected) {
-    notifyChatCompletion(input.pushNotifications, context)
-    return { translationStarted: false, notification: 'immediate' }
-  }
-
+  const notificationsEnabled = !!input.pushNotifications && chatCompletionNotificationSettingEnabled(input.db)
   let settings: Record<string, unknown> | null = null
   let eligible = false
   try {
@@ -93,39 +97,81 @@ export function handleGeneratedChatCompletion(input: GeneratedChatCompletionInpu
   } catch {
     eligible = false
   }
+
   if (!eligible || !settings) {
-    notifyChatCompletion(input.pushNotifications, context)
-    return { translationStarted: false, notification: 'immediate' }
+    if (notificationsEnabled) notifyChatCompletion(input.pushNotifications, context)
+    return {
+      translationStarted: false,
+      notification: notificationsEnabled ? 'immediate' : 'disabled',
+    }
   }
 
+  const jobId = randomUUID()
   const runTranslation = input.runMessageTranslation ?? runServerMessageTranslation
-  const translation = runTranslation({
-    db: input.db,
-    dataDir: input.dataDir,
-    eventSink: input.eventSink,
-    messageTranslationJobs: input.messageTranslationJobs,
-    messageId: input.messageId,
-  })
-
-  if (!input.pushNotifications || !chatCompletionNotificationSettingEnabled(input.db)) {
-    void translation.catch(() => {})
-    return { translationStarted: true, translation, notification: 'disabled' }
+  let translation: ReturnType<ServerMessageTranslationRunner>
+  try {
+    translation = runTranslation({
+      db: input.db,
+      dataDir: input.dataDir,
+      eventSink: input.eventSink,
+      messageTranslationJobs: input.messageTranslationJobs,
+      messageId: input.messageId,
+      jobId,
+    })
+  } catch (error) {
+    if (notificationsEnabled) notifyChatCompletion(input.pushNotifications, context)
+    return {
+      translationStarted: true,
+      notification: notificationsEnabled ? 'deferred' : 'disabled',
+      frame: { status: 'failed', jobId, error: safeTranslationError(error) },
+    }
   }
+  input.onTranslationStarted?.({ chatId: input.chatId, messageId: input.messageId, jobId })
 
   let notificationSent = false
   let capTimer: ReturnType<typeof setTimeout> | undefined
   const notifyOnce = (): void => {
-    if (notificationSent) return
+    if (!notificationsEnabled || notificationSent) return
     notificationSent = true
     if (capTimer) clearTimeout(capTimer)
     notifyChatCompletion(input.pushNotifications, context)
   }
+  const settled = translation.then(
+    (result) => ({ kind: 'succeeded' as const, result }),
+    (error) => ({ kind: 'failed' as const, error }),
+  )
+  void settled.then(notifyOnce)
+
   const capSeconds = autoTranslateNotificationDeferCapSeconds(settings)
-  if (capSeconds > 0) {
-    const elapsedMs = Math.max(0, Date.now() - (input.completedAt ?? Date.now()))
-    capTimer = setTimeout(notifyOnce, Math.max(0, capSeconds * 1000 - elapsedMs))
-    capTimer.unref?.()
+  const capped =
+    capSeconds > 0
+      ? new Promise<{ kind: 'running' }>((resolve) => {
+          const elapsedMs = Math.max(0, Date.now() - (input.completedAt ?? Date.now()))
+          capTimer = setTimeout(
+            () => {
+              notifyOnce()
+              resolve({ kind: 'running' })
+            },
+            Math.max(0, capSeconds * 1000 - elapsedMs),
+          )
+          capTimer.unref?.()
+        })
+      : null
+  const outcome = capped ? await Promise.race([settled, capped]) : await settled
+  if (outcome.kind !== 'running' && capTimer) clearTimeout(capTimer)
+
+  const frame: PostGenerationTranslationFrame =
+    outcome.kind === 'succeeded'
+      ? { status: 'succeeded', jobId, translation: outcome.result.translation }
+      : outcome.kind === 'failed'
+        ? { status: 'failed', jobId, error: safeTranslationError(outcome.error) }
+        : { status: 'running', jobId }
+
+  return {
+    translationStarted: true,
+    translation,
+    notification: notificationsEnabled ? 'deferred' : 'disabled',
+    frame,
+    ...(outcome.kind === 'succeeded' ? { revision: outcome.result.revision } : {}),
   }
-  void translation.then(notifyOnce, notifyOnce)
-  return { translationStarted: true, translation, notification: 'deferred' }
 }

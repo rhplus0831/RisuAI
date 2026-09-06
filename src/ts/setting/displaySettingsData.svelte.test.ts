@@ -17,12 +17,14 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import {
+  displayNonRendererServerSettingKeys,
   displayOtherSettingsItems,
   displaySizeSettingsItems,
   displayThemeSettingsItems,
 } from './displaySettingsData.svelte'
 import type { SettingContext } from './types'
 import { RegexDisplayReloadPointer } from '../process/regexDisplayReload'
+import { DISPLAY_PAINT_SETTING_KEYS } from '../gui/displaySettingsCache'
 
 function contextForTheme(theme: string): SettingContext {
   return {
@@ -33,6 +35,20 @@ function contextForTheme(theme: string): SettingContext {
 }
 
 describe('display theme settings data', () => {
+  it('includes every Theme and Size/Speed field in the paint cache allowlist', () => {
+    const fields = [...displayThemeSettingsItems, ...displaySizeSettingsItems].flatMap((item) =>
+      item.bindKey ? [item.bindKey] : [],
+    )
+    expect(DISPLAY_PAINT_SETTING_KEYS).toEqual(
+      expect.arrayContaining([...fields, ...displayNonRendererServerSettingKeys]),
+    )
+  })
+  it('projects the saved custom palette with the custom display controls', () => {
+    expect(displayNonRendererServerSettingKeys).toEqual(
+      expect.arrayContaining(['colorScheme', 'colorSchemeName', 'customColorScheme']),
+    )
+  })
+
   it('gives the conditional custom-font field a visible and accessible label', () => {
     const customFont = displayThemeSettingsItems.find((item) => item.id === 'display.customFont')
 

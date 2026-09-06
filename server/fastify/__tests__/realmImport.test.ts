@@ -1,7 +1,7 @@
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import fs, { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createHash, webcrypto } from 'node:crypto'
@@ -396,7 +396,7 @@ function realmCard(
         token_budget: 800,
         recursive_scanning: true,
         extensions: {},
-        entries: [],
+        entries: [] as Array<Record<string, unknown>>,
       },
     },
   }
@@ -447,7 +447,31 @@ function respondRealmJsonCard(
   return false
 }
 
-function realmCharx(options: { lowLevelAccess?: boolean; moduleData?: Uint8Array } = {}): Uint8Array {
+function realmCharx(
+  options: {
+    lowLevelAccess?: boolean
+    moduleData?: Uint8Array
+    assetSuffix?: string
+    preserveMainAsset?: boolean
+    conversionFailure?: boolean
+  } = {},
+): Uint8Array {
+  const marker = options.assetSuffix ? ` ${options.assetSuffix}` : ''
+  const cardAssets = options.conversionFailure
+    ? [
+        {
+          type: 'x-risu-asset',
+          uri: `data:text/css;base64,${Buffer.from('inline conversion asset').toString('base64')}`,
+          name: 'inline',
+          ext: 'css',
+        },
+        { type: 'icon', uri: 'embeded://assets/missing.png', name: 'main', ext: 'png' },
+      ]
+    : [
+        { type: 'icon', uri: 'embeded://assets/main.png', name: 'main', ext: 'png' },
+        { type: 'emotion', uri: 'embeded://assets/happy.png', name: 'happy', ext: 'png' },
+        { type: 'x-risu-asset', uri: '__asset:assets/theme.css', name: 'theme', ext: 'css' },
+      ]
   const card = {
     spec: 'chara_card_v3',
     spec_version: '3.0',
@@ -466,18 +490,16 @@ function realmCharx(options: { lowLevelAccess?: boolean; moduleData?: Uint8Array
       creator: '',
       character_version: '1',
       extensions: { risuai: { lowLevelAccess: options.lowLevelAccess } },
-      assets: [
-        { type: 'icon', uri: 'embeded://assets/main.png', name: 'main', ext: 'png' },
-        { type: 'emotion', uri: 'embeded://assets/happy.png', name: 'happy', ext: 'png' },
-        { type: 'x-risu-asset', uri: '__asset:assets/theme.css', name: 'theme', ext: 'css' },
-      ],
+      assets: cardAssets,
     },
   }
   const files: Record<string, Uint8Array> = {
     'card.json': new TextEncoder().encode(JSON.stringify(card)),
-    'assets/main.png': new TextEncoder().encode('main image'),
-    'assets/happy.png': new TextEncoder().encode('happy image'),
-    'assets/theme.css': new TextEncoder().encode('body { color: red; }'),
+    'assets/main.png': new TextEncoder().encode(options.preserveMainAsset ? 'main image' : `main image${marker}`),
+    'assets/happy.png': new TextEncoder().encode(`happy image${marker}`),
+    'assets/theme.css': new TextEncoder().encode(
+      options.assetSuffix ? `body { color: red; } /* ${options.assetSuffix} */` : 'body { color: red; }',
+    ),
   }
   if (options.moduleData) {
     files['module.risum'] = options.moduleData
@@ -614,10 +636,27 @@ afterEach(async () => {
 
 describe('Realm character import route', () => {
   it('streams progress while importing JSON Realm cards', async () => {
+    const card = realmCard()
+    card.data.character_book.entries = [
+      {
+        keys: ['first'],
+        secondary_keys: [],
+        content: 'First realm lore row',
+        insertion_order: 1,
+        name: 'First',
+      },
+      {
+        keys: ['second'],
+        secondary_keys: [],
+        content: 'Second realm lore row',
+        insertion_order: 2,
+        name: 'Second',
+      },
+    ]
     echo.setResponder((req, res) => {
       if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
         res.writeHead(200, { 'content-type': 'application/json' })
-        res.end(JSON.stringify({ card: realmCard(), img: 'main-img' }))
+        res.end(JSON.stringify({ card, img: 'main-img' }))
         return
       }
       if (req.url === '/resource/main-img') {
@@ -662,12 +701,71 @@ describe('Realm character import route', () => {
     expect(res.headers['content-type']).toContain('text/event-stream')
     const frames = parseSsePayload(res.payload)
     expect(frames.map((frame) => frame.event)).toContain('progress')
+    for (const frame of frames.filter((candidate) => candidate.event === 'progress')) {
+      expect(frame.data).toMatchObject({
+        phase: expect.any(String),
+        message: expect.any(String),
+        percent: expect.any(Number),
+      })
+    }
     expect(frames.at(-1)).toMatchObject({
       event: 'done',
       data: { characterId: expect.any(String), revision: expect.any(Number) },
     })
     expect(progressPercents(frames)).toEqual([...progressPercents(frames)].sort((a, b) => a - b))
     expect(progressPercents(frames).at(-1)).toBe(100)
+    const persisted = loadPersistedFromDir(harness.dataDir)
+    const character = (persisted.database as { characters: Array<Record<string, unknown>> }).characters[0]
+    const importedLorebook = character.globalLore as Array<Record<string, unknown>>
+    expect(importedLorebook).toHaveLength(2)
+    expect(importedLorebook.every((entry) => typeof entry.id === 'string' && entry.id.length > 0)).toBe(true)
+    expect(new Set(importedLorebook.map((entry) => entry.id)).size).toBe(2)
+  })
+
+  it('negotiates percent-only Realm progress deltas while preserving terminal frames', async () => {
+    echo.setResponder((req, res) => {
+      if (respondRealmJsonCard(req, res)) return
+      res.writeHead(404)
+      res.end()
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: {
+        accept: 'text/event-stream',
+        'risu-auth': assertion,
+        'risu-writer-session': 'writer-a',
+      },
+      payload: {
+        id: 'realm-id',
+        baseRevision,
+        clientCapabilities: { realmProgressDelta: true },
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const frames = parseSsePayload(res.payload)
+    const progress = frames
+      .filter((frame) => frame.event === 'progress')
+      .map((frame) => frame.data as Record<string, unknown>)
+    expect(progress[0]).toEqual({ phase: 'validate', message: 'Preparing Realm import', percent: 1 })
+    expect(progress.some((frame) => Object.keys(frame).length === 1 && typeof frame.percent === 'number')).toBe(true)
+    expect(
+      progress.some(
+        (frame, index) =>
+          index > 0 &&
+          (Object.prototype.hasOwnProperty.call(frame, 'phase') ||
+            Object.prototype.hasOwnProperty.call(frame, 'message')),
+      ),
+    ).toBe(true)
+    expect(progressPercents(frames)).toEqual([...progressPercents(frames)].sort((a, b) => a - b))
+    expect(frames.at(-1)).toMatchObject({
+      event: 'done',
+      data: { characterId: expect.any(String), revision: expect.any(Number) },
+    })
   })
 
   it('streams low-level-access confirmation requests without writing assets', async () => {
@@ -749,12 +847,15 @@ describe('Realm character import route', () => {
 
   it('preserves scripts stored in Realm charx module metadata', async () => {
     const regex = regexScript('charx-regex')
+    const duplicateRegex = regexScript('charx-regex')
     const trigger = luaTrigger('charx-trigger')
+    const duplicateTrigger = luaTrigger('charx-trigger')
     const lorebook = moduleLorebookEntry('charx-lore')
+    const duplicateLorebook = moduleLorebookEntry('charx-lore')
     const moduleData = risuModuleForTest({
-      regex: [regex],
-      trigger: [trigger],
-      lorebook: [lorebook],
+      regex: [regex, duplicateRegex],
+      trigger: [trigger, duplicateTrigger],
+      lorebook: [lorebook, duplicateLorebook],
     })
 
     echo.setResponder((req, res) => {
@@ -780,9 +881,22 @@ describe('Realm character import route', () => {
     expect(res.statusCode).toBe(200)
     const persisted = loadPersistedFromDir(harness.dataDir)
     const character = (persisted.database as { characters: Array<Record<string, unknown>> }).characters[0]
-    expect(character.customscript).toEqual([regex])
-    expect(character.triggerscript).toEqual([trigger])
-    expect(character.globalLore).toEqual([lorebook])
+    const importedScripts = character.customscript as Array<Record<string, unknown>>
+    const importedTriggers = character.triggerscript as Array<Record<string, unknown>>
+    expect(importedScripts[0]).toEqual(regex)
+    expect(importedScripts[1]).toMatchObject({ ...duplicateRegex, id: expect.any(String) })
+    expect(importedScripts[1].id).not.toBe('charx-regex')
+    expect(new Set(importedScripts.map((script) => script.id)).size).toBe(2)
+    expect(importedTriggers[0]).toEqual(trigger)
+    expect(importedTriggers[1]).toMatchObject({ ...duplicateTrigger, id: expect.any(String) })
+    expect(importedTriggers[1].id).not.toBe('charx-trigger')
+    expect(new Set(importedTriggers.map((script) => script.id)).size).toBe(2)
+    const importedLorebook = character.globalLore as Array<Record<string, unknown>>
+    expect(importedLorebook).toHaveLength(2)
+    expect(importedLorebook[0]).toEqual(lorebook)
+    expect(importedLorebook[1]).toMatchObject({ ...duplicateLorebook, id: expect.any(String) })
+    expect(importedLorebook[1].id).not.toBe('charx-lore')
+    expect(new Set(importedLorebook.map((entry) => entry.id)).size).toBe(2)
   })
 
   it('fetches Realm assets server-side and creates the character in one client request', async () => {
@@ -906,7 +1020,7 @@ describe('Realm character import route', () => {
     expectStarterChatWithoutGenerationSettings(character)
   })
 
-  it('L23: JSON Realm card asset import uses one batched asset revision and event', async () => {
+  it('JSON Realm card asset import uses one batched asset revision and event', async () => {
     echo.setResponder((req, res) => {
       if (respondRealmJsonCard(req, res)) return
       res.writeHead(404)
@@ -942,7 +1056,7 @@ describe('Realm character import route', () => {
     ])
   })
 
-  it('L24: JSON Realm import removes newly persisted assets when character append fails', async () => {
+  it('JSON Realm import removes newly persisted assets when character append fails', async () => {
     let assetSuffix = ''
     echo.setResponder((req, res) => {
       if (respondRealmJsonCard(req, res, assetSuffix)) return
@@ -1000,7 +1114,7 @@ describe('Realm character import route', () => {
     }
   })
 
-  it('L17: aborts a hung dynamic Realm download at the import deadline', async () => {
+  it('aborts a hung dynamic Realm download at the import deadline', async () => {
     await stopHarness(harness)
     harness = await startHarness(echo.url, { deadlineMs: 30 })
 
@@ -1037,7 +1151,7 @@ describe('Realm character import route', () => {
     expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
   })
 
-  it('L17: aborts upstream resource fetch when the SSE client disconnects', async () => {
+  it('aborts upstream resource fetch when the SSE client disconnects', async () => {
     await stopHarness(harness)
     harness = await startHarness(echo.url, { deadlineMs: 5000 })
 
@@ -1095,7 +1209,7 @@ describe('Realm character import route', () => {
     expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
   })
 
-  it('L18: rejects known-length oversized Realm dynamic JSON before reading the body', async () => {
+  it('rejects known-length oversized Realm dynamic JSON before reading the body', async () => {
     await stopHarness(harness)
     harness = await startHarness(echo.url, { maxDynamicJsonBytes: 32 })
 
@@ -1140,7 +1254,7 @@ describe('Realm character import route', () => {
     expect(queryAssets(harness.dataDir)).toHaveLength(0)
   })
 
-  it('L18: aborts unknown-length oversized Realm dynamic JSON once the cap is crossed', async () => {
+  it('aborts unknown-length oversized Realm dynamic JSON once the cap is crossed', async () => {
     await stopHarness(harness)
     harness = await startHarness(echo.url, { maxDynamicJsonBytes: 32 })
 
@@ -1186,7 +1300,7 @@ describe('Realm character import route', () => {
     expect(queryAssets(harness.dataDir)).toHaveLength(0)
   })
 
-  it('L18: rejects JSON-card fetched resources above the per-asset cap before reading the body', async () => {
+  it('rejects JSON-card fetched resources above the per-asset cap before reading the body', async () => {
     await stopHarness(harness)
     harness = await startHarness(echo.url, {
       maxFetchedAssetBytes: 8,
@@ -1237,7 +1351,7 @@ describe('Realm character import route', () => {
     expect(queryAssets(harness.dataDir)).toHaveLength(0)
   })
 
-  it('L18: rejects cumulative JSON-card fetched assets and cleans staged files', async () => {
+  it('rejects cumulative JSON-card fetched assets and cleans staged files', async () => {
     await stopHarness(harness)
     harness = await startHarness(echo.url, {
       maxFetchedAssetBytes: 1024,
@@ -1269,7 +1383,7 @@ describe('Realm character import route', () => {
     expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
   })
 
-  it('L18: keeps valid JSON Realm import output unchanged with disk-staged assets', async () => {
+  it('keeps valid JSON Realm import output unchanged with disk-staged assets', async () => {
     echo.setResponder((req, res) => {
       if (respondRealmJsonCard(req, res)) return
       res.writeHead(404)
@@ -1523,7 +1637,144 @@ describe('Realm character import route', () => {
     expect(character.additionalAssets).toEqual([['theme', expect.stringMatching(/^[a-f0-9]{64}$/), 'css']])
   })
 
-  it('L29: rejects known-length Realm charx downloads above the staging cap before reading the body', async () => {
+  it('removes earlier CharX asset files when a later package asset write fails', async () => {
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        res.writeHead(200, { 'content-type': 'application/charx' })
+        res.end(Buffer.from(realmCharx()))
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+    const failingAssetId = assetIdFor('happy image')
+    const writeFileSync = fs.writeFileSync
+    const writeSpy = vi.spyOn(fs, 'writeFileSync').mockImplementation((file, data) => {
+      if (String(file).endsWith(`${failingAssetId}.png`)) {
+        throw new Error('injected CharX asset write failure')
+      }
+      return writeFileSync(file, data)
+    })
+
+    try {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/import/realm-character',
+        headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+        payload: { id: 'realm-id', baseRevision },
+      })
+
+      expect(res.statusCode).toBe(500)
+    } finally {
+      writeSpy.mockRestore()
+    }
+
+    expect(queryAssets(harness.dataDir)).toHaveLength(0)
+    expect(assetFileNames(harness.dataDir)).toEqual([])
+    const persisted = loadPersistedFromDir(harness.dataDir)
+    expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
+  })
+
+  it('removes packaged and inline CharX assets when card conversion fails', async () => {
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        res.writeHead(200, { 'content-type': 'application/charx' })
+        res.end(Buffer.from(realmCharx({ conversionFailure: true })))
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+      payload: { id: 'realm-id', baseRevision },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'Embedded card asset not found: assets/missing.png' })
+    expect(queryAssets(harness.dataDir)).toHaveLength(0)
+    expect(assetFileNames(harness.dataDir)).toEqual([])
+    const persisted = loadPersistedFromDir(harness.dataDir)
+    expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
+  })
+
+  it('removes new CharX assets but preserves deduplicated assets when character append fails', async () => {
+    let assetSuffix = ''
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        res.writeHead(200, { 'content-type': 'application/charx' })
+        res.end(
+          Buffer.from(
+            realmCharx(
+              assetSuffix
+                ? {
+                    assetSuffix,
+                    preserveMainAsset: true,
+                  }
+                : {},
+            ),
+          ),
+        )
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const duplicateCharacterId = '11111111-1111-4111-8111-111111111111'
+    cryptoMock.randomUuidOverride = duplicateCharacterId
+
+    try {
+      const { assertion } = await setupAuthedClient(harness.app)
+      const baseRevision = await importEmptyDatabase(harness.app, assertion)
+      const first = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/import/realm-character',
+        headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+        payload: { id: 'realm-id', baseRevision },
+      })
+
+      expect(first.statusCode).toBe(200)
+      const assetsAfterFirstImport = queryAssets(harness.dataDir)
+      const filesAfterFirstImport = assetFileNames(harness.dataDir)
+
+      assetSuffix = 'second'
+      const duplicate = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/import/realm-character',
+        headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+        payload: { id: 'realm-id', baseRevision: currentRevision(harness.dataDir) },
+      })
+
+      expect(duplicate.statusCode).toBe(400)
+      expect(duplicate.json()).toEqual({
+        error: `Duplicate character id: ${duplicateCharacterId}`,
+      })
+      expect(queryAssets(harness.dataDir)).toEqual(assetsAfterFirstImport)
+      expect(assetFileNames(harness.dataDir)).toEqual(filesAfterFirstImport)
+      expect(existsSync(path.join(harness.dataDir, 'assets', `${assetIdFor('main image')}.png`))).toBe(true)
+
+      const newAssetFiles = [
+        `${assetIdFor('happy image second')}.png`,
+        `${assetIdFor('body { color: red; } /* second */')}.css`,
+      ]
+      for (const fileName of newAssetFiles) {
+        expect(existsSync(path.join(harness.dataDir, 'assets', fileName))).toBe(false)
+      }
+    } finally {
+      cryptoMock.randomUuidOverride = undefined
+    }
+  })
+
+  it('rejects known-length Realm charx downloads above the staging cap before reading the body', async () => {
     let bodyWriteAttempted = false
     let bodyTimer: ReturnType<typeof setTimeout> | undefined
     echo.setResponder((req, res) => {
@@ -1569,7 +1820,7 @@ describe('Realm character import route', () => {
     expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
   })
 
-  it('L29: aborts unknown-length Realm charx downloads as soon as the staging cap is crossed', async () => {
+  it('aborts unknown-length Realm charx downloads as soon as the staging cap is crossed', async () => {
     const chunks = Array.from({ length: 50 }, () => Buffer.alloc(400 * 1024, 0x61))
     let chunksAttempted = 0
     echo.setResponder((req, res) => {
@@ -1616,7 +1867,7 @@ describe('Realm character import route', () => {
     expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
   })
 
-  it('L29: accepts a valid Realm charx download within the staging cap', async () => {
+  it('accepts a valid Realm charx download within the staging cap', async () => {
     echo.setResponder((req, res) => {
       if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
         const bytes = Buffer.from(realmCharx())

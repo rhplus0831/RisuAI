@@ -1,24 +1,43 @@
-import './ts/polyfill'
-import 'core-js/actual'
-import './ts/storage/database.svelte'
-import App from './App.svelte'
-import { loadData } from './ts/bootstrap'
-import { initHotkey } from './ts/hotkey'
-import { installRouter } from './ts/router'
-import { mount } from 'svelte'
-import { installFastifyBrowserSmokeHook } from './ts/server/browserSmoke'
-import { installViewportScrollGuard } from './ts/gui/viewportScrollGuard'
+import { language } from './lang'
+import { alertError } from './ts/alert'
+import { renderEntryLoadError } from './ts/entryLoadError'
+import { startApplicationAfterEnvironment } from './ts/entryStartup'
+import { installRuntimeEnvironment } from './ts/polyfill'
+import { recordStartupMilestone } from './ts/startupReadiness'
+import { initializeClientDiagnostics } from './ts/diagnostics'
 
-installRouter()
-installViewportScrollGuard()
-let app = mount(App, {
-  target: document.getElementById('app'),
-})
-if (import.meta.env.VITE_FASTIFY_BROWSER_SMOKE === 'TRUE') {
-  installFastifyBrowserSmokeHook()
+const stopDiagnostics = initializeClientDiagnostics()
+if (import.meta.hot) import.meta.hot.dispose(stopDiagnostics)
+recordStartupMilestone('entry', 0)
+
+function entryLoadErrorMessage(): string {
+  return navigator.onLine === false ? language.preloadOfflineError : language.preloadStaleError
 }
-loadData()
-initHotkey()
-document.getElementById('preloading').remove()
+
+function showEntryLoadError(error: unknown): void {
+  console.error('Application entry load failed:', error)
+  const message = entryLoadErrorMessage()
+  alertError(message)
+  renderEntryLoadError({
+    documentTarget: document,
+    message,
+    reloadLabel: language.preloadReload,
+    onReload: () => window.location.reload(),
+  })
+}
+
+window.addEventListener('vite:preloadError', (event) => {
+  // Before the shell mounts, the entry preloader is the only recoverable error
+  // surface. Once it is gone, allow the dynamic import promise to reject so the
+  // owning LazyComponent can render its local retry/reload controls.
+  if (!document.getElementById('preloading')) return
+  event.preventDefault()
+  showEntryLoadError(event)
+})
+
+const app = startApplicationAfterEnvironment(installRuntimeEnvironment, () => import('./appStartup')).catch((error) => {
+  showEntryLoadError(error)
+  return null
+})
 
 export default app

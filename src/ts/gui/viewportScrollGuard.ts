@@ -1,3 +1,5 @@
+import { isTextEntryElement, isVisualViewportAdjustmentActive } from './visualViewportCoordinator'
+
 /**
  * The app shell renders inside a fixed, non-scrolling viewport: `body` uses
  * `overflow: hidden`, and no app code scrolls the document root. The root can
@@ -8,14 +10,20 @@
  * upward with no way for the user to scroll back. Pin the document scroll
  * position at the origin instead. Inner scroll containers are unaffected
  * because element scroll events do not bubble to the window.
+ *
+ * A cache-miss text entry may retain browser reveal scroll while the visual
+ * viewport coordinator's settle latch is inactive. A cached keyboard height
+ * activates the shell synchronously; otherwise enforcement resumes when the
+ * measured shell height settles.
  */
 export function installViewportScrollGuard(): void {
   window.addEventListener('scroll', resetViewportScroll)
 }
 
-function resetViewportScroll(): void {
+export function resetViewportScroll(): void {
   const scroller = document.scrollingElement
   if (!scroller) return
-  if (scroller.scrollTop !== 0) scroller.scrollTop = 0
   if (scroller.scrollLeft !== 0) scroller.scrollLeft = 0
+  if (isTextEntryElement(document.activeElement) && !isVisualViewportAdjustmentActive()) return
+  if (scroller.scrollTop !== 0) scroller.scrollTop = 0
 }

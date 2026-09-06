@@ -22,6 +22,22 @@ describe('resolveOobaLegacyRequest', () => {
       }),
     ).toBeNull()
   })
+
+  it('pins the retained legacy-instruct flattening', () => {
+    // Accepted divergence (PR-18/PR-7 sunset): Ooba keeps this fixed flattening
+    // instead of baseline `src/ts/process/templates/chatTemplate.ts` templates.
+    const resolved = resolveOobaLegacyRequest({
+      messages: [
+        { role: 'system', content: 'rules' },
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: 'prior' },
+      ],
+      baseUrl: 'http://localhost:5000',
+      signal: new AbortController().signal,
+    })
+
+    expect(resolved?.prompt).toBe('\n## Instruction\nrules\n## User\nhi\n## Assistant\nprior\n## Response\n')
+  })
 })
 
 describe('runOobaLegacy', () => {
@@ -42,11 +58,28 @@ describe('runOobaLegacy', () => {
     expect(r).toEqual({ type: 'success', result: 'ooba ok' })
     expect(captured!.url).toBe('http://localhost:5000/api/v1/generate')
     const sent = JSON.parse(captured!.init.body as string)
-    expect(sent.prompt).toContain('## User')
+    expect(sent.prompt).toBe('\n## User\nhi\n## Response\n')
     expect(sent.max_new_tokens).toBe(128)
     expect(sent.temperature).toBe(0.5)
     const headers = captured!.init.headers as Record<string, string>
     expect(headers['X-API-KEY']).toBeUndefined()
+  })
+
+  it('normalizes only the path when the hostname contains api', async () => {
+    let capturedUrl = ''
+    vi.stubGlobal('fetch', async (url: string) => {
+      capturedUrl = url
+      return ok({ results: [{ text: 'ooba ok' }] })
+    })
+    const resolved = resolveOobaLegacyRequest({
+      messages: [{ role: 'user', content: 'hi' }],
+      baseUrl: 'https://api.example.com/v1',
+      signal: new AbortController().signal,
+    })!
+
+    await runOobaLegacy(resolved)
+
+    expect(capturedUrl).toBe('https://api.example.com/v1/api/v1/generate')
   })
 
   it('forwards X-API-KEY when apiKey is provided (Mancer-style)', async () => {
@@ -64,6 +97,30 @@ describe('runOobaLegacy', () => {
     await runOobaLegacy(resolved)
     const headers = captured!.init.headers as Record<string, string>
     expect(headers['X-API-KEY']).toBe('mancer-key')
+  })
+
+  it('applies additional parameters after building the body and injects headers', async () => {
+    let captured: RequestInit | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = init
+      return ok({ results: [{ text: 'x' }] })
+    })
+    const resolved = resolveOobaLegacyRequest({
+      messages: [{ role: 'user', content: 'hi' }],
+      baseUrl: 'http://localhost:5000',
+      temperature: 0.5,
+      additionalParams: [
+        ['temperature', '0.15'],
+        ['custom_flag', 'true'],
+        ['header::X-Global-Trace', 'ooba'],
+      ],
+      signal: new AbortController().signal,
+    })!
+
+    await runOobaLegacy(resolved)
+
+    expect(JSON.parse(captured!.body as string)).toMatchObject({ temperature: 0.15, custom_flag: true })
+    expect((captured!.headers as Record<string, string>)['X-Global-Trace']).toBe('ooba')
   })
 
   it('forwards the retained Ooba sampler block instead of replacing it with hard-coded defaults', async () => {

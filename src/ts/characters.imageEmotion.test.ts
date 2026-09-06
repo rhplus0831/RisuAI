@@ -157,8 +157,8 @@ vi.mock('./filePicker', () => ({
 }))
 
 import { clearCachedServerCommandRevision } from './server/commands'
-import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+
+import { charactersResourceState, replaceResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 import { seedCloneCostDb, withCloneInstrumentation } from './__tests__/cloneCostHarness'
 import type { character, Database } from './storage/database.svelte'
@@ -166,6 +166,7 @@ import type { character, Database } from './storage/database.svelte'
 // `stores`/`database` finishes initializing before the reactive `moduleUpdate`
 // effect can run (matches the working characters.importChat test ordering).
 import { addCharEmotion, changeChar, rmCharEmotion, selectCharImg } from './characters'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db(): Database {
@@ -322,7 +323,6 @@ function baseCharacter(overrides: Partial<character> = {}): character {
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
   selectedCharID.set(0)
   selectedFileState.singleQueue.length = 0
   selectedFileState.multipleQueue.length = 0
@@ -333,11 +333,27 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
-describe('Phase 7 image/emotion scoped rollback', () => {
+describe('image/emotion scoped rollback', () => {
+  it('fails closed for duplicate ready character owners', () => {
+    testDatabaseState.db = {
+      characters: [
+        baseCharacter({ chaId: 'char-a', emotionImages: [['first', 'first-asset']] }),
+        baseCharacter({ chaId: 'char-a', emotionImages: [['second', 'second-asset']] }),
+      ],
+    } as any
+
+    expect(charactersResourceState.status).toBe('ready')
+    rmCharEmotion(0, 0)
+
+    expect(testDatabaseState.db.characters.map((character) => character.emotionImages)).toEqual([
+      [['first', 'first-asset']],
+      [['second', 'second-asset']],
+    ])
+  })
+
   it('rmCharEmotion captures a single-row baseline, never the whole characters array', async () => {
     // char-0 carries the large 40-message hydrated transcript; the edit targets a
     // small sibling so a whole-array clone would dwarf the single-row clone.
@@ -403,7 +419,7 @@ describe('Phase 7 image/emotion scoped rollback', () => {
   })
 })
 
-describe('Phase 3 character avatar upload freshness', () => {
+describe('character avatar upload freshness', () => {
   it('drops a stale upload after a newer avatar edit without appending assets or png metadata', async () => {
     const calls = stubCommandFetch()
     const upload = deferred<string>()
@@ -590,7 +606,7 @@ describe('Phase 3 character avatar upload freshness', () => {
   })
 })
 
-describe('Phase 3 character emotion image upload freshness', () => {
+describe('character emotion image upload freshness', () => {
   it('drops a stale emotion upload after a newer list edit without dispatching', async () => {
     const calls = stubCommandFetch()
     const upload = deferred<string>()

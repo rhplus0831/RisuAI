@@ -15,16 +15,15 @@ import {
   type ServerCommandResult,
   type ServerCommandTransportOptions,
 } from './server/commands'
-import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
-import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
+import { charactersResourceState, getCharacterResourceOwner } from './server/resourceState.svelte'
 import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from './server/staleStateGuards'
-import { recordHydratedCharacterLorebooks } from './server/lorebookBridge.svelte'
+import { recordHydratedCharacterLorebooks } from './server/lorebookOwner.svelte'
 import { dispatchDurableMutation } from './server/durableMutationDispatch'
-import { flushRegisteredPendingBridgePatches } from './server/pendingBridgeFlushRegistry'
 import {
   isPendingMutationProjectionFenceCurrent,
   pendingMutationCharacterOrderProjectionTarget,
   pendingMutationProjectionFence,
+  recordPendingMutationProjectionTargets,
   stagePendingMutation,
   type DurableMutationIntent,
   type PendingMutationHandle,
@@ -77,6 +76,7 @@ export type CharacterOrderFolderTarget =
 export interface CharacterOrderFolderMetadataPatch {
   name?: string
   color?: string
+  askBeforeOpening?: boolean
   imgFile?: string | null
   img?: string
 }
@@ -113,6 +113,7 @@ interface CharacterDeleteRollback {
   previousIndex: number
   orderPlacement: CharacterOrderPlacement | null
   previousCurrentChar?: number
+  previousCurrentCharacterId?: string
   previousSelectedCharID: number
   previousSelectedCharacterId?: string
 }
@@ -122,15 +123,36 @@ interface CharacterDeleteRollbackSelection {
   restorePreviousSelection: boolean
 }
 
+interface CharacterCollectionProjectionFences {
+  row: PendingMutationProjectionFence | null
+  order: PendingMutationProjectionFence | null
+  selection?: PendingMutationProjectionFence | null
+}
+
 export interface CharacterOrderNormalizationResult {
   characterOrder: (string | folder)[]
   changed: boolean
 }
 
-const CHARACTER_ORDER_FOLDER_METADATA_KEYS: CharacterOrderFolderMetadataKey[] = ['name', 'color', 'imgFile', 'img']
+const CHARACTER_ORDER_FOLDER_METADATA_KEYS: CharacterOrderFolderMetadataKey[] = [
+  'name',
+  'color',
+  'askBeforeOpening',
+  'imgFile',
+  'img',
+]
 const MAX_CHARACTER_ORDER_DEPENDENCY_KEYS = 32
 let characterOrderProjectionGeneration = 0
 const currentCharacterFieldMutationAttempts = new Map<string, CharacterFieldMutationFieldAttempt>()
+const CHARACTER_SELECTION_PROJECTION_TARGET = 'character-selection:current'
+
+function characterRowProjectionTarget(characterId: string): string {
+  return `character-row:${encodeURIComponent(characterId)}`
+}
+
+function characterFieldProjectionTarget(characterId: string, field: string): string {
+  return `${characterRowProjectionTarget(characterId)}:field:${encodeURIComponent(field)}`
+}
 
 export interface CompatibleCharacterUpdatePreparation {
   characterId?: string
@@ -173,6 +195,7 @@ export const CHARACTER_PATCH_EXCLUDED_KEYS = new Set([
   'modules',
   'coldstorage',
   'coldStoragedChats',
+  'greetingTranslations',
 ])
 
 export const CHARACTER_PATCH_DELETABLE_KEYS = new Set(['loreSettings'])
@@ -242,7 +265,7 @@ export function applyAttemptedCharacterFieldRollback(input: {
   return rolledBack
 }
 
-function pendingMutationStagingFailure(error: unknown): ServerCommandResult {
+function pendingMutationStagingFailure(error: unknown): Exclude<ServerCommandResult, { status: 'ok' }> {
   return {
     status: 'error',
     error: error instanceof Error ? error.message : 'Unable to stage pending server mutation',
@@ -250,47 +273,75 @@ function pendingMutationStagingFailure(error: unknown): ServerCommandResult {
   }
 }
 
+function characterRowsOwner(): character[] {
+  return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
+}
+
+function updateCharacterRowsOwner(mutator: (characters: character[]) => boolean | void): boolean {
+  return charactersResourceState.status === 'ready' && mutator(charactersResourceState.characters) !== false
+}
+
+function replaceCharacterRowsOwner(characters: character[]): boolean {
+  if (charactersResourceState.status !== 'ready') return false
+  charactersResourceState.characters = characters
+  return true
+}
+
+function characterOrderOwner(): (string | folder)[] {
+  return charactersResourceState.status === 'ready' ? charactersResourceState.characterOrder : []
+}
+
+function currentCharOwner(): number | undefined {
+  return charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : undefined
+}
+
+function setCurrentCharOwner(currentChar: number | undefined): void {
+  if (charactersResourceState.status === 'ready') {
+    charactersResourceState.currentChar = currentChar ?? -1
+  }
+}
+
+function setCharacterOrderOwner(characterOrder: (string | folder)[]): void {
+  if (charactersResourceState.status === 'ready') {
+    charactersResourceState.characterOrder = characterOrder
+  }
+}
+
 export function currentCharacterStateSnapshot(): CharacterStateSnapshot {
   return {
-    characters: cloneJsonValue(getDatabase().characters ?? []),
-    characterOrder: cloneJsonValue(getDatabase().characterOrder ?? []),
-    currentChar: (getDatabase() as unknown as { currentChar?: number }).currentChar,
+    characters: cloneJsonValue(characterRowsOwner()),
+    characterOrder: cloneJsonValue(characterOrderOwner()),
+    currentChar: currentCharOwner(),
     selectedCharID: get(selectedCharID),
   }
 }
 
 export function restoreCharacterState(snapshot: CharacterStateSnapshot): void {
-  withTrustedResourceWrite(() => {
-    getDatabase().characters = cloneJsonValue(snapshot.characters)
-    getDatabase().characterOrder = cloneJsonValue(snapshot.characterOrder)
-    ;(getDatabase() as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
-    selectedCharID.set(snapshot.selectedCharID)
-  })
+  replaceCharacterRowsOwner(cloneJsonValue(snapshot.characters))
+  setCharacterOrderOwner(cloneJsonValue(snapshot.characterOrder))
+  setCurrentCharOwner(snapshot.currentChar)
+  selectedCharID.set(snapshot.selectedCharID)
 }
 
 function currentCharacterOrderSnapshot(): (string | folder)[] {
-  return cloneJsonValue(getDatabase().characterOrder ?? [])
+  return cloneJsonValue(characterOrderOwner())
 }
 
 export function currentCharacterSelectionSnapshot(characterId: string): CharacterSelectionSnapshot {
-  const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+  const character = uniqueCharacterOwnerById(characterId)
   return {
     characterId,
     lastInteraction: character?.lastInteraction,
-    currentChar: (getDatabase() as unknown as { currentChar?: number }).currentChar,
+    currentChar: currentCharOwner(),
     selectedCharID: get(selectedCharID),
   }
 }
 
 export function restoreCharacterSelection(snapshot: CharacterSelectionSnapshot): void {
-  withTrustedResourceWrite(() => {
-    const character = getDatabase().characters?.find((candidate) => candidate.chaId === snapshot.characterId)
-    if (character) {
-      character.lastInteraction = snapshot.lastInteraction
-    }
-    ;(getDatabase() as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
-    selectedCharID.set(snapshot.selectedCharID)
-  })
+  const character = uniqueCharacterOwnerById(snapshot.characterId)
+  if (character) character.lastInteraction = snapshot.lastInteraction
+  setCurrentCharOwner(snapshot.currentChar)
+  selectedCharID.set(snapshot.selectedCharID)
 }
 
 function currentCharacterSelectionAttempt(
@@ -300,7 +351,7 @@ function currentCharacterSelectionAttempt(
   return {
     characterId,
     lastInteraction,
-    currentChar: (getDatabase() as unknown as { currentChar?: number }).currentChar,
+    currentChar: currentCharOwner(),
     selectedCharID: get(selectedCharID),
   }
 }
@@ -309,28 +360,24 @@ function restoreCharacterSelectionAttempt(
   previous: CharacterSelectionSnapshot,
   attempted: CharacterSelectionAttempt,
 ): void {
-  withTrustedResourceWrite(() => {
-    const liveSelectedCharID = get(selectedCharID)
-    const liveCurrentChar = (getDatabase() as unknown as { currentChar?: number }).currentChar
-    const liveSelectedCharacterId = selectedCharacterIdAt(liveSelectedCharID)
-    const attemptedCharacter = getDatabase().characters?.find((candidate) => candidate?.chaId === attempted.characterId)
+  const liveSelectedCharID = get(selectedCharID)
+  const liveCurrentChar = currentCharOwner()
+  const liveSelectedCharacterId = selectedCharacterIdAt(liveSelectedCharID)
+  const attemptedCharacter = uniqueCharacterOwnerById(attempted.characterId)
 
-    if (
-      liveSelectedCharID !== attempted.selectedCharID ||
-      liveCurrentChar !== attempted.currentChar ||
-      liveSelectedCharacterId !== attempted.characterId ||
-      (attempted.lastInteraction !== undefined && attemptedCharacter?.lastInteraction !== attempted.lastInteraction)
-    ) {
-      return
-    }
+  if (
+    liveSelectedCharID !== attempted.selectedCharID ||
+    liveCurrentChar !== attempted.currentChar ||
+    liveSelectedCharacterId !== attempted.characterId ||
+    (attempted.lastInteraction !== undefined && attemptedCharacter?.lastInteraction !== attempted.lastInteraction)
+  ) {
+    return
+  }
 
-    const previousCharacter = getDatabase().characters?.find((candidate) => candidate.chaId === previous.characterId)
-    if (previousCharacter) {
-      previousCharacter.lastInteraction = previous.lastInteraction
-    }
-    ;(getDatabase() as unknown as { currentChar?: number }).currentChar = previous.currentChar
-    selectedCharID.set(previous.selectedCharID)
-  })
+  const previousCharacter = uniqueCharacterOwnerById(previous.characterId)
+  if (previousCharacter) previousCharacter.lastInteraction = previous.lastInteraction
+  setCurrentCharOwner(previous.currentChar)
+  selectedCharID.set(previous.selectedCharID)
 }
 
 // Narrow single-row rollback. Character field edits, image/emotion writes, and
@@ -373,31 +420,31 @@ interface CharacterOrderPlacement {
 }
 
 export function currentCharacterRowSnapshot(index: number = get(selectedCharID)): CharacterRowSnapshot {
-  const character = getDatabase().characters?.[index]
+  const character = uniqueCharacterOwnerAt(index)
   return {
     characterId: character?.chaId,
     index,
     character: character ? cloneJsonValue(character) : undefined,
-    currentChar: (getDatabase() as unknown as { currentChar?: number }).currentChar,
+    currentChar: currentCharOwner(),
     selectedCharID: get(selectedCharID),
   }
 }
 
 export function currentCharacterTrashTimeSnapshot(index: number = get(selectedCharID)): CharacterTrashTimeSnapshot {
-  const character = getDatabase().characters?.[index] as (character & { trashTime?: number | null }) | undefined
+  const character = uniqueCharacterOwnerAt(index) as (character & { trashTime?: number | null }) | undefined
   return {
     characterId: character?.chaId,
     index,
     hadTrashTime: !!character && Object.prototype.hasOwnProperty.call(character, 'trashTime'),
     trashTime: character?.trashTime,
     orderPlacement: character?.chaId ? currentCharacterOrderPlacement(character.chaId) : null,
-    currentChar: (getDatabase() as unknown as { currentChar?: number }).currentChar,
+    currentChar: currentCharOwner(),
     selectedCharID: get(selectedCharID),
   }
 }
 
 export function currentCharacterSupaMemorySnapshot(characterId: string): CharacterSupaMemorySnapshot | null {
-  const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+  const character = uniqueCharacterOwnerById(characterId)
   if (!character) return null
   return {
     characterId,
@@ -407,86 +454,73 @@ export function currentCharacterSupaMemorySnapshot(characterId: string): Charact
 }
 
 export function restoreCharacterRow(snapshot: CharacterRowSnapshot): void {
-  withTrustedResourceWrite(() => {
-    const characters = getDatabase().characters
-    if (snapshot.character && characters) {
-      const index = locateCharacterIndex(characters, snapshot.characterId, snapshot.index)
-      if (index >= 0) {
-        if (snapshot.attempted) {
-          applyAttemptedCharacterFieldRollback({
-            target: characters[index] as unknown as Record<string, unknown>,
-            previous: snapshot.character as unknown as Record<string, unknown>,
-            attempted: snapshot.attempted,
-          })
-        } else {
-          characters[index] = cloneJsonValue(snapshot.character) as character
-        }
+  const target = characterForSnapshot(snapshot)
+  if (snapshot.character && target) {
+    if (snapshot.attempted) {
+      applyAttemptedCharacterFieldRollback({
+        target: target as unknown as Record<string, unknown>,
+        previous: snapshot.character as unknown as Record<string, unknown>,
+        attempted: snapshot.attempted,
+      })
+    } else {
+      const restored = cloneJsonValue(snapshot.character) as character
+      const targetRecord = target as unknown as Record<string, unknown>
+      for (const key of Object.keys(target)) {
+        if (!Object.prototype.hasOwnProperty.call(restored, key)) delete targetRecord[key]
       }
+      Object.assign(target, restored)
     }
-    ;(getDatabase() as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
-    selectedCharID.set(snapshot.selectedCharID)
-  })
+  }
+  setCurrentCharOwner(snapshot.currentChar)
+  selectedCharID.set(snapshot.selectedCharID)
 }
 
 function restoreCompatibleCharacterRowAttempt(snapshot: CharacterRowSnapshot): void {
   if (!snapshot.character || !snapshot.attempted) return
-  withTrustedResourceWrite(() => {
-    const characters = getDatabase().characters
-    if (!characters) return
-    const index = locateCharacterIndex(characters, snapshot.characterId, snapshot.index)
-    if (index < 0) return
-    applyAttemptedCharacterFieldRollback({
-      target: characters[index] as unknown as Record<string, unknown>,
-      previous: snapshot.character as unknown as Record<string, unknown>,
-      attempted: snapshot.attempted,
-    })
+  const target = characterForSnapshot(snapshot)
+  if (!target) return
+  applyAttemptedCharacterFieldRollback({
+    target: target as unknown as Record<string, unknown>,
+    previous: snapshot.character as unknown as Record<string, unknown>,
+    attempted: snapshot.attempted,
   })
 }
 
 export function restoreCharacterTrashTime(snapshot: CharacterTrashTimeSnapshot): void {
-  withTrustedResourceWrite(() => {
-    const characters = getDatabase().characters
-    if (characters) {
-      const index = locateCharacterIndex(characters, snapshot.characterId, snapshot.index)
-      if (index >= 0) {
-        const character = characters[index] as character & { trashTime?: number | null }
-        if (snapshot.hadTrashTime) {
-          character.trashTime = snapshot.trashTime
-        } else {
-          delete character.trashTime
-        }
-      }
+  const character = characterForSnapshot(snapshot) as (character & { trashTime?: number | null }) | undefined
+  if (character) {
+    if (snapshot.hadTrashTime) {
+      character.trashTime = snapshot.trashTime
+    } else {
+      delete character.trashTime
     }
-    restoreCharacterOrderPlacement(snapshot)
-    ;(getDatabase() as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
-    selectedCharID.set(snapshot.selectedCharID)
-  })
+  }
+  restoreCharacterOrderPlacement(snapshot)
+  setCurrentCharOwner(snapshot.currentChar)
+  selectedCharID.set(snapshot.selectedCharID)
 }
 
 export function restoreCharacterSupaMemory(snapshot: CharacterSupaMemorySnapshot): void {
-  withTrustedResourceWrite(() => {
-    const character = getDatabase().characters?.find((candidate) => candidate.chaId === snapshot.characterId)
-    if (!character) return
-    if (snapshot.hadSupaMemory) {
-      character.supaMemory = snapshot.supaMemory
-    } else {
-      delete character.supaMemory
-    }
-  })
+  const character = uniqueCharacterOwnerById(snapshot.characterId)
+  if (!character) return
+  if (snapshot.hadSupaMemory) {
+    character.supaMemory = snapshot.supaMemory
+  } else {
+    delete character.supaMemory
+  }
 }
 
-function locateCharacterIndex(characters: character[], characterId: string | undefined, fallbackIndex: number): number {
-  // Prefer the stable id so a stale index can never overwrite the wrong row;
-  // fall back to the captured index only when the row carried no id.
-  if (characterId) {
-    const byId = characters.findIndex((candidate) => candidate.chaId === characterId)
-    if (byId >= 0) return byId
-  }
-  return fallbackIndex >= 0 && fallbackIndex < characters.length ? fallbackIndex : -1
+function characterForSnapshot(
+  snapshot:
+    | Pick<CharacterRowSnapshot, 'characterId' | 'index'>
+    | Pick<CharacterTrashTimeSnapshot, 'characterId' | 'index'>,
+): character | undefined {
+  if (snapshot.characterId) return uniqueCharacterOwnerById(snapshot.characterId)
+  return undefined
 }
 
 function currentCharacterOrderPlacement(characterId: string): CharacterOrderPlacement | null {
-  return characterOrderPlacementFromOrder(getDatabase().characterOrder ?? [], characterId)
+  return characterOrderPlacementFromOrder(characterOrderOwner(), characterId)
 }
 
 function characterOrderPlacementFromOrder(
@@ -516,7 +550,7 @@ function restoreCharacterOrderPlacement(snapshot: CharacterTrashTimeSnapshot): v
   const placement = snapshot.orderPlacement
   if (!placement?.characterId) return
 
-  const character = getDatabase().characters?.find((candidate) => candidate.chaId === placement.characterId)
+  const character = uniqueCharacterOwnerById(placement.characterId)
   if (!character || character.trashTime) return
 
   if (characterOrderIncludes(ensureCharacterOrder(), placement.characterId)) return
@@ -570,11 +604,7 @@ function restoreCreatedCharacterAttempt(
   options: CreateAndSelectCharacterDispatchOptions = {},
 ): void {
   if (!rollback) return
-
-  withTrustedResourceWrite(() => {
-    const characters = getDatabase().characters
-    if (!characters) return
-
+  updateCharacterRowsOwner((characters) => {
     const liveSelectedCharacterId = selectedCharacterIdAt(get(selectedCharID))
     const shouldRestoreSelection =
       rollback.restoreSelection &&
@@ -591,15 +621,15 @@ function restoreCreatedCharacterAttempt(
       ],
       getKey: (candidate) => candidate?.chaId,
     })
-    if (rolledBack.length === 0) return
+    if (rolledBack.length === 0) return false
 
-    getDatabase().characters = characters
     replaceCharacterOrderWithNormalized()
     if (shouldRestoreSelection) {
       restoreCharacterSelectionScalars(rollback.previousCurrentChar, rollback.previousSelectedCharID)
     } else if (liveSelectedCharacterId && liveSelectedCharacterId !== rollback.characterId) {
       restoreCharacterSelectionById(liveSelectedCharacterId)
     }
+    return true
   })
 }
 
@@ -616,18 +646,72 @@ function characterDeleteRollbackFromState(
     previousIndex,
     orderPlacement: characterOrderPlacementFromOrder(previous.characterOrder, characterId),
     previousCurrentChar: previous.currentChar,
+    previousCurrentCharacterId: Number.isInteger(previous.currentChar)
+      ? previous.characters[previous.currentChar as number]?.chaId
+      : undefined,
     previousSelectedCharID: previous.selectedCharID,
     previousSelectedCharacterId: previous.characters[previous.selectedCharID]?.chaId,
   }
 }
 
+function isCurrentCharacterProjectionFence(fence: PendingMutationProjectionFence | null | undefined): boolean {
+  return fence != null && isPendingMutationProjectionFenceCurrent(fence)
+}
+
+function characterCollectionProjectionFences(
+  outbox: PendingMutationHandle,
+  characterId: string,
+  includeSelection: boolean,
+): CharacterCollectionProjectionFences {
+  const targets = [characterRowProjectionTarget(characterId), pendingMutationCharacterOrderProjectionTarget()]
+  if (includeSelection) targets.push(CHARACTER_SELECTION_PROJECTION_TARGET)
+  recordPendingMutationProjectionTargets(outbox, targets)
+  return {
+    row: pendingMutationProjectionFence(outbox, targets[0]),
+    order: pendingMutationProjectionFence(outbox, targets[1]),
+    ...(includeSelection ? { selection: pendingMutationProjectionFence(outbox, targets[2]) } : {}),
+  }
+}
+
+function reapplyCreatedCharacterProjection(
+  rollback: CharacterCreateRollback | null,
+  fences: CharacterCollectionProjectionFences,
+  options: CreateAndSelectCharacterDispatchOptions = {},
+): void {
+  if (!rollback) return
+  if (isCurrentCharacterProjectionFence(fences.row) && !uniqueCharacterOwnerById(rollback.characterId)) {
+    updateCharacterRowsOwner((characters) => {
+      if (characters.some((candidate) => candidate?.chaId === rollback.characterId)) return false
+      characters.push(cloneJsonValue(rollback.attemptedCharacter))
+      return true
+    })
+  }
+  if (isCurrentCharacterProjectionFence(fences.order)) repairCharacterOrderOptimistically({ dispatchReorder: false })
+  if (
+    rollback.restoreSelection &&
+    isCurrentCharacterProjectionFence(fences.selection) &&
+    (options.shouldRestoreSelection?.() ?? true)
+  ) {
+    restoreCharacterSelectionById(rollback.characterId)
+  }
+}
+
+function reapplyDeletedCharacterProjection(
+  rollback: CharacterDeleteRollback | null,
+  fences: CharacterCollectionProjectionFences,
+): void {
+  if (!rollback) return
+  if (isCurrentCharacterProjectionFence(fences.row)) applyCharacterDeleteOptimistically(rollback.characterId)
+  if (isCurrentCharacterProjectionFence(fences.order)) repairCharacterOrderOptimistically({ dispatchReorder: false })
+  if (isCurrentCharacterProjectionFence(fences.selection)) {
+    normalizeCurrentCharacterPointerAfterDelete(rollback.characterId, rollback.previousCurrentCharacterId)
+    selectedCharID.set(-1)
+  }
+}
+
 function restoreDeletedCharacterAttempt(rollback: CharacterDeleteRollback | null): void {
   if (!rollback) return
-
-  withTrustedResourceWrite(() => {
-    const characters = getDatabase().characters
-    if (!characters) return
-
+  updateCharacterRowsOwner((characters) => {
     const selection = currentDeletedCharacterRollbackSelection()
     const rolledBack = applyAttemptedKeyedListRollback<character, string>({
       list: characters,
@@ -641,15 +725,15 @@ function restoreDeletedCharacterAttempt(rollback: CharacterDeleteRollback | null
       ],
       getKey: (candidate) => candidate?.chaId,
     })
-    if (rolledBack.length === 0) return
+    if (rolledBack.length === 0) return false
 
-    getDatabase().characters = characters
     restoreMissingCharacterOrderPlacement(rollback.orderPlacement)
     if (selection.restorePreviousSelection) {
       restoreCharacterSelectionScalars(rollback.previousCurrentChar, rollback.previousSelectedCharID)
     } else if (selection.liveSelectedCharacterId && selection.liveSelectedCharacterId !== rollback.characterId) {
       restoreCharacterSelectionById(selection.liveSelectedCharacterId)
     }
+    return true
   })
 }
 
@@ -679,23 +763,76 @@ function shouldRestorePreviousSelectionAfterDeletedCharacterRollback(
 }
 
 function isCharacterSelectionEmptyOrStale(index: number): boolean {
-  return index < 0 || !getDatabase().characters?.[index]
+  return index < 0 || !uniqueCharacterOwnerAt(index)
 }
 
 function selectedCharacterIdAt(index: number): string | undefined {
-  if (index < 0) return undefined
-  return getDatabase().characters?.[index]?.chaId
+  return uniqueCharacterOwnerAt(index)?.chaId
 }
 
 function restoreCharacterSelectionScalars(currentChar: number | undefined, selectedCharacterIndex: number): void {
-  ;(getDatabase() as unknown as { currentChar?: number }).currentChar = currentChar
+  setCurrentCharOwner(currentChar)
   selectedCharID.set(selectedCharacterIndex)
 }
 
 function restoreCharacterSelectionById(characterId: string): void {
-  const index = getDatabase().characters?.findIndex((candidate) => candidate?.chaId === characterId) ?? -1
+  const characters = characterRowsOwner()
+  const candidate = uniqueCharacterOwnerById(characterId)
+  const index = candidate ? characters.indexOf(candidate) : -1
   if (index === -1) return
   restoreCharacterSelectionScalars(index, index)
+}
+
+function uniqueCharacterOwnerAt(index: number): character | undefined {
+  if (index < 0) return undefined
+  if (charactersResourceState.status !== 'ready') return undefined
+  const candidate = characterRowsOwner()[index]
+  return candidate?.chaId ? uniqueCharacterOwnerById(candidate.chaId) : undefined
+}
+
+function uniqueCharacterOwnerById(characterId: string): character | undefined {
+  return characterId && charactersResourceState.status === 'ready' ? getCharacterResourceOwner(characterId) : undefined
+}
+
+/** Apply one optimistic create to the explicit character collection owner. */
+export function applyCharacterCreateOptimistically(
+  character: character,
+  options: { lastInteraction?: number } = {},
+): number {
+  if (!character.chaId || uniqueCharacterOwnerById(character.chaId)) return -1
+  let index = -1
+  const applied = updateCharacterRowsOwner((characters) => {
+    if (characters.some((candidate) => candidate?.chaId === character.chaId)) return false
+    if (options.lastInteraction !== undefined) character.lastInteraction = options.lastInteraction
+    characters.push(character)
+    index = characters.length - 1
+    return true
+  })
+  return applied ? index : -1
+}
+
+/** Remove one uniquely identified optimistic character collection row. */
+export function applyCharacterDeleteOptimistically(characterId: string): boolean {
+  const owner = uniqueCharacterOwnerById(characterId)
+  if (!owner) return false
+  return updateCharacterRowsOwner((characters) => {
+    const index = characters.indexOf(owner)
+    if (index < 0) return false
+    characters.splice(index, 1)
+    return true
+  })
+}
+
+/** Apply selection and interaction time to the exact stable-id owner. */
+export function applyCharacterSelectionOptimistically(characterId: string, lastInteraction: number): number {
+  const character = uniqueCharacterOwnerById(characterId)
+  if (!character) return -1
+  const index = characterRowsOwner().indexOf(character)
+  if (index < 0) return -1
+  character.lastInteraction = lastInteraction
+  setCurrentCharOwner(index)
+  selectedCharID.set(index)
+  return index
 }
 
 function restoreMissingCharacterOrderPlacement(placement: CharacterOrderPlacement | null): void {
@@ -715,7 +852,7 @@ function restoreMissingCharacterOrderPlacement(placement: CharacterOrderPlacemen
           placement.characterId,
         )
         characterOrder[folderIndex] = targetFolder
-        getDatabase().characterOrder = characterOrder
+        setCharacterOrderOwner(characterOrder)
         return
       }
     }
@@ -723,12 +860,12 @@ function restoreMissingCharacterOrderPlacement(placement: CharacterOrderPlacemen
     const restoredFolder = cloneJsonValue(placement.folder)
     restoredFolder.data = [placement.characterId]
     characterOrder.splice(clampInsertionIndex(placement.folderIndex, characterOrder.length), 0, restoredFolder)
-    getDatabase().characterOrder = characterOrder
+    setCharacterOrderOwner(characterOrder)
     return
   }
 
   characterOrder.splice(clampInsertionIndex(placement.rootIndex, characterOrder.length), 0, placement.characterId)
-  getDatabase().characterOrder = characterOrder
+  setCharacterOrderOwner(characterOrder)
 }
 
 function removeCharacterIdFromOrder(characterOrder: (string | folder)[], characterId: string): void {
@@ -754,14 +891,21 @@ export function runCharacterCommand<T extends Record<string, unknown>>(
   return runServerCommand({ command, rollback, ...options })
 }
 
-export function dispatchCreateCharacter(character: character, previous: CharacterStateSnapshot): void {
+export function dispatchCreateCharacter(
+  character: character,
+  previous: CharacterStateSnapshot,
+): Promise<CharacterMutationOutcome> {
   recordHydratedCharacterLorebooks([character])
   const rollback = characterCreateRollbackFromState(character, previous, false)
   repairCharacterOrderOptimistically({ dispatchReorder: false })
-  if (!canUseServerCommands()) return
+  if (!canUseServerCommands()) {
+    restoreCreatedCharacterAttempt(rollback)
+    return Promise.resolve({ status: 'failed', result: { status: 'unavailable' } })
+  }
 
   const characterSnapshot = toCharacterSnapshot(character)
   const initialChat = initialCharacterChatSnapshot(character)
+  warnIfCharacterCreateWouldDropChats(character, initialChat)
   const intent: DurableMutationIntent = {
     version: 1,
     requests: [
@@ -775,14 +919,16 @@ export function dispatchCreateCharacter(character: character, previous: Characte
   let outbox: PendingMutationHandle
   try {
     outbox = stagePendingMutation(characterOwnerMutationKey(character.chaId), intent)
-  } catch {
+  } catch (error) {
     restoreCreatedCharacterAttempt(rollback)
-    return
+    return Promise.resolve({ status: 'failed', result: pendingMutationStagingFailure(error) })
   }
-  void dispatchDurableMutation(
-    outbox,
-    intent,
-    (transport) =>
+  const projectionFences = characterCollectionProjectionFences(outbox, character.chaId, false)
+  let disposition: 'retain' | 'rollback' = 'retain'
+  let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
+  const promise = dispatchDurableMutation(outbox, intent, (transport) => {
+    failureRollbackDisposition = transport.failureRollbackDisposition
+    return (
       runCharacterCommand(
         (baseRevision) =>
           createCharacterCommand({
@@ -792,8 +938,22 @@ export function dispatchCreateCharacter(character: character, previous: Characte
           }),
         () => restoreCreatedCharacterAttempt(rollback),
         transport,
-      ) ?? Promise.resolve({ status: 'unavailable' as const }),
+      ) ?? Promise.resolve({ status: 'unavailable' as const })
+    )
+  }).then(
+    (result) => {
+      disposition = result.status === 'ok' ? 'rollback' : (failureRollbackDisposition?.(result) ?? 'rollback')
+      if (result.status !== 'ok' && disposition === 'retain') {
+        reapplyCreatedCharacterProjection(rollback, projectionFences)
+      }
+      return result
+    },
+    (error) => {
+      disposition = failureRollbackDisposition?.({ status: 'unavailable' }) ?? 'rollback'
+      throw error
+    },
   )
+  return compatibleCharacterMutationOutcome({ promise, disposition: () => disposition })
 }
 
 export function dispatchCreateAndSelectCharacter(
@@ -801,14 +961,18 @@ export function dispatchCreateAndSelectCharacter(
   previous: CharacterStateSnapshot,
   lastInteraction: number,
   options: CreateAndSelectCharacterDispatchOptions = {},
-): Promise<ServerCommandResult> | undefined {
+): Promise<CharacterMutationOutcome> {
   recordHydratedCharacterLorebooks([character])
   const rollback = characterCreateRollbackFromState(character, previous, true)
   repairCharacterOrderOptimistically({ dispatchReorder: false })
-  if (!canUseServerCommands()) return
+  if (!canUseServerCommands()) {
+    restoreCreatedCharacterAttempt(rollback, options)
+    return Promise.resolve({ status: 'failed', result: { status: 'unavailable' } })
+  }
 
   const characterSnapshot = toCharacterSnapshot(character)
   const initialChat = initialCharacterChatSnapshot(character)
+  warnIfCharacterCreateWouldDropChats(character, initialChat)
   const previousSelectedCharacterId = selectedCharacterIdFromStateSnapshot(previous)
   const intent: DurableMutationIntent = {
     version: 1,
@@ -831,12 +995,14 @@ export function dispatchCreateAndSelectCharacter(
     outbox = stagePendingMutation(characterOwnerMutationKey(character.chaId), intent)
   } catch (error) {
     restoreCreatedCharacterAttempt(rollback, options)
-    return Promise.resolve(pendingMutationStagingFailure(error))
+    return Promise.resolve({ status: 'failed', result: pendingMutationStagingFailure(error) })
   }
-  return dispatchDurableMutation(
-    outbox,
-    intent,
-    (transport) =>
+  const projectionFences = characterCollectionProjectionFences(outbox, character.chaId, true)
+  let disposition: 'retain' | 'rollback' = 'retain'
+  let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
+  const promise = dispatchDurableMutation(outbox, intent, (transport) => {
+    failureRollbackDisposition = transport.failureRollbackDisposition
+    return (
       runCharacterCommand(
         (baseRevision) =>
           createAndSelectCharacterCommand({
@@ -847,8 +1013,22 @@ export function dispatchCreateAndSelectCharacter(
           }),
         () => restoreCreatedCharacterAttempt(rollback, options),
         transport,
-      ) ?? Promise.resolve({ status: 'unavailable' as const }),
+      ) ?? Promise.resolve({ status: 'unavailable' as const })
+    )
+  }).then(
+    (result) => {
+      disposition = result.status === 'ok' ? 'rollback' : (failureRollbackDisposition?.(result) ?? 'rollback')
+      if (result.status !== 'ok' && disposition === 'retain') {
+        reapplyCreatedCharacterProjection(rollback, projectionFences, options)
+      }
+      return result
+    },
+    (error) => {
+      disposition = failureRollbackDisposition?.({ status: 'unavailable' }) ?? 'rollback'
+      throw error
+    },
   )
+  return compatibleCharacterMutationOutcome({ promise, disposition: () => disposition })
 }
 
 function characterCreateDurableBody(
@@ -873,10 +1053,9 @@ function selectedCharacterIdFromStateSnapshot(snapshot: CharacterStateSnapshot):
 }
 
 function selectedCharacterIdFromSelectionSnapshot(snapshot: CharacterSelectionSnapshot): string | null {
-  const characters = getDatabase().characters ?? []
   for (const index of [snapshot.currentChar, snapshot.selectedCharID]) {
     if (!Number.isInteger(index) || (index as number) < 0) continue
-    const characterId = characters[index as number]?.chaId
+    const characterId = uniqueCharacterOwnerAt(index as number)?.chaId
     if (typeof characterId === 'string' && characterId.trim()) return characterId
   }
   return null
@@ -1004,7 +1183,7 @@ function isCharacterFieldMutationAttemptCurrent(
   ) {
     return false
   }
-  const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+  const character = uniqueCharacterOwnerById(characterId)
   return (
     !!character && isCharacterPatchValueCurrent(character as unknown as Record<string, unknown>, field, attemptedValue)
   )
@@ -1017,6 +1196,28 @@ function dispatchDurableCharacterPatch(
   rollback: (attempt: CharacterFieldMutationAttempt) => void,
 ): Promise<ServerCommandResult> | undefined {
   return prepareDurableCharacterPatchExecution(characterId, patch, previousFields, rollback)?.promise
+}
+
+function reapplyRetainedCharacterPatch(
+  characterId: string,
+  attempted: CharacterSnapshot,
+  previousFields: ReadonlyMap<string, CharacterFieldMutationBaseline>,
+  fences: ReadonlyMap<string, PendingMutationProjectionFence | null>,
+): void {
+  const character = uniqueCharacterOwnerById(characterId)
+  if (!character) return
+  const target = character as unknown as Record<string, unknown>
+  const patch: CharacterSnapshot = {}
+  for (const [field, attemptedValue] of Object.entries(attempted)) {
+    if (!isCurrentCharacterProjectionFence(fences.get(field))) continue
+    const previous = previousFields.get(field)
+    if (!previous) continue
+    const hasLiveValue = Object.prototype.hasOwnProperty.call(target, field)
+    if (hasLiveValue !== previous.hadValue) continue
+    if (hasLiveValue && !characterFieldSnapshotEquals(target[field], previous.value)) continue
+    patch[field] = attemptedValue
+  }
+  if (Object.keys(patch).length > 0) applyCharacterPatchToRecord(target, patch)
 }
 
 function prepareDurableCharacterPatchExecution(
@@ -1050,7 +1251,15 @@ function prepareDurableCharacterPatchExecution(
       disposition: () => 'rollback',
     }
   }
-  let disposition: 'retain' | 'rollback' = 'rollback'
+  const projectionTargets = Object.keys(attempted).map((field) => characterFieldProjectionTarget(characterId, field))
+  recordPendingMutationProjectionTargets(outbox, projectionTargets)
+  const projectionFences = new Map(
+    Object.keys(attempted).map((field, index) => [
+      field,
+      pendingMutationProjectionFence(outbox, projectionTargets[index]),
+    ]),
+  )
+  let disposition: 'retain' | 'rollback' = 'retain'
   let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
   const promise = dispatchDurableMutation(outbox, intent, (transport) => {
     failureRollbackDisposition = transport.failureRollbackDisposition
@@ -1068,10 +1277,16 @@ function prepareDurableCharacterPatchExecution(
   }).then(
     (result) => {
       disposition = result.status === 'ok' ? 'rollback' : (failureRollbackDisposition?.(result) ?? disposition)
+      if (result.status !== 'ok' && disposition === 'retain') {
+        reapplyRetainedCharacterPatch(characterId, attempted, previousFields, projectionFences)
+      }
       return result
     },
     (error) => {
       disposition = failureRollbackDisposition?.({ status: 'unavailable' }) ?? disposition
+      if (disposition === 'retain') {
+        reapplyRetainedCharacterPatch(characterId, attempted, previousFields, projectionFences)
+      }
       throw error
     },
   )
@@ -1320,18 +1535,12 @@ export function applyCharacterRowMutationScoped(
   mutate: (character: character) => void,
 ): boolean {
   const previous = currentCharacterRowSnapshot(index)
-  let applied = false
-  withTrustedResourceWrite(() => {
-    const target = getDatabase().characters?.[index]
-    if (!target || target.chaId !== characterId) return
-    mutate(target)
-    applied = true
-  })
+  const target = uniqueCharacterOwnerAt(index)
+  if (!target || target.chaId !== characterId || uniqueCharacterOwnerById(characterId) !== target) return false
+  mutate(target)
 
-  if (applied) {
-    dispatchCompatibleCharacterUpdateScoped(previous.character, getDatabase().characters?.[index], previous)
-  }
-  return applied
+  dispatchCompatibleCharacterUpdateScoped(previous.character, uniqueCharacterOwnerById(characterId), previous)
+  return true
 }
 
 // Factory-list form retained for legacy compatibility callers and focused
@@ -1440,10 +1649,15 @@ function prepareDeleteCharacter(
 ): PendingCharacterMutationExecution | undefined {
   const rollback = characterDeleteRollbackFromState(characterId, previous)
   repairCharacterOrderOptimistically({ dispatchReorder: false })
-  normalizeCurrentCharacterPointerAfterDelete(characterId, previous)
-  if (!canUseServerCommands()) return
+  normalizeCurrentCharacterPointerAfterDelete(characterId, rollback?.previousCurrentCharacterId)
+  if (!canUseServerCommands()) {
+    restoreDeletedCharacterAttempt(rollback)
+    return {
+      promise: Promise.resolve({ status: 'unavailable' }),
+      disposition: () => 'rollback',
+    }
+  }
 
-  flushRegisteredPendingBridgePatches({})
   const intent: DurableMutationIntent = {
     version: 1,
     dependencyKeys: [characterOwnerMutationKey(characterId)],
@@ -1465,7 +1679,8 @@ function prepareDeleteCharacter(
       disposition: () => 'rollback',
     }
   }
-  let disposition: 'retain' | 'rollback' = 'rollback'
+  const projectionFences = characterCollectionProjectionFences(outbox, characterId, true)
+  let disposition: 'retain' | 'rollback' = 'retain'
   let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
   const promise = dispatchDurableMutation(outbox, intent, (transport) => {
     failureRollbackDisposition = transport.failureRollbackDisposition
@@ -1483,45 +1698,40 @@ function prepareDeleteCharacter(
   }).then(
     (result) => {
       disposition = result.status === 'ok' ? 'rollback' : (failureRollbackDisposition?.(result) ?? disposition)
+      if (result.status !== 'ok' && disposition === 'retain') {
+        reapplyDeletedCharacterProjection(rollback, projectionFences)
+      }
       return result
     },
     (error) => {
       disposition = failureRollbackDisposition?.({ status: 'unavailable' }) ?? disposition
+      if (disposition === 'retain') reapplyDeletedCharacterProjection(rollback, projectionFences)
       throw error
     },
   )
   return { promise, disposition: () => disposition }
 }
 
-function normalizeCurrentCharacterPointerAfterDelete(characterId: string, previous: CharacterStateSnapshot): void {
-  const characters = getDatabase().characters ?? []
+function normalizeCurrentCharacterPointerAfterDelete(
+  characterId: string,
+  previousCurrentCharacterId: string | undefined,
+): void {
+  const characters = characterRowsOwner()
   if (characters.some((candidate) => candidate?.chaId === characterId)) return
 
-  withTrustedResourceWrite(() => {
-    const database = getDatabase() as unknown as { currentChar?: number }
-    const previousCurrentCharacterId = Number.isInteger(previous.currentChar)
-      ? previous.characters[previous.currentChar as number]?.chaId
-      : undefined
-    if (previousCurrentCharacterId && previousCurrentCharacterId !== characterId) {
-      const preservedIndex = characters.findIndex((candidate) => candidate?.chaId === previousCurrentCharacterId)
-      if (preservedIndex >= 0) {
-        database.currentChar = preservedIndex
-        return
-      }
+  if (previousCurrentCharacterId && previousCurrentCharacterId !== characterId) {
+    const preservedIndex = characters.findIndex((candidate) => candidate?.chaId === previousCurrentCharacterId)
+    if (preservedIndex >= 0) {
+      setCurrentCharOwner(preservedIndex)
+      return
     }
+  }
 
-    let currentChar = database.currentChar
-    if (!Number.isInteger(currentChar)) {
-      currentChar = characters.length > 0 ? 0 : -1
-    }
-    if ((currentChar as number) >= characters.length) {
-      currentChar = characters.length > 0 ? characters.length - 1 : -1
-    }
-    if ((currentChar as number) < -1) {
-      currentChar = characters.length > 0 ? 0 : -1
-    }
-    database.currentChar = currentChar
-  })
+  let currentChar = currentCharOwner()
+  if (!Number.isInteger(currentChar)) currentChar = characters.length > 0 ? 0 : -1
+  if ((currentChar as number) >= characters.length) currentChar = characters.length > 0 ? characters.length - 1 : -1
+  if ((currentChar as number) < -1) currentChar = characters.length > 0 ? 0 : -1
+  setCurrentCharOwner(currentChar)
 }
 
 export function dispatchSelectCharacter(
@@ -1529,7 +1739,63 @@ export function dispatchSelectCharacter(
   previous: CharacterSelectionSnapshot,
   lastInteraction?: number,
 ): void {
+  void dispatchSelectCharacterWithOutcome(characterId, previous, lastInteraction)
+}
+
+export function dispatchSelectCharacterWithOutcome(
+  characterId: string,
+  previous: CharacterSelectionSnapshot,
+  lastInteraction?: number,
+): Promise<CharacterMutationOutcome> {
+  const execution = prepareSelectCharacter(characterId, previous, lastInteraction)
+  return compatibleCharacterMutationOutcome(execution)
+}
+
+function reapplyRetainedCharacterSelection(
+  previous: CharacterSelectionSnapshot,
+  attempted: CharacterSelectionAttempt,
+  selectionFence: PendingMutationProjectionFence | null,
+  interactionFence: PendingMutationProjectionFence | null,
+): void {
+  const attemptedCharacter = uniqueCharacterOwnerById(attempted.characterId)
+  if (!attemptedCharacter) return
+  const liveSelectedCharacterId = selectedCharacterIdAt(get(selectedCharID))
+  const previousSelectedCharacterId = selectedCharacterIdFromSelectionSnapshot(previous)
+  if (
+    isCurrentCharacterProjectionFence(selectionFence) &&
+    (!liveSelectedCharacterId ||
+      liveSelectedCharacterId === attempted.characterId ||
+      liveSelectedCharacterId === previousSelectedCharacterId)
+  ) {
+    const attemptedIndex = characterRowsOwner().indexOf(attemptedCharacter)
+    if (attemptedIndex >= 0) {
+      setCurrentCharOwner(attemptedIndex)
+      selectedCharID.set(attemptedIndex)
+    }
+  }
+  if (
+    attempted.lastInteraction !== undefined &&
+    isCurrentCharacterProjectionFence(interactionFence) &&
+    (attemptedCharacter.lastInteraction === previous.lastInteraction ||
+      attemptedCharacter.lastInteraction === attempted.lastInteraction)
+  ) {
+    attemptedCharacter.lastInteraction = attempted.lastInteraction
+  }
+}
+
+function prepareSelectCharacter(
+  characterId: string,
+  previous: CharacterSelectionSnapshot,
+  lastInteraction?: number,
+): PendingCharacterMutationExecution {
   const attempted = currentCharacterSelectionAttempt(characterId, lastInteraction)
+  if (!canUseServerCommands()) {
+    restoreCharacterSelectionAttempt(previous, attempted)
+    return {
+      promise: Promise.resolve({ status: 'unavailable' }),
+      disposition: () => 'rollback',
+    }
+  }
   const previousSelectedCharacterId = selectedCharacterIdFromSelectionSnapshot(previous)
   const dependencyKeys = Array.from(
     new Set(
@@ -1552,11 +1818,25 @@ export function dispatchSelectCharacter(
       },
     ],
   }
-  const outbox = stagePendingMutation(CHARACTER_SELECTION_MUTATION_KEY, intent)
-  void dispatchDurableMutation(
-    outbox,
-    intent,
-    (transport) =>
+  let outbox: PendingMutationHandle
+  try {
+    outbox = stagePendingMutation(CHARACTER_SELECTION_MUTATION_KEY, intent)
+  } catch (error) {
+    restoreCharacterSelectionAttempt(previous, attempted)
+    return {
+      promise: Promise.resolve(pendingMutationStagingFailure(error)),
+      disposition: () => 'rollback',
+    }
+  }
+  const interactionTarget = characterFieldProjectionTarget(characterId, 'lastInteraction')
+  recordPendingMutationProjectionTargets(outbox, [CHARACTER_SELECTION_PROJECTION_TARGET, interactionTarget])
+  const selectionFence = pendingMutationProjectionFence(outbox, CHARACTER_SELECTION_PROJECTION_TARGET)
+  const interactionFence = pendingMutationProjectionFence(outbox, interactionTarget)
+  let disposition: 'retain' | 'rollback' = 'retain'
+  let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
+  const promise = dispatchDurableMutation(outbox, intent, (transport) => {
+    failureRollbackDisposition = transport.failureRollbackDisposition
+    return (
       runCharacterCommand(
         (baseRevision) =>
           selectCharacterCommand({
@@ -1566,8 +1846,25 @@ export function dispatchSelectCharacter(
           }),
         () => restoreCharacterSelectionAttempt(previous, attempted),
         transport,
-      ) ?? Promise.resolve({ status: 'unavailable' as const }),
+      ) ?? Promise.resolve({ status: 'unavailable' as const })
+    )
+  }).then(
+    (result) => {
+      disposition = result.status === 'ok' ? 'rollback' : (failureRollbackDisposition?.(result) ?? disposition)
+      if (result.status !== 'ok' && disposition === 'retain') {
+        reapplyRetainedCharacterSelection(previous, attempted, selectionFence, interactionFence)
+      }
+      return result
+    },
+    (error) => {
+      disposition = failureRollbackDisposition?.({ status: 'unavailable' }) ?? disposition
+      if (disposition === 'retain') {
+        reapplyRetainedCharacterSelection(previous, attempted, selectionFence, interactionFence)
+      }
+      throw error
+    },
   )
+  return { promise, disposition: () => disposition }
 }
 
 function dispatchCharacterOrderCommandWithOutcome(
@@ -1584,7 +1881,13 @@ function prepareCharacterOrderCommand(
   rollback: () => void,
   dependencyCharacterIds: readonly string[] = [],
 ): PendingCharacterMutationExecution | undefined {
-  if (!canUseServerCommands()) return
+  if (!canUseServerCommands()) {
+    rollback()
+    return {
+      promise: Promise.resolve({ status: 'unavailable' }),
+      disposition: () => 'rollback',
+    }
+  }
   const generation = ++characterOrderProjectionGeneration
   const commandOrder = cloneJsonValue(projection.attemptedOrder)
   const dependencyKeys = Array.from(
@@ -1616,7 +1919,7 @@ function prepareCharacterOrderCommand(
     }
   }
   const projectionFence = pendingMutationProjectionFence(outbox, pendingMutationCharacterOrderProjectionTarget())
-  let disposition: 'retain' | 'rollback' = 'rollback'
+  let disposition: 'retain' | 'rollback' = 'retain'
   let failureRollbackDisposition: ServerCommandTransportOptions['failureRollbackDisposition']
   const promise = dispatchDurableMutation(outbox, intent, (transport) => {
     failureRollbackDisposition = transport.failureRollbackDisposition
@@ -1650,6 +1953,16 @@ function prepareCharacterOrderCommand(
     },
     (error) => {
       disposition = failureRollbackDisposition?.({ status: 'unavailable' }) ?? disposition
+      if (disposition === 'retain') {
+        if (projection.metadata) {
+          reapplyCharacterOrderFolderMetadataProjection(projection.metadata)
+        } else if (
+          generation === characterOrderProjectionGeneration &&
+          isCurrentCharacterOrderProjectionFence(projectionFence)
+        ) {
+          reapplyCharacterOrderProjection(projection)
+        }
+      }
       throw error
     },
   )
@@ -1667,7 +1980,7 @@ export function dispatchReorderCharactersWithOutcome(
   previousOrder: (string | folder)[],
   dependencyCharacterIds: readonly string[] = [],
 ): Promise<CharacterMutationOutcome> | undefined {
-  const rollback = characterOrderRollbackFromOrders(previousOrder, getDatabase().characterOrder ?? [])
+  const rollback = characterOrderRollbackFromOrders(previousOrder, characterOrderOwner())
   return dispatchCharacterOrderCommandWithOutcome(
     { attemptedOrder: rollback.attemptedOrder },
     () => restoreCharacterOrderAttempt(rollback),
@@ -1680,45 +1993,41 @@ function isCurrentCharacterOrderProjectionFence(fence: PendingMutationProjection
 }
 
 function reapplyCharacterOrderProjection(projection: CharacterOrderDurableProjection): void {
-  withTrustedResourceWrite(() => {
-    const liveOrder = getDatabase().characterOrder ?? []
-    const reappliedOrder = restoreCharacterOrderStructure(projection.attemptedOrder, liveOrder)
-    const metadata = projection.metadata
-    if (metadata) {
-      const folderIndex = findCharacterOrderFolderIndex(reappliedOrder, metadata.folderId)
-      const targetFolder = reappliedOrder[folderIndex]
-      if (isCharacterOrderFolder(targetFolder)) {
-        applyCharacterOrderFolderMetadata(targetFolder, metadata.attempted)
-        reappliedOrder[folderIndex] = targetFolder
-      }
+  const liveOrder = characterOrderOwner()
+  const reappliedOrder = restoreCharacterOrderStructure(projection.attemptedOrder, liveOrder)
+  const metadata = projection.metadata
+  if (metadata) {
+    const folderIndex = findCharacterOrderFolderIndex(reappliedOrder, metadata.folderId)
+    const targetFolder = reappliedOrder[folderIndex]
+    if (isCharacterOrderFolder(targetFolder)) {
+      applyCharacterOrderFolderMetadata(targetFolder, metadata.attempted)
+      reappliedOrder[folderIndex] = targetFolder
     }
-    getDatabase().characterOrder = normalizeCharacterOrder(reappliedOrder, getDatabase().characters).characterOrder
-  })
+  }
+  setCharacterOrderOwner(normalizeCharacterOrder(reappliedOrder, characterRowsOwner()).characterOrder)
 }
 
 function reapplyCharacterOrderFolderMetadataProjection(metadata: CharacterOrderFolderMetadataRollback): void {
-  withTrustedResourceWrite(() => {
-    const characterOrder = getDatabase().characterOrder ?? []
-    const folderIndex = findCharacterOrderFolderIndex(characterOrder, metadata.folderId)
-    const targetFolder = characterOrder[folderIndex]
-    if (!isCharacterOrderFolder(targetFolder)) return
+  const characterOrder = characterOrderOwner()
+  const folderIndex = findCharacterOrderFolderIndex(characterOrder, metadata.folderId)
+  const targetFolder = characterOrder[folderIndex]
+  if (!isCharacterOrderFolder(targetFolder)) return
 
-    const target = targetFolder as unknown as Record<string, unknown>
-    const reapplied: Partial<Record<CharacterOrderFolderMetadataKey, unknown>> = {}
-    for (const [key, attemptedValue] of Object.entries(metadata.attempted) as Array<
-      [CharacterOrderFolderMetadataKey, unknown]
-    >) {
-      if (characterFieldSnapshotEquals(target[key], attemptedValue)) continue
-      const hadPrevious = Object.prototype.hasOwnProperty.call(metadata.previous, key)
-      if (Object.prototype.hasOwnProperty.call(target, key) !== hadPrevious) continue
-      if (hadPrevious && !characterFieldSnapshotEquals(target[key], metadata.previous[key])) continue
-      reapplied[key] = attemptedValue
-    }
-    if (Object.keys(reapplied).length === 0) return
-    applyCharacterOrderFolderMetadata(targetFolder, reapplied)
-    characterOrder[folderIndex] = targetFolder
-    getDatabase().characterOrder = characterOrder
-  })
+  const target = targetFolder as unknown as Record<string, unknown>
+  const reapplied: Partial<Record<CharacterOrderFolderMetadataKey, unknown>> = {}
+  for (const [key, attemptedValue] of Object.entries(metadata.attempted) as Array<
+    [CharacterOrderFolderMetadataKey, unknown]
+  >) {
+    if (characterFieldSnapshotEquals(target[key], attemptedValue)) continue
+    const hadPrevious = Object.prototype.hasOwnProperty.call(metadata.previous, key)
+    if (Object.prototype.hasOwnProperty.call(target, key) !== hadPrevious) continue
+    if (hadPrevious && !characterFieldSnapshotEquals(target[key], metadata.previous[key])) continue
+    reapplied[key] = attemptedValue
+  }
+  if (Object.keys(reapplied).length === 0) return
+  applyCharacterOrderFolderMetadata(targetFolder, reapplied)
+  characterOrder[folderIndex] = targetFolder
+  setCharacterOrderOwner(characterOrder)
 }
 
 function characterOrderRollbackFromOrders(
@@ -1732,12 +2041,9 @@ function characterOrderRollbackFromOrders(
 }
 
 function restoreCharacterOrderAttempt(rollback: CharacterOrderRollback): void {
-  withTrustedResourceWrite(() => {
-    const liveOrder = getDatabase().characterOrder ?? []
-    if (!characterOrderStructureEquals(liveOrder, rollback.attemptedOrder)) return
-
-    getDatabase().characterOrder = restoreCharacterOrderStructure(rollback.previousOrder, liveOrder)
-  })
+  const liveOrder = characterOrderOwner()
+  if (!characterOrderStructureEquals(liveOrder, rollback.attemptedOrder)) return
+  setCharacterOrderOwner(restoreCharacterOrderStructure(rollback.previousOrder, liveOrder))
 }
 
 function restoreCharacterOrderStructure(
@@ -1832,14 +2138,12 @@ export function repairCharacterOrderOptimistically(
     dispatchReorder?: boolean
   } = {},
 ): boolean {
-  const normalized = normalizeCharacterOrder(getDatabase().characterOrder, getDatabase().characters)
+  const normalized = normalizeCharacterOrder(characterOrderOwner(), characterRowsOwner())
   if (!normalized.changed) return false
 
   const shouldDispatchReorder = options.dispatchReorder ?? true
   const previousOrder = shouldDispatchReorder ? currentCharacterOrderSnapshot() : null
-  withTrustedResourceWrite(() => {
-    getDatabase().characterOrder = normalized.characterOrder
-  })
+  setCharacterOrderOwner(normalized.characterOrder)
   if (previousOrder) {
     const previousIds = new Set(characterIdsInOrder(previousOrder))
     const addedCharacterIds = characterIdsInOrder(normalized.characterOrder).filter((id) => !previousIds.has(id))
@@ -1871,7 +2175,7 @@ function prepareMoveCharacterOrderItem(
   const previousOrder = currentCharacterOrderSnapshot()
   let changed = false
   let dependencyCharacterId = ''
-  withTrustedResourceWrite(() => {
+  const applyMove = (): void => {
     const characterOrder = ensureCharacterOrder()
     let mainFolderIndex = mainIndex.folder ? getCharacterOrderFolderIndex(mainIndex.folder) : null
     const targetFolderIndex = targetIndex.folder ? getCharacterOrderFolderIndex(targetIndex.folder) : null
@@ -1941,10 +2245,11 @@ function prepareMoveCharacterOrderItem(
       }
     }
 
-    getDatabase().characterOrder = characterOrder
+    setCharacterOrderOwner(characterOrder)
     replaceCharacterOrderWithNormalized()
     changed = true
-  })
+  }
+  applyMove()
 
   if (!changed) return { applied: false, settlement: null }
   return {
@@ -1983,7 +2288,7 @@ function prepareCreateCharacterOrderFolder(
   const previousOrder = currentCharacterOrderSnapshot()
   let changed = false
   const dependencyCharacterIds: string[] = []
-  withTrustedResourceWrite(() => {
+  const applyFolderCreate = (): void => {
     const characterOrder = ensureCharacterOrder()
     const mainFolderIndex = mainIndex.folder ? getCharacterOrderFolderIndex(mainIndex.folder) : null
     const mainFolder = mainFolderIndex === null ? null : characterOrder[mainFolderIndex]
@@ -2028,10 +2333,11 @@ function prepareCreateCharacterOrderFolder(
         characterOrder.splice(mainIndex.index, 1)
       }
     }
-    getDatabase().characterOrder = characterOrder
+    setCharacterOrderOwner(characterOrder)
     replaceCharacterOrderWithNormalized()
     changed = true
-  })
+  }
+  applyFolderCreate()
 
   if (!changed) return { applied: false, settlement: null }
   return {
@@ -2064,7 +2370,7 @@ function prepareUpdateCharacterOrderFolder(
 
   let rollback: CharacterOrderFolderMetadataRollback | null = null
   let changed = false
-  withTrustedResourceWrite(() => {
+  const applyFolderUpdate = (): void => {
     const characterOrder = ensureCharacterOrder()
     const folderIndex = resolveCharacterOrderFolderIndex(characterOrder, folderIdOrIndex)
     if (folderIndex === -1) return
@@ -2085,6 +2391,10 @@ function prepareUpdateCharacterOrderFolder(
           mutableFolder.color = value as string
           break
 
+        case 'askBeforeOpening':
+          mutableFolder.askBeforeOpening = value as boolean
+          break
+
         case 'imgFile':
           mutableFolder.imgFile = value as string | null
           break
@@ -2100,9 +2410,10 @@ function prepareUpdateCharacterOrderFolder(
       attempted: cloneJsonValue(attemptedPatch),
     }
     characterOrder[folderIndex] = mutableFolder
-    getDatabase().characterOrder = characterOrder
+    setCharacterOrderOwner(characterOrder)
     changed = true
-  })
+  }
+  applyFolderUpdate()
 
   if (!changed || !rollback) return { applied: false, settlement: null }
   const metadataRollback = rollback
@@ -2154,6 +2465,9 @@ function applyCharacterOrderFolderMetadata(
       case 'color':
         target.color = value as string
         break
+      case 'askBeforeOpening':
+        target.askBeforeOpening = value as boolean
+        break
       case 'imgFile':
         target.imgFile = value as string | null
         break
@@ -2165,26 +2479,24 @@ function applyCharacterOrderFolderMetadata(
 }
 
 function restoreCharacterOrderFolderMetadataAttempt(rollback: CharacterOrderFolderMetadataRollback): void {
-  withTrustedResourceWrite(() => {
-    const characterOrder = getDatabase().characterOrder ?? []
-    const folderIndex = findCharacterOrderFolderIndex(characterOrder, rollback.folderId)
-    if (folderIndex === -1) return
+  const characterOrder = characterOrderOwner()
+  const folderIndex = findCharacterOrderFolderIndex(characterOrder, rollback.folderId)
+  if (folderIndex === -1) return
 
-    const targetFolder = characterOrder[folderIndex]
-    if (!isCharacterOrderFolder(targetFolder)) return
+  const targetFolder = characterOrder[folderIndex]
+  if (!isCharacterOrderFolder(targetFolder)) return
 
-    const rolledBack = applyAttemptedFieldRollback({
-      target: targetFolder as unknown as Record<string, unknown>,
-      previous: rollback.previous as Partial<Record<string, unknown>>,
-      attempted: rollback.attempted as Partial<Record<string, unknown>>,
-      keys: CHARACTER_ORDER_FOLDER_METADATA_KEYS,
-      deleteMissingPrevious: true,
-    })
-    if (rolledBack.length === 0) return
-
-    characterOrder[folderIndex] = targetFolder
-    getDatabase().characterOrder = characterOrder
+  const rolledBack = applyAttemptedFieldRollback({
+    target: targetFolder as unknown as Record<string, unknown>,
+    previous: rollback.previous as Partial<Record<string, unknown>>,
+    attempted: rollback.attempted as Partial<Record<string, unknown>>,
+    keys: CHARACTER_ORDER_FOLDER_METADATA_KEYS,
+    deleteMissingPrevious: true,
   })
+  if (rolledBack.length === 0) return
+
+  characterOrder[folderIndex] = targetFolder
+  setCharacterOrderOwner(characterOrder)
 }
 
 function isSameCharacterOrderPosition(
@@ -2204,8 +2516,13 @@ function characterIdsInOrder(order: readonly (string | folder)[]): string[] {
 }
 
 function ensureCharacterOrder(): (string | folder)[] {
-  getDatabase().characterOrder = getDatabase().characterOrder ?? []
-  return getDatabase().characterOrder
+  const characterOrder = characterOrderOwner()
+  if (charactersResourceState.status === 'ready') return characterOrder
+  if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
+    setCharacterOrderOwner(characterOrder)
+    return characterOrderOwner()
+  }
+  return []
 }
 
 function isCharacterOrderFolder(value: string | folder | undefined | null): value is folder {
@@ -2213,7 +2530,7 @@ function isCharacterOrderFolder(value: string | folder | undefined | null): valu
 }
 
 function getCharacterOrderFolderIndex(id: string): number {
-  return findCharacterOrderFolderIndex(getDatabase().characterOrder ?? [], id)
+  return findCharacterOrderFolderIndex(characterOrderOwner(), id)
 }
 
 function findCharacterOrderFolderIndex(characterOrder: (string | folder)[], id: string): number {
@@ -2249,8 +2566,8 @@ function resolveCharacterOrderFolderIndex(
 }
 
 function replaceCharacterOrderWithNormalized(): void {
-  const normalized = normalizeCharacterOrder(ensureCharacterOrder(), getDatabase().characters)
-  getDatabase().characterOrder = normalized.characterOrder
+  const normalized = normalizeCharacterOrder(ensureCharacterOrder(), characterRowsOwner())
+  setCharacterOrderOwner(normalized.characterOrder)
 }
 
 function isCharacterOrderableId(value: unknown): value is string {
@@ -2284,16 +2601,13 @@ function startCharacterSupaMemoryMutation(
   enabled: boolean,
 ): PendingCharacterMutationExecution | undefined {
   if (!characterId) return
-  return withTrustedResourceWrite(() => {
-    const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
-    if (!character || Boolean(character.supaMemory) === enabled) return
+  const character = uniqueCharacterOwnerById(characterId)
+  if (!character || Boolean(character.supaMemory) === enabled) return
 
-    const previous = canUseServerCommands() ? currentCharacterSupaMemorySnapshot(characterId) : null
-    character.supaMemory = enabled
-    if (previous) {
-      return prepareUpdateCharacterSupaMemory(characterId, enabled, previous)
-    }
-  })
+  const previous = currentCharacterSupaMemorySnapshot(characterId)
+  if (!previous) return
+  character.supaMemory = enabled
+  return prepareUpdateCharacterSupaMemory(characterId, enabled, previous)
 }
 
 export function toCharacterSnapshot(character: character): CharacterSnapshot {
@@ -2313,6 +2627,14 @@ export function initialCharacterChatSnapshot(character: character): ChatSnapshot
     return undefined
   }
   return cloneJsonValue(chat) as unknown as ChatSnapshot
+}
+
+function warnIfCharacterCreateWouldDropChats(character: character, initialChat: ChatSnapshot | undefined): void {
+  if ((character.chats?.length ?? 0) === 0 || initialChat) return
+  console.error(
+    `Character create would drop ${character.chats?.length ?? 0} chat(s) because no usable initial-chat snapshot exists`,
+    { characterId: character.chaId },
+  )
 }
 
 export function sanitizeCharacterPatch(patch: CharacterSnapshot): CharacterSnapshot {

@@ -2,9 +2,9 @@
   import { CharEmotion, ViewBoxsize } from '../../ts/stores.svelte'
   import { onMount } from 'svelte'
   import TransitionImage from './TransitionImage.svelte'
-  import { getEmotion } from '../../ts/characterState'
+  import { getEmotionForCharacter, getSelectedCharacterOwner } from '../../ts/characterState'
 
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
   import { language } from 'src/lang'
   import { clampResizeBoxSize, readResizePointer } from './ResizeBoxPointer'
 
@@ -16,6 +16,12 @@
   let initialHeight
   let initialX
   let initialY
+  let selectedCharacter = $derived.by(() => {
+    if (charactersResourceState.status === 'error') return undefined
+    const owner = getSelectedCharacterOwner()
+    if (owner?.chaId && charactersResourceState.rowStatuses[owner.chaId] === 'error') return undefined
+    return owner
+  })
 
   function handleStart(event) {
     const pointer = readResizePointer(event)
@@ -83,7 +89,7 @@
 </script>
 
 <div class="box bg-darkbg/70" bind:this={box} style="width: {$ViewBoxsize.width}px; height: {$ViewBoxsize.height}px;">
-  <TransitionImage classType="risu" src={getEmotion(getDatabase(), $CharEmotion, 'plain')} />
+  <TransitionImage classType="risu" src={getEmotionForCharacter(selectedCharacter, $CharEmotion, 'plain')} />
   <button
     type="button"
     aria-label={language.resizeCharacterImage}

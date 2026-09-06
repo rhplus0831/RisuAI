@@ -7,6 +7,14 @@ const jobMocks = vi.hoisted(() => ({
   unsubscribe: vi.fn(),
 }))
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((res) => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
+
 vi.mock('src/ts/process/request/serverMemory', () => ({
   cancelServerMemoryJob: jobMocks.cancelJob,
   listServerMemoryJobs: jobMocks.listJobs,
@@ -33,6 +41,7 @@ beforeEach(() => {
     jobs: [
       {
         id: 'job-1',
+        instanceId: 'job-1-instance-a',
         chatId: 'chat-1',
         kind: 'summarize',
         status: 'running',
@@ -85,6 +94,7 @@ describe('Server memory job keyboard navigation', () => {
       jobs: [
         {
           id: 'job-failed',
+          instanceId: 'job-failed-instance',
           chatId: 'chat-1',
           kind: 'summarize',
           status: 'failed',
@@ -134,5 +144,66 @@ describe('Server memory job keyboard navigation', () => {
 
     await vi.waitFor(() => expect(target.textContent).toContain('jobs reconcile failed'))
     expect(target.textContent).not.toContain('not used')
+  })
+
+  it('ignores a delayed cancellation response after the logical job is recreated', async () => {
+    const cancellation = deferred<{
+      status: 'ok'
+      job: {
+        id: string
+        instanceId: string
+        chatId: string
+        kind: 'summarize'
+        status: 'cancelled'
+        attemptCount: number
+        maxAttempts: number
+      }
+    }>()
+    jobMocks.cancelJob.mockReturnValueOnce(cancellation.promise)
+    let cancelButton: HTMLButtonElement | null = null
+    await vi.waitFor(() => {
+      cancelButton = target.querySelector<HTMLButtonElement>('button[title="Cancel job"]')
+      expect(cancelButton).toBeTruthy()
+    })
+    cancelButton?.click()
+    await vi.waitFor(() => expect(jobMocks.cancelJob).toHaveBeenCalledWith('job-1'))
+
+    jobMocks.listJobs.mockResolvedValueOnce({
+      status: 'ok',
+      jobs: [
+        {
+          id: 'job-1',
+          instanceId: 'job-1-instance-b',
+          chatId: 'chat-1',
+          kind: 'summarize',
+          status: 'running',
+          attemptCount: 1,
+          maxAttempts: 3,
+        },
+      ],
+    })
+    target
+      .querySelector<HTMLButtonElement>(`button[aria-label="${language.hypaV3Modal.refreshMemoryJobsAction}"]`)
+      ?.click()
+    await vi.waitFor(() => expect(jobMocks.listJobs).toHaveBeenCalledTimes(2))
+
+    cancellation.resolve({
+      status: 'ok',
+      job: {
+        id: 'job-1',
+        instanceId: 'job-1-instance-a',
+        chatId: 'chat-1',
+        kind: 'summarize',
+        status: 'cancelled',
+        attemptCount: 1,
+        maxAttempts: 3,
+      },
+    })
+
+    await vi.waitFor(() => {
+      expect(target.textContent).toContain('running')
+      expect(target.textContent).not.toContain('cancelled')
+      expect(target.querySelector<HTMLButtonElement>('button[title="Cancel job"]')?.disabled).toBe(false)
+    })
   })
 })

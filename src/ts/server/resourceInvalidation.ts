@@ -1,5 +1,11 @@
 import type { CommandEvent } from './commands'
-import { SERVER_SETTINGS_KEYS_BY_GROUP, isSettingsGroup, type SettingsGroup } from './settingsGroups'
+import { lorebookPageOwner } from './lorebookPageOwner.svelte'
+import {
+  SERVER_SETTINGS_GROUP_BY_KEY,
+  SERVER_SETTINGS_KEYS_BY_GROUP,
+  isSettingsGroup,
+  type SettingsGroup,
+} from './settingsGroups'
 import {
   fetchServerBulkCharacterLorebooks,
   fetchServerCharacterLorebook,
@@ -11,6 +17,8 @@ import {
   currentPromptTemplateOwnerId,
   ensurePromptTemplateHydrated,
   invalidatePromptTemplateHydration,
+  isPromptTemplateHydrated,
+  markPromptTemplateHydrationStale,
   markPromptTemplateProjectionApplied,
   resetPromptTemplateHydration,
 } from './promptTemplateHydration'
@@ -22,8 +30,10 @@ import {
   fetchServerCollection,
   fetchServerCollections,
   fetchServerInlayCatalog,
+  fetchServerShell,
   fetchServerSettings,
   fetchServerSettingsGroup,
+  fetchServerStandaloneSetting,
 } from './resourceReads'
 import {
   applyCharacterOrderResource,
@@ -35,6 +45,7 @@ import {
   applyLegacyPresetRowResource,
   applySettingsResource,
   applySettingsGroupResource,
+  applyStandaloneSettingResource,
   SERVER_COLLECTION_NAMES,
   captureCharacterListProjectionEpoch,
   captureCharacterLorebookBodyProjectionEpoch,
@@ -50,6 +61,8 @@ import {
   hasChatBodyProjectionEpochChanged,
   hasNewerCharacterLorebookBodyResourceRevision,
   hasNewerChatBodyResourceRevision,
+  isCharacterLorebookBodyResourceLoaded,
+  isChatBodyResourceLoaded,
   markCharacterLorebookBodyResourceRevision,
   markCharacterLorebookProjectionApplied,
   markChatBodyResourceRevision,
@@ -59,14 +72,23 @@ import {
   type ServerCharactersResourcePayload,
   type ServerLegacyPresetResourceBaseline,
 } from './resourceState.svelte'
-import { withServerResourceApply } from './resourceWriteGuard.svelte'
 import { createDestructiveRefreshToken } from './staleStateGuards'
 import { applyServerInlayCatalogResource, getServerInlayCatalogResource } from './inlayCatalog'
+import { applyServerShellResource } from './shellHydration'
+import { SERVER_SHELL_SETTINGS_KEYS } from '@risuai/protocol/shell-resource'
+import type { ServerStandaloneSettingName } from '@risuai/protocol/standalone-settings'
+import { SERVER_CHARACTER_SHELL_MARKER } from '@risuai/protocol/character-summary-resource'
+import {
+  isBardWikiChatResourceLoaded,
+  isBardWikiDocumentResourceLoaded,
+  refreshAllLoadedBardWikiResources,
+  refreshLoadedBardWikiChat,
+} from './bardWikiResource'
 
 export const FULL_RESOURCE_REFRESH_MAX_ATTEMPTS = 3
 
 export type ServerResourceRefreshResult =
-  | { status: 'ok'; revision: number; scope: 'full' | 'targeted' | 'none' }
+  | { status: 'ok'; revision: number; scope: 'shell' | 'full' | 'targeted' | 'none' }
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
 
@@ -91,11 +113,15 @@ export interface ServerResourceInvalidationHooks {
     hypaV3Data: unknown,
     alternates: unknown[],
     range?: { start: number; total: number },
+    options?: { hypaV3DataIncluded?: boolean },
   ): boolean
   applyCharacterLorebook(characterId: string, globalLore: unknown[]): boolean
   markCharacterLorebookHydrated(characterId: string): void
+  recordCanonicalCharacterLorebookScopes?(characters: ServerCharactersResourcePayload['characters']): void
+  recordCanonicalLorebookCollections?(names: readonly ServerCollectionName[]): void
   triggerOpenChatGenerationReattach(): void
   clearActiveMessageTranslation(messageId: string): void
+  refreshGreetingTranslations(characterId: string, minimumRevision: number): Promise<boolean>
 }
 
 export interface ServerResourceRefreshOptions {
@@ -110,12 +136,19 @@ export interface ServerResourceInvalidationOptions extends ServerResourceRefresh
 export interface ServerResourceTargetRefreshInput {
   characterIds?: readonly string[]
   collections?: readonly ServerCollectionName[]
+  inlayCatalog?: boolean
+  settingsGroups?: readonly SettingsGroup[]
+  standaloneSettings?: readonly ServerStandaloneSettingName[]
+  minimumRevision?: number
 }
 
 interface RefreshPlan {
+  bardWikiChatIds: Set<string>
+  bardWikiDocumentIds: Map<string, Set<string>>
   inlayCatalog: boolean
   settings: boolean
   settingsGroups: Set<SettingsGroup>
+  standaloneSettings: Set<ServerStandaloneSettingName>
   collections: Set<ServerCollectionName>
   allCharacters: boolean
   characterIds: Set<string>
@@ -125,6 +158,7 @@ interface RefreshPlan {
   generationChatMessageIds: Map<string, string>
   lorebookCharacterIds: Set<string>
   translatedMessageIds: Set<string>
+  greetingTranslationCharacterIds: Set<string>
   promptTemplateOwnerIds: Set<string>
   legacyPresetIds: Set<string>
   refreshSelectedPromptTemplate: boolean
@@ -133,6 +167,7 @@ interface RefreshPlan {
 
 type SettingsReadResult = Awaited<ReturnType<typeof fetchServerSettings>>
 type SettingsGroupReadResult = Awaited<ReturnType<typeof fetchServerSettingsGroup>>
+type StandaloneSettingReadResult = Awaited<ReturnType<typeof fetchServerStandaloneSetting>>
 type CollectionReadResult = Awaited<ReturnType<typeof fetchServerCollection>>
 type CharactersReadResult = Awaited<ReturnType<typeof fetchServerCharacters>>
 type CharacterReadResult = Awaited<ReturnType<typeof fetchServerCharacter>>
@@ -163,6 +198,12 @@ type CompletedTargetedRead =
   | { kind: 'inlayCatalog'; result: InlayCatalogReadResult }
   | { kind: 'settings'; fence: ResourceReadFence; result: SettingsReadResult }
   | { kind: 'settingsGroup'; group: SettingsGroup; fence: ResourceReadFence; result: SettingsGroupReadResult }
+  | {
+      kind: 'standaloneSetting'
+      setting: ServerStandaloneSettingName
+      fence: ResourceReadFence
+      result: StandaloneSettingReadResult
+    }
   | { kind: 'collection'; name: ServerCollectionName; fence: ResourceReadFence; result: CollectionReadResult }
   | {
       kind: 'legacyPresetRow'
@@ -190,11 +231,30 @@ type CompletedTargetedRead =
       result: BulkLorebookReadResult
     }
 
-/** Load and apply the complete API-backed database resource set at startup. */
+/** Load only the coherent shell. Routes and deferred runtimes own every other slice. */
 export async function loadInitialServerResources(
   options: ServerResourceRefreshOptions = {},
 ): Promise<ServerResourceRefreshResult> {
-  return refreshAllServerResources(options)
+  const shell = await fetchServerShell(options.signal)
+  if (shell.status !== 'ok') return failedRead(shell)
+  const mergedCharacters = options.hooks?.mergePendingAgentPresetCharacters
+    ? options.hooks.mergePendingAgentPresetCharacters(shell.characters.characters)
+    : shell.characters.characters
+  const payload = {
+    ...shell,
+    characters: {
+      ...shell.characters,
+      characters: mergedCharacters,
+    },
+  }
+  try {
+    if (!applyServerShellResource(payload)) {
+      return { status: 'error', error: 'Server shell response was superseded before apply' }
+    }
+    return { status: 'ok', revision: shell.revision, scope: 'shell' }
+  } catch (error) {
+    return { status: 'error', error: error instanceof Error ? error.message : String(error) }
+  }
 }
 
 /**
@@ -242,26 +302,23 @@ export async function refreshAllServerResources(
       )
       const mergedCollections = withPendingCollections(collections, options.hooks)
       const mergedCharacters = withPendingAgentPresetCharacters(characters, options.hooks)
-      const { settingsApplied, collectionsApplied, charactersApplied, inlayCatalogApplied } = withServerResourceApply(
-        () => {
-          const applied = {
-            settingsApplied: !superseded.settings && applySettingsResource(mergedSettings),
-            collectionsApplied: !superseded.collections && applyCollectionsResource(mergedCollections),
-            // A complete refresh is used for startup, revision gaps, restores, and
-            // unknown resources. Character reads intentionally omit transcripts,
-            // so retaining same-id resident bodies here could preserve stale chat
-            // data across a restore. Leave the chats as API-hydration stubs.
-            charactersApplied:
-              !superseded.characters &&
-              applyCharactersResource(mergedCharacters, { preserveResidentChatBodies: false }),
-            inlayCatalogApplied: applyServerInlayCatalogResource(inlayCatalog, { force: true }),
-          }
-          options.hooks?.reapplyPendingPresetProjections?.()
-          options.hooks?.reapplyPendingPromptTemplateStructuralProjections?.()
-          return applied
-        },
-      )
+      const settingsApplied = !superseded.settings && applySettingsResource(mergedSettings)
+      const collectionsApplied = !superseded.collections && applyCollectionsResource(mergedCollections)
+      // A complete refresh is used for startup, revision gaps, restores, and
+      // unknown resources. Character reads intentionally omit transcripts,
+      // so retaining same-id resident bodies here could preserve stale chat
+      // data across a restore. Leave the chats as API-hydration stubs.
+      const charactersApplied =
+        !superseded.characters && applyCharactersResource(mergedCharacters, { preserveResidentChatBodies: false })
+      const inlayCatalogApplied = applyServerInlayCatalogResource(inlayCatalog, { force: true })
+      options.hooks?.reapplyPendingPresetProjections?.()
+      options.hooks?.reapplyPendingPromptTemplateStructuralProjections?.()
       if (collectionsApplied) resetPromptTemplateHydration()
+      if (!superseded.settings && (settingsApplied || settingsFullAlreadyAtLeast(revision))) {
+        hydrateLorebookPageOwnerFromResidentSettings()
+      }
+      if (collectionsApplied) options.hooks?.recordCanonicalLorebookCollections?.(SERVER_COLLECTION_NAMES)
+      if (charactersApplied) options.hooks?.recordCanonicalCharacterLorebookScopes?.(mergedCharacters.characters)
       if (
         (!superseded.settings && !settingsApplied && !settingsFullAlreadyAtLeast(revision)) ||
         (!superseded.collections && !collectionsApplied && !collectionsAlreadyAtLeast(revision)) ||
@@ -270,7 +327,9 @@ export async function refreshAllServerResources(
       ) {
         return { status: 'error', error: 'Failed to apply a complete server resource refresh' }
       }
-      return { status: 'ok', revision, scope: 'full' }
+      const bardWiki = await refreshAllLoadedBardWikiResources(revision, options.signal)
+      if (bardWiki.status !== 'ok') return bardWiki
+      return { status: 'ok', revision: Math.max(revision, bardWiki.revision), scope: 'full' }
     } catch (error) {
       return { status: 'error', error: error instanceof Error ? error.message : String(error) }
     }
@@ -309,6 +368,7 @@ export async function refreshInvalidatedServerResources(
     addEventToRefreshPlan(plan, event)
     if (plan.full) return refreshAllServerResources(options)
   }
+  retainLoadedRefreshTargets(plan)
 
   const missingHook = missingRequiredHook(plan, options.hooks)
   if (missingHook) {
@@ -334,8 +394,17 @@ export async function refreshServerResourceTargets(
     plan.characterIds.add(characterId)
   }
   for (const name of new Set(input.collections ?? [])) plan.collections.add(name)
+  for (const group of new Set(input.settingsGroups ?? [])) plan.settingsGroups.add(group)
+  for (const setting of new Set(input.standaloneSettings ?? [])) plan.standaloneSettings.add(setting)
+  plan.inlayCatalog = input.inlayCatalog === true
 
-  if (plan.characterIds.size === 0 && plan.collections.size === 0) {
+  if (
+    plan.characterIds.size === 0 &&
+    plan.collections.size === 0 &&
+    plan.settingsGroups.size === 0 &&
+    plan.standaloneSettings.size === 0 &&
+    !plan.inlayCatalog
+  ) {
     return { status: 'ok', revision: 0, scope: 'none' }
   }
 
@@ -344,7 +413,7 @@ export async function refreshServerResourceTargets(
     return { status: 'error', error: `Server resource invalidation requires the ${missingHook} hook` }
   }
 
-  return executeTargetedRefreshPlan(plan, options)
+  return executeTargetedRefreshPlan(plan, options, input.minimumRevision)
 }
 
 async function executeTargetedRefreshPlan(
@@ -373,15 +442,16 @@ async function executeTargetedRefreshPlan(
 
   if (completed.length > 0) {
     try {
-      const failedApply = withServerResourceApply(() => {
-        for (const entry of completed) {
-          if (entry.result.status !== 'ok') continue
-          if (!applyTargetedRead(entry, readSupersessions, options.hooks)) return targetedReadLabel(entry)
+      let failedApply: string | null = null
+      for (const entry of completed) {
+        if (entry.result.status !== 'ok') continue
+        if (!applyTargetedRead(entry, readSupersessions, options.hooks)) {
+          failedApply = targetedReadLabel(entry)
+          break
         }
-        options.hooks?.reapplyPendingPresetProjections?.()
-        options.hooks?.reapplyPendingPromptTemplateStructuralProjections?.()
-        return null
-      })
+      }
+      options.hooks?.reapplyPendingPresetProjections?.()
+      options.hooks?.reapplyPendingPromptTemplateStructuralProjections?.()
       if (failedApply) {
         return { status: 'error', error: `Failed to apply server ${failedApply} response` }
       }
@@ -407,15 +477,40 @@ async function executeTargetedRefreshPlan(
     options.hooks?.triggerOpenChatGenerationReattach?.()
   }
   for (const messageId of plan.translatedMessageIds) options.hooks?.clearActiveMessageTranslation?.(messageId)
+  for (const characterId of plan.greetingTranslationCharacterIds) {
+    const refreshed = await options.hooks?.refreshGreetingTranslations?.(
+      characterId,
+      minimumRevision ?? responseRevision,
+    )
+    if (!refreshed) {
+      return { status: 'error', error: `Failed to refresh greeting translations for ${characterId}` }
+    }
+  }
 
-  return { status: 'ok', revision: responseRevision, scope: 'targeted' }
+  let bardWikiRevision = responseRevision
+  for (const chatId of plan.bardWikiChatIds) {
+    const documentIds = plan.bardWikiDocumentIds.get(chatId)
+    const refreshed = await refreshLoadedBardWikiChat(
+      chatId,
+      documentIds ? [...documentIds] : [],
+      minimumRevision ?? responseRevision,
+      options.signal,
+    )
+    if (refreshed.status !== 'ok') return refreshed
+    bardWikiRevision = Math.max(bardWikiRevision, refreshed.revision)
+  }
+
+  return { status: 'ok', revision: bardWikiRevision, scope: 'targeted' }
 }
 
 function createRefreshPlan(): RefreshPlan {
   return {
+    bardWikiChatIds: new Set(),
+    bardWikiDocumentIds: new Map(),
     inlayCatalog: false,
     settings: false,
     settingsGroups: new Set(),
+    standaloneSettings: new Set(),
     collections: new Set(),
     allCharacters: false,
     characterIds: new Set(),
@@ -425,11 +520,110 @@ function createRefreshPlan(): RefreshPlan {
     generationChatMessageIds: new Map(),
     lorebookCharacterIds: new Set(),
     translatedMessageIds: new Set(),
+    greetingTranslationCharacterIds: new Set(),
     promptTemplateOwnerIds: new Set(),
     legacyPresetIds: new Set(),
     refreshSelectedPromptTemplate: false,
     full: false,
   }
+}
+
+const SHELL_SETTINGS_GROUPS = new Set<SettingsGroup>(
+  SERVER_SHELL_SETTINGS_KEYS.map((key) => SERVER_SETTINGS_GROUP_BY_KEY[key]).filter(
+    (group): group is SettingsGroup => group !== undefined,
+  ),
+)
+
+/**
+ * A contiguous event advances the global cursor even when its resource is not
+ * resident. Re-read only loaded projections; a later route read gets the
+ * current revision directly. Gap/restore recovery bypasses this filter and
+ * remains a complete authoritative refresh.
+ */
+function retainLoadedRefreshTargets(plan: RefreshPlan): void {
+  for (const chatId of [...plan.bardWikiChatIds]) {
+    if (!isBardWikiChatResourceLoaded(chatId)) {
+      plan.bardWikiChatIds.delete(chatId)
+      plan.bardWikiDocumentIds.delete(chatId)
+    }
+  }
+  for (const [chatId, documentIds] of plan.bardWikiDocumentIds) {
+    for (const documentId of [...documentIds]) {
+      if (!isBardWikiDocumentResourceLoaded(chatId, documentId)) documentIds.delete(documentId)
+    }
+  }
+  if (plan.settings && settingsResourceState.fullRevision === null) {
+    plan.settings = false
+    for (const group of Object.keys(settingsResourceState.groupStatuses)) {
+      if (isSettingsGroup(group) && settingsResourceState.groupStatuses[group] === 'ready') {
+        plan.settingsGroups.add(group)
+      }
+    }
+    for (const group of SHELL_SETTINGS_GROUPS) plan.settingsGroups.add(group)
+    for (const [setting, status] of Object.entries(settingsResourceState.standaloneStatuses)) {
+      if (status === 'ready') plan.standaloneSettings.add(setting as ServerStandaloneSettingName)
+    }
+  }
+
+  for (const group of [...plan.settingsGroups]) {
+    if (settingsResourceState.groupStatuses[group] !== 'ready' && !SHELL_SETTINGS_GROUPS.has(group)) {
+      plan.settingsGroups.delete(group)
+    }
+  }
+  for (const setting of [...plan.standaloneSettings]) {
+    if (settingsResourceState.standaloneStatuses[setting] !== 'ready') plan.standaloneSettings.delete(setting)
+  }
+  for (const name of [...plan.collections]) {
+    if (collectionsResourceState.statuses[name] !== 'ready') plan.collections.delete(name)
+  }
+
+  if (plan.inlayCatalog && getServerInlayCatalogResource() === null) plan.inlayCatalog = false
+
+  for (const characterId of [...plan.characterIds]) {
+    const resident = charactersResourceState.characters.find((candidate) => candidate?.chaId === characterId)
+    if (!resident) {
+      plan.characterIds.delete(characterId)
+      continue
+    }
+    if ((resident as unknown as Record<string, unknown>)[SERVER_CHARACTER_SHELL_MARKER] === true) {
+      plan.characterIds.delete(characterId)
+      plan.allCharacters = true
+    }
+  }
+  for (const chatId of [...plan.chatIds]) {
+    if (!isChatBodyResourceLoaded(chatId) && !residentChatBodyHasContent(chatId)) plan.chatIds.delete(chatId)
+  }
+  for (const chatId of [...plan.generationChatMessageIds.keys()]) {
+    if (!isChatBodyResourceLoaded(chatId) && !residentChatBodyHasContent(chatId)) {
+      plan.generationChatMessageIds.delete(chatId)
+    }
+  }
+  for (const characterId of [...plan.lorebookCharacterIds]) {
+    if (!isCharacterLorebookBodyResourceLoaded(characterId) && !residentCharacterLorebookIsLoaded(characterId)) {
+      plan.lorebookCharacterIds.delete(characterId)
+    }
+  }
+  for (const ownerId of [...plan.promptTemplateOwnerIds]) {
+    if (!isPromptTemplateHydrated(ownerId)) plan.promptTemplateOwnerIds.delete(ownerId)
+  }
+  if (plan.refreshSelectedPromptTemplate && !isPromptTemplateHydrated(currentPromptTemplateOwnerId())) {
+    plan.refreshSelectedPromptTemplate = false
+  }
+}
+
+function residentChatBodyHasContent(chatId: string): boolean {
+  return charactersResourceState.characters.some((character) =>
+    character.chats?.some((chat) => chat.id === chatId && Array.isArray(chat.message) && chat.message.length > 0),
+  )
+}
+
+function residentCharacterLorebookIsLoaded(characterId: string): boolean {
+  const character = charactersResourceState.characters.find((candidate) => candidate?.chaId === characterId)
+  return (
+    !!character &&
+    (character as unknown as Record<string, unknown>)[SERVER_CHARACTER_SHELL_MARKER] !== true &&
+    Array.isArray(character.globalLore)
+  )
 }
 
 function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
@@ -511,6 +705,22 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
   }
 
   switch (event.resource) {
+    case 'bardWikiChat':
+      if (!nonEmptyString(event.id)) {
+        plan.full = true
+        return
+      }
+      plan.bardWikiChatIds.add(event.id)
+      return
+    case 'bardWikiDocument':
+      if (!nonEmptyString(event.id) || !nonEmptyString(event.parentId)) {
+        plan.full = true
+        return
+      }
+      plan.bardWikiChatIds.add(event.parentId)
+      if (!plan.bardWikiDocumentIds.has(event.parentId)) plan.bardWikiDocumentIds.set(event.parentId, new Set())
+      plan.bardWikiDocumentIds.get(event.parentId)?.add(event.id)
+      return
     case 'asset':
     case 'revisionOnly':
       return
@@ -525,6 +735,7 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       addSettingsGroup(event.id)
       return
     case 'modelProfile':
+    case 'providerCredential':
       addSettingsGroup('models')
       return
     case 'agentPreset':
@@ -539,6 +750,13 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       return
     case 'moduleEnabled':
       addSettingsGroup('modules')
+      return
+    case 'moduleFolders':
+      addSettingsGroup('modules')
+      return
+    case 'moduleOrganization':
+      addSettingsGroup('modules')
+      plan.collections.add('modules')
       return
     case 'settingsWithHypaV3Presets':
       if (event.id !== 'memory') {
@@ -563,6 +781,13 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       return
     case 'characterRow':
       addCharacter(event.parentId ?? event.id)
+      return
+    case 'greetingTranslation':
+      if (!nonEmptyString(event.id)) {
+        plan.full = true
+        return
+      }
+      plan.greetingTranslationCharacterIds.add(event.id)
       return
     case 'scriptDefinition':
     case 'triggerDefinition':
@@ -635,10 +860,11 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
           return
         case 'modelPreset.deleted':
           if (!hasEntityId) break
-          // Deletion can move the selected pointer and atomically rehome chat
-          // and loadout generation references.
+          // Deletion can move the selected pointer and atomically rehome chat,
+          // loadout, and prompt-recommendation references.
           addFullSettings()
           plan.collections.add('modelPresets')
+          plan.collections.add('promptPresets')
           plan.collections.add('loadouts')
           addAllCharacters()
           return
@@ -791,6 +1017,7 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
     case 'module':
       addSettingsGroup('modules')
       plan.collections.add('modules')
+      plan.collections.add('personas')
       plan.collections.add('loadouts')
       addAllCharacters()
       return
@@ -832,11 +1059,16 @@ function isWellFormedAgentPresetEvent(event: CommandEvent): boolean {
   const hasId = nonEmptyString(event.id)
   const hasParentId = nonEmptyString(event.parentId)
   switch (event.type) {
+    case 'agent.created':
+    case 'agent.updated':
+    case 'agent.deleted':
     case 'agentPreset.created':
     case 'agentPreset.updated':
       return hasId && event.parentId === undefined
+    case 'agent.duplicated':
     case 'agentPreset.duplicated':
       return hasId && hasParentId
+    case 'agent.reordered':
     case 'agentPreset.reordered':
       return event.id === undefined && event.parentId === undefined
     case 'agentPreset.default.updated':
@@ -845,7 +1077,11 @@ function isWellFormedAgentPresetEvent(event: CommandEvent): boolean {
     case 'agentPreset.step.updated':
     case 'agentPreset.step.duplicated':
     case 'agentPreset.step.deleted':
+    case 'agentPreset.use.created':
+    case 'agentPreset.use.updated':
+    case 'agentPreset.use.deleted':
       return hasId && hasParentId
+    case 'agentPreset.use.reordered':
     case 'agentPreset.step.reordered':
       return hasId && event.parentId === undefined
     default:
@@ -886,6 +1122,13 @@ function captureSettingsGroupReadFence(group: SettingsGroup): ResourceReadFence 
   return captureResourceReadFence(
     () => captureSettingsGroupProjectionEpoch(group),
     () => snapshotFields(settingsResourceState.value as Record<string, unknown>, keys),
+  )
+}
+
+function captureStandaloneSettingReadFence(setting: ServerStandaloneSettingName): ResourceReadFence {
+  return captureResourceReadFence(
+    () => settingsResourceState.standaloneRevisions[setting] ?? null,
+    () => snapshotFields(settingsResourceState.value as Record<string, unknown>, [setting]),
   )
 }
 
@@ -992,6 +1235,17 @@ async function runTargetedReads(
       fetchServerSettingsGroup(group, signal).then((result) => ({
         kind: 'settingsGroup' as const,
         group,
+        fence,
+        result,
+      })),
+    )
+  }
+  for (const setting of plan.standaloneSettings) {
+    const fence = captureStandaloneSettingReadFence(setting)
+    reads.push(
+      fetchServerStandaloneSetting(setting, signal).then((result) => ({
+        kind: 'standaloneSetting' as const,
+        setting,
         fence,
         result,
       })),
@@ -1230,7 +1484,11 @@ function applyTargetedRead(
         withPendingPluginProvider(entry.result, hooks?.mergePendingPluginProvider),
         hooks?.mergePendingAgentPresetSettings,
       )
-      return payload.status !== 'ok' || applySettingsResource(payload) || settingsFullAlreadyAtLeast(payload.revision)
+      if (payload.status !== 'ok') return true
+      const applied = applySettingsResource(payload)
+      const alreadyApplied = settingsFullAlreadyAtLeast(payload.revision)
+      if (applied || alreadyApplied) hydrateLorebookPageOwnerFromResidentSettings()
+      return applied || alreadyApplied
     }
     case 'settingsGroup': {
       if (entry.result.status === 'ok' && entry.result.group !== entry.group) return false
@@ -1249,6 +1507,16 @@ function applyTargetedRead(
         settingsGroupAlreadyAtLeast(entry.group, payload.revision)
       )
     }
+    case 'standaloneSetting': {
+      if (entry.result.status === 'ok' && entry.result.setting !== entry.setting) return false
+      if (entry.result.status !== 'ok' || supersessions.generic.has(entry)) return true
+      const applied = applyStandaloneSettingResource(entry.result)
+      const alreadyApplied = (settingsResourceState.standaloneRevisions[entry.setting] ?? -1) >= entry.result.revision
+      if (entry.setting === 'loreBookPage' && (applied || alreadyApplied)) {
+        hydrateLorebookPageOwnerFromResidentSettings()
+      }
+      return applied || alreadyApplied
+    }
     case 'collection': {
       if (entry.result.status !== 'ok') return true
       if (supersessions.generic.has(entry)) return true
@@ -1257,6 +1525,7 @@ function applyTargetedRead(
           ? withPendingCollections(entry.result, hooks)
           : entry.result
       const applied = applyCollectionsResource(payload, entry.name)
+      if (applied) hooks?.recordCanonicalLorebookCollections?.([entry.name])
       if (applied && entry.name === 'promptPresets') resetPromptTemplateHydration()
       const alreadyApplied = (collectionsResourceState.revisions[entry.name] ?? -1) >= entry.result.revision
       if (applied && entry.name === 'promptTemplate') {
@@ -1286,17 +1555,19 @@ function applyTargetedRead(
     case 'characters': {
       if (supersessions.generic.has(entry)) return true
       const payload = withPendingAgentPresetCharacters(entry.result, hooks)
-      return payload.status !== 'ok' || applyCharactersResource(payload) || charactersAlreadyAtLeast(payload.revision)
+      if (payload.status !== 'ok') return true
+      const applied = applyCharactersResource(payload)
+      if (applied) hooks?.recordCanonicalCharacterLorebookScopes?.(payload.characters)
+      return applied || charactersAlreadyAtLeast(payload.revision)
     }
     case 'character': {
       if (entry.result.status === 'ok' && entry.result.character?.chaId !== entry.characterId) return false
       if (supersessions.generic.has(entry)) return true
       const payload = withPendingAgentPresetCharacter(entry.result, hooks)
-      return (
-        payload.status !== 'ok' ||
-        applyCharacterResource(payload) ||
-        characterAlreadyAtLeast(entry.characterId, payload.revision)
-      )
+      if (payload.status !== 'ok') return true
+      const applied = applyCharacterResource(payload)
+      if (applied) hooks?.recordCanonicalCharacterLorebookScopes?.([payload.character])
+      return applied || characterAlreadyAtLeast(entry.characterId, payload.revision)
     }
     case 'characterOrder':
       return (
@@ -1322,7 +1593,8 @@ function applyTargetedRead(
     case 'lorebook':
       return (
         entry.result.status !== 'ok' ||
-        applyCharacterLorebook(entry.result, supersessions.characterLorebookIds.has(entry.characterId), hooks)
+        (entry.result.characterId === entry.characterId &&
+          applyCharacterLorebook(entry.result, supersessions.characterLorebookIds.has(entry.characterId), hooks))
       )
     case 'lorebooks': {
       const result = entry.result
@@ -1340,6 +1612,23 @@ function applyTargetedRead(
   }
 }
 
+function hydrateLorebookPageOwnerFromResidentSettings(): void {
+  const revision = Math.max(
+    settingsResourceState.loreBookPageRevision ?? -1,
+    settingsResourceState.standaloneRevisions.loreBookPage ?? -1,
+    settingsResourceState.fullRevision ?? -1,
+  )
+  if (revision < 0) return
+  const settings = settingsResourceState.value as Record<string, unknown>
+  lorebookPageOwner.hydrate({
+    revision,
+    setting: 'loreBookPage',
+    state: Object.prototype.hasOwnProperty.call(settings, 'loreBookPage')
+      ? { present: true, value: settings.loreBookPage }
+      : { present: false },
+  })
+}
+
 async function refreshInvalidatedPromptTemplateOwners(
   plan: RefreshPlan,
   minimumRevision: number,
@@ -1352,9 +1641,18 @@ async function refreshInvalidatedPromptTemplateOwners(
   if (ownerIds.size === 0) return null
 
   const selectedOwnerId = currentPromptTemplateOwnerId()
-  for (const ownerId of ownerIds) invalidatePromptTemplateHydration(ownerId)
+  // Prompt-item events update an owner whose complete body is still resident.
+  // Keep that body mounted while the forced read revalidates it so a routine
+  // value-only acknowledgement cannot destroy the focused editor. Prompt-preset
+  // events replace owner shells, so those still require a full invalidation.
+  const retainedOwnerIds = plan.refreshSelectedPromptTemplate ? new Set<string>() : new Set(plan.promptTemplateOwnerIds)
+  for (const ownerId of ownerIds) {
+    if (retainedOwnerIds.has(ownerId)) markPromptTemplateHydrationStale(ownerId)
+    else invalidatePromptTemplateHydration(ownerId)
+  }
+  const ownerIdList = [...ownerIds]
   const results = await Promise.all(
-    [...ownerIds].map((ownerId) =>
+    ownerIdList.map((ownerId) =>
       ensurePromptTemplateHydrated({
         applyProjection: ownerId === selectedOwnerId,
         force: true,
@@ -1363,6 +1661,10 @@ async function refreshInvalidatedPromptTemplateOwners(
       }),
     ),
   )
+  results.forEach((applied, index) => {
+    const ownerId = ownerIdList[index]
+    if (!applied && retainedOwnerIds.has(ownerId)) invalidatePromptTemplateHydration(ownerId)
+  })
   return results.every(Boolean) ? null : 'Failed to refresh an invalidated prompt-template owner'
 }
 
@@ -1380,7 +1682,12 @@ function applyChatMessages(
     typeof result.messageStart === 'number' && typeof result.messageTotal === 'number'
       ? { start: result.messageStart, total: result.messageTotal }
       : undefined
-  const applied = hooks.applyChatMessages(result.chatId, result.message, result.hypaV3Data, result.alternates, range)
+  const applied =
+    typeof result.hypaV3DataIncluded === 'boolean'
+      ? hooks.applyChatMessages(result.chatId, result.message, result.hypaV3Data, result.alternates, range, {
+          hypaV3DataIncluded: result.hypaV3DataIncluded,
+        })
+      : hooks.applyChatMessages(result.chatId, result.message, result.hypaV3Data, result.alternates, range)
   if (applied) markChatBodyResourceRevision(result.chatId, result.revision)
   return applied
 }
@@ -1520,6 +1827,9 @@ function missingRequiredHook(
   if (plan.translatedMessageIds.size > 0 && !hooks?.clearActiveMessageTranslation) {
     return 'clearActiveMessageTranslation'
   }
+  if (plan.greetingTranslationCharacterIds.size > 0 && !hooks?.refreshGreetingTranslations) {
+    return 'refreshGreetingTranslations'
+  }
   if (plan.lorebookCharacterIds.size > 0 && !hooks?.applyCharacterLorebook) return 'applyCharacterLorebook'
   if (plan.lorebookCharacterIds.size > 0 && !hooks?.markCharacterLorebookHydrated) {
     return 'markCharacterLorebookHydrated'
@@ -1551,6 +1861,8 @@ function targetedReadLabel(entry: CompletedTargetedRead): string {
       return 'settings'
     case 'settingsGroup':
       return `${entry.group} settings`
+    case 'standaloneSetting':
+      return `${entry.setting} setting`
     case 'collection':
       return `${entry.name} collection`
     case 'legacyPresetRow':

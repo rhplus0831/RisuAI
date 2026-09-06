@@ -92,7 +92,7 @@ export class MessageTranslationJobRegistry {
   }
 }
 
-function safeTranslationError(error: unknown): string {
+export function safeTranslationError(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error)
   const redacted = raw
     .replace(/\bBearer\s+\S+/gi, 'Bearer [redacted]')

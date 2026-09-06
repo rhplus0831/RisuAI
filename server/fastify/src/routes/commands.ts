@@ -16,7 +16,6 @@ import {
 import {
   applyCharacterSelectionCommandMutation,
   applyJsonCommandMutation,
-  applyMessageFreeJsonCommandMutation,
   applyTargetedCommandMutation,
   readBaseRevision,
   TARGETED_MUTATION_PATHS,
@@ -34,32 +33,45 @@ import {
 } from '../commandMutationReceipts.js'
 import { DATABASE_LINEAGE_HEADER, DatabaseLineageConflictError } from '../databaseLineage.js'
 import { InitializeConflictError } from '../databaseInitialization.js'
+import { MAX_REQUEST_HISTORY_LIMIT, pruneRequestHistory } from '../requestHistory.js'
 import { maskProviderSecrets, resolveMaskedProviderSecretPlaceholders } from '../providerSecrets.js'
 import {
   normalizeLegacyFallbackModels,
   normalizeLegacySeperateModels,
   normalizeModelRoleOverrides,
-} from '../../../../src/ts/model/modelRoles.js'
+} from '@risuai/shared-core/model-roles'
 import {
   ModelProfileRecordValidationError,
+  normalizeModelProfileOrder,
   normalizeModelRuntimeDefaults,
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
+  readModelProfileOrder,
   readModelProfiles,
   readModelRuntimeDefaults,
   readModelRoleProfiles,
-} from '../../../../src/ts/model/modelProfileRecords.js'
-import { normalizeChatGenerationTogglePresets } from '../../../../src/ts/chatGenerationTogglePresetRecords.js'
-import { normalizeAgentPresets } from '../../../../src/ts/agentPresetRecords.js'
+} from '@risuai/shared-core/model-profile-records'
+import {
+  normalizeProviderCredentials,
+  ProviderCredentialRecordValidationError,
+  readProviderCredentials,
+} from '@risuai/shared-core/provider-credential-records'
+import { normalizeChatGenerationTogglePresets } from '@risuai/shared-core/chat-generation-toggle-preset-records'
+import { hypaV3PresetIndexFromStableId } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
+import {
+  MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB,
+  MIN_REGEX_OUTPUT_SIZE_LIMIT_MIB,
+} from '@risuai/shared-core/regex-output-size-limit'
 import {
   createPromptItemRecord,
-  ensurePromptTemplateCollection,
+  normalizePromptItemRecord,
   PROMPT_SETTINGS_KEYS,
   readPromptItemId,
   readPromptItemPatch,
   readPromptSettingsPatch,
   requirePromptItemIndex,
   validateFullPromptItemIdList,
+  type PromptItemRecord,
 } from '../commands/prompts.js'
 import {
   buildPersonaMutationCertificate,
@@ -72,6 +84,7 @@ import {
   readPersonaId,
   readPersonaPatch,
   requirePersonaIndex,
+  requireSelectedPersonaIndex,
   saveSelectedPersonaSnapshot,
   selectedPersonaId,
   validateFullPersonaIdList,
@@ -93,6 +106,7 @@ import {
   saveCurrentPresetSnapshot,
   selectedPresetId,
   validateFullPresetIdList,
+  type PresetRecord,
 } from '../commands/presets.js'
 import {
   applyModelPreset,
@@ -117,6 +131,7 @@ import {
   selectedPromptPresetId,
   validateFullModelPresetIdList,
   validateFullPromptPresetIdList,
+  validatePromptPresetRecommendedModelPreset,
   type LegacyBotPresetExtractionMode,
 } from '../commands/splitPresets.js'
 import {
@@ -130,7 +145,6 @@ import {
   readTranslatorPresetPatch,
   requireTranslatorPresetIndex,
   selectedTranslatorPresetId,
-  syncSelectedTranslatorPresetToLegacyFields,
 } from '../commands/translatorPresets.js'
 import {
   createLoadoutRecord,
@@ -147,9 +161,8 @@ import {
 import { rehomeGenerationReferences, type GenerationReferenceCascadeResult } from '../commands/generationReferences.js'
 import {
   type CharacterRecord,
-  buildPatchedCharacterCollectionRow,
+  buildStrictPatchedCharacterRow,
   createCharacterRecord,
-  ensureCharacterCollection,
   ensureDatabaseObject as ensureCharacterDatabaseObject,
   findCharacterIndex,
   readAlternateGreetingMutation,
@@ -158,6 +171,7 @@ import {
   readCharacterPatch,
   repairCharacterCollectionRow,
   requireCharacterIndex,
+  readStrictCharacterRecord,
   remapAlternateGreetingIndex,
   selectedCharacterId,
   validateCharacterOrderAssetRefs,
@@ -171,6 +185,8 @@ import {
   createChatRecord,
   ensureCharacterChatFolders,
   ensureCharacterChats,
+  requireChatLocationExact,
+  requireStrictChatLocation,
   normalizeAllCharacterChats,
   readChatFolderId,
   readChatFolderIdList,
@@ -182,16 +198,19 @@ import {
   readChatPatch,
   readChatScriptstateDeleteKeys,
   readChatScriptstatePatch,
+  readStrictCharacterChatFolders,
   readOptionalBoolean as readChatOptionalBoolean,
   readOptionalFolderByChatId,
   requireChatFolderIndex,
   requireChatLocation,
   selectChat,
   selectedChatId,
+  selectedChatIdStrict,
   validateChatScriptstateCommand,
   validateFullChatFolderOrder,
   validateFullChatOrder,
   type ChatRecord,
+  type ChatFolderRecord,
 } from '../commands/chats.js'
 import {
   createMessageRecord,
@@ -200,6 +219,7 @@ import {
   readMessageId,
   readMessagePatch,
   readReplacementMessages,
+  readStrictStoredMessageRecord,
   readTruncateAfterMessageId,
   type MessageRecord,
   validateUniqueMessageIds,
@@ -207,7 +227,6 @@ import {
 import {
   applyLorebookEntryWriteById,
   deleteLorebookEntryById,
-  ensureGlobalLorebookCollection,
   normalizeSelectedCharacterLorebooks,
   normalizeSelectedChatLorebooks,
   readCharacterId as readLorebookCharacterId,
@@ -217,13 +236,15 @@ import {
   readLorebookId,
   readLorebookIdList,
   readModuleId,
+  readStrictGlobalLorebookCollection,
   reorderLorebookEntriesById,
   requireGlobalLorebookIndex,
   requireModule,
   validateFullLorebookOrder,
   validateGlobalLorebookCreate,
   validateLorebookEntries,
-  type ModuleRecord as LorebookModuleRecord,
+  validateStoredGlobalLorebook,
+  validateStoredLorebookEntries,
 } from '../commands/lorebooks.js'
 import {
   applyScriptDefinitionCollectionMutation,
@@ -236,20 +257,27 @@ import {
 } from '../commands/scriptDefinitions.js'
 import {
   createModuleRecord,
-  ensureEnabledModules,
-  ensureModuleCommandDatabase,
-  ensureModuleRecords,
+  createModuleFolderRecord,
   findCharacterForModuleCommand,
   readCharacterId as readModuleCharacterId,
   readModuleEnabled,
+  readModuleFolderAssignments,
+  readModuleFolderIdList,
+  readModuleFolderPatch,
   readModuleId as readCommandModuleId,
   readModuleIdList,
   readModulePatch,
+  readStrictEnabledModules,
+  readStrictModuleRecords,
+  readStrictModuleFolders,
   removeModuleReferences,
   requireModuleIndex,
   validateCharacterModuleLinks,
   validateFullModuleOrder,
+  validateFullModuleFolderOrder,
+  validateModuleFolderReference,
   validateNormalModuleLinks,
+  validateStoredModuleRecord,
 } from '../commands/modules.js'
 import {
   convertLegacyModelProfilesCommand,
@@ -257,27 +285,37 @@ import {
   createModelProfileCommand,
   deleteModelProfileCommand,
   duplicateModelProfileCommand,
+  reorderModelProfilesCommand,
   updateModelProfileCommand,
   updateModelRoleProfilesCommand,
   updateModelRuntimeDefaultsCommand,
 } from '../commands/modelProfiles.js'
 import {
+  createProviderCredentialCommand,
+  deleteProviderCredentialCommand,
+  updateProviderCredentialCommand,
+} from '../commands/providerCredentials.js'
+import {
+  createAgentCommand,
   createAgentPresetCommand,
   createAgentPresetStepCommand,
+  deleteAgentCommand,
   deleteAgentPresetCommand,
   deleteAgentPresetStepCommand,
+  duplicateAgentCommand,
   duplicateAgentPresetCommand,
   duplicateAgentPresetStepCommand,
+  reorderAgentsCommand,
   reorderAgentPresetsCommand,
   reorderAgentPresetStepsCommand,
   setAgentPresetDefaultCommand,
+  updateAgentCommand,
   updateAgentPresetCommand,
   updateAgentPresetStepCommand,
+  readStrictAgentConfiguration,
 } from '../commands/agentPresets.js'
 import {
   createPluginRecord,
-  ensurePluginCommandDatabase,
-  ensurePluginRecords,
   readPluginEnabled,
   readPluginId,
   readPluginIdList,
@@ -285,25 +323,22 @@ import {
   readPluginProvider,
   requirePluginIndex,
   validateFullPluginOrder,
+  type PluginRecord,
 } from '../commands/plugins.js'
-import {
-  ensurePluginCustomStorage,
-  ensurePluginStorageDatabase,
-  readPluginStorageBulkPatch,
-  readPluginStorageKey,
-  readPluginStorageValue,
-} from '../commands/pluginStorage.js'
+import { readPluginStorageBulkPatch, readPluginStorageKey, readPluginStorageValue } from '../commands/pluginStorage.js'
 import { validateOptionalServerAssetRef } from '../commands/assets.js'
 import { requireAuth } from '../http.js'
-import type { ChatGenerationSettings } from '../../../../src/ts/chatGenerationSettings.js'
+import { getSchemaState } from '../db.js'
+import type { ChatGenerationSettings } from '@risuai/shared-core/chat-generation-settings'
 import {
   MODEL_PRESET_FIELDS,
   PROMPT_PRESET_FIELDS,
   PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS,
   PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS,
   PROMPT_PRESET_MODEL_PARAMETERS_OVERRIDE_KEY,
+  clearPromptPresetRecommendedModelPresetReferences,
   databaseKeyForModelPresetField,
-} from '../../../../src/ts/presetSplit.js'
+} from '@risuai/shared-core/preset-split'
 import {
   activeMessageIdExistsOutsideChat,
   activeMessageIdExists,
@@ -324,6 +359,9 @@ import {
 } from '../messageStore.js'
 import {
   deleteCharacterChatRow,
+  clearChatTranslatorPresetBindings,
+  characterRowExists,
+  chatRowExists,
   deleteCharacterRow,
   deletePluginStorageKey,
   deleteInlayCatalogEntry,
@@ -331,6 +369,9 @@ import {
   extractSettings,
   initializeDefaultDatabase,
   insertCharacterChatRow,
+  insertCharacterRow,
+  loadCharacterAppendState,
+  nextCharacterRowPosition,
   replacePluginStorage,
   RevisionMismatchError,
   ValidationError,
@@ -347,8 +388,44 @@ import {
   writeSingleCollectionTable,
 } from '../repository.js'
 import { readLegacyStorageValue } from './legacyStorage.js'
+import {
+  deleteChangedGreetingTranslations,
+  remapAlternateGreetingTranslations,
+} from '../translation/greetingTranslationStore.js'
 import type { MessageTranslationJobRegistry } from '../messageTranslationJobs.js'
 import { runServerMessageTranslation } from '../translation/serverMessageTranslation.js'
+import type { GreetingTranslationJobRegistry } from '../greetingTranslationJobs.js'
+import { runServerGreetingTranslation } from '../translation/serverGreetingTranslation.js'
+import {
+  BARDWIKI_CONTEXT_POLICIES,
+  BARDWIKI_DOCUMENT_KINDS,
+  BARDWIKI_MEMORY_MODES,
+  BARDWIKI_CONFIRMATION_POLICIES,
+  BARDWIKI_REVIEW_STATES,
+  BardWikiConflictError,
+  BardWikiValidationError,
+  createBardWikiDocument,
+  deleteBardWikiDocument,
+  updateBardWikiChatSettings,
+  updateBardWikiDocument,
+  type BardWikiChatSettingsPatch,
+  type BardWikiDocumentKind,
+  type BardWikiContextPolicy,
+  type BardWikiReviewState,
+} from '../bardWikiRepository.js'
+import {
+  createOrReuseExplicitBardWikiConfirmation,
+  type ExplicitBardWikiConfirmationInput,
+} from '../bardWikiReceipts.js'
+import { isBardWikiGlobalSettings } from '@risuai/protocol'
+import {
+  applyBardWikiVaultImport,
+  decodeBardWikiVault,
+  planBardWikiVaultImport,
+  type BardWikiVaultConflictStrategy,
+  type BardWikiVaultExpectedTarget,
+} from '../bardWikiVault.js'
+import { enqueueBardWikiRebuild, previewBardWikiRebuild } from '../bardWikiRebuildHandler.js'
 
 function commandEventOrigin(req: FastifyRequest): CommandEventOrigin | undefined {
   const writerSessionId = readActiveWriterSessionId(req)
@@ -458,6 +535,349 @@ function asArray(value: unknown): readonly unknown[] {
   return Array.isArray(value) ? value : []
 }
 
+/** Read the one character row supplied by a targeted chat loader without
+ * repairing or widening the mutation to the aggregate character collection. */
+function readScopedCharacterRecords(database: unknown): CharacterRecord[] {
+  const target = ensureCharacterDatabaseObject(database)
+  if (!Array.isArray(target.characters)) return []
+  const candidate = target.characters[0]
+  if (
+    !candidate ||
+    typeof candidate !== 'object' ||
+    Array.isArray(candidate) ||
+    typeof (candidate as Record<string, unknown>).chaId !== 'string' ||
+    !(candidate as Record<string, unknown>).chaId
+  ) {
+    return []
+  }
+  return [candidate as CharacterRecord]
+}
+
+function readStrictIdentityCollection<T extends Record<string, unknown>>(
+  value: unknown,
+  collectionLabel: string,
+  idKey: string,
+): T[] {
+  if (!Array.isArray(value)) {
+    throw new ValidationError(`${collectionLabel} must be an array`)
+  }
+  const seen = new Set<string>()
+  value.forEach((candidate, index) => {
+    const record = readJsonObject(candidate, `${collectionLabel}[${index}]`) as T
+    const id = record[idKey]
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new ValidationError(`${collectionLabel}[${index}].${idKey} must be a non-empty string`)
+    }
+    if (seen.has(id)) {
+      throw new ValidationError(`Duplicate ${collectionLabel} id: ${id}`)
+    }
+    seen.add(id)
+  })
+  return value as T[]
+}
+
+function readStrictHypaV3PresetState(
+  target: Record<string, unknown>,
+  options: { validateNumericProjection?: boolean } = {},
+): { presets: Record<string, unknown>[]; selectedId: string | null; selectedIndex: number } {
+  const presets = readStrictIdentityCollection<Record<string, unknown>>(target.hypaV3Presets, 'hypaV3Presets', 'id')
+  for (let index = 0; index < presets.length; index += 1) {
+    const preset = presets[index]
+    if (typeof preset.name !== 'string') {
+      throw new ValidationError(`hypaV3Presets[${index}].name must be a string`)
+    }
+    if (!isPlainObject(preset.settings)) {
+      throw new ValidationError(`hypaV3Presets[${index}].settings must be an object`)
+    }
+  }
+  validateHypaV3PresetSummaryModels(presets)
+
+  const selectedId = target.selectedHypaV3PresetId
+  if (presets.length === 0) {
+    if (selectedId !== null) {
+      throw new ValidationError('selectedHypaV3PresetId must be null when hypaV3Presets is empty')
+    }
+  } else if (typeof selectedId !== 'string' || selectedId.trim() === '') {
+    throw new ValidationError('selectedHypaV3PresetId must identify an existing Hypa V3 preset')
+  }
+
+  const selectedIndex = hypaV3PresetIndexFromStableId(target)
+  if (presets.length > 0 && selectedIndex === -1) {
+    throw new ValidationError(`Unknown selectedHypaV3PresetId: ${String(selectedId)}`)
+  }
+  if (options.validateNumericProjection !== false && target.hypaV3PresetId !== selectedIndex) {
+    throw new ValidationError('hypaV3PresetId must match the selectedHypaV3PresetId compatibility projection')
+  }
+
+  return { presets, selectedId: selectedId as string | null, selectedIndex }
+}
+
+function validateStrictSelectedIndex(target: Record<string, unknown>, key: string, collectionLength: number): number {
+  const selected = target[key]
+  if (!Number.isInteger(selected)) {
+    throw new ValidationError(`${key} must be an integer`)
+  }
+  const index = selected as number
+  if (collectionLength === 0) {
+    if (index !== -1) throw new ValidationError(`${key} must be -1 when its collection is empty`)
+    return index
+  }
+  if (index < 0 || index >= collectionLength) {
+    throw new ValidationError(`${key} must select an existing record`)
+  }
+  return index
+}
+
+function assertStoredRecordAlreadyCanonical<T>(record: T, parse: (copy: T) => unknown, label: string): void {
+  const copy = cloneJsonForCommandCertificate(record)
+  const canonical = parse(copy)
+  if (!isDeepStrictEqual(record, canonical)) {
+    throw new ValidationError(`${label} must already be canonical; use an explicit import or recovery boundary`)
+  }
+}
+
+function readStrictLegacyPresetCollection(
+  target: Record<string, unknown>,
+  options: { allowEmptyPendingFirstRecord?: boolean; allowInvalidSelectedPointer?: boolean } = {},
+): PresetRecord[] {
+  const presets = readStrictIdentityCollection<PresetRecord>(target.botPresets, 'botPresets', 'id')
+  for (let index = 0; index < presets.length; index += 1) {
+    if (presets[index].name !== undefined && typeof presets[index].name !== 'string') {
+      throw new ValidationError(`botPresets[${index}].name must be a string`)
+    }
+  }
+  if (
+    !options.allowInvalidSelectedPointer &&
+    !(options.allowEmptyPendingFirstRecord && presets.length === 0 && target.botPresetsId === 0)
+  ) {
+    validateStrictSelectedIndex(target, 'botPresetsId', presets.length)
+  }
+  return presets
+}
+
+function readStrictModelPresetCollection(
+  target: Record<string, unknown>,
+): ReturnType<typeof ensureModelPresetCollection> {
+  const presets = readStrictIdentityCollection<ReturnType<typeof ensureModelPresetCollection>[number]>(
+    target.modelPresets,
+    'modelPresets',
+    'id',
+  )
+  for (let index = 0; index < presets.length; index += 1) {
+    if (presets[index].name !== undefined && typeof presets[index].name !== 'string') {
+      throw new ValidationError(`modelPresets[${index}].name must be a string`)
+    }
+  }
+  validateStrictSelectedIndex(target, 'modelPresetsId', presets.length)
+  return presets
+}
+
+function readStrictPromptPresetCollection(
+  target: Record<string, unknown>,
+): ReturnType<typeof ensurePromptPresetCollection> {
+  const presets = readStrictIdentityCollection<ReturnType<typeof ensurePromptPresetCollection>[number]>(
+    target.promptPresets,
+    'promptPresets',
+    'id',
+  )
+  for (let index = 0; index < presets.length; index += 1) {
+    const preset = presets[index]
+    if (preset.name !== undefined && typeof preset.name !== 'string') {
+      throw new ValidationError(`promptPresets[${index}].name must be a string`)
+    }
+    if (preset.archived !== undefined && typeof preset.archived !== 'boolean') {
+      throw new ValidationError(`promptPresets[${index}].archived must be a boolean`)
+    }
+    if (
+      preset.recommendedModelPresetId !== undefined &&
+      preset.recommendedModelPresetId !== null &&
+      (typeof preset.recommendedModelPresetId !== 'string' || preset.recommendedModelPresetId.trim() === '')
+    ) {
+      throw new ValidationError(`promptPresets[${index}].recommendedModelPresetId must be non-empty or null`)
+    }
+  }
+  validateStrictSelectedIndex(target, 'promptPresetsId', presets.length)
+  return presets
+}
+
+function readStrictPromptTemplateCollection(
+  target: Record<string, unknown>,
+  options: { allowMissing?: boolean } = {},
+): PromptItemRecord[] {
+  if (target.promptTemplate === undefined && options.allowMissing) return []
+  const items = readStrictIdentityCollection<PromptItemRecord>(target.promptTemplate, 'promptTemplate', 'id')
+  for (let index = 0; index < items.length; index += 1) {
+    assertStoredRecordAlreadyCanonical(
+      items[index],
+      (record) => normalizePromptItemRecord(record),
+      `promptTemplate[${index}]`,
+    )
+  }
+  return items
+}
+
+function readStrictPluginCommandTarget(database: unknown): {
+  target: Record<string, unknown>
+  plugins: PluginRecord[]
+} {
+  const target = readJsonObject(database, 'database')
+  if (typeof target.currentPluginProvider !== 'string') {
+    throw new ValidationError('currentPluginProvider must be a string')
+  }
+  const plugins = readStrictIdentityCollection<PluginRecord>(target.plugins, 'plugins', 'name')
+  for (let index = 0; index < plugins.length; index += 1) {
+    createPluginRecord(plugins[index], `plugins[${index}]`)
+  }
+  return { target, plugins }
+}
+
+function readStrictPluginProviderTarget(database: unknown): Record<string, unknown> {
+  const target = readJsonObject(database, 'database')
+  if (typeof target.currentPluginProvider !== 'string') {
+    throw new ValidationError('currentPluginProvider must be a string')
+  }
+  return target
+}
+
+function readStrictPluginStorageTarget(database: unknown): {
+  target: Record<string, unknown>
+  storage: Record<string, unknown>
+} {
+  const target = readJsonObject(database, 'database')
+  const storage = readJsonObject(target.pluginCustomStorage, 'pluginCustomStorage')
+  return { target, storage }
+}
+
+function readStrictCharacterCollection(database: unknown): CharacterRecord[] {
+  const target = readJsonObject(database, 'database')
+  if (!Array.isArray(target.characters)) {
+    throw new ValidationError('characters must be an array')
+  }
+  const seen = new Set<string>()
+  target.characters.forEach((candidate, index) => {
+    const record = readJsonObject(candidate, `characters[${index}]`)
+    const id = readCharacterId(record.chaId, `characters[${index}].chaId`)
+    if (seen.has(id)) throw new ValidationError(`Duplicate character id: ${id}`)
+    seen.add(id)
+    readStrictCharacterRecord(record, id)
+  })
+  validateStrictSelectedIndex(target, 'currentChar', target.characters.length)
+  return target.characters as CharacterRecord[]
+}
+
+function readStrictCharacterChats(
+  character: CharacterRecord,
+  globalChatIds: Set<string> = new Set<string>(),
+): ChatRecord[] {
+  if (!Array.isArray(character.chats)) {
+    throw new ValidationError(`character ${character.chaId}.chats must be an array`)
+  }
+  const folders = readStrictChatFolders(character)
+  const folderIds = new Set(folders.map((folder) => folder.id))
+  const chats = character.chats as ChatRecord[]
+  for (let index = 0; index < chats.length; index += 1) {
+    const record = readJsonObject(chats[index], `character ${character.chaId}.chats[${index}]`)
+    const id = readChatId(record.id, `character ${character.chaId}.chats[${index}].id`)
+    if (globalChatIds.has(id)) throw new ValidationError(`Duplicate chat id: ${id}`)
+    globalChatIds.add(id)
+    requireStrictChatLocation([character], id)
+    if (record.folderId !== undefined && record.folderId !== null) {
+      const folderId = readChatFolderId(record.folderId, `chat ${id}.folderId`)
+      if (!folderIds.has(folderId)) throw new ValidationError(`Unknown chat folder id: ${folderId}`)
+    }
+  }
+  selectedChatIdStrict(character)
+  return chats
+}
+
+function readStrictChatFolders(character: CharacterRecord): ChatFolderRecord[] {
+  readStrictCharacterChatFolders(character)
+  return character.chatFolders as ChatFolderRecord[]
+}
+
+function readStrictCharacterGraph(database: unknown): CharacterRecord[] {
+  const characters = readStrictCharacterCollection(database)
+  const chatIds = new Set<string>()
+  const folderIds = new Set<string>()
+  for (const character of characters) {
+    const folders = readStrictChatFolders(character)
+    for (const folder of folders) {
+      if (folderIds.has(folder.id)) throw new ValidationError(`Duplicate chat folder id: ${folder.id}`)
+      folderIds.add(folder.id)
+    }
+    readStrictCharacterChats(character, chatIds)
+  }
+  return characters
+}
+
+function requireStrictChatFolderIndex(
+  characters: readonly CharacterRecord[],
+  folderId: string,
+): { character: CharacterRecord; characterIndex: number; folderIndex: number } {
+  let found: { character: CharacterRecord; characterIndex: number; folderIndex: number } | undefined
+  for (let characterIndex = 0; characterIndex < characters.length; characterIndex += 1) {
+    const character = characters[characterIndex]
+    const folders = readStrictChatFolders(character)
+    const folderIndex = folders.findIndex((folder) => folder.id === folderId)
+    if (folderIndex === -1) continue
+    if (found) throw new ValidationError(`Duplicate chat folder id: ${folderId}`)
+    readStrictCharacterChats(character)
+    found = { character, characterIndex, folderIndex }
+  }
+  if (!found) throw new EntityNotFoundError(`Chat folder not found: ${folderId}`)
+  return found
+}
+
+function validateStrictFullChatOrder(
+  character: CharacterRecord,
+  chatIds: readonly string[],
+  folderByChatId: Record<string, string | null> = {},
+): void {
+  const chats = readStrictCharacterChats(character)
+  const existing = new Set(chats.map((chat) => chat.id))
+  const seen = new Set<string>()
+  for (const chatId of chatIds) {
+    if (!existing.has(chatId)) throw new ValidationError(`Unknown chat id in chatIds: ${chatId}`)
+    if (seen.has(chatId)) throw new ValidationError(`Duplicate chat id in chatIds: ${chatId}`)
+    seen.add(chatId)
+  }
+  if (seen.size !== existing.size) throw new ValidationError('chatIds must include every chat for the character')
+  const folderIds = new Set(readStrictChatFolders(character).map((folder) => folder.id))
+  for (const [chatId, folderId] of Object.entries(folderByChatId)) {
+    if (!existing.has(chatId)) throw new ValidationError(`Unknown chat id in folderByChatId: ${chatId}`)
+    if (folderId !== null && !folderIds.has(folderId)) {
+      throw new ValidationError(`Unknown chat folder id in folderByChatId: ${folderId}`)
+    }
+  }
+}
+
+function validateStrictFullChatFolderOrder(character: CharacterRecord, folderIds: readonly string[]): void {
+  const folders = readStrictChatFolders(character)
+  const existing = new Set(folders.map((folder) => folder.id))
+  const seen = new Set<string>()
+  for (const folderId of folderIds) {
+    if (!existing.has(folderId)) throw new ValidationError(`Unknown chat folder id in folderIds: ${folderId}`)
+    if (seen.has(folderId)) throw new ValidationError(`Duplicate chat folder id in folderIds: ${folderId}`)
+    seen.add(folderId)
+  }
+  if (seen.size !== existing.size) {
+    throw new ValidationError('folderIds must include every chat folder for the character')
+  }
+}
+
+function selectChatStrict(character: CharacterRecord, chatId: string): void {
+  const chats = readStrictCharacterChats(character)
+  const index = chats.findIndex((chat) => chat.id === chatId)
+  if (index === -1) throw new EntityNotFoundError(`Chat not found for character ${character.chaId}: ${chatId}`)
+  character.chatPage = index
+}
+
+function requireOrdinaryChatLocation(characters: readonly CharacterRecord[], chatId: string, db: DatabaseSync) {
+  return chatRowExists(db, chatId)
+    ? requireStrictChatLocation(characters, chatId)
+    : requireChatLocationExact(characters, chatId)
+}
+
 function findJsonRecordById(
   values: unknown,
   id: string,
@@ -511,12 +931,10 @@ function buildPresetReorderAcknowledgement(
 
 function readGlobalLorebookCommandTarget(database: unknown): {
   target: Record<string, unknown>
-  lorebooks: ReturnType<typeof ensureGlobalLorebookCollection>
+  lorebooks: ReturnType<typeof readStrictGlobalLorebookCollection>
 } {
   const target = readJsonObject(database, 'database')
-  // Global lorebook commands persist only the global collection/settings; child
-  // lorebook repair would be validate-only here, so leave it to broad import paths.
-  const lorebooks = ensureGlobalLorebookCollection(target)
+  const lorebooks = readStrictGlobalLorebookCollection(target)
   return { target, lorebooks }
 }
 
@@ -528,16 +946,35 @@ function readScriptDefinitionCommandTarget(database: unknown): Record<string, un
 
 function readModuleCollectionCommandTarget(database: unknown): {
   target: Record<string, unknown>
-  modules: LorebookModuleRecord[]
+  modules: ReturnType<typeof readStrictModuleRecords>
 } {
   const target = readJsonObject(database, 'database')
-  const modules = Array.isArray(target.modules)
-    ? (target.modules.map((candidate, index) =>
-        readJsonObject(candidate, `module[${index}]`),
-      ) as LorebookModuleRecord[])
-    : []
-  target.modules = modules
+  const modules = readStrictModuleRecords(target)
   return { target, modules }
+}
+
+function readStrictModuleCommandTarget(database: unknown): {
+  target: Record<string, unknown>
+  modules: ReturnType<typeof readStrictModuleRecords>
+  enabledModuleIds: string[]
+} {
+  const target = readJsonObject(database, 'database')
+  const modules = readStrictModuleRecords(target)
+  for (let index = 0; index < modules.length; index += 1) {
+    validateStoredModuleRecord(modules[index], `module[${index}]`, { allowMcp: true })
+  }
+  const enabledModuleIds = readStrictEnabledModules(target)
+  validateNormalModuleLinks(modules, enabledModuleIds, 'enabledModules')
+  return { target, modules, enabledModuleIds }
+}
+
+function readStrictModuleLorebookTarget(database: unknown, moduleId: string) {
+  const { modules } = readModuleCollectionCommandTarget(database)
+  const module = requireModule(modules, moduleId)
+  validateStoredModuleRecord(module, `module ${moduleId}`)
+  const entries =
+    module.lorebook === undefined ? [] : validateStoredLorebookEntries(module.lorebook, `module ${moduleId}.lorebook`)
+  return { modules, module, entries }
 }
 
 function characterOrderIncludes(order: readonly unknown[], characterId: string): boolean {
@@ -582,7 +1019,7 @@ function updateCharacterOrderForPatchedRow(
 }
 
 function applySelectedPromptPresetAfterModelPreset(target: Record<string, unknown>): void {
-  const promptPresets = ensurePromptPresetCollection(target)
+  const promptPresets = readStrictPromptPresetCollection(target)
   const promptPresetIndex = Number.isInteger(target.promptPresetsId as number) ? (target.promptPresetsId as number) : -1
   const promptPreset = promptPresetIndex >= 0 ? promptPresets[promptPresetIndex] : undefined
   if (promptPreset) {
@@ -705,10 +1142,8 @@ function hasSplitPresetProjectionChange(
 
 /** The shared narrow write for every translator-preset route: a full
  *  `translator_presets` rewrite plus an unconditional `settings` write.
- *  `ensureTranslatorPresetCollection` reassigns the whole array and re-syncs the
- *  `translatorPrompt` / `translatorMaxResponse` / `translatorPresetId` settings
- *  scalars on every call, so both writes are faithful (not over-broad) for create,
- *  patch, delete, and select alike. */
+ *  Legacy translator prompt/max-response scalars remain untouched; the
+ *  canonical preset rows own ordinary runtime behavior. */
 function writeTranslatorPresetMutation(
   db: DatabaseSync,
   target: Record<string, unknown>,
@@ -773,14 +1208,18 @@ function buildChatGenerationSettingsValidationContext(
   const chatModuleIds = Array.isArray(chat.modules)
     ? chat.modules.filter((id): id is string => typeof id === 'string')
     : []
+  const { agents, presets: agentPresets, defaultId: effectiveAgentPresetId } = readStrictAgentConfiguration(target)
+  const { modules, enabledModuleIds } = readStrictModuleCommandTarget(target)
 
   return {
     personas: ensurePersonaCollection(target),
-    modelPresets: ensureModelPresetCollection(target),
-    promptPresets: ensurePromptPresetCollection(target),
-    agentPresets: normalizeAgentPresets(target.agentPresets),
-    modules: ensureModuleRecords(target),
-    enabledModuleIds: ensureEnabledModules(target),
+    modelPresets: readStrictModelPresetCollection(target),
+    promptPresets: readStrictPromptPresetCollection(target),
+    agentPresets,
+    agents,
+    effectiveAgentPresetId,
+    modules,
+    enabledModuleIds,
     characterModuleIds,
     chatModuleIds,
   }
@@ -801,20 +1240,21 @@ function readOptionalPromptPresetIdFromBody(body: PromptCommandBody): string | u
 function requireSelectedPromptPresetCommandTarget(
   database: unknown,
   promptPresetId: string,
+  options: { allowMissingPromptTemplate?: boolean } = {},
 ): {
   preset: ReturnType<typeof ensurePromptPresetCollection>[number]
   index: number
-  items: ReturnType<typeof ensurePromptTemplateCollection>
+  items: PromptItemRecord[]
 } {
   const target = ensureSplitPresetDatabaseObject(database)
-  const presets = ensurePromptPresetCollection(target)
+  const presets = readStrictPromptPresetCollection(target)
   const index = requirePromptPresetIndex(presets, promptPresetId)
   const selectedId = selectedPromptPresetId(target, presets)
   if (selectedId !== promptPresetId) {
     throw new ValidationError(`Selected prompt preset changed before command reached the server: ${promptPresetId}`)
   }
   const preset = presets[index]
-  const items = ensurePromptTemplateCollection(preset)
+  const items = readStrictPromptTemplateCollection(preset, { allowMissing: options.allowMissingPromptTemplate })
   return { preset, index, items }
 }
 
@@ -824,16 +1264,23 @@ const COLLECTION_SCOPED_READS = {
   // resident in the targeted mutation snapshot.
   modelPresets: ['modelPresets', 'promptPresets'],
   promptPresets: ['promptPresets'],
+  // Recommendation writes validate their foreign key without broadening
+  // unrelated prompt-preset mutations.
+  promptPresetsWithModels: ['modelPresets', 'promptPresets'],
   promptTemplate: ['promptTemplate'],
   legacyBotPresetExtraction: ['botPresets', 'modelPresets', 'promptPresets'],
   onboarding: ['modelPresets', 'promptPresets'],
   presets: ['botPresets'],
   personas: ['personas'],
+  // Persona create/update validates module links without broadening the write:
+  // only the persona row/table is persisted by those commands.
+  personasWithModules: ['personas', 'modules'],
   translatorPresets: ['translatorPresets'],
   loadouts: ['loadouts'],
   lorebooks: ['loreBook'],
   modules: ['modules'],
   plugins: ['plugins'],
+  hypaV3Presets: ['hypaV3Presets'],
 } as const
 
 interface RuntimeSettingsCommandBody {
@@ -1071,11 +1518,11 @@ interface ChatFolderCommandBody {
 
 interface MessageCommandBody {
   baseRevision?: unknown
+  chatId?: unknown
   message?: unknown
   patch?: unknown
   messages?: unknown
   afterMessageId?: unknown
-  preserveRemovedAsAlternates?: unknown
   generationResult?: unknown
   expectedData?: unknown
   expectedChatId?: unknown
@@ -1089,6 +1536,17 @@ function readOptionalMessageTranslationJobId(value: unknown): string | undefined
     throw new ValidationError('jobId must be a non-empty string of at most 128 characters when provided')
   }
   return value
+}
+
+function readGreetingTranslationIndex(value: unknown): number {
+  if (typeof value !== 'string' || !/^-?\d+$/.test(value)) {
+    throw new ValidationError('greetingIndex must be an integer at least -1')
+  }
+  const greetingIndex = Number(value)
+  if (!Number.isSafeInteger(greetingIndex) || greetingIndex < -1) {
+    throw new ValidationError('greetingIndex must be an integer at least -1')
+  }
+  return greetingIndex
 }
 
 function readOptionalMessageCondition(value: unknown, label: string, allowEmpty = false): string | undefined {
@@ -1126,15 +1584,7 @@ function pruneChatBookmarkMetadata(
   else chat.bookmarks = bookmarks
   if (bookmarkNames === undefined) delete chat.bookmarkNames
   else chat.bookmarkNames = bookmarkNames
-  writeSingleChatRow(targetDb, chat.id, chat)
-}
-
-function readOptionalBooleanFlag(value: unknown, label: string): boolean {
-  if (value === undefined || value === null) return false
-  if (typeof value !== 'boolean') {
-    throw new ValidationError(`${label} must be a boolean when provided`)
-  }
-  return value
+  writeSingleChatRowExact(targetDb, chat.id, chat)
 }
 
 interface ScriptDefinitionCommandBody {
@@ -1165,6 +1615,14 @@ interface ModuleCommandBody {
   moduleId?: unknown
   moduleIds?: unknown
   enabled?: unknown
+  folderByModuleId?: unknown
+}
+
+interface ModuleFolderCommandBody {
+  baseRevision?: unknown
+  folder?: unknown
+  patch?: unknown
+  folderIds?: unknown
 }
 
 interface PluginCommandBody {
@@ -1242,6 +1700,7 @@ export const SETTINGS_GROUPS = [
   'advanced',
   'sidebar',
   'account',
+  'data',
 ] as const
 
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
@@ -1249,7 +1708,13 @@ export const READ_ONLY_SETTINGS_GROUPS = ['agents', 'models'] as const
 export const READABLE_SETTINGS_GROUPS = [...SETTINGS_GROUPS, ...READ_ONLY_SETTINGS_GROUPS] as const
 export type ReadableSettingsGroup = (typeof READABLE_SETTINGS_GROUPS)[number]
 type SettingValueKind = 'boolean' | 'number' | 'string' | 'stringOrNull' | 'object' | 'array' | 'arrayOrNull' | 'json'
-const MODEL_PROFILE_SETTINGS_KEYS = ['modelProfiles', 'modelRoleProfiles', 'modelRuntimeDefaults'] as const
+const MODEL_PROFILE_SETTINGS_KEYS = [
+  'providerCredentials',
+  'modelProfiles',
+  'modelProfileOrder',
+  'modelRoleProfiles',
+  'modelRuntimeDefaults',
+] as const
 
 export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[]> = {
   providers: [
@@ -1258,10 +1723,13 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'proxyKey',
     'bias',
     'additionalParams',
+    'applyAdditionalParamsToAll',
     'aiModel',
     'subModel',
     'modelRoles',
     'modelProfiles',
+    'modelProfileOrder',
+    'providerCredentials',
     'modelRoleProfiles',
     'modelRuntimeDefaults',
     'textgenWebUIStreamURL',
@@ -1318,6 +1786,7 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'vertexAccessTokenExpires',
     'vertexRegion',
     'OaiCompAPIKeys',
+    'openAIFlexProcessing',
     'authRefreshes',
     'customModels',
     'dynamicModelRegistry',
@@ -1331,6 +1800,7 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
   ],
   models: MODEL_PROFILE_SETTINGS_KEYS,
   runtime: [
+    'halfStreaming',
     'useStreaming',
     'streamGeminiThoughts',
     'maxContext',
@@ -1395,7 +1865,10 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'assetWidth',
     'animationSpeed',
     'reducedMotion',
+    'hypaV3ProgressOpenChatOnly',
     'chatDisplayTailCount',
+    'chatLoadInitialPages',
+    'chatLoadAdditionalPages',
     'memoryLimitThickness',
     'settingsCloseButtonSize',
     'fullScreen',
@@ -1432,6 +1905,7 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'customGUI',
     'colorScheme',
     'colorSchemeName',
+    'customColorScheme',
     'customBackground',
     'classicMaxWidth',
     'heightMode',
@@ -1446,6 +1920,7 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'legacyTranslation',
     'translateBeforeHTMLFormatting',
     'translatorSendTextAsIs',
+    'translatorExcludeThoughts',
     'translatorHistoryMaxTokens',
     'autoTranslateCachedOnly',
     'useAutoTranslateInput',
@@ -1499,20 +1974,26 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'emotionProcesser',
   ],
   memory: [
-    'supaMemoryKey',
+    'bardWiki',
     'hypaV3Key',
     'hypaMemoryKey',
     'voyageApiKey',
     'hypaModel',
+    'memoryAlgorithmType',
+    'supaModelType',
+    'hypaMemory',
+    'hypav2',
+    'hanuraiEnable',
+    'legacyMemoryMigrationNoticeDismissed',
     'hypaV3',
-    'hypaV3Settings',
     'hypaV3Presets',
     'hypaV3PresetId',
+    'selectedHypaV3PresetId',
     'hypaCustomSettings',
     'showMenuHypaMemoryModal',
   ],
-  modules: ['enabledModules'],
-  agents: ['agentPresets', 'agentPresetDefaultId'],
+  modules: ['enabledModules', 'moduleFolders'],
+  agents: ['agents', 'agentPresets', 'agentPresetDefaultId'],
   advanced: [
     'inputHooks',
     'loreBookDepth',
@@ -1553,6 +2034,7 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'complexRegexInputTimeoutMs',
     'complexRegexOutputTimeoutMs',
     'complexRegexDisplayTimeoutMs',
+    'regexOutputSizeLimitMiB',
     'pluginDevelopMode',
     'showDeprecatedTriggerV1',
     'showDeprecatedTriggerV2',
@@ -1570,6 +2052,7 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'instantRemove',
     'sendWithEnter',
     'fixedChatTextarea',
+    'floatingChatInput',
     'clickToEdit',
     'disableAutoPopupMessageEditor',
     'useMonacoEditorOnDesktop',
@@ -1596,10 +2079,12 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'chatGenerationTogglePresets',
     'customSidebarItems',
   ],
+  data: ['requestHistoryLimit'],
   account: ['account', 'didFirstSetup', 'username'],
 }
 
 const BOOLEAN_SETTING_KEYS = new Set([
+  'applyAdditionalParamsToAll',
   'askRemoval',
   'autoContinueChat',
   'autoScrollToNewMessage',
@@ -1643,6 +2128,7 @@ const BOOLEAN_SETTING_KEYS = new Set([
   'enableScrollToActiveChar',
   'fallbackWhenBlankResponse',
   'fixedChatTextarea',
+  'floatingChatInput',
   'fullScreen',
   'goCharacterOnImport',
   'hamburgerButtonBottom',
@@ -1650,12 +2136,16 @@ const BOOLEAN_SETTING_KEYS = new Set([
   'hideApiKey',
   'hideRealm',
   'htmlTranslation',
+  'hanuraiEnable',
+  'hypaMemory',
+  'hypav2',
   'hypaV3',
   'imageCompression',
   'inlayErrorResponse',
   'instantRemove',
   'jailbreakToggle',
   'legacyMediaFindings',
+  'legacyMemoryMigrationNoticeDismissed',
   'legacyTranslation',
   'localActivationInGlobalLorebook',
   'longPressToPopupEditor',
@@ -1669,6 +2159,7 @@ const BOOLEAN_SETTING_KEYS = new Set([
   'noWaitForTranslate',
   'openrouterFallback',
   'openrouterMiddleOut',
+  'openAIFlexProcessing',
   'useInstructPrompt',
   'outputImageModal',
   'paragraphBreakBySentences',
@@ -1681,6 +2172,7 @@ const BOOLEAN_SETTING_KEYS = new Set([
   'promptTextInfoInsideChat',
   'realmDirectOpen',
   'reducedMotion',
+  'hypaV3ProgressOpenChatOnly',
   'rememberToolUsage',
   'removeIncompleteResponse',
   'returnCSSError',
@@ -1712,6 +2204,7 @@ const BOOLEAN_SETTING_KEYS = new Set([
   'toggleConfirmRecommendedPreset',
   'translateBeforeHTMLFormatting',
   'translatorSendTextAsIs',
+  'translatorExcludeThoughts',
   'ttsAutoSpeech',
   'unformatQuotes',
   'useAdditionalAssetsPreview',
@@ -1721,6 +2214,7 @@ const BOOLEAN_SETTING_KEYS = new Set([
   'useChatSticker',
   'useExperimental',
   'useExperimentalGoogleTranslator',
+  'halfStreaming',
   'useLegacyGUI',
   'usePlainFetch',
   'useSayNothing',
@@ -1735,10 +2229,13 @@ const NUMBER_SETTING_KEYS = new Set([
   'autoContinueMinTokens',
   'autoTranslateNotificationDeferCapSeconds',
   'chatDisplayTailCount',
+  'chatLoadInitialPages',
+  'chatLoadAdditionalPages',
   'chatScreenWidth',
   'complexRegexInputTimeoutMs',
   'complexRegexOutputTimeoutMs',
   'complexRegexDisplayTimeoutMs',
+  'regexOutputSizeLimitMiB',
   'customAPIFormat',
   'echoDelay',
   'falLoraScale',
@@ -1759,6 +2256,7 @@ const NUMBER_SETTING_KEYS = new Set([
   'reasoningEffort',
   'repetition_penalty',
   'requestRetrys',
+  'requestHistoryLimit',
   'sdCFG',
   'sdSteps',
   'settingsCloseButtonSize',
@@ -1815,6 +2313,7 @@ const STRING_SETTING_KEYS = new Set([
   'huggingfaceKey',
   'hypaMemoryKey',
   'hypaModel',
+  'memoryAlgorithmType',
   'hypaV3Key',
   'ImagenAspectRatio',
   'ImagenImageSize',
@@ -1859,6 +2358,7 @@ const STRING_SETTING_KEYS = new Set([
   'stabilityKey',
   'stabilityModel',
   'systemRoleReplacement',
+  'supaModelType',
   'textgenWebUIBlockingURL',
   'textgenWebUIStreamURL',
   'textTheme',
@@ -1889,9 +2389,12 @@ const ARRAY_SETTING_KEYS = new Set([
   'chatGenerationTogglePresets',
   'customSidebarItems',
   'enabledModules',
+  'moduleFolders',
   'globalscript',
   'hotkeys',
   'modelProfiles',
+  'modelProfileOrder',
+  'providerCredentials',
   'modelTools',
   'hypaV3Presets',
   'inputHooks',
@@ -1899,12 +2402,13 @@ const ARRAY_SETTING_KEYS = new Set([
 
 const ARRAY_OR_NULL_SETTING_KEYS = new Set(['localStopStrings'])
 
-const STRING_OR_NULL_SETTING_KEYS = new Set(['textScreenBorder', 'textScreenColor'])
+const STRING_OR_NULL_SETTING_KEYS = new Set(['selectedHypaV3PresetId', 'textScreenBorder', 'textScreenColor'])
 
 const OBJECT_SETTING_KEYS = new Set([
   'account',
   'ainconfig',
   'colorScheme',
+  'customColorScheme',
   'comfyConfig',
   'customTextTheme',
   'deeplOptions',
@@ -1913,7 +2417,6 @@ const OBJECT_SETTING_KEYS = new Set([
   'globalChatVariables',
   'hordeConfig',
   'hypaCustomSettings',
-  'hypaV3Settings',
   'fallbackModels',
   'modelRuntimeDefaults',
   'modelRoleProfiles',
@@ -1960,6 +2463,8 @@ export function registerCommandRoutes(
   dataDir: string,
   eventSink: CommandEventSink,
   messageTranslationJobs?: MessageTranslationJobRegistry,
+  greetingTranslationJobs?: GreetingTranslationJobRegistry,
+  bardWikiJobs?: { wakeWorker?: () => void },
 ): void {
   app.addHook('preHandler', async (req, reply) => {
     const path = req.url.split('?')[0] ?? req.url
@@ -2068,6 +2573,11 @@ export function registerCommandRoutes(
             ...promptPatch,
             id: promptPresetId,
           }
+          validatePromptPresetRecommendedModelPreset(
+            promptPresets[promptIndex],
+            modelPresets,
+            `promptPresets.${promptPresetId}`,
+          )
 
           applyModelPreset(target, modelPresets[modelIndex])
           applyPromptPreset(target, promptPresets[promptIndex])
@@ -2078,9 +2588,6 @@ export function registerCommandRoutes(
 
           writeSingleCollectionRow(innerDb, 'modelPresets', modelIndex, modelPresets[modelIndex])
           writeSingleCollectionRow(innerDb, 'promptPresets', promptIndex, promptPresets[promptIndex])
-          if (promptPresetAppliesPromptTemplate(promptPresets[promptIndex])) {
-            writePromptTemplatesTable(innerDb, asArray(target.promptTemplate))
-          }
           writeSettingsOnly(innerDb, extractSettings(target))
 
           return {
@@ -2133,6 +2640,12 @@ export function registerCommandRoutes(
       const patch = group === 'prompt' ? readPromptSettingsPatch(body.patch) : readSettingsGroupPatch(group, body.patch)
       const requestedPatch = body.patch as Record<string, unknown>
       const writesHypaV3Presets = Object.prototype.hasOwnProperty.call(patch, 'hypaV3Presets')
+      const writesSelectedHypaV3PresetId = Object.prototype.hasOwnProperty.call(patch, 'selectedHypaV3PresetId')
+      const writesHypaV3PresetId = Object.prototype.hasOwnProperty.call(patch, 'hypaV3PresetId')
+      const writesHypaV3Identity = writesHypaV3Presets || writesSelectedHypaV3PresetId || writesHypaV3PresetId
+      if (writesHypaV3PresetId && !writesSelectedHypaV3PresetId) {
+        throw new ValidationError('hypaV3PresetId is derived and requires selectedHypaV3PresetId in the same patch')
+      }
       validateSettingsAssetRefs(db, patch)
       const result = applyTargetedCommandMutation({
         db,
@@ -2140,10 +2653,36 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.settings,
-        settingsScopedRead: true,
+        ...(writesHypaV3Identity
+          ? { collectionScopedRead: COLLECTION_SCOPED_READS.hypaV3Presets }
+          : { settingsScopedRead: true }),
         mutate(database, innerDb) {
-          applySettingsPatch(database, patch)
+          let appliedPatch = patch
+          if (writesHypaV3Identity) {
+            const target = readJsonObject(database, 'database')
+            readStrictHypaV3PresetState(target)
+            const proposed = {
+              ...target,
+              ...(writesHypaV3Presets ? { hypaV3Presets: patch.hypaV3Presets } : {}),
+              ...(writesSelectedHypaV3PresetId ? { selectedHypaV3PresetId: patch.selectedHypaV3PresetId } : {}),
+            }
+            const { selectedId, selectedIndex } = readStrictHypaV3PresetState(proposed, {
+              validateNumericProjection: false,
+            })
+            if (writesHypaV3PresetId && patch.hypaV3PresetId !== selectedIndex) {
+              throw new ValidationError('hypaV3PresetId must match the selectedHypaV3PresetId compatibility projection')
+            }
+            appliedPatch = {
+              ...patch,
+              selectedHypaV3PresetId: selectedId,
+              hypaV3PresetId: selectedIndex,
+            }
+          }
+          applySettingsPatch(database, appliedPatch)
           writeSettingsOnly(innerDb, extractSettings(database as Record<string, unknown>))
+          if (Object.prototype.hasOwnProperty.call(patch, 'requestHistoryLimit')) {
+            pruneRequestHistory(innerDb, (database as Record<string, unknown>).requestHistoryLimit)
+          }
           // The `memory` group's `hypaV3Presets` is a collection field, not a
           // settings scalar, so co-write only that one collection table when the
           // patch carries it; every other settings group is settings-only.
@@ -2337,6 +2876,65 @@ export function registerCommandRoutes(
     }
   })
 
+  app.post('/api/v1/commands/provider-credentials', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = createProviderCredentialCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/provider-credentials/:credentialId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = updateProviderCredentialCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+        credentialId: (req.params as { credentialId?: unknown }).credentialId as string,
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/provider-credentials/:credentialId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = deleteProviderCredentialCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+        credentialId: (req.params as { credentialId?: unknown }).credentialId as string,
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
   app.post('/api/v1/commands/model-profiles/create-and-bind', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
 
@@ -2367,6 +2965,29 @@ export function registerCommandRoutes(
       const body = req.body ?? {}
       const baseRevision = readBaseRevision(body)
       const result = convertLegacyModelProfilesCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+      })
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/model-profiles/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = reorderModelProfilesCommand({
         db,
         dataDir,
         baseRevision,
@@ -2496,6 +3117,94 @@ export function registerCommandRoutes(
         event: result.event,
         ...result.extra,
       }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/agents', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    try {
+      const body = req.body ?? {}
+      const result = createAgentCommand({
+        db,
+        dataDir,
+        baseRevision: readBaseRevision(body),
+        ...commandMutationContext(req, eventSink),
+        body,
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/agents/:agentId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    try {
+      const body = req.body ?? {}
+      const result = updateAgentCommand({
+        db,
+        dataDir,
+        baseRevision: readBaseRevision(body),
+        ...commandMutationContext(req, eventSink),
+        body,
+        agentId: (req.params as { agentId?: unknown }).agentId as string,
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/agents/:agentId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    try {
+      const body = req.body ?? {}
+      const result = deleteAgentCommand({
+        db,
+        dataDir,
+        baseRevision: readBaseRevision(body),
+        ...commandMutationContext(req, eventSink),
+        body,
+        agentId: (req.params as { agentId?: unknown }).agentId as string,
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/agents/:agentId/duplicate', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    try {
+      const body = req.body ?? {}
+      const result = duplicateAgentCommand({
+        db,
+        dataDir,
+        baseRevision: readBaseRevision(body),
+        ...commandMutationContext(req, eventSink),
+        body,
+        agentId: (req.params as { agentId?: unknown }).agentId as string,
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/agents/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    try {
+      const body = req.body ?? {}
+      const result = reorderAgentsCommand({
+        db,
+        dataDir,
+        baseRevision: readBaseRevision(body),
+        ...commandMutationContext(req, eventSink),
+        body,
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
     } catch (err) {
       return sendCommandError(reply, err)
     }
@@ -2642,6 +3351,87 @@ export function registerCommandRoutes(
     }
   })
 
+  app.post('/api/v1/commands/agent-presets/:presetId/uses', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const result = createAgentPresetStepCommand({
+        db,
+        dataDir,
+        baseRevision: readBaseRevision(body),
+        ...commandMutationContext(req, eventSink),
+        body,
+        presetId: (req.params as { presetId?: unknown }).presetId as string,
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/agent-presets/:presetId/uses/:useId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const params = req.params as { presetId?: unknown; useId?: unknown }
+      const result = updateAgentPresetStepCommand({
+        db,
+        dataDir,
+        baseRevision: readBaseRevision(body),
+        ...commandMutationContext(req, eventSink),
+        body,
+        presetId: params.presetId as string,
+        stepId: params.useId as string,
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/agent-presets/:presetId/uses/:useId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const params = req.params as { presetId?: unknown; useId?: unknown }
+      const result = deleteAgentPresetStepCommand({
+        db,
+        dataDir,
+        baseRevision: readBaseRevision(body),
+        ...commandMutationContext(req, eventSink),
+        body,
+        presetId: params.presetId as string,
+        stepId: params.useId as string,
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/agent-presets/:presetId/uses/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const result = reorderAgentPresetStepsCommand({
+        db,
+        dataDir,
+        baseRevision: readBaseRevision(body),
+        ...commandMutationContext(req, eventSink),
+        body,
+        presetId: (req.params as { presetId?: unknown }).presetId as string,
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  // Retained compatibility endpoints for clients that still call preset uses "steps".
   app.post('/api/v1/commands/agent-presets/:presetId/steps', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
 
@@ -2786,7 +3576,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.presets,
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
-          const presets = ensurePresetCollection(target)
+          const presets = readStrictLegacyPresetCollection(target, { allowEmptyPendingFirstRecord: true })
           if (findPresetIndex(presets, preset.id) !== -1) {
             throw new ValidationError(`Duplicate preset id: ${preset.id}`)
           }
@@ -2836,7 +3626,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.presets,
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
-          const presets = ensurePresetCollection(target)
+          const presets = readStrictLegacyPresetCollection(target)
           const index = requirePresetIndex(presets, presetId)
           const patch = readPresetPatch(resolveMaskedLegacyPresetPatch(presets[index], requestedPatch, presetId), {
             assetDb: db,
@@ -2851,7 +3641,9 @@ export function registerCommandRoutes(
             ...patch,
             id: presetId,
           }
-          normalizePresetAgentSettings(presets[index])
+          if (Object.prototype.hasOwnProperty.call(patch, 'agentPresets')) {
+            normalizePresetAgentSettings(presets[index])
+          }
           writeSingleCollectionRow(innerDb, 'botPresets', index, presets[index])
           const receipt = compactCanonicalPresetReceipt(presets[index], optimisticPreset)
           return {
@@ -2897,7 +3689,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.presets,
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
-          const presets = ensurePresetCollection(target)
+          const presets = readStrictLegacyPresetCollection(target)
           if (presets.length <= 1) {
             throw new ValidationError('Cannot delete the only preset')
           }
@@ -2982,7 +3774,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.presets,
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
-          const presets = ensurePresetCollection(target)
+          const presets = readStrictLegacyPresetCollection(target)
           const savedPresetId = saveCurrent ? selectedPresetId(target, presets) : null
           if (saveCurrent) {
             saveCurrentPresetSnapshot(target, presets)
@@ -3039,7 +3831,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.presets,
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
-          const presets = ensurePresetCollection(target)
+          const presets = readStrictLegacyPresetCollection(target, { allowInvalidSelectedPointer: true })
           const beforeSelected = target.botPresetsId
           const previousSelectedId = selectedPresetId(target, presets)
           if (saveCurrent) {
@@ -3155,7 +3947,7 @@ export function registerCommandRoutes(
           const target = ensureDatabaseObject(database)
           const rawPresets = cloneJsonForCommandCertificate(target.botPresets)
           const rawSelected = target.botPresetsId
-          const presets = ensurePresetCollection(target)
+          const presets = readStrictLegacyPresetCollection(target)
           const acknowledgementSafe =
             Array.isArray(rawPresets) && isDeepStrictEqual(rawPresets, presets) && rawSelected === target.botPresetsId
           const beforeSelected = target.botPresetsId
@@ -3220,7 +4012,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.modelPresets,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
-          const presets = ensureModelPresetCollection(target)
+          const presets = readStrictModelPresetCollection(target)
           if (findModelPresetIndex(presets, preset.id) !== -1) {
             throw new ValidationError(`Duplicate model preset id: ${preset.id}`)
           }
@@ -3264,7 +4056,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.modelPresets,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
-          const presets = ensureModelPresetCollection(target)
+          const presets = readStrictModelPresetCollection(target)
           const index = requireModelPresetIndex(presets, modelPresetId)
           const projectionKeys = splitPresetSettingsProjectionKeys('model', patch)
           const selectedProjectionCandidate = target.modelPresetsId === index && projectionKeys.length > 0
@@ -3292,7 +4084,7 @@ export function registerCommandRoutes(
           const selectedProjectionApplied =
             selectedProjectionCandidate && hasSplitPresetProjectionChange(target, canonicalTarget, projectionKeys)
           const selectedPromptPreset = selectedProjectionApplied
-            ? selectedPromptPresetId(target, ensurePromptPresetCollection(target))
+            ? selectedPromptPresetId(target, readStrictPromptPresetCollection(target))
             : null
           writeSingleCollectionRow(innerDb, 'modelPresets', index, presets[index])
           if (selectedProjectionApplied) {
@@ -3342,6 +4134,7 @@ export function registerCommandRoutes(
         selectedModelPresetId: string | null
         cascadedChatCount: number
         cascadedLoadoutCount: number
+        clearedPromptRecommendationCount: number
       }>({
         db,
         dataDir,
@@ -3350,7 +4143,8 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
-          const presets = ensureModelPresetCollection(target)
+          const presets = readStrictModelPresetCollection(target)
+          const promptPresets = readStrictPromptPresetCollection(target)
           const deletedIndex = findModelPresetIndex(presets, modelPresetId)
           if (deletedIndex === -1) {
             const selectedId = selectedModelPresetId(target, presets)
@@ -3359,7 +4153,14 @@ export function registerCommandRoutes(
               ? (presets.find((preset) => preset.id === replacementId) ?? null)
               : null
             const cascade = rehomeGenerationReferences(target, 'modelPreset', modelPresetId, replacementPreset)
+            const clearedPromptRecommendationCount = clearPromptPresetRecommendedModelPresetReferences(
+              promptPresets,
+              modelPresetId,
+            )
             writeGenerationReferenceCascade(innerDb, target, cascade)
+            if (clearedPromptRecommendationCount > 0) {
+              writeSingleCollectionTable(innerDb, 'promptPresets', promptPresets)
+            }
             return {
               event: { ...COMMAND_EVENT_CATALOG.modelPresetDeleted, id: modelPresetId },
               extra: {
@@ -3367,6 +4168,7 @@ export function registerCommandRoutes(
                 selectedModelPresetId: selectedId,
                 cascadedChatCount: cascade.changedChatCount,
                 cascadedLoadoutCount: cascade.changedLoadoutCount,
+                clearedPromptRecommendationCount,
               },
             }
           }
@@ -3391,7 +4193,14 @@ export function registerCommandRoutes(
             modelPresetId,
             nextSelectedIndex >= 0 ? presets[nextSelectedIndex] : null,
           )
+          const clearedPromptRecommendationCount = clearPromptPresetRecommendedModelPresetReferences(
+            promptPresets,
+            modelPresetId,
+          )
           writeSingleCollectionTable(innerDb, 'modelPresets', presets)
+          if (clearedPromptRecommendationCount > 0) {
+            writeSingleCollectionTable(innerDb, 'promptPresets', promptPresets)
+          }
           if (target.modelPresetsId !== beforeSelected || deletedWasSelected) {
             writeSettingsOnly(innerDb, extractSettings(target))
           }
@@ -3403,6 +4212,7 @@ export function registerCommandRoutes(
               selectedModelPresetId: selectedModelPresetId(target, presets),
               cascadedChatCount: cascade.changedChatCount,
               cascadedLoadoutCount: cascade.changedLoadoutCount,
+              clearedPromptRecommendationCount,
             },
           }
         },
@@ -3434,7 +4244,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.modelPresets,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
-          const presets = ensureModelPresetCollection(target)
+          const presets = readStrictModelPresetCollection(target)
           const beforeSelected = target.modelPresetsId
           const nextSelectedIndex = requireModelPresetIndex(presets, modelPresetId)
           target.modelPresetsId = nextSelectedIndex
@@ -3520,7 +4330,7 @@ export function registerCommandRoutes(
           const target = ensureSplitPresetDatabaseObject(database)
           const rawPresets = cloneJsonForCommandCertificate(target.modelPresets)
           const rawSelected = target.modelPresetsId
-          const presets = ensureModelPresetCollection(target)
+          const presets = readStrictModelPresetCollection(target)
           const acknowledgementSafe =
             Array.isArray(rawPresets) && isDeepStrictEqual(rawPresets, presets) && rawSelected === target.modelPresetsId
           const beforeSelected = target.modelPresetsId
@@ -3577,12 +4387,17 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: COLLECTION_SCOPED_READS.promptPresets,
+        collectionScopedRead: Object.prototype.hasOwnProperty.call(preset, 'recommendedModelPresetId')
+          ? COLLECTION_SCOPED_READS.promptPresetsWithModels
+          : COLLECTION_SCOPED_READS.promptPresets,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
-          const presets = ensurePromptPresetCollection(target)
+          const presets = readStrictPromptPresetCollection(target)
           if (findPromptPresetIndex(presets, preset.id) !== -1) {
             throw new ValidationError(`Duplicate prompt preset id: ${preset.id}`)
+          }
+          if (Object.prototype.hasOwnProperty.call(preset, 'recommendedModelPresetId')) {
+            validatePromptPresetRecommendedModelPreset(preset, readStrictModelPresetCollection(target))
           }
           presets.push(preset)
           writeSingleCollectionTable(innerDb, 'promptPresets', presets)
@@ -3621,10 +4436,12 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: COLLECTION_SCOPED_READS.promptPresets,
+        collectionScopedRead: Object.prototype.hasOwnProperty.call(patch, 'recommendedModelPresetId')
+          ? COLLECTION_SCOPED_READS.promptPresetsWithModels
+          : COLLECTION_SCOPED_READS.promptPresets,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
-          const presets = ensurePromptPresetCollection(target)
+          const presets = readStrictPromptPresetCollection(target)
           const index = requirePromptPresetIndex(presets, promptPresetId)
           const projectionKeys = splitPresetSettingsProjectionKeys('prompt', patch)
           const selected = target.promptPresetsId === index
@@ -3639,11 +4456,15 @@ export function registerCommandRoutes(
           if (selected && (selectedProjectionCandidate || touchesPromptTemplate)) {
             applyPromptPreset(optimisticTarget, optimisticPreset)
           }
-          presets[index] = {
+          const nextPreset = {
             ...presets[index],
             ...patch,
             id: promptPresetId,
           }
+          if (Object.prototype.hasOwnProperty.call(patch, 'recommendedModelPresetId')) {
+            validatePromptPresetRecommendedModelPreset(nextPreset, readStrictModelPresetCollection(target))
+          }
+          presets[index] = nextPreset
           const canonicalTarget = { ...target }
           if (selected && (selectedProjectionCandidate || touchesPromptTemplate)) {
             applyPromptPreset(canonicalTarget, presets[index])
@@ -3653,9 +4474,6 @@ export function registerCommandRoutes(
           writeSingleCollectionRow(innerDb, 'promptPresets', index, presets[index])
           if (selected && (selectedProjectionApplied || touchesPromptTemplate)) {
             applyPromptPreset(target, presets[index])
-            if (touchesPromptTemplate && promptPresetAppliesPromptTemplate(presets[index])) {
-              writePromptTemplatesTable(innerDb, asArray(target.promptTemplate))
-            }
           }
           if (selectedProjectionApplied) {
             writeSettingsOnly(innerDb, extractSettings(target))
@@ -3711,7 +4529,7 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
-          const presets = ensurePromptPresetCollection(target)
+          const presets = readStrictPromptPresetCollection(target)
           const deletedIndex = findPromptPresetIndex(presets, promptPresetId)
           if (deletedIndex === -1) {
             const selectedId = selectedPromptPresetId(target, presets)
@@ -3744,9 +4562,6 @@ export function registerCommandRoutes(
           target.promptPresetsId = nextSelectedIndex
           if (nextSelectedIndex >= 0) {
             applyPromptPreset(target, presets[nextSelectedIndex])
-            if (promptPresetAppliesPromptTemplate(presets[nextSelectedIndex])) {
-              writePromptTemplatesTable(innerDb, asArray(target.promptTemplate))
-            }
           }
           const cascade = rehomeGenerationReferences(
             target,
@@ -3797,14 +4612,11 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.promptPresets,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
-          const presets = ensurePromptPresetCollection(target)
+          const presets = readStrictPromptPresetCollection(target)
           const beforeSelected = target.promptPresetsId
           const nextSelectedIndex = requirePromptPresetIndex(presets, promptPresetId)
           target.promptPresetsId = nextSelectedIndex
           applyPromptPreset(target, presets[nextSelectedIndex])
-          if (promptPresetAppliesPromptTemplate(presets[nextSelectedIndex])) {
-            writePromptTemplatesTable(innerDb, asArray(target.promptTemplate))
-          }
           if (target.promptPresetsId !== beforeSelected) {
             writeSettingsOnly(innerDb, extractSettings(target))
           }
@@ -3838,12 +4650,17 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: COLLECTION_SCOPED_READS.promptPresets,
+        collectionScopedRead: Object.prototype.hasOwnProperty.call(preset, 'recommendedModelPresetId')
+          ? COLLECTION_SCOPED_READS.promptPresetsWithModels
+          : COLLECTION_SCOPED_READS.promptPresets,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
           const presets = ensurePromptPresetCollection(target)
           if (findPromptPresetIndex(presets, preset.id) !== -1) {
             throw new ValidationError(`Duplicate prompt preset id: ${preset.id}`)
+          }
+          if (Object.prototype.hasOwnProperty.call(preset, 'recommendedModelPresetId')) {
+            validatePromptPresetRecommendedModelPreset(preset, ensureModelPresetCollection(target))
           }
           presets.push(preset)
           writeSingleCollectionTable(innerDb, 'promptPresets', presets)
@@ -3883,7 +4700,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.promptPresets,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
-          const presets = ensurePromptPresetCollection(target)
+          const presets = readStrictPromptPresetCollection(target)
           const beforeSelected = target.promptPresetsId
           const currentSelectedId = selectedPromptPresetId(target, presets)
           validateFullPromptPresetIdList(presets, promptPresetIds)
@@ -4011,7 +4828,7 @@ export function registerCommandRoutes(
           : COLLECTION_SCOPED_READS.promptTemplate,
         mutate(database, innerDb) {
           const scoped = promptPresetId ? requireSelectedPromptPresetCommandTarget(database, promptPresetId) : undefined
-          const items = scoped ? scoped.items : ensurePromptTemplateCollection(ensureDatabaseObject(database))
+          const items = scoped ? scoped.items : readStrictPromptTemplateCollection(ensureDatabaseObject(database))
           if (items.some((item) => item.id === promptItem.id)) {
             throw new ValidationError(`Duplicate prompt item id: ${promptItem.id}`)
           }
@@ -4062,13 +4879,13 @@ export function registerCommandRoutes(
           : COLLECTION_SCOPED_READS.promptTemplate,
         mutate(database, innerDb) {
           const scoped = promptPresetId ? requireSelectedPromptPresetCommandTarget(database, promptPresetId) : undefined
-          const items = scoped ? scoped.items : ensurePromptTemplateCollection(ensureDatabaseObject(database))
+          const items = scoped ? scoped.items : readStrictPromptTemplateCollection(ensureDatabaseObject(database))
           const index = requirePromptItemIndex(items, itemId)
           const updated = { ...items[index] }
           for (const key of deleteKeys) delete updated[key]
           Object.assign(updated, patch)
           updated.id = itemId
-          items[index] = updated
+          items[index] = normalizePromptItemRecord(updated)
           if (scoped) {
             writeSingleCollectionRow(innerDb, 'promptPresets', scoped.index, scoped.preset)
           } else {
@@ -4114,10 +4931,10 @@ export function registerCommandRoutes(
           : COLLECTION_SCOPED_READS.promptTemplate,
         mutate(database, innerDb) {
           let scoped: ReturnType<typeof requireSelectedPromptPresetCommandTarget> | undefined
-          let items: ReturnType<typeof ensurePromptTemplateCollection>
+          let items: PromptItemRecord[]
           if (promptPresetId) {
             const target = ensureSplitPresetDatabaseObject(database)
-            const presets = ensurePromptPresetCollection(target)
+            const presets = readStrictPromptPresetCollection(target)
             const presetIndex = findPromptPresetIndex(presets, promptPresetId)
             if (presetIndex === -1) {
               return {
@@ -4129,7 +4946,7 @@ export function registerCommandRoutes(
                 extra: { itemId },
               }
             }
-            const presetItems = ensurePromptTemplateCollection(presets[presetIndex])
+            const presetItems = readStrictPromptTemplateCollection(presets[presetIndex])
             if (!presetItems.some((item) => item.id === itemId)) {
               return {
                 event: {
@@ -4143,7 +4960,7 @@ export function registerCommandRoutes(
             scoped = requireSelectedPromptPresetCommandTarget(database, promptPresetId)
             items = scoped.items
           } else {
-            items = ensurePromptTemplateCollection(ensureDatabaseObject(database))
+            items = readStrictPromptTemplateCollection(ensureDatabaseObject(database), { allowMissing: true })
             if (!items.some((item) => item.id === itemId)) {
               return {
                 event: { ...COMMAND_EVENT_CATALOG.promptItemDeleted, id: itemId },
@@ -4200,10 +5017,14 @@ export function registerCommandRoutes(
           ? COLLECTION_SCOPED_READS.promptPresets
           : COLLECTION_SCOPED_READS.promptTemplate,
         mutate(database, innerDb) {
-          const scoped = promptPresetId ? requireSelectedPromptPresetCommandTarget(database, promptPresetId) : undefined
+          const scoped = promptPresetId
+            ? requireSelectedPromptPresetCommandTarget(database, promptPresetId, {
+                allowMissingPromptTemplate: enabled,
+              })
+            : undefined
           if (scoped) {
             if (enabled) {
-              ensurePromptTemplateCollection(scoped.preset)
+              if (scoped.preset.promptTemplate === undefined) scoped.preset.promptTemplate = []
             } else {
               delete scoped.preset.promptTemplate
             }
@@ -4214,7 +5035,8 @@ export function registerCommandRoutes(
             // enabling ensures the array, disabling clears it. Either way it is a
             // single-table write — the `prompt_templates` rows, never another table.
             if (enabled) {
-              const items = ensurePromptTemplateCollection(target)
+              const items = readStrictPromptTemplateCollection(target, { allowMissing: true })
+              if (target.promptTemplate === undefined) target.promptTemplate = items
               writePromptTemplatesTable(innerDb, items)
             } else {
               delete target.promptTemplate
@@ -4264,7 +5086,7 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const scoped = promptPresetId ? requireSelectedPromptPresetCommandTarget(database, promptPresetId) : undefined
           const target = ensureDatabaseObject(database)
-          const items = scoped ? scoped.items : ensurePromptTemplateCollection(target)
+          const items = scoped ? scoped.items : readStrictPromptTemplateCollection(target)
           validateFullPromptItemIdList(items, itemIds)
           const byId = new Map(items.map((item) => [item.id, item]))
           const reordered = itemIds.map((id) => byId.get(id)!)
@@ -4307,22 +5129,29 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: COLLECTION_SCOPED_READS.personas,
+        collectionScopedRead: COLLECTION_SCOPED_READS.personasWithModules,
         mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
+          validateNormalModuleLinks(
+            readStrictModuleCommandTarget(target).modules,
+            persona.modules ?? [],
+            'persona.modules',
+          )
           const personas = ensurePersonaCollection(target)
+          if (personas.length > 0) requireSelectedPersonaIndex(target, personas)
           if (findPersonaIndex(personas, persona.id) !== -1) {
             throw new ValidationError(`Duplicate persona id: ${persona.id}`)
           }
           personas.push(persona)
           writeSingleCollectionTable(innerDb, 'personas', personas)
-          // Mirroring moves the selected pointer + the 4 legacy profile scalars,
-          // all settings; co-write settings only when the request mirrors.
+          // A newly created row becomes selected in the normal row-owner flow;
+          // mirroring the legacy scalar aliases remains opt-in compatibility.
+          target.selectedPersonaId = persona.id
+          target.selectedPersona = personas.length - 1
           if (mirror) {
-            target.selectedPersona = personas.length - 1
             mirrorLegacyProfile(target, persona)
-            writeSettingsOnly(innerDb, extractSettings(target))
           }
+          writeSettingsOnly(innerDb, extractSettings(target))
           return {
             event: { ...COMMAND_EVENT_CATALOG.personaCreated, id: persona.id },
             extra: {
@@ -4332,7 +5161,7 @@ export function registerCommandRoutes(
                 database: target,
                 personas,
                 collectionWritten: true,
-                settingsWritten: mirror,
+                settingsWritten: true,
                 legacyProfileProjectionApplied: mirror,
               }),
             },
@@ -4372,11 +5201,15 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: COLLECTION_SCOPED_READS.personas,
+        collectionScopedRead: COLLECTION_SCOPED_READS.personasWithModules,
         mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
+          if (Array.isArray(patch.modules)) {
+            validateNormalModuleLinks(readStrictModuleCommandTarget(target).modules, patch.modules, 'patch.modules')
+          }
           const personas = ensurePersonaCollection(target)
           const index = requirePersonaIndex(personas, personaId)
+          const selectedIndex = requireSelectedPersonaIndex(target, personas)
           personas[index] = {
             ...personas[index],
             ...patch,
@@ -4385,7 +5218,7 @@ export function registerCommandRoutes(
           writeSingleCollectionRow(innerDb, 'personas', index, personas[index])
           // Editing the selected persona with mirroring refreshes the legacy
           // profile scalars; co-write settings only then.
-          const legacyProfileProjectionApplied = mirror && target.selectedPersona === index
+          const legacyProfileProjectionApplied = mirror && selectedIndex === index
           if (legacyProfileProjectionApplied) {
             mirrorLegacyProfile(target, personas[index])
             writeSettingsOnly(innerDb, extractSettings(target))
@@ -4420,7 +5253,9 @@ export function registerCommandRoutes(
       const baseRevision = readBaseRevision(body)
       const selectPersonaId =
         body.selectPersonaId === undefined ? undefined : readPersonaId(body.selectPersonaId, 'selectPersonaId')
-      const mirror = readPersonaOptionalBoolean(body.mirrorLegacyProfile, 'mirrorLegacyProfile', true)
+      // Persona rows own normal profile state. Legacy scalar projection remains
+      // available only to explicitly named migration/compatibility callers.
+      const mirror = readPersonaOptionalBoolean(body.mirrorLegacyProfile, 'mirrorLegacyProfile', false)
       const saveCurrent = readPersonaOptionalBoolean(body.saveCurrent, 'saveCurrent', false)
       const result = applyTargetedCommandMutation<
         { personaId: string; cascadedChatCount: number; cascadedLoadoutCount: number } & PersonaMutationCertificate
@@ -4433,6 +5268,7 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
+          requireSelectedPersonaIndex(target, personas)
           const deletedIndex = findPersonaIndex(personas, personaId)
           if (deletedIndex === -1) {
             const selectedId = selectedPersonaId(target, personas)
@@ -4462,7 +5298,6 @@ export function registerCommandRoutes(
           if (personas.length <= 1) {
             throw new ValidationError('Cannot delete the only persona')
           }
-          const beforeSelected = target.selectedPersona
           if (saveCurrent) {
             saveSelectedPersonaSnapshot(target, personas)
           }
@@ -4478,6 +5313,7 @@ export function registerCommandRoutes(
           }
 
           const selectedIndex = nextSelectedId ? requirePersonaIndex(personas, nextSelectedId) : -1
+          target.selectedPersonaId = nextSelectedId ?? null
           target.selectedPersona = selectedIndex
           let mirrored = false
           if (mirror && selectedIndex >= 0) {
@@ -4487,12 +5323,9 @@ export function registerCommandRoutes(
 
           // The splice shifts positions, so the persona table is always rewritten.
           writeSingleCollectionTable(innerDb, 'personas', personas)
-          // `selectedPersona` + the mirror scalars are settings; co-write settings
-          // when the pointer moved or mirroring rewrote the legacy profile.
-          const settingsWritten = mirrored || target.selectedPersona !== beforeSelected
-          if (settingsWritten) {
-            writeSettingsOnly(innerDb, extractSettings(target))
-          }
+          // Stable identity is authoritative; the numeric field is persisted in
+          // the same transaction as a derived compatibility projection.
+          writeSettingsOnly(innerDb, extractSettings(target))
           const cascade = rehomeGenerationReferences(
             target,
             'persona',
@@ -4512,7 +5345,7 @@ export function registerCommandRoutes(
                 database: target,
                 personas,
                 collectionWritten: true,
-                settingsWritten,
+                settingsWritten: true,
                 legacyProfileProjectionApplied: mirrored,
               }),
             },
@@ -4537,8 +5370,10 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PersonaCommandBody
       const baseRevision = readBaseRevision(body)
       const personaId = readPersonaId(body.personaId, 'personaId')
-      const mirror = readPersonaOptionalBoolean(body.mirrorLegacyProfile, 'mirrorLegacyProfile', true)
-      const saveCurrent = readPersonaOptionalBoolean(body.saveCurrent, 'saveCurrent', true)
+      // Do not snapshot or mirror legacy profile scalars during ordinary row
+      // deletion/selection. Older import/export callers can opt in explicitly.
+      const mirror = readPersonaOptionalBoolean(body.mirrorLegacyProfile, 'mirrorLegacyProfile', false)
+      const saveCurrent = readPersonaOptionalBoolean(body.saveCurrent, 'saveCurrent', false)
       const result = applyTargetedCommandMutation<{ personaId: string } & PersonaMutationCertificate>({
         db,
         dataDir,
@@ -4549,11 +5384,12 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
-          const beforeSelected = target.selectedPersona
+          requireSelectedPersonaIndex(target, personas)
           if (saveCurrent) {
             saveSelectedPersonaSnapshot(target, personas)
           }
           const index = requirePersonaIndex(personas, personaId)
+          target.selectedPersonaId = personaId
           target.selectedPersona = index
           let mirrored = false
           if (mirror) {
@@ -4565,10 +5401,7 @@ export function registerCommandRoutes(
           if (saveCurrent) {
             writeSingleCollectionTable(innerDb, 'personas', personas)
           }
-          const settingsWritten = mirrored || target.selectedPersona !== beforeSelected
-          if (settingsWritten) {
-            writeSettingsOnly(innerDb, extractSettings(target))
-          }
+          writeSettingsOnly(innerDb, extractSettings(target))
           return {
             event: { ...COMMAND_EVENT_CATALOG.personaSelected, id: personaId },
             extra: {
@@ -4578,7 +5411,7 @@ export function registerCommandRoutes(
                 database: target,
                 personas,
                 collectionWritten: saveCurrent,
-                settingsWritten,
+                settingsWritten: true,
                 legacyProfileProjectionApplied: mirrored,
               }),
             },
@@ -4616,24 +5449,21 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
-          const beforeSelected = target.selectedPersona
           const currentSelectedId = selectedPersonaId(target, personas)
           validateFullPersonaIdList(personas, personaIds)
           const byId = new Map(personas.map((persona) => [persona.id, persona]))
           const reordered = personaIds.map((id) => byId.get(id)!)
           target.personas = reordered
+          target.selectedPersonaId = currentSelectedId
           target.selectedPersona = currentSelectedId
             ? requirePersonaIndex(reordered, currentSelectedId)
             : reordered.length > 0
               ? 0
               : -1
           writeSingleCollectionTable(innerDb, 'personas', reordered)
-          // `selectedPersona` is a settings scalar; co-write settings only when
-          // the reorder moved the selected persona to a new index.
-          const settingsWritten = target.selectedPersona !== beforeSelected
-          if (settingsWritten) {
-            writeSettingsOnly(innerDb, extractSettings(target))
-          }
+          // Co-persist the stable owner and numeric compatibility projection
+          // with the reordered rows even when the selected index is unchanged.
+          writeSettingsOnly(innerDb, extractSettings(target))
           return {
             event: COMMAND_EVENT_CATALOG.personaReordered,
             extra: buildPersonaMutationCertificate({
@@ -4641,7 +5471,7 @@ export function registerCommandRoutes(
               database: target,
               personas: reordered,
               collectionWritten: true,
-              settingsWritten,
+              settingsWritten: true,
               legacyProfileProjectionApplied: false,
             }),
           }
@@ -4681,8 +5511,7 @@ export function registerCommandRoutes(
           }
           presets.push(preset)
           if (select) {
-            target.translatorPresetId = presets.length - 1
-            syncSelectedTranslatorPresetToLegacyFields(target, presets)
+            target.translatorPresetId = preset.id
           }
           writeTranslatorPresetMutation(innerDb, target, presets)
           return {
@@ -4728,21 +5557,14 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const target = ensureTranslatorPresetDatabaseObject(database)
           const rawPresets = target.translatorPresets
-          const rawSelectedIndex = target.translatorPresetId
-          const rawPrompt = target.translatorPrompt
-          const rawMaxResponse = target.translatorMaxResponse
+          const rawSelectedId = target.translatorPresetId
           const presets = ensureTranslatorPresetCollection(target)
           const acknowledgementSafe =
             Array.isArray(rawPresets) &&
             isDeepStrictEqual(rawPresets, presets) &&
-            rawSelectedIndex === target.translatorPresetId &&
-            rawPrompt === target.translatorPrompt &&
-            rawMaxResponse === target.translatorMaxResponse
+            rawSelectedId === target.translatorPresetId
           const index = requireTranslatorPresetIndex(presets, presetId)
           presets[index] = applyTranslatorPresetRecordPatch(presets[index], patch)
-          if (target.translatorPresetId === index) {
-            syncSelectedTranslatorPresetToLegacyFields(target, presets)
-          }
           writeTranslatorPresetMutation(innerDb, target, presets)
           return {
             event: { ...COMMAND_EVENT_CATALOG.translatorPresetUpdated, id: presetId },
@@ -4781,6 +5603,7 @@ export function registerCommandRoutes(
       const result = applyTargetedCommandMutation<{
         presetId: string
         selectedPresetId: string | null
+        cascadedChatIds: string[]
       }>({
         db,
         dataDir,
@@ -4794,10 +5617,11 @@ export function registerCommandRoutes(
           const deletedIndex = findTranslatorPresetIndex(presets, presetId)
           if (deletedIndex === -1) {
             return {
-              event: { ...COMMAND_EVENT_CATALOG.translatorPresetDeleted, id: presetId },
+              event: { ...COMMAND_EVENT_CATALOG.translatorPresetDeleted, resource: 'state', id: presetId },
               extra: {
                 presetId,
                 selectedPresetId: selectedTranslatorPresetId(target, presets),
+                cascadedChatIds: [],
               },
             }
           }
@@ -4815,16 +5639,17 @@ export function registerCommandRoutes(
             nextSelectedId = currentSelectedId ?? presets[0]?.id
           }
 
-          const selectedIndex = nextSelectedId ? requireTranslatorPresetIndex(presets, nextSelectedId) : 0
-          target.translatorPresetId = selectedIndex
-          syncSelectedTranslatorPresetToLegacyFields(target, presets)
+          const selectedIndex = nextSelectedId ? requireTranslatorPresetIndex(presets, nextSelectedId) : -1
+          target.translatorPresetId = selectedIndex >= 0 ? presets[selectedIndex].id : presets[0]?.id
+          const cascadedChatIds = clearChatTranslatorPresetBindings(innerDb, presetId)
           writeTranslatorPresetMutation(innerDb, target, presets)
 
           return {
-            event: { ...COMMAND_EVENT_CATALOG.translatorPresetDeleted, id: presetId },
+            event: { ...COMMAND_EVENT_CATALOG.translatorPresetDeleted, resource: 'state', id: presetId },
             extra: {
               presetId,
               selectedPresetId: selectedTranslatorPresetId(target, presets),
+              cascadedChatIds,
             },
           }
         },
@@ -4857,9 +5682,8 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const target = ensureTranslatorPresetDatabaseObject(database)
           const presets = ensureTranslatorPresetCollection(target)
-          const index = requireTranslatorPresetIndex(presets, presetId)
-          target.translatorPresetId = index
-          syncSelectedTranslatorPresetToLegacyFields(target, presets)
+          requireTranslatorPresetIndex(presets, presetId)
+          target.translatorPresetId = presetId
           writeTranslatorPresetMutation(innerDb, target, presets)
           return {
             event: { ...COMMAND_EVENT_CATALOG.translatorPresetSelected, id: presetId },
@@ -5092,34 +5916,44 @@ export function registerCommandRoutes(
     try {
       const body = (req.body ?? {}) as CharacterCommandBody
       const baseRevision = readBaseRevision(body)
+      // Fingerprint the submitted intent before creation normalizes its fields.
+      const mutationContext = commandMutationContext(req, eventSink)
       const character = createCharacterRecord(body.character, { assetDb: db })
       const initialChat = readInitialCharacterChat(body.initialChat)
-      const result = applyMessageFreeJsonCommandMutation<{
+      const result = applyTargetedCommandMutation<{
         characterId: string
         selectedCharacterId: string | null
       }>({
         db,
         dataDir,
         baseRevision,
-        ...commandMutationContext(req, eventSink),
-        mutate(database) {
-          const target = ensureCharacterDatabaseObject(database)
-          const characters = ensureCharacterCollection(target)
-          if (findCharacterIndex(characters, character.chaId) !== -1) {
+        ...mutationContext,
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        skipDatabaseLoad: true,
+        mutate(_database, innerDb) {
+          const { settings: target, characters } = loadCharacterAppendState(innerDb)
+          validateStrictSelectedIndex(target, 'currentChar', characters.length)
+          const characterOrder = readCharacterOrder(target.characterOrder)
+          validateFullCharacterOrder(characters, characterOrder)
+          if (characterRowExists(innerDb, character.chaId)) {
             throw new ValidationError(`Duplicate character id: ${character.chaId}`)
           }
-          if (initialChat && chatIdExists(characters, initialChat.id)) {
+          if (initialChat && chatRowExists(innerDb, initialChat.id)) {
             throw new ValidationError(`Duplicate chat id: ${initialChat.id}`)
           }
           character.chats = initialChat ? [initialChat] : []
-          character.chatPage = 0
+          character.chatFolders = []
+          character.chatPage = initialChat ? 0 : -1
+          insertCharacterRow(innerDb, nextCharacterRowPosition(innerDb), character)
+          if (initialChat) insertCharacterChatRow(innerDb, character.chaId, 0, initialChat)
           characters.push(character)
-          const normalizedCharacters = ensureCharacterCollection(target)
+          updateCharacterOrderForPatchedRow(target, character.chaId, character)
+          writeSettingsOnly(innerDb, target)
           return {
             event: { ...COMMAND_EVENT_CATALOG.characterCreated, id: character.chaId },
             extra: {
               characterId: character.chaId,
-              selectedCharacterId: selectedCharacterId(target, normalizedCharacters),
+              selectedCharacterId: selectedCharacterId(target, characters),
             },
           }
         },
@@ -5141,37 +5975,47 @@ export function registerCommandRoutes(
     try {
       const body = (req.body ?? {}) as CharacterCommandBody
       const baseRevision = readBaseRevision(body)
+      // Fingerprint the submitted intent before creation normalizes its fields.
+      const mutationContext = commandMutationContext(req, eventSink)
       const character = createCharacterRecord(body.character, { assetDb: db })
       const initialChat = readInitialCharacterChat(body.initialChat)
       const lastInteraction = readSelectionLastInteraction(body.lastInteraction)
       character.lastInteraction = lastInteraction
-      const result = applyMessageFreeJsonCommandMutation<{
+      const result = applyTargetedCommandMutation<{
         characterId: string
         selectedCharacterId: string | null
       }>({
         db,
         dataDir,
         baseRevision,
-        ...commandMutationContext(req, eventSink),
-        mutate(database) {
-          const target = ensureCharacterDatabaseObject(database)
-          const characters = ensureCharacterCollection(target)
-          if (findCharacterIndex(characters, character.chaId) !== -1) {
+        ...mutationContext,
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        skipDatabaseLoad: true,
+        mutate(_database, innerDb) {
+          const { settings: target, characters } = loadCharacterAppendState(innerDb)
+          validateStrictSelectedIndex(target, 'currentChar', characters.length)
+          const characterOrder = readCharacterOrder(target.characterOrder)
+          validateFullCharacterOrder(characters, characterOrder)
+          if (characterRowExists(innerDb, character.chaId)) {
             throw new ValidationError(`Duplicate character id: ${character.chaId}`)
           }
-          if (initialChat && chatIdExists(characters, initialChat.id)) {
+          if (initialChat && chatRowExists(innerDb, initialChat.id)) {
             throw new ValidationError(`Duplicate chat id: ${initialChat.id}`)
           }
           character.chats = initialChat ? [initialChat] : []
-          character.chatPage = 0
+          character.chatFolders = []
+          character.chatPage = initialChat ? 0 : -1
+          insertCharacterRow(innerDb, nextCharacterRowPosition(innerDb), character)
+          if (initialChat) insertCharacterChatRow(innerDb, character.chaId, 0, initialChat)
           characters.push(character)
-          const normalizedCharacters = ensureCharacterCollection(target)
-          target.currentChar = requireCharacterIndex(normalizedCharacters, character.chaId)
+          updateCharacterOrderForPatchedRow(target, character.chaId, character)
+          target.currentChar = requireCharacterIndex(characters, character.chaId)
+          writeSettingsOnly(innerDb, target)
           return {
             event: { ...COMMAND_EVENT_CATALOG.characterCreatedAndSelected, id: character.chaId },
             extra: {
               characterId: character.chaId,
-              selectedCharacterId: selectedCharacterId(target, normalizedCharacters),
+              selectedCharacterId: selectedCharacterId(target, characters),
             },
           }
         },
@@ -5201,17 +6045,20 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
-        characterScopedRead: { characterId },
+        characterScopedRead: { characterId, exactCharacterRow: true },
         mutate(database, innerDb) {
           const target = ensureCharacterDatabaseObject(database)
           const characters = Array.isArray(target.characters) ? target.characters : []
-          const index = characters.findIndex(
+          let index = characters.findIndex(
             (character) =>
               !!character &&
               typeof character === 'object' &&
               !Array.isArray(character) &&
               (character as Record<string, unknown>).chaId === characterId,
           )
+          if (index === -1 && characters.length === 1 && characterRowExists(innerDb, characterId)) {
+            index = 0
+          }
           if (index === -1) {
             throw new EntityNotFoundError(`Character not found: ${characterId}`)
           }
@@ -5221,9 +6068,11 @@ export function registerCommandRoutes(
           const resolvedRow = (resolvedContainer.characters as Array<Record<string, unknown>>)[0]
           const resolvedPatch = { ...resolvedRow }
           delete resolvedPatch.chaId
-          const patched = buildPatchedCharacterCollectionRow(characters[index], resolvedPatch, characterId, index)
+          const before = structuredClone(characters[index]) as Record<string, unknown>
+          const patched = buildStrictPatchedCharacterRow(characters[index], resolvedPatch, characterId)
           characters[index] = patched
           writeSingleCharacterRow(innerDb, characterId, patched)
+          deleteChangedGreetingTranslations(innerDb, characterId, before, patched)
           const updatesTrashState = Object.prototype.hasOwnProperty.call(resolvedPatch, 'trashTime')
           if (updatesTrashState) {
             updateCharacterOrderForPatchedRow(target, characterId, patched)
@@ -5258,6 +6107,10 @@ export function registerCommandRoutes(
       const characterId = readCharacterId((req.params as { characterId?: unknown }).characterId)
       const body = (req.body ?? {}) as CharacterCommandBody
       const baseRevision = readBaseRevision(body)
+      let appliedGreetingMutation:
+        | { type: 'delete'; index: number }
+        | { type: 'swap'; firstIndex: number; secondIndex: number }
+        | null = null
       const result = applyTargetedCommandMutation<{
         characterId: string
         certificate: 'alternate-greeting-index-cascade-v1'
@@ -5270,14 +6123,15 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         mutate(database, innerDb) {
           const target = ensureCharacterDatabaseObject(database)
-          const characters = normalizeAllCharacterChats(target)
+          const characters = readStrictCharacterGraph(target)
           const character = characters[requireCharacterIndex(characters, characterId)]
           const currentGreetings = Array.isArray(character.alternateGreetings)
             ? character.alternateGreetings.filter((value): value is string => typeof value === 'string')
             : []
           const mutation = readAlternateGreetingMutation(body, currentGreetings.length)
+          appliedGreetingMutation = mutation.operation
           character.alternateGreetings = mutation.alternateGreetings
-          const chats = ensureCharacterChats(character)
+          const chats = readStrictCharacterChats(character)
           const chatGreetingIndices = chats.map((chat) => {
             const fmIndex = remapAlternateGreetingIndex(chat.fmIndex, currentGreetings.length, mutation.operation)
             chat.fmIndex = fmIndex
@@ -5286,6 +6140,7 @@ export function registerCommandRoutes(
 
           writeCharacterChatRows(innerDb, characterId, chats as Record<string, unknown>[])
           writeSingleCharacterRow(innerDb, characterId, character)
+          remapAlternateGreetingTranslations(innerDb, characterId, mutation.operation)
           return {
             event: { ...COMMAND_EVENT_CATALOG.alternateGreetingsUpdated, id: characterId },
             extra: {
@@ -5296,6 +6151,9 @@ export function registerCommandRoutes(
           }
         },
       })
+      if (appliedGreetingMutation) {
+        greetingTranslationJobs?.invalidateAlternateMutation(characterId, appliedGreetingMutation)
+      }
 
       return {
         revision: result.revision,
@@ -5304,6 +6162,40 @@ export function registerCommandRoutes(
       }
     } catch (err) {
       return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/characters/:characterId/greetings/:greetingIndex/translate', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const params = req.params as { characterId?: unknown; greetingIndex?: unknown }
+      const characterId = readCharacterId(params.characterId)
+      const greetingIndex = readGreetingTranslationIndex(params.greetingIndex)
+      const body = (req.body ?? {}) as MessageCommandBody
+      readBaseRevision(body)
+      const chatId = readChatId(body.chatId)
+      const requestedJobId = readOptionalMessageTranslationJobId(body.jobId)
+      return await runServerGreetingTranslation({
+        db,
+        dataDir,
+        greetingTranslationJobs,
+        characterId,
+        chatId,
+        greetingIndex,
+        ...(requestedJobId ? { jobId: requestedJobId } : {}),
+        ...commandMutationContext(req, eventSink),
+      })
+    } catch (err) {
+      if (
+        err instanceof RevisionMismatchError ||
+        err instanceof ValidationError ||
+        err instanceof EntityNotFoundError
+      ) {
+        return sendCommandError(reply, err)
+      }
+      const message = err instanceof Error && err.message.length > 0 ? err.message : String(err)
+      return sendCommandError(reply, new ValidationError(message || 'Greeting translation failed'))
     }
   })
 
@@ -5418,7 +6310,7 @@ export function registerCommandRoutes(
         // Sibling character-row repairs mutate the clone only and are discarded.
         mutate(database, innerDb) {
           const target = ensureCharacterDatabaseObject(database)
-          const characters = ensureCharacterCollection(target)
+          const characters = readStrictCharacterCollection(target)
           const index = findCharacterIndex(characters, characterId)
           if (index === -1) {
             return {
@@ -5430,9 +6322,15 @@ export function registerCommandRoutes(
             }
           }
           const character = characters[index]
-          const removedChatIds = ensureCharacterChats(character).map((chat) => chat.id)
+          const removedChatIds = readStrictCharacterChats(character).map((chat) => chat.id)
+          const selectedIndex = target.currentChar as number
+          const characterOrder = readCharacterOrder(target.characterOrder)
+          validateFullCharacterOrder(characters, characterOrder)
           characters.splice(index, 1)
-          ensureCharacterCollection(target)
+          if (characters.length === 0) target.currentChar = -1
+          else if (selectedIndex === index) target.currentChar = Math.min(index, characters.length - 1)
+          else if (selectedIndex > index) target.currentChar = selectedIndex - 1
+          target.characterOrder = characterOrderWithout(characterOrder, characterId)
           // The chats.character_id ON DELETE CASCADE removes the chat rows with
           // the character row; no explicit chats DELETE needed.
           deleteCharacterRow(innerDb, characterId)
@@ -5506,11 +6404,10 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.settings,
         mutate(database, innerDb) {
           const target = ensureCharacterDatabaseObject(database)
-          const characters = ensureCharacterCollection(target)
+          const characters = readStrictCharacterCollection(target)
           validateFullCharacterOrder(characters, order)
           // `characterOrder` is a settings scalar; reorder edits presentation
-          // order, not `characters` table positions. The `ensureCharacterCollection`
-          // repair on sibling rows is validate-only and is not persisted.
+          // order, not `characters` table positions.
           target.characterOrder = order
           writeSettingsOnly(innerDb, extractSettings(target))
           return {
@@ -5552,12 +6449,11 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         mutate(database, innerDb) {
-          const target = ensureModuleCommandDatabase(database)
-          const characters = normalizeAllCharacterChats(target)
-          const modules = ensureModuleRecords(target)
+          const { target, modules } = readStrictModuleCommandTarget(database)
+          const characters = readStrictCharacterGraph(target)
           const character = characters[requireCharacterIndex(characters, characterId)]
-          const previousSelectedChatId = selectedChatId(character)
-          const chats = ensureCharacterChats(character)
+          const previousSelectedChatId = selectedChatIdStrict(character)
+          const chats = readStrictCharacterChats(character)
           if (chatIdExists(characters, chat.id)) {
             throw new ValidationError(`Duplicate chat id: ${chat.id}`)
           }
@@ -5570,7 +6466,7 @@ export function registerCommandRoutes(
             validateNormalModuleLinks(modules, chat.modules, 'chat.modules')
           }
           if (chat.folderId) {
-            const folders = ensureCharacterChatFolders(character)
+            const folders = readStrictChatFolders(character)
             if (!folders.some((folder) => folder.id === chat.folderId)) {
               throw new ValidationError(`Unknown chat folder id: ${chat.folderId}`)
             }
@@ -5585,9 +6481,7 @@ export function registerCommandRoutes(
           if (selectCreated) {
             character.chatPage = 0
           } else if (previousSelectedChatId) {
-            selectChat(character, previousSelectedChatId)
-          } else {
-            ensureCharacterChats(character)
+            selectChatStrict(character, previousSelectedChatId)
           }
           writeCharacterChatRows(innerDb, characterId, character.chats as Record<string, unknown>[])
           insertCharacterChatRow(innerDb, characterId, 0, chat as Record<string, unknown>)
@@ -5606,9 +6500,85 @@ export function registerCommandRoutes(
             },
             extra: {
               chatId: chat.id,
-              selectedChatId: selectedChatId(character),
+              selectedChatId: selectedChatIdStrict(character),
               generationSettings: chat.generationSettings ?? null,
             },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.put('/api/v1/commands/characters/:characterId/chats', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const characterId = readCharacterId((req.params as { characterId?: unknown }).characterId)
+      const body = (req.body ?? {}) as ChatCommandBody
+      const baseRevision = readBaseRevision(body)
+      const chat = createChatRecord(body.chat)
+      if (chat.message.length > 0) {
+        throw new ValidationError('chat.message must be empty when resetting chats')
+      }
+      if (chat.hypaV3Data !== undefined && chat.hypaV3Data !== null) {
+        throw new ValidationError('chat.hypaV3Data must be empty when resetting chats')
+      }
+
+      const result = applyTargetedCommandMutation<{
+        chatId: string
+        selectedChatId: string
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        mutate(database, innerDb) {
+          const { target, modules } = readStrictModuleCommandTarget(database)
+          const characters = readStrictCharacterGraph(target)
+          const character = characters[requireCharacterIndex(characters, characterId)]
+          if (chatIdExists(characters, chat.id)) {
+            throw new ValidationError(`Duplicate chat id: ${chat.id}`)
+          }
+          if (chat.modules) {
+            validateNormalModuleLinks(modules, chat.modules, 'chat.modules')
+          }
+          if (chat.folderId) {
+            const folders = readStrictChatFolders(character)
+            if (!folders.some((folder) => folder.id === chat.folderId)) {
+              throw new ValidationError(`Unknown chat folder id: ${chat.folderId}`)
+            }
+          }
+          if (Object.prototype.hasOwnProperty.call(chat, 'generationSettings')) {
+            chat.generationSettings = readChatGenerationSettingsSave(
+              chat.generationSettings,
+              buildChatGenerationSettingsValidationContext(target, character, chat),
+            )
+          }
+
+          const removedChatIds = readStrictCharacterChats(character).map((candidate) => candidate.id)
+          character.chats = [chat]
+          character.chatPage = 0
+
+          for (const removedChatId of removedChatIds) {
+            deleteCharacterChatRow(innerDb, removedChatId, characterId)
+            deleteChatMessages(innerDb, removedChatId)
+            deleteChatHypaV3(innerDb, removedChatId)
+          }
+          insertCharacterChatRow(innerDb, characterId, 0, chat as Record<string, unknown>)
+          writeSingleCharacterRow(innerDb, characterId, character)
+
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.chatsReset, id: chat.id, parentId: characterId },
+            extra: { chatId: chat.id, selectedChatId: chat.id },
           }
         },
       })
@@ -5642,30 +6612,34 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.chatRow,
-        ...(hasModulePatch ? {} : { chatScopedRead: { chatId } }),
+        ...(hasModulePatch ? {} : { chatScopedRead: { chatId, exactChatRow: true } }),
         mutate(database, innerDb) {
           const target = hasModulePatch
-            ? ensureModuleCommandDatabase(database)
+            ? readStrictModuleCommandTarget(database).target
             : ensureCharacterDatabaseObject(database)
-          const characters = normalizeAllCharacterChats(target)
-          const { character, chatIndex } = requireChatLocation(characters, chatId)
+          const characters = hasModulePatch ? readStrictCharacterGraph(target) : readScopedCharacterRecords(target)
+          const { character, chatIndex } = hasModulePatch
+            ? requireStrictChatLocation(characters, chatId)
+            : requireOrdinaryChatLocation(characters, chatId, innerDb)
           if (hasModulePatch) {
-            const modules = ensureModuleRecords(target)
+            const modules = readStrictModuleRecords(target)
             validateNormalModuleLinks(modules, patch.modules as string[], 'patch.modules')
           }
           if (patch.folderId) {
-            const folders = ensureCharacterChatFolders(character)
+            const folders = readStrictChatFolders(character)
             if (!folders.some((folder) => folder.id === patch.folderId)) {
               throw new ValidationError(`Unknown chat folder id: ${patch.folderId}`)
             }
           }
-          const chats = ensureCharacterChats(character)
-          chats[chatIndex] = {
+          const chats = hasModulePatch ? readStrictCharacterChats(character) : (character.chats as ChatRecord[])
+          const updatedChat = {
             ...chats[chatIndex],
             ...patch,
             id: chatId,
           }
-          writeSingleChatRow(innerDb, chatId, chats[chatIndex])
+          if (patch.translatorPresetId === null) delete updatedChat.translatorPresetId
+          chats[chatIndex] = updatedChat
+          ;(hasModulePatch ? writeSingleChatRow : writeSingleChatRowExact)(innerDb, chatId, chats[chatIndex])
           // The parent character row is rewritten only when `select:true` moves
           // its `chatPage` pointer.
           if (selectUpdated) {
@@ -5674,7 +6648,10 @@ export function registerCommandRoutes(
           }
           return {
             event: { ...COMMAND_EVENT_CATALOG.chatUpdated, id: chatId, parentId: character.chaId },
-            extra: { chatId, selectedChatId: selectedChatId(character) },
+            extra: {
+              chatId,
+              selectedChatId: selectedChatIdStrict(character),
+            },
           }
         },
       })
@@ -5782,9 +6759,9 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.chatRow,
         mutate(database, innerDb) {
-          const target = ensureModuleCommandDatabase(database)
-          const characters = normalizeAllCharacterChats(target)
-          const { character, chat } = requireChatLocation(characters, chatId)
+          const { target } = readStrictModuleCommandTarget(database)
+          const characters = readStrictCharacterGraph(target)
+          const { character, chat } = requireStrictChatLocation(characters, chatId)
           const write = readChatGenerationSettingsWrite(
             body,
             chat.generationSettings,
@@ -5840,7 +6817,7 @@ export function registerCommandRoutes(
         // clone only and is discarded.
         mutate(database, innerDb) {
           const target = ensureCharacterDatabaseObject(database)
-          const characters = normalizeAllCharacterChats(target)
+          const characters = readStrictCharacterGraph(target)
           if (!chatIdExists(characters, chatId)) {
             const currentCharacterIndex = Number.isInteger(target.currentChar as number)
               ? (target.currentChar as number)
@@ -5850,17 +6827,22 @@ export function registerCommandRoutes(
               event: { ...COMMAND_EVENT_CATALOG.chatDeleted, id: chatId },
               extra: {
                 chatId,
-                selectedChatId: currentCharacter ? selectedChatId(currentCharacter) : null,
+                selectedChatId: currentCharacter ? selectedChatIdStrict(currentCharacter) : null,
               },
             }
           }
-          const { character, chatIndex } = requireChatLocation(characters, chatId)
-          const chats = ensureCharacterChats(character)
+          const { character, chatIndex } = requireStrictChatLocation(characters, chatId)
+          const chats = readStrictCharacterChats(character)
           if (chats.length <= 1) {
             throw new ValidationError('Cannot delete the only chat for a character')
           }
+          const previousSelectedChatId = selectedChatIdStrict(character)
           chats.splice(chatIndex, 1)
-          ensureCharacterChats(character)
+          if (previousSelectedChatId && previousSelectedChatId !== chatId) {
+            selectChatStrict(character, previousSelectedChatId)
+          } else {
+            character.chatPage = Math.min(chatIndex, chats.length - 1)
+          }
           const characterId = character.chaId as string
           deleteCharacterChatRow(innerDb, chatId, characterId)
           writeCharacterChatRows(innerDb, characterId, chats as Record<string, unknown>[])
@@ -5869,7 +6851,7 @@ export function registerCommandRoutes(
           deleteChatHypaV3(innerDb, chatId)
           return {
             event: { ...COMMAND_EVENT_CATALOG.chatDeleted, id: chatId, parentId: character.chaId },
-            extra: { chatId, selectedChatId: selectedChatId(character) },
+            extra: { chatId, selectedChatId: selectedChatIdStrict(character) },
           }
         },
       })
@@ -5909,13 +6891,12 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         mutate(database, innerDb) {
-          const target = ensureModuleCommandDatabase(database)
-          const characters = normalizeAllCharacterChats(target)
-          const modules = ensureModuleRecords(target)
-          const { character, chatIndex } = requireChatLocation(characters, sourceChatId)
-          const previousSelectedChatId = selectedChatId(character)
-          const chats = ensureCharacterChats(character)
-          const folders = ensureCharacterChatFolders(character)
+          const { target, modules } = readStrictModuleCommandTarget(database)
+          const characters = readStrictCharacterGraph(target)
+          const { character, chatIndex } = requireStrictChatLocation(characters, sourceChatId)
+          const previousSelectedChatId = selectedChatIdStrict(character)
+          const chats = readStrictCharacterChats(character)
+          const folders = readStrictChatFolders(character)
           if (folder) {
             if (chatFolderIdExists(characters, folder.id)) {
               throw new ValidationError(`Duplicate chat folder id: ${folder.id}`)
@@ -5966,9 +6947,7 @@ export function registerCommandRoutes(
           if (selectFork) {
             character.chatPage = 0
           } else if (previousSelectedChatId) {
-            selectChat(character, previousSelectedChatId)
-          } else {
-            ensureCharacterChats(character)
+            selectChatStrict(character, previousSelectedChatId)
           }
           // Surgical fork persistence, scoped to the source character: re-stamp
           // its existing chat-row positions (source chat's `sourcePatch` rides
@@ -5995,7 +6974,7 @@ export function registerCommandRoutes(
             extra: {
               chatId: nextChat.id,
               sourceChatId,
-              selectedChatId: selectedChatId(character),
+              selectedChatId: selectedChatIdStrict(character),
               generationSettings: nextChat.generationSettings ?? null,
             },
           }
@@ -6030,10 +7009,10 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         mutate(database, innerDb) {
-          const characters = normalizeAllCharacterChats(database)
+          const characters = readStrictCharacterGraph(database)
           const character = characters[requireCharacterIndex(characters, characterId)]
-          validateFullChatOrder(character, chatIds, folderByChatId)
-          const chats = ensureCharacterChats(character)
+          validateStrictFullChatOrder(character, chatIds, folderByChatId)
+          const chats = readStrictCharacterChats(character)
           const chatById = new Map(chats.map((chat) => [chat.id, chat]))
           character.chats = chatIds.map((chatId) => {
             const chat = chatById.get(chatId)!
@@ -6043,9 +7022,7 @@ export function registerCommandRoutes(
             return chat
           })
           if (selectedId) {
-            selectChat(character, selectedId)
-          } else {
-            ensureCharacterChats(character)
+            selectChatStrict(character, selectedId)
           }
           // Reorder shifts only this character's chat-row positions (+ folderId
           // where folderByChatId moved a chat); the character row carries the
@@ -6054,7 +7031,7 @@ export function registerCommandRoutes(
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
             event: { ...COMMAND_EVENT_CATALOG.chatReordered, parentId: characterId },
-            extra: { selectedChatId: selectedChatId(character) },
+            extra: { selectedChatId: selectedChatIdStrict(character) },
           }
         },
       })
@@ -6084,14 +7061,13 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         mutate(database, innerDb) {
-          const characters = normalizeAllCharacterChats(database)
+          const characters = readStrictCharacterGraph(database)
           const character = characters[requireCharacterIndex(characters, characterId)]
-          const folders = ensureCharacterChatFolders(character)
+          const folders = readStrictChatFolders(character)
           if (chatFolderIdExists(characters, folder.id)) {
             throw new ValidationError(`Duplicate chat folder id: ${folder.id}`)
           }
-          // `chatFolders` lives in the character row; sibling-character chat
-          // normalization is validate-only.
+          // `chatFolders` lives in the character row.
           folders.unshift(folder)
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
@@ -6130,9 +7106,9 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         mutate(database, innerDb) {
-          const characters = normalizeAllCharacterChats(database)
-          const { character, folderIndex } = requireChatFolderIndex(characters, folderId)
-          const folders = ensureCharacterChatFolders(character)
+          const characters = readStrictCharacterGraph(database)
+          const { character, folderIndex } = requireStrictChatFolderIndex(characters, folderId)
+          const folders = readStrictChatFolders(character)
           folders[folderIndex] = {
             ...folders[folderIndex],
             ...patch,
@@ -6174,21 +7150,19 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         mutate(database, innerDb) {
-          const characters = normalizeAllCharacterChats(database)
+          const characters = readStrictCharacterGraph(database)
           if (!chatFolderIdExists(characters, folderId)) {
             return {
               event: { ...COMMAND_EVENT_CATALOG.chatFolderDeleted, id: folderId },
               extra: { folderId },
             }
           }
-          const { character, folderIndex } = requireChatFolderIndex(characters, folderId)
-          const folders = ensureCharacterChatFolders(character)
+          const { character, folderIndex } = requireStrictChatFolderIndex(characters, folderId)
+          const folders = readStrictChatFolders(character)
           folders.splice(folderIndex, 1)
           // The folder lives on the character row (`chatFolders`); deleting it
           // re-homes only the chat rows whose `folderId` pointed at it. Iterate
-          // the already-normalized `character.chats` directly: calling
-          // `ensureCharacterChats` again here would itself null the now-orphaned
-          // `folderId` before this comparison could see it.
+          // the already-validated `character.chats` directly.
           const reHomed: Record<string, unknown>[] = []
           for (const chat of character.chats as Record<string, unknown>[]) {
             if (chat.folderId === folderId) {
@@ -6238,21 +7212,21 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         mutate(database, innerDb) {
-          const characters = normalizeAllCharacterChats(database)
+          const characters = readStrictCharacterGraph(database)
           const character = characters[requireCharacterIndex(characters, characterId)]
-          validateFullChatFolderOrder(character, folderIds)
-          const folders = ensureCharacterChatFolders(character)
+          validateStrictFullChatFolderOrder(character, folderIds)
+          const folders = readStrictChatFolders(character)
           const folderById = new Map(folders.map((folder) => [folder.id, folder]))
           // `chatFolders` and `chatPage` (via selectChat) live in the character
           // row; reordering folders touches no chat row.
           character.chatFolders = folderIds.map((folderId) => folderById.get(folderId)!)
           if (selectedId) {
-            selectChat(character, selectedId)
+            selectChatStrict(character, selectedId)
           }
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
             event: { ...COMMAND_EVENT_CATALOG.chatFolderReordered, parentId: characterId },
-            extra: { selectedChatId: selectedChatId(character) },
+            extra: { selectedChatId: selectedChatIdStrict(character) },
           }
         },
       })
@@ -6284,10 +7258,10 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.chatRow,
         // This callback only locates + rewrites the one chat row.
-        chatScopedRead: { chatId },
+        chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, innerDb) {
-          const characters = normalizeAllCharacterChats(database)
-          const { character, chat } = requireChatLocation(characters, chatId)
+          const characters = readScopedCharacterRecords(database)
+          const { character, chat } = requireOrdinaryChatLocation(characters, chatId, innerDb)
           // This path updates only the chat row's `scriptstate`; sibling chat
           // normalization is validate-only.
           chat.scriptstate ??= {}
@@ -6298,7 +7272,7 @@ export function registerCommandRoutes(
           if (Object.keys(chat.scriptstate).length === 0) {
             delete chat.scriptstate
           }
-          writeSingleChatRow(innerDb, chatId, chat)
+          writeSingleChatRowExact(innerDb, chatId, chat)
           return {
             event: {
               ...COMMAND_EVENT_CATALOG.chatScriptstateUpdated,
@@ -6335,10 +7309,10 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
         // Chat is located for validation only; writes go to the message store.
-        chatScopedRead: { chatId },
+        chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, targetDb) {
-          const characters = normalizeAllCharacterChats(database)
-          requireChatLocation(characters, chatId)
+          const characters = readScopedCharacterRecords(database)
+          requireOrdinaryChatLocation(characters, chatId, targetDb)
           if (activeMessageIdExists(targetDb, message.chatId)) {
             throw new ValidationError(`Duplicate message id: ${message.chatId}`)
           }
@@ -6383,9 +7357,9 @@ export function registerCommandRoutes(
         mutationPath: 'targeted-message',
         // The loader resolves the parent chat from the message id;
         // a missing message falls back broad and the callback throws as before.
-        chatScopedRead: { messageId },
+        chatScopedRead: { messageId, exactChatRow: true },
         mutate(database, targetDb) {
-          const characters = normalizeAllCharacterChats(database)
+          const characters = readScopedCharacterRecords(database)
           const resolved = resolveActiveMessageLocationById(targetDb, messageId)
           if (resolved.ok === false) {
             if (resolved.reason === 'ambiguous') {
@@ -6394,7 +7368,8 @@ export function registerCommandRoutes(
             throw new EntityNotFoundError(`Message not found: ${messageId}`)
           }
           const { location } = resolved
-          requireChatLocation(characters, location.chatId)
+          requireOrdinaryChatLocation(characters, location.chatId, targetDb)
+          readStrictStoredMessageRecord(location.message, messageId)
           const liveGenerationInfo = location.message.generationInfo
           const liveGenerationId =
             liveGenerationInfo && typeof liveGenerationInfo === 'object' && !Array.isArray(liveGenerationInfo)
@@ -6482,9 +7457,9 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
         // Same message-id-resolved scoped read as the PATCH route.
-        chatScopedRead: { messageId },
+        chatScopedRead: { messageId, exactChatRow: true },
         mutate(database, targetDb) {
-          const characters = normalizeAllCharacterChats(database)
+          const characters = readScopedCharacterRecords(database)
           const resolved = resolveActiveMessageLocationById(targetDb, messageId)
           if (resolved.ok === false) {
             if (resolved.reason === 'ambiguous') {
@@ -6493,7 +7468,7 @@ export function registerCommandRoutes(
             throw new EntityNotFoundError(`Message not found: ${messageId}`)
           }
           const { location } = resolved
-          const { chat } = requireChatLocation(characters, location.chatId)
+          const { chat } = requireOrdinaryChatLocation(characters, location.chatId, targetDb)
           const deleted = deleteActiveMessageById(targetDb, messageId)
           if (deleted.ok === false) {
             if (deleted.reason === 'ambiguous') {
@@ -6531,10 +7506,9 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as MessageCommandBody
       const baseRevision = readBaseRevision(body)
       const afterMessageId = readTruncateAfterMessageId(body)
-      const preserveRemovedAsAlternates = readOptionalBooleanFlag(
-        body.preserveRemovedAsAlternates,
-        'preserveRemovedAsAlternates',
-      )
+      if (Object.prototype.hasOwnProperty.call(body, 'preserveRemovedAsAlternates')) {
+        throw new ValidationError('preserveRemovedAsAlternates is no longer supported')
+      }
       const result = applyTargetedCommandMutation<{
         chatId: string
         afterMessageId: string | null
@@ -6546,35 +7520,16 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
         // Chat is located for validation only; truncate hits the message store.
-        chatScopedRead: { chatId },
+        chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, targetDb) {
-          const characters = normalizeAllCharacterChats(database)
-          const { chat } = requireChatLocation(characters, chatId)
-          const removedAlternates: unknown[] = []
-          if (preserveRemovedAsAlternates) {
-            const base = getChatMessages(targetDb, chatId)
-            let keepCount = 0
-            if (afterMessageId !== null) {
-              const resolved = resolveChatMessageIndexById(base, afterMessageId)
-              if (resolved.ok === false) {
-                if (resolved.reason === 'ambiguous') {
-                  throw new ValidationError(`Ambiguous message id: ${afterMessageId}`)
-                }
-                throw new EntityNotFoundError(`Message not found for chat ${chatId}: ${afterMessageId}`)
-              }
-              keepCount = resolved.index + 1
-            }
-            removedAlternates.push(...base.slice(keepCount).filter((message) => message.role === 'char'))
-          }
+          const characters = readScopedCharacterRecords(database)
+          const { chat } = requireOrdinaryChatLocation(characters, chatId, targetDb)
           const truncated = truncateActiveChatMessages(targetDb, chatId, afterMessageId)
           if (truncated.ok === false) {
             if (truncated.reason === 'ambiguous-after') {
               throw new ValidationError(`Ambiguous message id: ${truncated.afterMessageId}`)
             }
             throw new EntityNotFoundError(`Message not found for chat ${chatId}: ${truncated.afterMessageId}`)
-          }
-          for (const message of removedAlternates) {
-            addAlternateMessage(targetDb, chatId, message)
           }
           pruneChatBookmarkMetadata(targetDb, chat, getChatMessages(targetDb, chatId))
           return {
@@ -6614,10 +7569,10 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
         // Chat is located for validation only; replacement hits the message store.
-        chatScopedRead: { chatId },
+        chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, targetDb) {
-          const characters = normalizeAllCharacterChats(database)
-          const { chat } = requireChatLocation(characters, chatId)
+          const characters = readScopedCharacterRecords(database)
+          const { chat } = requireOrdinaryChatLocation(characters, chatId, targetDb)
           const base = getChatMessages(targetDb, chatId)
           let keepCount = 0
           if (afterMessageId !== null) {
@@ -6675,10 +7630,10 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
         // Chat is located for validation only; replacement hits the message store.
-        chatScopedRead: { chatId },
+        chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, targetDb) {
-          const characters = normalizeAllCharacterChats(database)
-          const { chat } = requireChatLocation(characters, chatId)
+          const characters = readScopedCharacterRecords(database)
+          const { chat } = requireOrdinaryChatLocation(characters, chatId, targetDb)
           validateUniqueMessageIds(replacement)
           for (const message of replacement) {
             if (activeMessageIdExistsOutsideChat(targetDb, message.chatId, chatId)) {
@@ -6719,10 +7674,10 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-generation',
         // Chat is located for validation only; persistence hits the message store.
-        chatScopedRead: { chatId },
+        chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, targetDb) {
-          const characters = normalizeAllCharacterChats(database)
-          requireChatLocation(characters, chatId)
+          const characters = readScopedCharacterRecords(database)
+          requireOrdinaryChatLocation(characters, chatId, targetDb)
           const write = writeGenerationChatMessage(
             targetDb,
             chatId,
@@ -6783,6 +7738,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
         mutate(database, innerDb) {
           const { target, lorebooks } = readGlobalLorebookCommandTarget(database)
+          lorebooks.forEach((candidate, index) => validateStoredGlobalLorebook(candidate, `loreBook[${index}]`))
           const beforeLoreBookPage = target.loreBookPage
           if (lorebooks.some((candidate) => candidate.id === lorebook.id)) {
             throw new ValidationError(`Duplicate lorebook id: ${lorebook.id}`)
@@ -6826,6 +7782,7 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const { lorebooks } = readGlobalLorebookCommandTarget(database)
           const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
+          validateStoredGlobalLorebook(lorebooks[index], `loreBook[${index}]`)
           Object.assign(lorebooks[index], patch)
           // The clean case: one lorebook's metadata, no pointer move, no child
           // repair persisted — a single-row UPDATE.
@@ -6871,6 +7828,9 @@ export function registerCommandRoutes(
               extra: { lorebookId },
             }
           }
+          lorebooks.forEach((candidate, candidateIndex) =>
+            validateStoredGlobalLorebook(candidate, `loreBook[${candidateIndex}]`),
+          )
           if (lorebooks.length === 1) {
             throw new ValidationError('Cannot delete the last lorebook')
           }
@@ -6910,6 +7870,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
         mutate(database, innerDb) {
           const { target, lorebooks } = readGlobalLorebookCommandTarget(database)
+          lorebooks.forEach((candidate, index) => validateStoredGlobalLorebook(candidate, `loreBook[${index}]`))
           const beforeLoreBookPage = target.loreBookPage
           validateFullLorebookOrder(lorebooks, lorebookIds)
           const byId = new Map(lorebooks.map((lorebook) => [lorebook.id, lorebook]))
@@ -6995,6 +7956,7 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const { lorebooks } = readGlobalLorebookCommandTarget(database)
           const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
+          validateStoredGlobalLorebook(lorebooks[index], `loreBook[${index}]`)
           lorebooks[index].data = entries
           // Replacing one lorebook's entries: no pointer move, no child repair
           // persisted — a single-row UPDATE.
@@ -7041,13 +8003,11 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
         mutate(database, innerDb) {
-          const rawTarget = readJsonObject(database, 'database')
-          const rawLorebook = cloneJsonForCommandCertificate(findJsonRecordById(rawTarget.loreBook, lorebookId))
           const { lorebooks } = readGlobalLorebookCommandTarget(database)
           const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
-          const normalizationIdentity = isDeepStrictEqual(rawLorebook, lorebooks[index])
+          validateStoredGlobalLorebook(lorebooks[index], `loreBook[${index}]`)
           const written = applyLorebookEntryWriteById(lorebooks[index].data, entryId, entryWrite)
-          const certified = normalizationIdentity && written.patchedKeys && written.deletedKeys
+          const certified = written.patchedKeys && written.deletedKeys
           writeSingleCollectionRow(innerDb, 'loreBook', index, lorebooks[index])
           return {
             event: { ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced, id: lorebookId },
@@ -7101,6 +8061,7 @@ export function registerCommandRoutes(
               extra: { lorebookId, entryId, entryIndex: -1 },
             }
           }
+          validateStoredGlobalLorebook(lorebooks[index], `loreBook[${index}]`)
           if (!lorebooks[index].data.some((entry) => entry.id === entryId)) {
             return {
               event: { ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced, id: lorebookId },
@@ -7144,6 +8105,7 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const { lorebooks } = readGlobalLorebookCommandTarget(database)
           const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
+          validateStoredGlobalLorebook(lorebooks[index], `loreBook[${index}]`)
           reorderLorebookEntriesById(lorebooks[index].data, entryIds)
           writeSingleCollectionRow(innerDb, 'loreBook', index, lorebooks[index])
           return {
@@ -7180,8 +8142,6 @@ export function registerCommandRoutes(
         characterScopedRead: { characterId, exactCharacterRow: true },
         mutate(database, innerDb) {
           const { character } = normalizeSelectedCharacterLorebooks(database, characterId)
-          // Repair and replace only the owned lorebook field; sibling character
-          // fields are loaded and written without normalization.
           character.globalLore = entries
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
@@ -7233,13 +8193,10 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         characterScopedRead: { characterId, exactCharacterRow: true },
         mutate(database, innerDb) {
-          const rawTarget = readJsonObject(database, 'database')
-          const rawCharacter = findJsonRecordById(rawTarget.characters, characterId, 'chaId')
-          const rawCharacterSnapshot = cloneJsonForCommandCertificate(rawCharacter)
           const { character, entries } = normalizeSelectedCharacterLorebooks(database, characterId)
-          const normalizationIdentity = isDeepStrictEqual(rawCharacterSnapshot, character)
           const written = applyLorebookEntryWriteById(entries, entryId, entryWrite)
-          const certified = normalizationIdentity && written.patchedKeys && written.deletedKeys
+          character.globalLore = entries
+          const certified = written.patchedKeys && written.deletedKeys
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
             event: {
@@ -7391,8 +8348,6 @@ export function registerCommandRoutes(
         chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, innerDb) {
           const { chat, parentId } = normalizeSelectedChatLorebooks(database, chatId)
-          // Repair and replace only the owned lorebook field; sibling chat
-          // fields are loaded and written without normalization.
           chat.localLore = entries
           writeSingleChatRowExact(innerDb, chatId, chat)
           return {
@@ -7444,13 +8399,10 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.chatRow,
         chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, innerDb) {
-          const rawTarget = readJsonObject(database, 'database')
-          const rawChat = findRawChatRecord(rawTarget, chatId)
-          const rawChatSnapshot = cloneJsonForCommandCertificate(rawChat)
-          const { chat, parentId } = normalizeSelectedChatLorebooks(database, chatId)
-          const normalizationIdentity = isDeepStrictEqual(rawChatSnapshot, chat)
-          const written = applyLorebookEntryWriteById(chat.localLore, entryId, entryWrite)
-          const certified = normalizationIdentity && written.patchedKeys && written.deletedKeys
+          const { chat, entries, parentId } = normalizeSelectedChatLorebooks(database, chatId)
+          const written = applyLorebookEntryWriteById(entries, entryId, entryWrite)
+          chat.localLore = entries
+          const certified = written.patchedKeys && written.deletedKeys
           writeSingleChatRowExact(innerDb, chatId, chat)
           return {
             event: {
@@ -7512,8 +8464,8 @@ export function registerCommandRoutes(
               extra: { chatId, entryId, entryIndex: -1 },
             }
           }
-          const { chat, parentId } = normalizeSelectedChatLorebooks(database, chatId)
-          if (!chat.localLore.some((entry) => entry.id === entryId)) {
+          const { chat, entries, parentId } = normalizeSelectedChatLorebooks(database, chatId)
+          if (!entries.some((entry) => entry.id === entryId)) {
             return {
               event: {
                 ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
@@ -7524,7 +8476,7 @@ export function registerCommandRoutes(
               extra: { chatId, entryId, entryIndex: -1 },
             }
           }
-          const deleted = deleteLorebookEntryById(chat.localLore, entryId)
+          const deleted = deleteLorebookEntryById(entries, entryId)
           writeSingleChatRowExact(innerDb, chatId, chat)
           return {
             event: {
@@ -7564,8 +8516,8 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.chatRow,
         chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, innerDb) {
-          const { chat, parentId } = normalizeSelectedChatLorebooks(database, chatId)
-          reorderLorebookEntriesById(chat.localLore, entryIds)
+          const { chat, entries, parentId } = normalizeSelectedChatLorebooks(database, chatId)
+          reorderLorebookEntriesById(entries, entryIds)
           writeSingleChatRowExact(innerDb, chatId, chat)
           return {
             event: {
@@ -7589,6 +8541,160 @@ export function registerCommandRoutes(
     }
   })
 
+  app.post('/api/v1/commands/module-folders', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as ModuleFolderCommandBody
+      const baseRevision = readBaseRevision(body)
+      const folder = createModuleFolderRecord(body.folder)
+      const result = applyTargetedCommandMutation<{ folderId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.settings,
+        mutate(database, innerDb) {
+          const target = readJsonObject(database, 'database')
+          const folders = readStrictModuleFolders(target)
+          if (folders.some((candidate) => candidate.id === folder.id)) {
+            throw new ValidationError(`Module folder already exists: ${folder.id}`)
+          }
+          folders.push(folder)
+          target.moduleFolders = folders
+          writeSettingsOnly(innerDb, extractSettings(target))
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.moduleFolderCreated, id: folder.id },
+            extra: { folderId: folder.id },
+          }
+        },
+      })
+
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/module-folders/:folderId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const folderId = readCommandModuleId((req.params as { folderId?: unknown }).folderId, 'folderId')
+      const body = (req.body ?? {}) as ModuleFolderCommandBody
+      const baseRevision = readBaseRevision(body)
+      const patch = readModuleFolderPatch(body.patch)
+      const result = applyTargetedCommandMutation<{ folderId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.settings,
+        mutate(database, innerDb) {
+          const target = readJsonObject(database, 'database')
+          const folders = readStrictModuleFolders(target)
+          const matches = folders
+            .map((folder, index) => ({ folder, index }))
+            .filter(({ folder }) => folder.id === folderId)
+          if (matches.length === 0) throw new EntityNotFoundError(`Module folder not found: ${folderId}`)
+          if (matches.length !== 1) throw new ValidationError(`Duplicate module folder id: ${folderId}`)
+          folders[matches[0].index] = { ...matches[0].folder, ...patch, id: folderId }
+          target.moduleFolders = folders
+          writeSettingsOnly(innerDb, extractSettings(target))
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.moduleFolderUpdated, id: folderId },
+            extra: { folderId },
+          }
+        },
+      })
+
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/module-folders/:folderId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const folderId = readCommandModuleId((req.params as { folderId?: unknown }).folderId, 'folderId')
+      const body = (req.body ?? {}) as ModuleFolderCommandBody
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation<{ folderId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.crossOwner,
+        mutate(database, innerDb) {
+          const target = readJsonObject(database, 'database')
+          const folders = readStrictModuleFolders(target)
+          const matches = folders
+            .map((folder, index) => ({ folder, index }))
+            .filter(({ folder }) => folder.id === folderId)
+          if (matches.length === 0) {
+            return {
+              event: { ...COMMAND_EVENT_CATALOG.moduleFolderDeleted, id: folderId },
+              extra: { folderId },
+            }
+          }
+          if (matches.length !== 1) throw new ValidationError(`Duplicate module folder id: ${folderId}`)
+          folders.splice(matches[0].index, 1)
+          target.moduleFolders = folders
+
+          const modules = readStrictModuleRecords(target)
+          let modulesChanged = false
+          for (const module of modules) {
+            if (module.folderId !== folderId) continue
+            delete module.folderId
+            modulesChanged = true
+          }
+          writeSettingsOnly(innerDb, extractSettings(target))
+          if (modulesChanged) writeSingleCollectionTable(innerDb, 'modules', modules)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.moduleFolderDeleted, id: folderId },
+            extra: { folderId },
+          }
+        },
+      })
+
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/module-folders/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as ModuleFolderCommandBody
+      const baseRevision = readBaseRevision(body)
+      const folderIds = readModuleFolderIdList(body.folderIds)
+      const result = applyTargetedCommandMutation({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.settings,
+        mutate(database, innerDb) {
+          const target = readJsonObject(database, 'database')
+          const folders = readStrictModuleFolders(target)
+          validateFullModuleFolderOrder(folders, folderIds)
+          const byId = new Map(folders.map((folder) => [folder.id, folder]))
+          target.moduleFolders = folderIds.map((folderId) => byId.get(folderId)!)
+          writeSettingsOnly(innerDb, extractSettings(target))
+          return { event: { ...COMMAND_EVENT_CATALOG.moduleFolderReordered } }
+        },
+      })
+
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
   app.post('/api/v1/commands/modules', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
 
@@ -7602,12 +8708,17 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modules,
         mutate(database, innerDb) {
-          const target = ensureModuleCommandDatabase(database)
-          const modules = ensureModuleRecords(target)
+          const target = readJsonObject(database, 'database')
+          const modules = readStrictModuleRecords(target)
+          modules.forEach((candidate, index) =>
+            validateStoredModuleRecord(candidate, `module[${index}]`, { allowMcp: true }),
+          )
           if (modules.some((candidate) => candidate.id === module.id)) {
             throw new ValidationError(`Module already exists: ${module.id}`)
           }
+          validateModuleFolderReference(module, readStrictModuleFolders(target))
           modules.push(module)
           writeSingleCollectionTable(innerDb, 'modules', modules)
           return {
@@ -7641,10 +8752,12 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modules,
         mutate(database, innerDb) {
-          const target = ensureModuleCommandDatabase(database)
-          const modules = ensureModuleRecords(target)
+          const target = readJsonObject(database, 'database')
+          const modules = readStrictModuleRecords(target)
           const index = requireModuleIndex(modules, moduleId)
+          validateStoredModuleRecord(modules[index], `module ${moduleId}`)
           for (const [key, value] of Object.entries(patch)) {
             if (value === null) {
               delete modules[index][key]
@@ -7652,6 +8765,8 @@ export function registerCommandRoutes(
               modules[index][key] = value
             }
           }
+          validateModuleFolderReference(modules[index], readStrictModuleFolders(target), `module ${moduleId}`)
+          validateStoredModuleRecord(modules[index], `module ${moduleId}`)
           writeSingleCollectionRow(innerDb, 'modules', index, modules[index])
           return {
             event: { ...COMMAND_EVENT_CATALOG.moduleUpdated, id: moduleId },
@@ -7677,14 +8792,15 @@ export function registerCommandRoutes(
       const moduleId = readCommandModuleId((req.params as { moduleId?: unknown }).moduleId)
       const body = (req.body ?? {}) as ModuleCommandBody
       const baseRevision = readBaseRevision(body)
-      const result = applyMessageFreeJsonCommandMutation<{ moduleId: string }>({
+      const result = applyTargetedCommandMutation<{ moduleId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
-          const target = ensureModuleCommandDatabase(database)
-          const modules = ensureModuleRecords(target)
+        mutationPath: TARGETED_MUTATION_PATHS.crossOwner,
+        mutate(database, innerDb) {
+          const target = readJsonObject(database, 'database')
+          const modules = readStrictModuleRecords(target)
           const index = modules.findIndex((module) => module.id === moduleId)
           if (index === -1) {
             return {
@@ -7692,8 +8808,23 @@ export function registerCommandRoutes(
               extra: { moduleId },
             }
           }
+          validateStoredModuleRecord(modules[index], `module ${moduleId}`, { allowMcp: true })
           modules.splice(index, 1)
-          removeModuleReferences(target, moduleId)
+          const removed = removeModuleReferences(target, moduleId)
+          writeSingleCollectionTable(innerDb, 'modules', modules)
+          if (removed.settingsChanged) writeSettingsOnly(innerDb, extractSettings(target))
+          for (const changedIndex of removed.changedPersonaIndexes) {
+            writeSingleCollectionRow(innerDb, 'personas', changedIndex, asArray(target.personas)[changedIndex])
+          }
+          for (const changedIndex of removed.changedLoadoutIndexes) {
+            writeSingleCollectionRow(innerDb, 'loadouts', changedIndex, asArray(target.loadouts)[changedIndex])
+          }
+          for (const changed of removed.changedCharacters) {
+            writeSingleCharacterRow(innerDb, changed.characterId, changed.character)
+          }
+          for (const changed of removed.changedChats) {
+            writeSingleChatRowExact(innerDb, changed.chatId, changed.chat)
+          }
           return {
             event: { ...COMMAND_EVENT_CATALOG.moduleDeleted, id: moduleId },
             extra: { moduleId },
@@ -7725,10 +8856,13 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.settings,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modules,
         mutate(database, innerDb) {
-          const target = ensureModuleCommandDatabase(database)
-          requireModuleIndex(ensureModuleRecords(target), moduleId, { allowMcp: true })
-          const enabledModules = new Set(ensureEnabledModules(target))
+          const target = readJsonObject(database, 'database')
+          const modules = readStrictModuleRecords(target)
+          const index = requireModuleIndex(modules, moduleId, { allowMcp: true })
+          validateStoredModuleRecord(modules[index], `module ${moduleId}`, { allowMcp: true })
+          const enabledModules = new Set(readStrictEnabledModules(target))
           if (enabled) {
             enabledModules.add(moduleId)
           } else {
@@ -7768,12 +8902,28 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modules,
         mutate(database, innerDb) {
-          const target = ensureModuleCommandDatabase(database)
-          const modules = ensureModuleRecords(target)
+          const target = readJsonObject(database, 'database')
+          const modules = readStrictModuleRecords(target)
+          modules.forEach((candidate, index) =>
+            validateStoredModuleRecord(candidate, `module[${index}]`, { allowMcp: true }),
+          )
           validateFullModuleOrder(modules, moduleIds)
+          const folderByModuleId =
+            body.folderByModuleId === undefined
+              ? null
+              : readModuleFolderAssignments(body.folderByModuleId, modules, readStrictModuleFolders(target))
           const byId = new Map(modules.map((module) => [module.id, module]))
-          const reordered = moduleIds.map((id) => byId.get(id))
+          const reordered = moduleIds.map((id) => {
+            const module = byId.get(id)!
+            if (folderByModuleId) {
+              const folderId = folderByModuleId[id]
+              if (folderId === null) delete module.folderId
+              else module.folderId = folderId
+            }
+            return module
+          })
           target.modules = reordered
           writeSingleCollectionTable(innerDb, 'modules', reordered)
           return {
@@ -7806,14 +8956,16 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        characterScopedRead: {
+          characterId,
+          exactCharacterRow: true,
+          collectionFields: COLLECTION_SCOPED_READS.modules,
+        },
         mutate(database, innerDb) {
-          const target = ensureModuleCommandDatabase(database)
-          const modules = ensureModuleRecords(target)
+          const target = readJsonObject(database, 'database')
+          const modules = readStrictModuleRecords(target)
           const character = findCharacterForModuleCommand(target, characterId)
           validateCharacterModuleLinks(modules, moduleIds)
-          // The only persistent change is `character.modules` (the character
-          // row); the `ensureModuleRecords` collection repair is validate-only
-          // so the `modules` table is not rewritten.
           character.modules = moduleIds
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
@@ -7851,8 +9003,7 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         collectionScopedRead: COLLECTION_SCOPED_READS.plugins,
         mutate(database, innerDb) {
-          const target = ensurePluginCommandDatabase(database)
-          const plugins = ensurePluginRecords(target)
+          const { plugins } = readStrictPluginCommandTarget(database)
           if (plugins.some((candidate) => candidate.name === plugin.name)) {
             throw new ValidationError(`Plugin already exists: ${plugin.name}`)
           }
@@ -7891,8 +9042,7 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         collectionScopedRead: COLLECTION_SCOPED_READS.plugins,
         mutate(database, innerDb) {
-          const target = ensurePluginCommandDatabase(database)
-          const plugins = ensurePluginRecords(target)
+          const { plugins } = readStrictPluginCommandTarget(database)
           const index = requirePluginIndex(plugins, pluginId)
           for (const [key, value] of Object.entries(patch)) {
             if (value === null) {
@@ -7934,8 +9084,7 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         collectionScopedRead: COLLECTION_SCOPED_READS.plugins,
         mutate(database, innerDb) {
-          const target = ensurePluginCommandDatabase(database)
-          const plugins = ensurePluginRecords(target)
+          const { target, plugins } = readStrictPluginCommandTarget(database)
           const index = requirePluginIndex(plugins, pluginId)
           plugins.splice(index, 1)
           // The deleted plugin shifts later positions, so rewrite the one table.
@@ -7987,8 +9136,7 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         collectionScopedRead: COLLECTION_SCOPED_READS.plugins,
         mutate(database, innerDb) {
-          const target = ensurePluginCommandDatabase(database)
-          const plugins = ensurePluginRecords(target)
+          const { plugins } = readStrictPluginCommandTarget(database)
           const index = requirePluginIndex(plugins, pluginId)
           plugins[index].enabled = enabled
           writeSingleCollectionRow(innerDb, 'plugins', index, plugins[index])
@@ -8024,7 +9172,7 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.settings,
         settingsScopedRead: true,
         mutate(database, innerDb) {
-          const target = ensurePluginCommandDatabase(database)
+          const target = readStrictPluginProviderTarget(database)
           target.currentPluginProvider = provider
           writeSettingsOnly(innerDb, extractSettings(target))
           return {
@@ -8059,8 +9207,7 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         collectionScopedRead: COLLECTION_SCOPED_READS.plugins,
         mutate(database, innerDb) {
-          const target = ensurePluginCommandDatabase(database)
-          const plugins = ensurePluginRecords(target)
+          const { target, plugins } = readStrictPluginCommandTarget(database)
           validateFullPluginOrder(plugins, pluginIds)
           const byId = new Map(plugins.map((plugin) => [plugin.name, plugin]))
           const reordered = pluginIds.map((id) => byId.get(id))
@@ -8235,8 +9382,8 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.pluginStorage,
         mutate(database, innerDb) {
-          const target = ensurePluginStorageDatabase(database)
-          const storage = patch.clear ? {} : { ...ensurePluginCustomStorage(target) }
+          const { storage: currentStorage } = readStrictPluginStorageTarget(database)
+          const storage = patch.clear ? {} : { ...currentStorage }
           for (const key of patch.deleteKeys) {
             delete storage[key]
           }
@@ -8274,12 +9421,10 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modules,
         mutate(database, innerDb) {
-          const { modules } = readModuleCollectionCommandTarget(database)
-          const module = requireModule(modules, moduleId)
+          const { modules, module } = readStrictModuleLorebookTarget(database, moduleId)
           module.lorebook = entries
-          // One module's lorebook is a single-row edit; the in-memory child
-          // lorebook repairs across characters/chats are dropped to validate-only.
           writeSingleCollectionRow(innerDb, 'modules', modules.indexOf(module), module)
           return {
             // Only the `modules` table is written, so a foreign refresh ships
@@ -8328,15 +9473,12 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modules,
         mutate(database, innerDb) {
-          const rawTarget = readJsonObject(database, 'database')
-          const rawModule = cloneJsonForCommandCertificate(findJsonRecordById(rawTarget.modules, moduleId))
-          const { modules } = readModuleCollectionCommandTarget(database)
-          const module = requireModule(modules, moduleId)
-          module.lorebook ??= []
-          const normalizationIdentity = isDeepStrictEqual(rawModule, module)
-          const written = applyLorebookEntryWriteById(module.lorebook, entryId, entryWrite)
-          const certified = normalizationIdentity && written.patchedKeys && written.deletedKeys
+          const { modules, module, entries } = readStrictModuleLorebookTarget(database, moduleId)
+          const written = applyLorebookEntryWriteById(entries, entryId, entryWrite)
+          module.lorebook = entries
+          const certified = written.patchedKeys && written.deletedKeys
           writeSingleCollectionRow(innerDb, 'modules', modules.indexOf(module), module)
           return {
             event: {
@@ -8384,6 +9526,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modules,
         mutate(database, innerDb) {
           const { modules } = readModuleCollectionCommandTarget(database)
           const module = modules.find((candidate) => candidate.id === moduleId && !candidate.mcp)
@@ -8397,8 +9540,12 @@ export function registerCommandRoutes(
               extra: { moduleId, entryId, entryIndex: -1 },
             }
           }
-          module.lorebook ??= []
-          if (!module.lorebook.some((entry) => entry.id === entryId)) {
+          validateStoredModuleRecord(module, `module ${moduleId}`)
+          const entries =
+            module.lorebook === undefined
+              ? []
+              : validateStoredLorebookEntries(module.lorebook, `module ${moduleId}.lorebook`)
+          if (!entries.some((entry) => entry.id === entryId)) {
             return {
               event: {
                 ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
@@ -8408,7 +9555,7 @@ export function registerCommandRoutes(
               extra: { moduleId, entryId, entryIndex: -1 },
             }
           }
-          const deleted = deleteLorebookEntryById(module.lorebook, entryId)
+          const deleted = deleteLorebookEntryById(entries, entryId)
           writeSingleCollectionRow(innerDb, 'modules', modules.indexOf(module), module)
           return {
             event: {
@@ -8445,11 +9592,10 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modules,
         mutate(database, innerDb) {
-          const { modules } = readModuleCollectionCommandTarget(database)
-          const module = requireModule(modules, moduleId)
-          module.lorebook ??= []
-          reorderLorebookEntriesById(module.lorebook, entryIds)
+          const { modules, module, entries } = readStrictModuleLorebookTarget(database, moduleId)
+          reorderLorebookEntriesById(entries, entryIds)
           writeSingleCollectionRow(innerDb, 'modules', modules.indexOf(module), module)
           return {
             event: {
@@ -8791,6 +9937,586 @@ export function registerCommandRoutes(
       return sendCommandError(reply, err)
     }
   })
+
+  app.patch('/api/v1/commands/bardwiki/chats/:chatId/settings', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const chatId = readBardWikiId((req.params as { chatId?: unknown }).chatId, 'chatId')
+      const body = readBardWikiSettingsCommandBody(req.body)
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.bardWiki,
+        skipDatabaseLoad: true,
+        mutate(_database, innerDb) {
+          const settings = updateBardWikiChatSettings(innerDb, chatId, body.patch)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.bardWikiSettingsUpdated, id: chatId },
+            extra: { settings },
+          }
+        },
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/bardwiki/chats/:chatId/confirmations', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const chatId = readBardWikiId((req.params as { chatId?: unknown }).chatId, 'chatId')
+      const body = readBardWikiConfirmationCommandBody(req.body, chatId)
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.bardWiki,
+        skipDatabaseLoad: true,
+        mutate(_database, innerDb) {
+          const confirmation = createOrReuseExplicitBardWikiConfirmation(innerDb, body.confirmation)
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.bardWikiConfirmationQueued,
+              id: chatId,
+              jobId: confirmation.job.id,
+              sourceMessageId: confirmation.receipt.assistantMessageId,
+            },
+            extra: {
+              receipt: confirmation.receipt,
+              job: confirmation.job,
+              created: confirmation.created,
+            },
+          }
+        },
+      })
+      bardWikiJobs?.wakeWorker?.()
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/bardwiki/chats/:chatId/documents', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const chatId = readBardWikiId((req.params as { chatId?: unknown }).chatId, 'chatId')
+      const body = readBardWikiCreateDocumentCommandBody(req.body)
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.bardWiki,
+        skipDatabaseLoad: true,
+        mutate(_database, innerDb) {
+          const document = createBardWikiDocument(innerDb, {
+            chatId,
+            ...body.document,
+            commandRevision: baseRevision + 1,
+          })
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.bardWikiDocumentCreated,
+              id: document.id,
+              parentId: chatId,
+            },
+            extra: { document },
+          }
+        },
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/bardwiki/chats/:chatId/documents/:documentId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const params = req.params as { chatId?: unknown; documentId?: unknown }
+      const chatId = readBardWikiId(params.chatId, 'chatId')
+      const documentId = readBardWikiId(params.documentId, 'documentId')
+      const body = readBardWikiUpdateDocumentCommandBody(req.body)
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.bardWiki,
+        skipDatabaseLoad: true,
+        mutate(_database, innerDb) {
+          const document = updateBardWikiDocument(innerDb, chatId, documentId, {
+            expectedVersion: body.expectedVersion,
+            expectedContentHash: body.expectedContentHash,
+            ...body.patch,
+            commandRevision: baseRevision + 1,
+          })
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.bardWikiDocumentUpdated,
+              id: document.id,
+              parentId: chatId,
+            },
+            extra: { document },
+          }
+        },
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/bardwiki/chats/:chatId/documents/:documentId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const params = req.params as { chatId?: unknown; documentId?: unknown }
+      const chatId = readBardWikiId(params.chatId, 'chatId')
+      const documentId = readBardWikiId(params.documentId, 'documentId')
+      const body = readBardWikiDeleteDocumentCommandBody(req.body)
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.bardWiki,
+        skipDatabaseLoad: true,
+        mutate(_database, innerDb) {
+          const document = deleteBardWikiDocument(innerDb, chatId, documentId, {
+            expectedVersion: body.expectedVersion,
+            expectedContentHash: body.expectedContentHash,
+            commandRevision: baseRevision + 1,
+          })
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.bardWikiDocumentDeleted,
+              id: document.id,
+              parentId: chatId,
+            },
+            extra: { document },
+          }
+        },
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/bardwiki/chats/:chatId/imports', { bodyLimit: 24 * 1024 * 1024 }, async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const chatId = readBardWikiId((req.params as { chatId?: unknown }).chatId, 'chatId')
+      const body = readBardWikiImportCommandBody(req.body)
+      const vault = decodeBardWikiVault(body.archive)
+      if (body.dryRun) {
+        return {
+          revision: getSchemaState(db).revision,
+          dryRun: true,
+          plan: planBardWikiVaultImport(db, chatId, vault, body.strategy, body.expectedTargets),
+        }
+      }
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.bardWiki,
+        skipDatabaseLoad: true,
+        mutate(_database, innerDb) {
+          const plan = applyBardWikiVaultImport(
+            innerDb,
+            chatId,
+            vault,
+            body.strategy,
+            body.expectedTargets,
+            baseRevision + 1,
+          )
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.bardWikiVaultImported, id: chatId },
+            extra: { dryRun: false, plan },
+          }
+        },
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/bardwiki/chats/:chatId/rebuilds', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const chatId = readBardWikiId((req.params as { chatId?: unknown }).chatId, 'chatId')
+      const body = readBardWikiRebuildCommandBody(req.body)
+      if (body.preview === true) {
+        return {
+          revision: getSchemaState(db).revision,
+          preview: previewBardWikiRebuild(db, chatId, body.policy),
+        }
+      }
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.bardWiki,
+        skipDatabaseLoad: true,
+        mutate(_database, innerDb) {
+          const enqueued = enqueueBardWikiRebuild(innerDb, {
+            chatId,
+            policy: body.policy,
+            expectedSourceCount: body.expectedSourceCount,
+          })
+          const { payload: _payload, ...job } = enqueued
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.bardWikiRebuildQueued, id: chatId, jobId: job.id },
+            extra: { job },
+          }
+        },
+      })
+      bardWikiJobs?.wakeWorker?.()
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+}
+
+function readBardWikiId(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 200 || /[\u0000-\u001f\u007f]/u.test(value)) {
+    throw new ValidationError(`${label} must be a valid non-empty string`)
+  }
+  return value
+}
+
+function readBardWikiObject(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new ValidationError(`${label} must be an object`)
+  }
+  return value as Record<string, unknown>
+}
+
+function rejectUnsupportedBardWikiFields(
+  value: Record<string, unknown>,
+  allowed: readonly string[],
+  label: string,
+): void {
+  const allowedSet = new Set(allowed)
+  const unsupported = Object.keys(value).find((key) => !allowedSet.has(key))
+  if (unsupported) throw new ValidationError(`Unsupported ${label} field: ${unsupported}`)
+}
+
+function readBardWikiSettingsCommandBody(value: unknown): {
+  baseRevision?: unknown
+  patch: BardWikiChatSettingsPatch
+} {
+  const body = readBardWikiObject(value ?? {}, 'body')
+  rejectUnsupportedBardWikiFields(body, ['baseRevision', 'patch'], 'BardWiki settings command')
+  const source = readBardWikiObject(body.patch, 'patch')
+  const allowed = [
+    'enabledOverride',
+    'memoryModeOverride',
+    'confirmationPolicyOverride',
+    'canonicalUpdatesOverride',
+    'totalTokenBudgetOverride',
+    'hybridHypaTokenBudgetOverride',
+    'hybridBardWikiTokenBudgetOverride',
+    'maxDocumentsOverride',
+    'maxLinkHopsOverride',
+    'recentMessageCountOverride',
+    'modelProfileIdOverride',
+    'modelProfileIdIsSet',
+    'promptPresetIdOverride',
+    'promptPresetIdIsSet',
+  ] as const
+  rejectUnsupportedBardWikiFields(source, allowed, 'BardWiki settings patch')
+  if (Object.keys(source).length === 0) throw new ValidationError('patch must include at least one setting')
+  const patch: BardWikiChatSettingsPatch = {}
+  for (const [key, raw] of Object.entries(source)) {
+    switch (key) {
+      case 'enabledOverride':
+      case 'canonicalUpdatesOverride':
+        if (raw !== null && typeof raw !== 'boolean') throw new ValidationError(`${key} must be boolean or null`)
+        patch[key] = raw as boolean | null
+        break
+      case 'memoryModeOverride':
+        if (raw !== null && (typeof raw !== 'string' || !BARDWIKI_MEMORY_MODES.includes(raw as never))) {
+          throw new ValidationError('memoryModeOverride is unsupported')
+        }
+        patch.memoryModeOverride = raw as BardWikiChatSettingsPatch['memoryModeOverride']
+        break
+      case 'confirmationPolicyOverride':
+        if (raw !== null && (typeof raw !== 'string' || !BARDWIKI_CONFIRMATION_POLICIES.includes(raw as never))) {
+          throw new ValidationError('confirmationPolicyOverride is unsupported')
+        }
+        patch.confirmationPolicyOverride = raw as BardWikiChatSettingsPatch['confirmationPolicyOverride']
+        break
+      case 'modelProfileIdIsSet':
+      case 'promptPresetIdIsSet':
+        if (typeof raw !== 'boolean') throw new ValidationError(`${key} must be a boolean`)
+        patch[key] = raw
+        break
+      case 'modelProfileIdOverride':
+      case 'promptPresetIdOverride':
+        if (raw !== null && typeof raw !== 'string') throw new ValidationError(`${key} must be string or null`)
+        patch[key] = raw as string | null
+        break
+      default:
+        if (raw !== null && !Number.isSafeInteger(raw)) throw new ValidationError(`${key} must be integer or null`)
+        ;(patch as Record<string, unknown>)[key] = raw
+    }
+  }
+  return { baseRevision: body.baseRevision, patch }
+}
+
+function readBardWikiConfirmationCommandBody(
+  value: unknown,
+  chatId: string,
+): { baseRevision?: unknown; confirmation: ExplicitBardWikiConfirmationInput } {
+  const body = readBardWikiObject(value ?? {}, 'body')
+  const allowed = [
+    'baseRevision',
+    'userMessageId',
+    'userContentHash',
+    'assistantMessageId',
+    'assistantContentHash',
+  ] as const
+  rejectUnsupportedBardWikiFields(body, allowed, 'BardWiki confirmation command')
+  return {
+    baseRevision: body.baseRevision,
+    confirmation: {
+      chatId,
+      userMessageId: readBardWikiId(body.userMessageId, 'userMessageId'),
+      userContentHash: readBardWikiExpectedHash(body.userContentHash),
+      assistantMessageId: readBardWikiId(body.assistantMessageId, 'assistantMessageId'),
+      assistantContentHash: readBardWikiExpectedHash(body.assistantContentHash),
+    },
+  }
+}
+
+function readBardWikiCreateDocumentCommandBody(value: unknown): {
+  baseRevision?: unknown
+  document: BardWikiDocumentCommandFields &
+    Required<Pick<BardWikiDocumentCommandFields, 'kind' | 'title' | 'logicalPath' | 'markdown'>>
+} {
+  const body = readBardWikiObject(value ?? {}, 'body')
+  rejectUnsupportedBardWikiFields(body, ['baseRevision', 'document'], 'BardWiki create command')
+  return {
+    baseRevision: body.baseRevision,
+    document: readBardWikiDocumentFields(body.document, false) as BardWikiDocumentCommandFields &
+      Required<Pick<BardWikiDocumentCommandFields, 'kind' | 'title' | 'logicalPath' | 'markdown'>>,
+  }
+}
+
+function readBardWikiUpdateDocumentCommandBody(value: unknown): {
+  baseRevision?: unknown
+  expectedVersion: number
+  expectedContentHash: string
+  patch: BardWikiDocumentCommandFields
+} {
+  const body = readBardWikiObject(value ?? {}, 'body')
+  rejectUnsupportedBardWikiFields(
+    body,
+    ['baseRevision', 'expectedVersion', 'expectedContentHash', 'patch'],
+    'BardWiki update command',
+  )
+  const expectedVersion = readBardWikiExpectedVersion(body.expectedVersion)
+  const expectedContentHash = readBardWikiExpectedHash(body.expectedContentHash)
+  const patch = readBardWikiDocumentFields(body.patch, true)
+  if (Object.keys(patch).length === 0) throw new ValidationError('patch must include at least one document field')
+  return { baseRevision: body.baseRevision, expectedVersion, expectedContentHash, patch }
+}
+
+function readBardWikiDeleteDocumentCommandBody(value: unknown): {
+  baseRevision?: unknown
+  expectedVersion: number
+  expectedContentHash: string
+} {
+  const body = readBardWikiObject(value ?? {}, 'body')
+  rejectUnsupportedBardWikiFields(
+    body,
+    ['baseRevision', 'expectedVersion', 'expectedContentHash'],
+    'BardWiki delete command',
+  )
+  return {
+    baseRevision: body.baseRevision,
+    expectedVersion: readBardWikiExpectedVersion(body.expectedVersion),
+    expectedContentHash: readBardWikiExpectedHash(body.expectedContentHash),
+  }
+}
+
+function readBardWikiImportCommandBody(value: unknown): {
+  baseRevision?: unknown
+  dryRun: boolean
+  strategy: BardWikiVaultConflictStrategy
+  archive: Uint8Array
+  expectedTargets: BardWikiVaultExpectedTarget[]
+} {
+  const body = readBardWikiObject(value ?? {}, 'body')
+  rejectUnsupportedBardWikiFields(
+    body,
+    ['baseRevision', 'dryRun', 'strategy', 'archiveBase64', 'expectedTargets'],
+    'BardWiki import command',
+  )
+  if (typeof body.dryRun !== 'boolean') throw new ValidationError('dryRun must be a boolean')
+  if (body.strategy !== 'skip' && body.strategy !== 'rename' && body.strategy !== 'replace') {
+    throw new ValidationError('strategy must be skip, rename, or replace')
+  }
+  if (
+    typeof body.archiveBase64 !== 'string' ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(body.archiveBase64)
+  ) {
+    throw new ValidationError('archiveBase64 must be canonical base64')
+  }
+  const archive = Buffer.from(body.archiveBase64, 'base64')
+  if (archive.toString('base64') !== body.archiveBase64)
+    throw new ValidationError('archiveBase64 must be canonical base64')
+  const rawTargets = body.expectedTargets ?? []
+  if (!Array.isArray(rawTargets) || rawTargets.length > 2_000) {
+    throw new ValidationError('expectedTargets must be a bounded array')
+  }
+  const expectedTargets = rawTargets.map((target, index): BardWikiVaultExpectedTarget => {
+    const object = readBardWikiObject(target, `expectedTargets[${index}]`)
+    rejectUnsupportedBardWikiFields(object, ['documentId', 'version', 'contentHash'], 'BardWiki import target')
+    return {
+      documentId: readBardWikiId(object.documentId, `expectedTargets[${index}].documentId`),
+      version: readBardWikiExpectedVersion(object.version),
+      contentHash: readBardWikiExpectedHash(object.contentHash),
+    }
+  })
+  if (new Set(expectedTargets.map(({ documentId }) => documentId)).size !== expectedTargets.length) {
+    throw new ValidationError('expectedTargets must not contain duplicate document ids')
+  }
+  if (!body.dryRun && body.baseRevision === undefined) throw new ValidationError('baseRevision is required for import')
+  return {
+    baseRevision: body.baseRevision,
+    dryRun: body.dryRun,
+    strategy: body.strategy,
+    archive,
+    expectedTargets,
+  }
+}
+
+function readBardWikiRebuildCommandBody(value: unknown):
+  | { baseRevision?: unknown; preview: true; policy: 'missing' | 'full' }
+  | {
+      baseRevision?: unknown
+      preview: false
+      policy: 'missing' | 'full'
+      expectedSourceCount: number
+    } {
+  const body = readBardWikiObject(value ?? {}, 'body')
+  rejectUnsupportedBardWikiFields(
+    body,
+    ['baseRevision', 'preview', 'confirm', 'policy', 'expectedSourceCount'],
+    'BardWiki rebuild command',
+  )
+  if (body.policy !== 'missing' && body.policy !== 'full') {
+    throw new ValidationError('policy must be missing or full')
+  }
+  if (body.preview === true) {
+    if (body.confirm !== undefined || body.expectedSourceCount !== undefined || body.baseRevision !== undefined) {
+      throw new ValidationError('rebuild preview does not accept confirmation fields')
+    }
+    return { preview: true, policy: body.policy }
+  }
+  if (body.preview !== false || body.confirm !== true) {
+    throw new ValidationError('rebuild must be previewed or explicitly confirmed')
+  }
+  if (!Number.isSafeInteger(body.expectedSourceCount) || (body.expectedSourceCount as number) < 0) {
+    throw new ValidationError('expectedSourceCount must be a non-negative integer')
+  }
+  if (body.baseRevision === undefined) throw new ValidationError('baseRevision is required for rebuild')
+  return {
+    baseRevision: body.baseRevision,
+    preview: false,
+    policy: body.policy,
+    expectedSourceCount: body.expectedSourceCount as number,
+  }
+}
+
+interface BardWikiDocumentCommandFields {
+  kind?: BardWikiDocumentKind
+  title?: string
+  logicalPath?: string
+  aliases?: string[]
+  contextPolicy?: BardWikiContextPolicy
+  reviewState?: BardWikiReviewState
+  markdown?: string
+}
+
+function readBardWikiDocumentFields(value: unknown, partial: boolean): BardWikiDocumentCommandFields {
+  const source = readBardWikiObject(value, partial ? 'patch' : 'document')
+  const allowed = ['kind', 'title', 'logicalPath', 'aliases', 'contextPolicy', 'reviewState', 'markdown'] as const
+  rejectUnsupportedBardWikiFields(source, allowed, partial ? 'BardWiki document patch' : 'BardWiki document')
+  const result: Record<string, unknown> = {}
+  for (const key of allowed) {
+    const raw = source[key]
+    if (raw === undefined) continue
+    if (key === 'aliases') {
+      if (!Array.isArray(raw) || !raw.every((alias) => typeof alias === 'string')) {
+        throw new ValidationError('aliases must be an array of strings')
+      }
+      result.aliases = raw
+    } else if (key === 'kind') {
+      if (typeof raw !== 'string' || !BARDWIKI_DOCUMENT_KINDS.includes(raw as never)) {
+        throw new ValidationError('kind is unsupported')
+      }
+      result.kind = raw
+    } else if (key === 'contextPolicy') {
+      if (typeof raw !== 'string' || !BARDWIKI_CONTEXT_POLICIES.includes(raw as never)) {
+        throw new ValidationError('contextPolicy is unsupported')
+      }
+      result.contextPolicy = raw
+    } else if (key === 'reviewState') {
+      if (typeof raw !== 'string' || !BARDWIKI_REVIEW_STATES.includes(raw as never)) {
+        throw new ValidationError('reviewState is unsupported')
+      }
+      result.reviewState = raw
+    } else {
+      if (typeof raw !== 'string') throw new ValidationError(`${key} must be a string`)
+      result[key] = raw
+    }
+  }
+  if (!partial) {
+    for (const required of ['kind', 'title', 'logicalPath', 'markdown'] as const) {
+      if (result[required] === undefined) throw new ValidationError(`document.${required} is required`)
+    }
+  }
+  return result as BardWikiDocumentCommandFields
+}
+
+function readBardWikiExpectedVersion(value: unknown): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1) {
+    throw new ValidationError('expectedVersion must be a positive integer')
+  }
+  return value as number
+}
+
+function readBardWikiExpectedHash(value: unknown): string {
+  if (typeof value !== 'string' || !/^[a-f0-9]{64}$/u.test(value)) {
+    throw new ValidationError('expectedContentHash must be a SHA-256 hex string')
+  }
+  return value
 }
 
 function readSettingsGroup(group: unknown): SettingsGroup {
@@ -8918,6 +10644,9 @@ function readSettingsGroupPatch(group: SettingsGroup, patch: unknown): Record<st
     if (!SETTINGS_GROUP_KEY_SETS[group].has(key)) {
       throw new ValidationError(`Unsupported ${group} setting: ${key}`)
     }
+    if (key === 'moduleFolders') {
+      throw new ValidationError('moduleFolders must be changed through module folder commands')
+    }
     validateSettingValue(key, value)
     sanitized[key] = sanitizeSettingValue(key, value)
   }
@@ -8926,6 +10655,9 @@ function readSettingsGroupPatch(group: SettingsGroup, patch: unknown): Record<st
 }
 
 function validateSettingValue(key: string, value: unknown): void {
+  if (key === 'bardWiki' && !isBardWikiGlobalSettings(value)) {
+    throw new ValidationError('bardWiki must match the BardWiki global settings contract')
+  }
   if (key === 'hypaV3Presets') validateHypaV3PresetSummaryModels(value)
   if (key === 'complexRegexCompatibilityMode' && value !== 'strict' && value !== 'worker') {
     throw new ValidationError('complexRegexCompatibilityMode must be strict or worker')
@@ -8935,6 +10667,22 @@ function validateSettingValue(key: string, value: unknown): void {
     (typeof value !== 'number' || !Number.isFinite(value) || value < 0)
   ) {
     throw new ValidationError(`${key} must be a non-negative finite number`)
+  }
+  if (
+    key === 'regexOutputSizeLimitMiB' &&
+    (!Number.isSafeInteger(value) ||
+      (value as number) < MIN_REGEX_OUTPUT_SIZE_LIMIT_MIB ||
+      (value as number) > MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB)
+  ) {
+    throw new ValidationError(
+      `regexOutputSizeLimitMiB must be an integer from ${MIN_REGEX_OUTPUT_SIZE_LIMIT_MIB} to ${MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB}`,
+    )
+  }
+  if (
+    key === 'requestHistoryLimit' &&
+    (!Number.isSafeInteger(value) || (value as number) < 0 || (value as number) > MAX_REQUEST_HISTORY_LIMIT)
+  ) {
+    throw new ValidationError(`requestHistoryLimit must be an integer from 0 to ${MAX_REQUEST_HISTORY_LIMIT}`)
   }
   const kind = settingValueKind(key)
   if (kind === 'json') {
@@ -8977,8 +10725,18 @@ function validateHypaV3PresetSummaryModels(value: unknown): void {
 }
 
 function sanitizeSettingValue(key: string, value: unknown): unknown {
+  if (key === 'providerCredentials') {
+    return readSettingsProviderCredentials(value)
+  }
   if (key === 'modelProfiles') {
     return readSettingsModelProfiles(value)
+  }
+  if (key === 'modelProfileOrder') {
+    try {
+      return readModelProfileOrder(value, referencedProfilesForOrder(value))
+    } catch (error) {
+      throwModelProfileValidationError(error)
+    }
   }
   if (key === 'modelRoleProfiles') {
     return readSettingsModelRoleProfiles(value)
@@ -9009,6 +10767,17 @@ function readSettingsModelProfiles(value: unknown): unknown {
     return readModelProfiles(value)
   } catch (error) {
     throwModelProfileValidationError(error)
+  }
+}
+
+function readSettingsProviderCredentials(value: unknown): unknown {
+  try {
+    return readProviderCredentials(value)
+  } catch (error) {
+    if (error instanceof ProviderCredentialRecordValidationError) {
+      throw new ValidationError(error.message)
+    }
+    throw error
   }
 }
 
@@ -9125,20 +10894,42 @@ function applySettingsPatch(database: unknown, patch: Record<string, unknown>): 
 
   const target = database as Record<string, unknown>
   const resolvedPatch = resolveMaskedProviderSecretPlaceholders(database, patch)
+  const nextProfiles = normalizeModelProfiles(resolvedPatch.modelProfiles ?? target.modelProfiles)
   for (const [key, value] of Object.entries(resolvedPatch)) {
-    target[key] = normalizeSettingsPatchValue(key, value)
+    target[key] = normalizeSettingsPatchValue(key, value, nextProfiles)
+  }
+  if (Object.prototype.hasOwnProperty.call(resolvedPatch, 'modelProfiles')) {
+    target.modelProfileOrder = normalizeModelProfileOrder(target.modelProfileOrder, nextProfiles)
   }
 }
 
-function normalizeSettingsPatchValue(key: string, value: unknown): unknown {
+function normalizeSettingsPatchValue(
+  key: string,
+  value: unknown,
+  profiles = normalizeModelProfiles(undefined),
+): unknown {
+  if (key === 'providerCredentials') return normalizeProviderCredentials(value)
   if (key === 'modelRoles') return normalizeModelRoleOverrides(value)
   if (key === 'modelProfiles') return normalizeModelProfiles(value)
+  if (key === 'modelProfileOrder') return normalizeModelProfileOrder(value, profiles)
   if (key === 'modelRoleProfiles') return normalizeModelRoleProfiles(value)
   if (key === 'modelRuntimeDefaults') return normalizeModelRuntimeDefaults(value)
   if (key === 'seperateModels') return normalizeLegacySeperateModels(value)
   if (key === 'fallbackModels') return normalizeLegacyFallbackModels(value)
   if (key === 'seperateParameters') return normalizeSeperateParametersValue(value)
   return value
+}
+
+function referencedProfilesForOrder(value: unknown) {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  return value.flatMap((entry) => {
+    if (!isPlainObject(entry) || entry.kind !== 'profile' || typeof entry.profileId !== 'string') return []
+    const id = entry.profileId.trim()
+    if (!id || seen.has(id)) return []
+    seen.add(id)
+    return [{ id, name: id }]
+  })
 }
 
 function normalizeSeperateParametersValue(value: unknown): Record<string, unknown> {
@@ -9176,6 +10967,24 @@ function sendCommandError(
   }
   if (err instanceof InitializeConflictError) {
     reply.code(409)
+    return { error: err.code }
+  }
+  if (err instanceof BardWikiConflictError) {
+    reply.code(409)
+    return { error: err.code }
+  }
+  if (err instanceof BardWikiValidationError) {
+    if (err.code === 'bardwiki_chat_not_found' || err.code === 'bardwiki_document_not_found') reply.code(404)
+    else if (err.code === 'bardwiki_limit_exceeded') reply.code(413)
+    else if (
+      err.code === 'bardwiki_disabled' ||
+      err.code === 'bardwiki_source_not_active' ||
+      err.code === 'bardwiki_import_conflict' ||
+      err.code === 'bardwiki_rebuild_active' ||
+      err.code === 'bardwiki_rebuild_preview_stale'
+    )
+      reply.code(409)
+    else reply.code(400)
     return { error: err.code }
   }
   if (err instanceof ValidationError) {

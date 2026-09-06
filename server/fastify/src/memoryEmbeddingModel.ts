@@ -1,7 +1,35 @@
-import type { Database } from '../../../src/ts/storage/database.svelte'
-import type { HypaModel } from '../../../src/ts/process/memory/hypamemory'
-
 export type MemoryEmbeddingProvider = 'openai-compatible' | 'custom' | 'voyage-contextual'
+
+export type MemoryEmbeddingModel =
+  | 'custom'
+  | 'ada'
+  | 'openai3small'
+  | 'openai3large'
+  | 'MiniLM'
+  | 'MiniLMGPU'
+  | 'nomic'
+  | 'nomicGPU'
+  | 'bgeSmallEn'
+  | 'bgeSmallEnGPU'
+  | 'bgem3'
+  | 'bgem3GPU'
+  | 'multiMiniLM'
+  | 'multiMiniLMGPU'
+  | 'bgeM3Ko'
+  | 'bgeM3KoGPU'
+  | 'voyageContext3'
+  | 'voyageContext4'
+
+export interface MemoryEmbeddingSettings {
+  hypaModel?: MemoryEmbeddingModel | string | null
+  hypaCustomSettings?: {
+    url?: unknown
+    model?: unknown
+    key?: unknown
+  } | null
+  hypaV3Key?: unknown
+  voyageApiKey?: unknown
+}
 
 export const MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN = 4
 export const MEMORY_EMBEDDING_FALLBACK_MAX_INPUT_BYTES = 64 * 1024
@@ -9,7 +37,7 @@ export const MEMORY_EMBEDDING_FALLBACK_MAX_INPUT_BYTES = 64 * 1024
 export const OPENAI_EMBEDDING_MAX_INPUT_TOKENS = 8_192
 export const OPENAI_EMBEDDING_MAX_REQUEST_TOKENS = 300_000
 
-export const VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS = 32_000
+export const VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS = 32_000
 export const VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS = 120_000
 export const VOYAGE_CONTEXTUAL_MAX_REQUEST_TOKENS = VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS
 export const VOYAGE_CONTEXTUAL_MAX_CHUNKS = 16_000
@@ -44,14 +72,17 @@ export interface MemoryEmbeddingLimitViolation {
   unit: 'estimated tokens' | 'bytes' | 'chunks'
 }
 
-const OPENAI_EMBEDDING_MODELS: Partial<Record<HypaModel, string>> = {
+const OPENAI_EMBEDDING_MODELS = {
   ada: 'text-embedding-ada-002',
   openai3small: 'text-embedding-3-small',
   openai3large: 'text-embedding-3-large',
-}
+} satisfies Partial<Record<MemoryEmbeddingModel, string>>
 
 const VOYAGE_CONTEXTUAL_ENDPOINT = 'https://api.voyageai.com/v1/contextualizedembeddings'
-const VOYAGE_CONTEXTUAL_MODEL = 'voyage-context-3'
+const VOYAGE_CONTEXTUAL_MODELS = {
+  voyageContext3: 'voyage-context-3',
+  voyageContext4: 'voyage-context-4',
+} satisfies Partial<Record<MemoryEmbeddingModel, string>>
 
 const LOCAL_EMBEDDING_MODELS = new Set<string>([
   'MiniLM',
@@ -69,8 +100,8 @@ const LOCAL_EMBEDDING_MODELS = new Set<string>([
 ])
 
 export function resolveMemoryEmbeddingModel(
-  db: Database,
-  requestedModel: HypaModel | 'auto' = 'auto',
+  db: MemoryEmbeddingSettings,
+  requestedModel: MemoryEmbeddingModel | 'auto' = 'auto',
 ): ResolveMemoryEmbeddingModelResult {
   const model = requestedModel === 'auto' ? db.hypaModel || 'MiniLM' : requestedModel
 
@@ -93,7 +124,7 @@ export function resolveMemoryEmbeddingModel(
     }
   }
 
-  const openAIModel = OPENAI_EMBEDDING_MODELS[model]
+  const openAIModel = OPENAI_EMBEDDING_MODELS[model as keyof typeof OPENAI_EMBEDDING_MODELS]
   if (openAIModel) {
     const apiKey = asTrimmedString(db.hypaV3Key)
     if (!apiKey) return { ok: false, error: `${openAIModel} requires a Hypa V3 API key` }
@@ -110,15 +141,16 @@ export function resolveMemoryEmbeddingModel(
     }
   }
 
-  if (model === 'voyageContext3') {
+  const voyageContextualModel = VOYAGE_CONTEXTUAL_MODELS[model as keyof typeof VOYAGE_CONTEXTUAL_MODELS]
+  if (voyageContextualModel) {
     const apiKey = asTrimmedString(db.voyageApiKey)
-    if (!apiKey) return { ok: false, error: 'voyage-context-3 requires a Voyage API key' }
+    if (!apiKey) return { ok: false, error: `${voyageContextualModel} requires a Voyage API key` }
     return {
       ok: true,
       request: {
         provider: 'voyage-contextual',
-        model: VOYAGE_CONTEXTUAL_MODEL,
-        wireModel: VOYAGE_CONTEXTUAL_MODEL,
+        model: voyageContextualModel,
+        wireModel: voyageContextualModel,
         endpoint: VOYAGE_CONTEXTUAL_ENDPOINT,
         apiKey,
         limits: voyageContextualEmbeddingLimits(),
@@ -258,8 +290,8 @@ function openAIEmbeddingLimits(): MemoryEmbeddingModelLimits {
 function voyageContextualEmbeddingLimits(): MemoryEmbeddingModelLimits {
   return {
     source: 'provider',
-    maxInputTokens: VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS,
-    maxInputBytes: VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
+    maxInputTokens: VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS,
+    maxInputBytes: VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
     maxRequestTokens: VOYAGE_CONTEXTUAL_MAX_REQUEST_TOKENS,
     maxRequestChunks: VOYAGE_CONTEXTUAL_MAX_CHUNKS,
     contextualWindowTokens: VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS,

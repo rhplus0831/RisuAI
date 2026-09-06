@@ -1,11 +1,16 @@
-import { getDatabase, type Chat, type character } from '../../storage/database.svelte'
-import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
+import type { Chat, character } from '../../storage/database.svelte'
+import { getChatMessageOwnerState } from '../../server/chatMessageHydration.svelte'
 import { runTrigger } from '../triggers'
+import {
+  mutateStablePostGenerationChat,
+  resolveStablePostGenerationChat,
+  type StablePostGenerationChatTarget,
+} from './stableTarget'
 
 export interface ApplyOutputTriggerOptions {
   currentChar: character
-  selectedChar: number
-  selectedChat: number
+  currentChat: Chat
+  target: StablePostGenerationChatTarget | null
   runCurrentChatFunction: (chat: Chat) => Chat
 }
 
@@ -16,14 +21,25 @@ export interface ApplyOutputTriggerResult {
 }
 
 export async function applyOutputTrigger(opts: ApplyOutputTriggerOptions): Promise<ApplyOutputTriggerResult> {
-  const { currentChar, selectedChar, selectedChat, runCurrentChatFunction } = opts
-  withTrustedResourceWrite(() => {
-    getDatabase().characters[selectedChar].chats[selectedChat] = runCurrentChatFunction(
-      getDatabase().characters[selectedChar].chats[selectedChat],
-    )
+  const { currentChar, currentChat, target, runCurrentChatFunction } = opts
+  let chat = currentChat
+  const applied = mutateStablePostGenerationChat(target, (ownerChat, character) => {
+    const messages = ownerChat.id ? getChatMessageOwnerState(ownerChat.id)?.messages : undefined
+    if (!messages) return false
+    const updatedChat = runCurrentChatFunction({ ...ownerChat, message: messages })
+    const chatIndex = character.chats.indexOf(ownerChat)
+    if (chatIndex < 0 || updatedChat.id !== ownerChat.id) return false
+    character.chats[chatIndex] = updatedChat
+    chat = updatedChat
+    return true
   })
-  const chat = getDatabase().characters[selectedChar].chats[selectedChat]
+  if (!applied || !resolveStablePostGenerationChat(target)) {
+    return { chat, triggerChat: null, resendChat: false }
+  }
   const triggerResult = await runTrigger(currentChar, 'output', { chat })
+  if (!resolveStablePostGenerationChat(target)) {
+    return { chat, triggerChat: null, resendChat: false }
+  }
   return {
     chat,
     triggerChat: triggerResult && triggerResult.chat ? triggerResult.chat : null,

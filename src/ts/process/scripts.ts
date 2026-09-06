@@ -1,12 +1,6 @@
 import { get } from 'svelte/store'
 import { CharEmotion, selectedCharID, VariableReloadGUIPointer } from '../stores.svelte'
-import {
-  type character,
-  type customscript,
-  getDatabase,
-  getCurrentCharacter,
-  getCurrentChat,
-} from '../storage/database.svelte'
+import type { character, customscript, Database, Chat } from '../storage/database.svelte'
 import { downloadFile } from '../globalApi.svelte'
 import { alertError, alertNormal } from '../alert'
 import { language } from 'src/lang'
@@ -17,18 +11,126 @@ import {
   risuChatParser as risuChatParserOrg,
   type simpleCharacterArgument,
 } from '../parser/parser.svelte'
-import { getModuleAssets, getModuleRegexScripts } from './modules'
 import { HypaProcesser } from './memory/hypamemory'
 import { runLuaEditTrigger } from './scriptings'
 import { pluginV2 } from '../plugins/plugins.svelte'
 import { runTrigger } from './triggers'
-import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { canUseServerCommands } from '../server/commands'
 import { currentChatScopedSnapshot, dispatchUpdateMessageScoped } from '../chatCommands'
 import { getActivePromptPresetRegexScripts } from './promptPresetRegex'
+import { registerScriptCacheResetter } from './scriptCacheInvalidation'
+import {
+  matchFirstClientRegex,
+  normalizeClientRegexTimeout,
+  replaceClientRegex,
+  testClientRegex,
+  testMoveClientRegex,
+  testReplaceClientRegex,
+} from './clientRegexWorker'
+import { assertClientRegexPatternSafe } from './regexSafety'
+import { regexOutputSizeLimitCodeUnits } from '@risuai/shared-core/regex-output-size-limit'
+import { getSelectedCharacterOwner } from '../characterState'
+import {
+  collectionsResourceState,
+  settingsResourceState,
+  type ServerCollectionName,
+} from '../server/resourceState.svelte'
+import type { SettingsGroup } from '@risuai/shared-core/settings-groups'
+import { resolveActiveModuleStates } from '../moduleActivation'
 
 const dreg = /{{data}}/g
 const randomness = /\|\|\|/g
+
+function settingsGroupOwner(group: SettingsGroup): Partial<Database> | undefined {
+  const status = settingsResourceState.groupStatuses[group] ?? 'idle'
+  if (settingsResourceState.status === 'error' || status === 'error') return undefined
+  if (status === 'ready') return settingsResourceState.value as Partial<Database>
+  return undefined
+}
+
+function collectionOwner<Name extends ServerCollectionName>(name: Name): Database[Name] | undefined {
+  const status = collectionsResourceState.statuses[name] ?? 'idle'
+  if (collectionsResourceState.status === 'error' || status === 'error') return undefined
+  if (status === 'ready') return collectionsResourceState.values[name] as Database[Name] | undefined
+  return undefined
+}
+
+function standaloneSettingsOwner(): Partial<Database> | undefined {
+  const status = settingsResourceState.standaloneStatuses.selectedPersonaId ?? 'idle'
+  if (settingsResourceState.status === 'error' || status === 'error') return undefined
+  if (status === 'ready') return settingsResourceState.value as Partial<Database>
+  return undefined
+}
+
+function scriptSettings(): Partial<Database> {
+  const advanced = settingsGroupOwner('advanced')
+  const media = settingsGroupOwner('media')
+  return {
+    globalscript: advanced?.globalscript,
+    complexRegexInputTimeoutMs: advanced?.complexRegexInputTimeoutMs,
+    complexRegexOutputTimeoutMs: advanced?.complexRegexOutputTimeoutMs,
+    complexRegexDisplayTimeoutMs: advanced?.complexRegexDisplayTimeoutMs,
+    regexOutputSizeLimitMiB: advanced?.regexOutputSizeLimitMiB,
+    dynamicAssets: media?.dynamicAssets,
+    dynamicAssetsEditDisplay: media?.dynamicAssetsEditDisplay,
+  }
+}
+
+function promptPresetDatabase(): Database {
+  const prompt = settingsGroupOwner('prompt')
+  return {
+    presetRegex: prompt?.presetRegex ?? [],
+    promptPresets: collectionOwner('promptPresets') ?? [],
+  } as Database
+}
+
+function stableOwnerCollection<T extends { id?: unknown }>(value: unknown): T[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const ids = new Set<string>()
+  for (const candidate of value) {
+    const id = typeof candidate?.id === 'string' ? candidate.id.trim() : ''
+    if (!id || ids.has(id)) return undefined
+    ids.add(id)
+  }
+  return value as T[]
+}
+
+function moduleActivationDatabase(): Database | undefined {
+  const moduleSettings = settingsGroupOwner('modules')
+  const advancedSettings = settingsGroupOwner('advanced')
+  const agentSettings = settingsGroupOwner('agents')
+  const personaSelection = standaloneSettingsOwner()
+  const modules = stableOwnerCollection<Database['modules'][number]>(collectionOwner('modules'))
+  const promptPresets = stableOwnerCollection<Database['promptPresets'][number]>(collectionOwner('promptPresets'))
+  const personas = stableOwnerCollection<Database['personas'][number]>(collectionOwner('personas'))
+  const agentPresets = stableOwnerCollection<Database['agentPresets'][number]>(agentSettings?.agentPresets)
+  const enabledModules = moduleSettings?.enabledModules
+  if (
+    !moduleSettings ||
+    !advancedSettings ||
+    !agentSettings ||
+    !personaSelection ||
+    !modules ||
+    !promptPresets ||
+    !personas ||
+    !agentPresets ||
+    !Array.isArray(enabledModules) ||
+    !enabledModules.every((id) => typeof id === 'string' && id.trim().length > 0)
+  ) {
+    return undefined
+  }
+
+  return {
+    modules,
+    promptPresets,
+    personas,
+    enabledModules,
+    moduleIntergration: advancedSettings.moduleIntergration,
+    agentPresets,
+    agentPresetDefaultId: agentSettings.agentPresetDefaultId,
+    selectedPersonaId: personaSelection.selectedPersonaId,
+  } as Database
+}
 
 export type ScriptMode = 'editinput' | 'editoutput' | 'editprocess' | 'editdisplay'
 
@@ -63,8 +165,7 @@ export async function processScript(
 }
 
 export function exportRegex(s?: customscript[]) {
-  let db = getDatabase()
-  const script = s ?? db.globalscript
+  const script = s ?? scriptSettings().globalscript ?? []
   const data = Buffer.from(
     JSON.stringify({
       type: 'regex',
@@ -164,15 +265,24 @@ function generateScriptCacheKey(
   chatID = -1,
   cbsConditions: CbsConditions = {},
   cacheScope = '',
+  sizeLimit = regexOutputSizeLimitCodeUnits(undefined),
 ) {
-  let hash = data + '|||' + mode + '|||' + cacheScope + '|||'
-  for (const script of scripts) {
-    if (script.type !== mode) {
-      continue
-    }
-    hash += `${script.flag?.includes('<cbs>') ? risuChatParser(script.in, { chatID: chatID, cbsConditions }) : script.in}|||${script.out}${chatID}|||${script.flag ?? ''}|||${script.ableFlag ? 1 : 0}`
-  }
-  return hash
+  return JSON.stringify([
+    'process-script-cache-v2',
+    data,
+    mode,
+    cacheScope,
+    sizeLimit,
+    chatID,
+    scripts
+      .filter((script) => script.type === mode)
+      .map((script) => [
+        script.flag?.includes('<cbs>') ? risuChatParser(script.in, { chatID, cbsConditions }) : script.in,
+        script.out,
+        script.flag ?? '',
+        script.ableFlag === true,
+      ]),
+  ])
 }
 
 function cacheScript(hash: string, result: string) {
@@ -196,14 +306,22 @@ export function hasProcessScriptCacheEntryForTesting(
   cbsConditions: CbsConditions = {},
 ) {
   return processScriptCache.has(
-    generateScriptCacheKey(scripts, data, mode, chatID, cbsConditions, currentScriptCacheScope(mode)),
+    generateScriptCacheKey(
+      scripts,
+      data,
+      mode,
+      chatID,
+      cbsConditions,
+      currentScriptCacheScope(mode),
+      regexOutputSizeLimitCodeUnits(scriptSettings().regexOutputSizeLimitMiB),
+    ),
   )
 }
 
-function currentScriptCacheScope(mode: ScriptMode) {
+function currentScriptCacheScope(mode: ScriptMode, activeChat?: Chat) {
   if (mode !== 'editdisplay') return ''
   try {
-    const chat = getCurrentChat()
+    const chat = activeChat ?? getSelectedCharacterOwner()?.chats?.[getSelectedCharacterOwner()?.chatPage ?? -1]
     return JSON.stringify({
       selectedChar: get(selectedCharID),
       chatId: chat?.id,
@@ -254,40 +372,20 @@ export function getBestMatchCacheSizeForTesting() {
   return bestMatchCache.size
 }
 
-function selectedChatMessage(chatID: number) {
-  const selchar = getDatabase().characters?.[get(selectedCharID)]
-  const chat = selchar?.chats?.[selchar.chatPage]
+function selectedChatMessage(chat: Chat | undefined, chatID: number) {
   return chat?.message?.[chatID]
 }
 
-function applyInjectMutation(data: string, mode: ScriptMode, chatID: number) {
+function applyInjectMutation(data: string, mode: ScriptMode, chatID: number, chat: Chat | undefined) {
   if (mode === 'editdisplay' || chatID === -1) return
 
   if (canUseServerCommands()) {
-    const messageId = selectedChatMessage(chatID)?.chatId
+    const messageId = selectedChatMessage(chat, chatID)?.chatId
     if (!messageId) return
 
     const previous = currentChatScopedSnapshot()
-    let updated = false
-    withTrustedResourceWrite(() => {
-      const message = selectedChatMessage(chatID)
-      if (!message || message.chatId !== messageId) return
-      message.data = data
-      updated = true
-    })
-
-    if (updated) {
-      dispatchUpdateMessageScoped(messageId, { data }, previous, { optimisticPatchAlreadyApplied: true })
-    }
-    return
+    dispatchUpdateMessageScoped(messageId, { data }, previous)
   }
-
-  withTrustedResourceWrite(() => {
-    const message = selectedChatMessage(chatID)
-    if (message) {
-      message.data = data
-    }
-  })
 }
 
 // Regex-script sources are constant across the per-token streaming re-runs that
@@ -303,6 +401,7 @@ export function getCompiledRegex(source: string, flag: string): RegExp {
   const key = `${flag}|||${source}`
   let reg = compiledRegexCache.get(key)
   if (!reg) {
+    assertClientRegexPatternSafe(source)
     reg = new RegExp(source, flag)
     compiledRegexCache.set(key, reg)
     if (compiledRegexCache.size > 1000) {
@@ -319,6 +418,8 @@ export function resetScriptCache() {
   compiledRegexCache = new Map()
 }
 
+registerScriptCacheResetter(resetScriptCache)
+
 export async function processScriptFull(
   char: character | simpleCharacterArgument,
   data: string,
@@ -326,16 +427,17 @@ export async function processScriptFull(
   chatID = -1,
   cbsConditions: CbsConditions = {},
 ) {
-  let db = getDatabase()
+  const db = scriptSettings()
   let emoChanged = false
+  const activeCharacter = char.type === 'character' ? char : getSelectedCharacterOwner()
+  const currentChat = activeCharacter?.chats?.[activeCharacter.chatPage]
   data = await runLuaEditTrigger(char, mode, data, { index: chatID })
 
   if (mode === 'editdisplay') {
-    const currentChar = getCurrentCharacter()
-    if (currentChar) {
+    if (activeCharacter && currentChat) {
       try {
-        const d = await runTrigger(currentChar, 'display', {
-          chat: getCurrentChat(),
+        const d = await runTrigger(activeCharacter, 'display', {
+          chat: currentChat,
           displayMode: true,
           displayData: data,
         })
@@ -357,11 +459,22 @@ export async function processScriptFull(
   }
 
   data = risuChatParser(data, { chatID: chatID, cbsConditions })
+  const moduleDatabase = moduleActivationDatabase()
+  const activeModules = moduleDatabase ? resolveActiveModuleStates(moduleDatabase, activeCharacter, currentChat) : []
   const scripts = getProcessableCustomScripts(db.globalscript)
-    .concat(getProcessableCustomScripts(getActivePromptPresetRegexScripts(db)))
+    .concat(getProcessableCustomScripts(getActivePromptPresetRegexScripts(promptPresetDatabase(), currentChat)))
     .concat(getProcessableCustomScripts((char as { customscript?: unknown }).customscript))
-    .concat(getProcessableCustomScripts(getModuleRegexScripts()))
-  const hash = generateScriptCacheKey(scripts, data, mode, chatID, cbsConditions, currentScriptCacheScope(mode))
+    .concat(getProcessableCustomScripts(activeModules.flatMap(({ module }) => module.regex ?? [])))
+  const regexSizeLimit = regexOutputSizeLimitCodeUnits(db.regexOutputSizeLimitMiB)
+  const hash = generateScriptCacheKey(
+    scripts,
+    data,
+    mode,
+    chatID,
+    cbsConditions,
+    currentScriptCacheScope(mode, currentChat),
+    regexSizeLimit,
+  )
   const cached = getScriptCache(hash)
   if (cached) {
     return { data: cached, emoChanged: false }
@@ -371,7 +484,15 @@ export async function processScriptFull(
     cacheScript(hash, data)
     return { data, emoChanged }
   }
-  function executeScript(pscript: pScript) {
+  const regexTimeout = normalizeClientRegexTimeout(
+    mode === 'editoutput'
+      ? db.complexRegexOutputTimeoutMs
+      : mode === 'editdisplay'
+        ? db.complexRegexDisplayTimeoutMs
+        : db.complexRegexInputTimeoutMs,
+  )
+
+  async function executeScript(pscript: pScript) {
     const script = pscript.script
 
     if (script.in === '') {
@@ -414,10 +535,11 @@ export async function processScriptFull(
         input = risuChatParser(input, { chatID: chatID, cbsConditions })
       }
 
-      const reg = getCompiledRegex(input, flag)
       if (outScript.startsWith('@@') || pscript.actions.length > 0) {
-        if (reg.test(data)) {
-          if (outScript.startsWith('@@emo ')) {
+        let matched = false
+        if (outScript.startsWith('@@emo ')) {
+          matched = await testClientRegex(input, flag, data, regexTimeout)
+          if (matched) {
             const emoName = script.out.substring(6).trim()
             let charemotions = get(CharEmotion)
             let tempEmotion = charemotions[char.chaId]
@@ -439,87 +561,79 @@ export async function processScriptFull(
                 }
               }
             }
-          } else if (outScript.startsWith('@@inject') || pscript.actions.includes('inject')) {
-            applyInjectMutation(data, mode, chatID)
-            data = data.replace(reg, '')
-          } else if (
+          }
+        } else if (outScript.startsWith('@@inject') || pscript.actions.includes('inject')) {
+          const replaced = await testReplaceClientRegex(input, flag, data, '', regexTimeout, regexSizeLimit)
+          matched = replaced.matched
+          if (matched) {
+            applyInjectMutation(data, mode, chatID, currentChat)
+            data = replaced.result
+          }
+        } else {
+          const isMove =
             outScript.startsWith('@@move_top') ||
             outScript.startsWith('@@move_bottom') ||
             pscript.actions.includes('move_top') ||
             pscript.actions.includes('move_bottom')
-          ) {
-            const isGlobal = flag.includes('g')
-            const matchAll = isGlobal ? data.matchAll(reg) : [data.match(reg)]
-            data = data.replace(reg, '')
-            for (const matched of matchAll) {
-              if (matched) {
-                const inData = matched[0]
-                let out = outScript
-                  .replace('@@move_top ', '')
-                  .replace('@@move_bottom ', '')
-                  .replace(/(?<!\$)\$[0-9]+/g, (v) => {
-                    const index = parseInt(v.substring(1))
-                    if (index < matched.length) {
-                      return matched[index]
-                    }
-                    return v
-                  })
-                  .replace(/\$\&/g, inData)
-                  .replace(/(?<!\$)\$<([^>]+)>/g, (v) => {
-                    const groupName = parseInt(v.substring(2, v.length - 1))
-                    if (matched.groups && matched.groups[groupName]) {
-                      return matched.groups[groupName]
-                    }
-                    return v
-                  })
-                if (outScript.startsWith('@@move_top') || pscript.actions.includes('move_top')) {
-                  data = out + '\n' + data
-                } else {
-                  data = data + '\n' + out
-                }
-              }
-            }
+          if (isMove) {
+            const moved = await testMoveClientRegex(
+              input,
+              flag,
+              data,
+              outScript,
+              outScript.startsWith('@@move_top') || pscript.actions.includes('move_top'),
+              regexTimeout,
+              regexSizeLimit,
+            )
+            matched = moved.matched
+            if (matched) data = moved.result
           } else {
-            data = risuChatParser(data.replace(reg, outScript), { chatID: chatID, cbsConditions })
-          }
-        } else {
-          if ((outScript.startsWith('@@repeat_back') || pscript.actions.includes('repeat_back')) && chatID !== -1) {
-            const v = outScript.split(' ', 2)[1]
-            const selchar = db.characters[get(selectedCharID)]
-            const chat = selchar.chats[selchar.chatPage]
-            let lastChat = chat.fmIndex === -1 ? selchar.firstMessage : selchar.alternateGreetings[chat.fmIndex]
-            let pointer = chatID - 1
-            while (pointer >= 0) {
-              if (chat.message[pointer].role === chat.message[chatID].role) {
-                lastChat = chat.message[pointer].data
-                break
-              }
-              pointer--
-            }
-
-            const r = lastChat.match(reg)
-            if (!v) {
-              data = data + r[0]
-            } else if (r[0]) {
-              switch (v) {
-                case 'end':
-                  data = data + r[0]
-                  break
-                case 'start':
-                  data = r[0] + data
-                  break
-                case 'end_nl':
-                  data = data + '\n' + r[0]
-                  break
-                case 'start_nl':
-                  data = r[0] + '\n' + data
-                  break
-              }
+            const replaced = await testReplaceClientRegex(input, flag, data, outScript, regexTimeout, regexSizeLimit)
+            matched = replaced.matched
+            if (matched) {
+              data = risuChatParser(replaced.result, { chatID: chatID, cbsConditions })
             }
           }
         }
+
+        if (
+          !matched &&
+          (outScript.startsWith('@@repeat_back') || pscript.actions.includes('repeat_back')) &&
+          chatID !== -1
+        ) {
+          const v = outScript.split(' ', 2)[1]
+          const selchar = char.type === 'character' ? char : getSelectedCharacterOwner()
+          const chat = currentChat
+          if (!selchar || !chat) return
+          let lastChat = chat.fmIndex === -1 ? selchar.firstMessage : selchar.alternateGreetings[chat.fmIndex]
+          let pointer = chatID - 1
+          while (pointer >= 0) {
+            if (chat.message[pointer].role === chat.message[chatID].role) {
+              lastChat = chat.message[pointer].data
+              break
+            }
+            pointer--
+          }
+
+          const repeatMatch = await matchFirstClientRegex(input, flag, lastChat, regexTimeout)
+          if (!repeatMatch) return
+          switch (v) {
+            case 'start':
+              data = repeatMatch + data
+              break
+            case 'end_nl':
+              data = data + '\n' + repeatMatch
+              break
+            case 'start_nl':
+              data = repeatMatch + '\n' + data
+              break
+            default:
+              data = data + repeatMatch
+          }
+        }
       } else {
-        data = risuChatParser(data.replace(reg, outScript), { chatID: chatID, cbsConditions })
+        const replaced = await replaceClientRegex(input, flag, data, outScript, regexTimeout, regexSizeLimit)
+        data = risuChatParser(replaced, { chatID: chatID, cbsConditions })
       }
     }
   }
@@ -564,7 +678,7 @@ export async function processScriptFull(
   }
   for (const script of parsedScripts) {
     try {
-      executeScript(script)
+      await executeScript(script)
     } catch (error) {
       console.error(error)
     }
@@ -582,7 +696,7 @@ export async function processScriptFull(
     }
     const assetNames = char.additionalAssets.map((v) => v[0])
 
-    const moduleAssets = getModuleAssets()
+    const moduleAssets = activeModules.flatMap(({ module }) => module.assets ?? [])
     if (moduleAssets.length > 0) {
       for (const asset of moduleAssets) {
         assetNames.push(asset[0])

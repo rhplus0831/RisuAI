@@ -281,6 +281,34 @@ describe('PlaygroundImageTrans request ownership', () => {
     expect(imageMocks.alertError).not.toHaveBeenCalled()
   })
 
+  it('aborts an in-flight translation and ignores its completion after unmount', async () => {
+    const canvasContext = installImageBrowserMocks()
+    imageMocks.selectSingleFile.mockResolvedValue({ name: 'image.png', data: new Uint8Array([1, 2, 3]) })
+    const response = deferred<{ type: 'fail'; result: string }>()
+    let requestSignal: AbortSignal | undefined
+    imageMocks.requestChatData.mockImplementation((_request, _model, signal: AbortSignal) => {
+      requestSignal = signal
+      return response.promise
+    })
+    component = mount(PlaygroundImageTrans, { target })
+
+    translationButton().click()
+    await vi.waitFor(() => expect(imageMocks.requestChatData).toHaveBeenCalledOnce())
+    expect(canvasContext.drawImage).toHaveBeenCalledOnce()
+
+    await unmount(component)
+    component = undefined
+    expect(requestSignal?.aborted).toBe(true)
+
+    response.resolve({ type: 'fail', result: 'late provider failure' })
+    await response.promise
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(canvasContext.drawImage).toHaveBeenCalledOnce()
+    expect(imageMocks.alertError).not.toHaveBeenCalled()
+  })
+
   it('drops a response after the selected image changes', async () => {
     const canvasContext = installImageBrowserMocks()
     imageMocks.selectSingleFile

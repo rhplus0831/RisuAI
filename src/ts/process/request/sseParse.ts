@@ -52,6 +52,7 @@ export async function* iterateSseEvents(
   const decoder = new TextDecoder()
   let buf = ''
   let aborted = false
+  let sourceClosed = false
 
   const cancel = (): void => {
     aborted = true
@@ -68,7 +69,10 @@ export async function* iterateSseEvents(
   try {
     while (!aborted) {
       const { value, done } = await reader.read()
-      if (done) break
+      if (done) {
+        sourceClosed = true
+        break
+      }
       buf += decoder.decode(value, { stream: true })
       let separator = findSseSeparator(buf)
       while (separator) {
@@ -85,6 +89,11 @@ export async function* iterateSseEvents(
     }
   } finally {
     if (signal) signal.removeEventListener('abort', onAbort)
+    if (!sourceClosed && !aborted) {
+      await reader.cancel().catch(() => {
+        // The source may already have failed while the consumer returned early.
+      })
+    }
   }
 }
 

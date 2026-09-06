@@ -1,4 +1,7 @@
-import { CHAT_GENERATION_SETTINGS_FIELD, type ChatGenerationSettings } from '../../../src/ts/chatGenerationSettings.js'
+import {
+  CHAT_GENERATION_SETTINGS_FIELD,
+  type ChatGenerationSettings,
+} from '@risuai/shared-core/chat-generation-settings'
 
 type JsonRecord = Record<string, unknown>
 
@@ -24,6 +27,12 @@ export function normalizeStoredChatGenerationSettings(value: unknown): ChatGener
   }
   if (typeof value.modelPresetId === 'string') {
     normalized.modelPresetId = value.modelPresetId
+  }
+  if (
+    normalized.modelPresetId?.trim() &&
+    (value.modelPresetSelectionSource === 'manual' || value.modelPresetSelectionSource === 'prompt-recommendation')
+  ) {
+    normalized.modelPresetSelectionSource = value.modelPresetSelectionSource
   }
   if (typeof value.promptPresetId === 'string') {
     normalized.promptPresetId = value.promptPresetId

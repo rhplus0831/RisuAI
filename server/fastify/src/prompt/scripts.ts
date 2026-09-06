@@ -1,8 +1,16 @@
-import type { Chat, Database, character, customscript } from '../../../../src/ts/storage/database.svelte'
-import type { CbsConditions } from '../../../../src/ts/parser/risuChatParserHelpers'
-import type { RisuModule } from '../../../../src/ts/process/modules'
+import { randomUUID } from 'node:crypto'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyCustomScript as customscript,
+  FastifyDatabase as Database,
+  FastifyMessage as Message,
+} from './serverTypes.js'
+import type { CbsConditions } from '@risuai/shared-core/risuchat-parser-helpers'
+import type { ServerModule as RisuModule } from './moduleDescriptors.js'
 import {
   assertBoundedRegexHaystack,
+  assertBoundedRegexOutput,
   assertBoundedRegexReplacement,
   type BoundedRegexCompatibilityOptions,
   type BoundedRegexLike,
@@ -19,6 +27,9 @@ import {
 } from './boundedRegex.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { getActiveModules, getModuleRegexScripts } from './modules.js'
+import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
+import { serverUnsupportedRegexEffectType } from './triggerCompatibility.js'
+import { regexOutputSizeLimitCodeUnits } from '@risuai/shared-core/regex-output-size-limit'
 
 /**
  * Regex script processor ported from `src/ts/process/scripts.ts`
@@ -89,6 +100,18 @@ import { getActiveModules, getModuleRegexScripts } from './modules.js'
 
 export type ScriptMode = 'editinput' | 'editoutput' | 'editprocess' | 'editdisplay'
 
+export interface ScriptInjectMutation {
+  messageId: string
+  before: Message
+  after: Message
+}
+
+export interface ScriptMutationHooks {
+  /** The history row being formatted; avoids addressing a filtered transcript by index. */
+  injectTarget?: Message
+  onInject?: (mutation: ScriptInjectMutation) => void
+}
+
 const VALID_FLAG_CHARS = /[^dgimsuvy]/g
 const META_RE = /<(.+?)>/g
 const DATA_RE = /\{\{data\}\}/g
@@ -105,6 +128,8 @@ function sanitizeFlag(flag: string): string {
 interface ParsedScript {
   script: customscript
   order: number
+  /** Baseline stores NaN; this flag preserves its stable-sort equality outcome explicitly. */
+  malformedOrder: boolean
   actions: string[]
 }
 
@@ -132,7 +157,7 @@ interface PreparedScript {
   reg: BoundedRegexLike | null
 }
 
-function parseScripts(rawScripts: customscript[]): {
+function parseScripts(rawScripts: readonly customscript[]): {
   parsed: ParsedScript[]
   orderChanged: boolean
 } {
@@ -142,15 +167,18 @@ function parseScripts(rawScripts: customscript[]): {
     if (script.ableFlag && script.flag?.includes('<')) {
       const cloned = { ...script }
       let order = 0
+      let malformedOrder = false
       const actions: string[] = []
-      cloned.flag = (cloned.flag ?? '').replace(META_RE, (_match, body: string) => {
+      cloned.flag = (cloned.flag ?? '').replace(META_RE, (_match: string, body: string) => {
         const tokens = body.split(',').map((t) => t.trim())
         for (const t of tokens) {
           if (t.startsWith('order ')) {
             const n = parseInt(t.substring(6))
-            if (!Number.isNaN(n)) {
+            orderChanged = true
+            if (Number.isNaN(n)) {
+              malformedOrder = true
+            } else {
               order = n
-              orderChanged = true
             }
           } else if (t.length > 0) {
             actions.push(t)
@@ -158,9 +186,9 @@ function parseScripts(rawScripts: customscript[]): {
         }
         return ''
       })
-      parsed.push({ script: cloned, order, actions })
+      parsed.push({ script: cloned, order, malformedOrder, actions })
     } else {
-      parsed.push({ script, order: 0, actions: [] })
+      parsed.push({ script, order: 0, malformedOrder: false, actions: [] })
     }
   }
   return { parsed, orderChanged }
@@ -190,9 +218,16 @@ function substituteMatch(template: string, matched: RegExpMatchArray): string {
     })
 }
 
-function applyMove(data: string, reg: RegExp, flag: string, outScript: string, toTop: boolean): string {
+function applyMove(
+  data: string,
+  reg: RegExp,
+  flag: string,
+  outScript: string,
+  toTop: boolean,
+  sizeLimit: number,
+): string {
   assertBoundedRegexHaystack(data, 'customscript move source')
-  assertBoundedRegexReplacement(outScript, 'customscript move replacement')
+  assertBoundedRegexReplacement(outScript, 'customscript move replacement', sizeLimit)
   reg.lastIndex = 0
   const isGlobal = flag.includes('g')
   const matchAll = isGlobal ? Array.from(data.matchAll(reg)) : [data.match(reg)]
@@ -202,19 +237,46 @@ function applyMove(data: string, reg: RegExp, flag: string, outScript: string, t
     const template = outScript.replace('@@move_top ', '').replace('@@move_bottom ', '')
     const out = substituteMatch(template, matched as RegExpMatchArray)
     next = toTop ? out + '\n' + next : next + '\n' + out
+    assertBoundedRegexOutput(next, 'customscript move source', sizeLimit)
   }
   return next
 }
 
-function applyInject(currentChat: Chat | undefined, chatID: number, data: string, reg: RegExp): string {
+function injectTarget(
+  currentChat: Chat | undefined,
+  chatID: number,
+  hooks: ScriptMutationHooks | undefined,
+): Message | undefined {
+  return hooks?.injectTarget ?? (chatID >= 0 ? currentChat?.message?.[chatID] : undefined)
+}
+
+function writeInjectTarget(target: Message, data: string, hooks: ScriptMutationHooks | undefined): void {
+  const before = structuredClone(target) as Message
+  const messageId = target.chatId || randomUUID()
+  target.chatId = messageId
+  target.data = data
+  if (!before.chatId) before.chatId = messageId
+  hooks?.onInject?.({
+    messageId,
+    before,
+    after: structuredClone(target) as Message,
+  })
+}
+
+function applyInject(
+  currentChat: Chat | undefined,
+  chatID: number,
+  data: string,
+  reg: RegExp,
+  hooks?: ScriptMutationHooks,
+): string {
   assertBoundedRegexHaystack(data, 'customscript inject source')
-  if (!currentChat || chatID < 0) return data
-  const target = currentChat.message?.[chatID]
+  const target = injectTarget(currentChat, chatID, hooks)
   if (!target) return data
   // SPA mutates message[chatID].data with the FULL pre-strip data (yes,
   // that is intentional in scripts.ts). The assembled chat is
   // persisted after prompt assembly.
-  target.data = data
+  writeInjectTarget(target, data, hooks)
   return data.replace(reg, '')
 }
 
@@ -333,6 +395,8 @@ function applyOne(
   cbsConditions: CbsConditions | undefined,
   chatID: number,
   currentChat: Chat | undefined,
+  mutationHooks: ScriptMutationHooks | undefined,
+  sizeLimit: number,
 ): string {
   const script = prepared.script
   const actions = prepared.actions
@@ -344,7 +408,7 @@ function applyOne(
   if (prepared.isCbs) {
     // `cbs` action: pre-expand the input regex source (scripts.ts).
     // Per-message by design — the expansion depends on cbsConditions.
-    const regexIn = expandVariables(script.in, { ...ctx, cbsConditions }).text
+    const regexIn = expandVariables(script.in, { ...ctx, chatID, cbsConditions }).text
     reg = compileBoundedRegex(regexIn, flag, 'customscript cbs script.in pattern')
   } else {
     if (!prepared.reg) return data
@@ -360,7 +424,7 @@ function applyOne(
   const isAction = outScript.startsWith('@@') || actions.length > 0
   if (isAction) {
     assertBoundedRegexHaystack(data, 'customscript action source')
-    assertBoundedRegexReplacement(outScript, 'customscript action replacement')
+    assertBoundedRegexReplacement(outScript, 'customscript action replacement', sizeLimit)
     const matched = testBoundedRegex(reg, data, 'customscript action source')
     // reg.test() advances `lastIndex` when the regex is global; both
     // matchAll() and a sticky-style match would then start past the
@@ -368,18 +432,23 @@ function applyOne(
     // Reset before any downstream use of the same regex object.
     reg.lastIndex = 0
     if (matched) {
-      if (outScript.startsWith('@@emo ')) return data
+      const unsupportedEffectType = serverUnsupportedRegexEffectType(outScript)
+      if (unsupportedEffectType) {
+        ctx.unsupportedTriggerEffectTypes?.add(unsupportedEffectType)
+        return data
+      }
       if (outScript.startsWith('@@inject') || actions.includes('inject')) {
-        return applyInject(currentChat, chatID, data, reg)
+        return applyInject(currentChat, chatID, data, reg, mutationHooks)
       }
       if (isMoveTop || isMoveBottom) {
-        return applyMove(data, reg, flag, outScript, isMoveTop)
+        return applyMove(data, reg, flag, outScript, isMoveTop, sizeLimit)
       }
       // Unknown @@ prefix or arbitrary action: fall through to plain replace.
       assertBoundedRegexHaystack(data, 'customscript action replace source')
-      assertBoundedRegexReplacement(outScript, 'customscript action replace replacement')
+      assertBoundedRegexReplacement(outScript, 'customscript action replace replacement', sizeLimit)
       const replaced = data.replace(reg, outScript)
-      return expandVariables(replaced, { ...ctx, cbsConditions }).text
+      assertBoundedRegexOutput(replaced, 'customscript action replace source', sizeLimit)
+      return expandVariables(replaced, { ...ctx, chatID, cbsConditions }).text
     }
     // No match: only @@repeat_back / the 'repeat_back' action fires.
     if (outScript.startsWith('@@repeat_back') || actions.includes('repeat_back')) {
@@ -389,9 +458,10 @@ function applyOne(
   }
 
   assertBoundedRegexHaystack(data, 'customscript replace source')
-  assertBoundedRegexReplacement(outScript, 'customscript replace replacement')
+  assertBoundedRegexReplacement(outScript, 'customscript replace replacement', sizeLimit)
   const replaced = data.replace(reg, outScript)
-  return expandVariables(replaced, { ...ctx, cbsConditions }).text
+  assertBoundedRegexOutput(replaced, 'customscript replace source', sizeLimit)
+  return expandVariables(replaced, { ...ctx, chatID, cbsConditions }).text
 }
 
 async function applyMoveAsync(
@@ -402,7 +472,7 @@ async function applyMoveAsync(
   options: BoundedRegexCompatibilityOptions,
 ): Promise<string> {
   if (!isComplexBoundedRegex(reg)) {
-    return applyMove(data, reg, reg.flags, outScript, toTop)
+    return applyMove(data, reg, reg.flags, outScript, toTop, options.sizeLimit)
   }
   return moveBoundedRegexWithCompatibility(
     reg,
@@ -421,14 +491,14 @@ async function applyInjectAsync(
   data: string,
   reg: BoundedRegexLike,
   options: BoundedRegexCompatibilityOptions,
+  hooks?: ScriptMutationHooks,
 ): Promise<string> {
-  if (!isComplexBoundedRegex(reg)) return applyInject(currentChat, chatID, data, reg)
+  if (!isComplexBoundedRegex(reg)) return applyInject(currentChat, chatID, data, reg, hooks)
 
   assertBoundedRegexHaystack(data, 'customscript inject source')
-  if (!currentChat || chatID < 0) return data
-  const target = currentChat.message?.[chatID]
+  const target = injectTarget(currentChat, chatID, hooks)
   if (!target) return data
-  target.data = data
+  writeInjectTarget(target, data, hooks)
   return replaceBoundedRegexWithCompatibility(
     reg,
     data,
@@ -495,6 +565,7 @@ async function applyOneAsync(
   chatID: number,
   currentChat: Chat | undefined,
   options: BoundedRegexCompatibilityOptions,
+  mutationHooks: ScriptMutationHooks | undefined,
 ): Promise<string> {
   const script = prepared.script
   const actions = prepared.actions
@@ -504,7 +575,7 @@ async function applyOneAsync(
 
   let reg: BoundedRegexLike
   if (prepared.isCbs) {
-    const regexIn = expandVariables(script.in, { ...ctx, cbsConditions }).text
+    const regexIn = expandVariables(script.in, { ...ctx, chatID, cbsConditions }).text
     reg = compileBoundedRegexWithCompatibility(regexIn, flag, 'customscript cbs script.in pattern', options)
   } else {
     if (!prepared.reg) return data
@@ -515,13 +586,17 @@ async function applyOneAsync(
   const isAction = outScript.startsWith('@@') || actions.length > 0
   if (isAction) {
     assertBoundedRegexHaystack(data, 'customscript action source')
-    assertBoundedRegexReplacement(outScript, 'customscript action replacement')
+    assertBoundedRegexReplacement(outScript, 'customscript action replacement', options.sizeLimit)
     const matched = await testBoundedRegexWithCompatibility(reg, data, 'customscript action source', options)
     if (!isComplexBoundedRegex(reg)) reg.lastIndex = 0
     if (matched) {
-      if (outScript.startsWith('@@emo ')) return data
+      const unsupportedEffectType = serverUnsupportedRegexEffectType(outScript)
+      if (unsupportedEffectType) {
+        ctx.unsupportedTriggerEffectTypes?.add(unsupportedEffectType)
+        return data
+      }
       if (outScript.startsWith('@@inject') || actions.includes('inject')) {
-        return applyInjectAsync(currentChat, chatID, data, reg, options)
+        return applyInjectAsync(currentChat, chatID, data, reg, options, mutationHooks)
       }
       if (isMoveTop || isMoveBottom) {
         return applyMoveAsync(data, reg, outScript, isMoveTop, options)
@@ -534,7 +609,7 @@ async function applyOneAsync(
         'customscript action replace replacement',
         options,
       )
-      return expandVariables(replaced, { ...ctx, cbsConditions }).text
+      return expandVariables(replaced, { ...ctx, chatID, cbsConditions }).text
     }
     if (outScript.startsWith('@@repeat_back') || actions.includes('repeat_back')) {
       return applyRepeatBackAsync(char, currentChat, chatID, data, reg, outScript, options)
@@ -550,7 +625,7 @@ async function applyOneAsync(
     'customscript replace replacement',
     options,
   )
-  return expandVariables(replaced, { ...ctx, cbsConditions }).text
+  return expandVariables(replaced, { ...ctx, chatID, cbsConditions }).text
 }
 
 interface PreparedScriptsMemoEntry {
@@ -558,10 +633,10 @@ interface PreparedScriptsMemoEntry {
    *  request loads a fresh `Database`, so within one assembly these refs are
    *  stable across the whole per-message walk. */
   charRef: character
-  globalscriptRef: customscript[] | undefined
-  presetRegexRef: customscript[] | undefined
+  globalscriptRef: readonly customscript[] | undefined
+  presetRegexRef: readonly customscript[] | undefined
   customscriptRef: customscript[] | undefined
-  activeModulesRef: RisuModule[]
+  activeModulesRef: ReturnType<typeof getActiveModules>
   compatEnabled: boolean
   compatStage: BoundedRegexCompatibilityOptions['stage'] | null
   prepared: PreparedScript[]
@@ -600,7 +675,7 @@ function getPreparedScripts(
     .concat(getModuleRegexScripts(activeModules))
   const { parsed, orderChanged } = parseScripts(rawScripts)
   if (orderChanged) {
-    parsed.sort((a, b) => b.order - a.order)
+    parsed.sort((a, b) => (a.malformedOrder || b.malformedOrder ? 0 : b.order - a.order))
   }
   const prepared = parsed.map((script) => prepareOne(script, options?.enabled ? options : undefined))
   preparedScriptsMemo.set(db, {
@@ -624,14 +699,16 @@ export function processScript(
   cbsConditions: CbsConditions = {},
   chatID: number = -1,
   currentChat: Chat | undefined = undefined,
+  mutationHooks: ScriptMutationHooks | undefined = undefined,
 ): string {
   const prepared = getPreparedScripts(ctx.database, char, currentChat)
+  const sizeLimit = regexOutputSizeLimitCodeUnits(ctx.database.regexOutputSizeLimitMiB)
 
   let current = data
   for (const p of prepared) {
     if (p.script.type !== mode) continue
     try {
-      current = applyOne(ctx, char, current, p, cbsConditions, chatID, currentChat)
+      current = applyOne(ctx, char, current, p, cbsConditions, chatID, currentChat, mutationHooks, sizeLimit)
     } catch (err) {
       if (isBoundedRegexError(err)) throw err
       // Mirror SPA behavior: one bad regex should not stop the rest of the chain.
@@ -655,15 +732,26 @@ export async function processScriptAsync(
   cbsConditions: CbsConditions = {},
   chatID: number = -1,
   currentChat: Chat | undefined = undefined,
+  mutationHooks: ScriptMutationHooks | undefined = undefined,
 ): Promise<string> {
   const options = complexRegexCompatibilityOptions(ctx.database, stageForScriptMode(mode))
   const prepared = getPreparedScripts(ctx.database, char, currentChat, options)
 
-  let current = data
+  // `processScriptFull` reparsed the whole Lua/plugin-processed body before
+  // regex scripts. Keep `runVar` disabled exactly like that parser call (which
+  // omitted the flag), so nested CBS resolves without replaying state writes.
+  let current = isRisuChatParserFixedPoint(data)
+    ? data
+    : expandVariables(data, {
+        ...ctx,
+        chatID,
+        cbsConditions,
+        runVar: false,
+      }).text
   for (const p of prepared) {
     if (p.script.type !== mode) continue
     try {
-      current = await applyOneAsync(ctx, char, current, p, cbsConditions, chatID, currentChat, options)
+      current = await applyOneAsync(ctx, char, current, p, cbsConditions, chatID, currentChat, options, mutationHooks)
     } catch (err) {
       if (isBoundedRegexError(err)) throw err
     }

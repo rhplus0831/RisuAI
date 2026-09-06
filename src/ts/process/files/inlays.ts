@@ -1,7 +1,6 @@
 import localforage from 'localforage'
 import { getImageType } from 'src/ts/media'
-import { getDatabase } from '../../storage/database.svelte'
-import { getModelInfo, LLMFlags, LLMFormat } from 'src/ts/model/modellist'
+import { getModelInfo, LLMFlags, type LLMFormat, type LLMModel } from 'src/ts/model/modellist'
 import { asBuffer } from '../../util'
 import {
   readServerAsset,
@@ -23,6 +22,7 @@ import {
   type ServerInlayCatalogEntry,
 } from '../../server/inlayCatalog'
 import { fetchServerInlayCatalog } from '../../server/resourceReads'
+import { settingsResourceState } from '../../server/resourceState.svelte'
 
 export type InlayAsset = {
   data?: string | Blob
@@ -522,7 +522,9 @@ export async function getInlayAssetBlob(id: string) {
   if (typeof img.data === 'string') {
     // Migrate to Blob
     data = base64ToBlob(img.data)
-    setInlayAsset(id, { ...img, data })
+    void setInlayAsset(id, { ...img, data }).catch((error) => {
+      console.warn('Unable to migrate the browser-local inlay asset', error)
+    })
   } else {
     data = img.data
   }
@@ -575,9 +577,9 @@ export async function removeInlayAsset(id: string) {
   await Promise.all(aliases.map((key) => inlayStorage.removeItem(key)))
 }
 
-export function supportsInlayImage() {
-  const db = getDatabase()
-  return getModelInfo(db.aiModel).flags.includes(LLMFlags.hasImageInput)
+export function supportsInlayImage(modelInfo?: Pick<LLMModel, 'flags'>) {
+  if (modelInfo) return modelInfo.flags.includes(LLMFlags.hasImageInput)
+  return false
 }
 
 export async function getServerInlayAssetId(id: string): Promise<string | null> {

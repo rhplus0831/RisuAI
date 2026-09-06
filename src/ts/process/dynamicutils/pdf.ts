@@ -61,49 +61,53 @@ export async function convertPdfToImages(
     for (let i = 1; i <= pageCount; i++) {
       throwIfPdfAborted(signal)
       const page = await pdf.getPage(i)
-      const viewport = page.getViewport({ scale })
-
-      const canvas = document.createElement('canvas')
-      const context = canvas.getContext('2d')!
-
-      canvas.height = viewport.height
-      canvas.width = viewport.width
-
-      const renderContext = {
-        canvasContext: context,
-        viewport: viewport,
-      }
-
-      activeRenderTask = page.render(renderContext)
+      let canvas: HTMLCanvasElement | null = null
       try {
-        await activeRenderTask.promise
-      } catch (error) {
-        if (signal?.aborted) {
-          throw createPdfAbortError(signal)
-        }
-        throw error
-      } finally {
-        activeRenderTask = null
-      }
+        throwIfPdfAborted(signal)
+        const viewport = page.getViewport({ scale })
 
-      throwIfPdfAborted(signal)
-      const imageData = canvas.toDataURL(`image/${format}`, quality)
-      const imageBytes = imageData.length
-      if (
-        Number.isFinite(options?.maxOutputBytes) &&
-        options!.maxOutputBytes! >= 0 &&
-        outputBytes + imageBytes > options!.maxOutputBytes!
-      ) {
+        canvas = document.createElement('canvas')
+        const context = canvas.getContext('2d')!
+
+        canvas.height = viewport.height
+        canvas.width = viewport.width
+
+        const renderContext = {
+          canvasContext: context,
+          viewport: viewport,
+        }
+
+        activeRenderTask = page.render(renderContext)
+        try {
+          await activeRenderTask.promise
+        } catch (error) {
+          if (signal?.aborted) {
+            throw createPdfAbortError(signal)
+          }
+          throw error
+        } finally {
+          activeRenderTask = null
+        }
+
+        throwIfPdfAborted(signal)
+        const imageData = canvas.toDataURL(`image/${format}`, quality)
+        const imageBytes = imageData.length
+        if (
+          Number.isFinite(options?.maxOutputBytes) &&
+          options!.maxOutputBytes! >= 0 &&
+          outputBytes + imageBytes > options!.maxOutputBytes!
+        ) {
+          break
+        }
+        images.push(imageData)
+        outputBytes += imageBytes
+      } finally {
         page.cleanup()
-        canvas.width = 0
-        canvas.height = 0
-        break
+        if (canvas) {
+          canvas.width = 0
+          canvas.height = 0
+        }
       }
-      images.push(imageData)
-      outputBytes += imageBytes
-      page.cleanup()
-      canvas.width = 0
-      canvas.height = 0
     }
   } catch (error) {
     if (signal?.aborted) {

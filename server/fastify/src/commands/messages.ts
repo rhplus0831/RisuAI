@@ -93,6 +93,20 @@ export function createMessageRecord(input: unknown, label = 'message'): MessageR
   return message
 }
 
+/** Validate an existing ordinary-command target without minting or coercing. */
+export function readStrictStoredMessageRecord(
+  input: unknown,
+  expectedMessageId: string,
+  label = 'message',
+): MessageRecord {
+  const message = readJsonObject(input, label) as MessageRecord
+  validateMessageRecord(message, label)
+  if (message.chatId !== expectedMessageId) {
+    throw new ValidationError(`${label}.chatId must match messageId: ${expectedMessageId}`)
+  }
+  return message
+}
+
 function repairMessageRecord(input: unknown, label = 'message'): MessageRecord {
   const message = readJsonObject(input, label) as MessageRecord
   message.chatId = typeof message.chatId === 'string' && message.chatId.trim() ? message.chatId : randomUUID()

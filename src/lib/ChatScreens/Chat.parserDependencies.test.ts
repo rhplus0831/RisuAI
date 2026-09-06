@@ -50,7 +50,12 @@ const languageMocks = vi.hoisted(() => {
   const language = new Proxy<Record<string, any>>(
     {},
     {
-      get: (_target, property) => (property === 'partialEdit' ? partialEdit : String(property)),
+      get: (_target, property) =>
+        property === 'partialEdit'
+          ? partialEdit
+          : property === 'chatGenerationElapsed'
+            ? (seconds: number) => `${seconds}s`
+            : String(property),
     },
   )
 
@@ -176,6 +181,7 @@ vi.mock('src/ts/chatCommands', () => ({
     message.chatId ??= 'generated-message-id'
     return message.chatId
   }),
+  restoreChatRowMetadata: vi.fn(),
 }))
 
 vi.mock('src/ts/server/commands', () => ({
@@ -195,7 +201,7 @@ vi.mock('src/ts/utilState', () => ({
 }))
 
 import ChatParserDependenciesHarness, { type ParserDependencyRow } from './Chat.parserDependenciesHarness.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
+import { replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
 import {
   HideIconStore,
   ReloadChatPointer,
@@ -205,8 +211,9 @@ import {
   selIdState,
   selectedCharID,
 } from '../../ts/stores.svelte'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../../ts/server/resourceWriteGuard.svelte'
+
 import { dispatchDeleteMessageScoped, dispatchUpdateMessageScoped } from 'src/ts/chatCommands'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 chatParserMocks.getDatabase.mockImplementation(() => getResourceDatabase())
 
@@ -307,6 +314,7 @@ function seedDatabase(rows: ParserDependencyRow[]) {
   SizeStore.set({ w: 900, h: 700 })
   replaceResourceDatabase({
     askRemoval: false,
+    currentChar: 0,
     characters: [
       {
         chaId: 'parser-dependency-character',
@@ -354,7 +362,6 @@ function seedDatabase(rows: ParserDependencyRow[]) {
     useChatCopy: false,
     zoomsize: 100,
   } as unknown as Database)
-  setResourceWriteGuardEnabled(true)
 }
 
 async function settle() {
@@ -388,7 +395,6 @@ afterEach(() => {
     unmount(component)
     component = undefined
   }
-  setResourceWriteGuardEnabled(false)
   replaceResourceDatabase(previousDb)
   selectedCharID.set(previousSelectedChar)
   selIdState.selId = previousSelectedChar
@@ -402,7 +408,57 @@ afterEach(() => {
 })
 
 describe('Chat parser dependencies', () => {
-  it('does not re-run every visible row parser on unrelated guarded projection writes', async () => {
+  it('renders an indeterminate full-width phase track without fabricated percentage progress', async () => {
+    const rows: ParserDependencyRow[] = [
+      {
+        id: 'loading-row',
+        data: 'previous response',
+        generationStage: 3,
+        isGenerationLoading: true,
+        name: 'Parser Bot',
+        role: 'char',
+      },
+    ]
+    seedDatabase(rows)
+    mountHarness(rows)
+    await settle()
+
+    const loading = target.querySelector<HTMLElement>('.chat-generation-loading')
+    expect(loading?.classList).toContain('w-full')
+    const track = loading?.querySelector('.chat-generation-loading-track')
+    const fill = loading?.querySelector<HTMLElement>('.chat-generation-loading-fill')
+    expect(track).toBeTruthy()
+    expect(fill?.classList).toContain('chat-generation-loading-phase-waiting-for-model')
+    expect(fill?.style.width).toBe('')
+    expect(loading?.textContent).toContain('chatGenerationStageWaitingForModel')
+    expect(target.textContent).not.toContain('previous response')
+  })
+
+  it('keeps a compact generating footer beside streamed projection text', async () => {
+    const rows: ParserDependencyRow[] = [
+      {
+        id: 'streaming-row',
+        data: 'Partial streamed response',
+        generationPhase: 'generating',
+        generationStartedAt: Date.now() - 5_000,
+        isGenerationLoading: true,
+        isGenerationProjection: true,
+        name: 'Parser Bot',
+        role: 'char',
+      },
+    ]
+    seedDatabase(rows)
+    mountHarness(rows)
+    await settle()
+
+    expect(target.textContent).toContain('Partial streamed response')
+    const footer = target.querySelector<HTMLElement>('.chat-generation-loading-compact')
+    expect(footer?.textContent).toContain('chatGenerationStageGenerating')
+    expect(footer?.textContent).toContain('5s')
+    expect(footer?.querySelector('.chat-generation-loading-track')).toBeNull()
+  })
+
+  it('does not re-run every visible row parser on unrelated owner writes', async () => {
     const rows = makeRows(4)
     seedDatabase(rows)
     mountHarness(rows)
@@ -411,8 +467,8 @@ describe('Chat parser dependencies', () => {
     expect(chatParserMocks.risuChatParser.mock.calls.map((call) => call[0])).toEqual(rows.map((row) => row.data))
     const callsAfterMount = chatParserMocks.risuChatParser.mock.calls.length
 
-    withTrustedResourceWrite(() => {
-      getResourceDatabase().characters[0].chats[0].note = 'unrelated guarded projection write'
+    withTestDatabaseWrite(() => {
+      getResourceDatabase().characters[0].chats[0].note = 'unrelated owner write'
     })
     await settle()
 
@@ -495,7 +551,7 @@ describe('Chat parser dependencies', () => {
   it('re-runs only synthetic greeting display parsing when the active chat changes', async () => {
     const rows = makeRows(4)
     seedDatabase(rows)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].chats.push({
         id: 'parser-dependency-other-chat',
         name: 'Other Parser Dependency Chat',
@@ -513,7 +569,7 @@ describe('Chat parser dependencies', () => {
     await settle()
     chatParserMocks.risuChatParser.mockClear()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].chatPage = 1
     })
     await settle()
@@ -614,7 +670,7 @@ describe('Chat parser dependencies', () => {
   it('keeps interactive message content out of click-to-edit mode', async () => {
     const rows = makeRows(1)
     seedDatabase(rows)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().clickToEdit = true
     })
     mountHarness(rows)
@@ -642,7 +698,7 @@ describe('Chat parser dependencies', () => {
     seedDatabase(rows)
     chatParserMocks.canUseServerCommands.mockReturnValue(true)
     chatParserMocks.alertConfirm.mockReturnValueOnce(confirmation.promise)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().askRemoval = true
     })
     mountHarness(rows)
@@ -653,7 +709,7 @@ describe('Chat parser dependencies', () => {
     await settle()
     expect(chatParserMocks.alertConfirm).toHaveBeenCalledWith(languageMocks.language.removeChat)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].chats[0].message.unshift({
         chatId: 'newer-row',
         data: 'newer message',
@@ -715,7 +771,7 @@ describe('Chat parser dependencies', () => {
     seedDatabase(rows)
     chatParserMocks.canUseServerCommands.mockReturnValue(true)
     chatParserMocks.alertConfirm.mockResolvedValueOnce(true).mockReturnValueOnce(instantConfirmation.promise)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().askRemoval = true
       getResourceDatabase().instantRemove = true
     })
@@ -727,7 +783,7 @@ describe('Chat parser dependencies', () => {
     await settle()
     expect(chatParserMocks.alertConfirm).toHaveBeenCalledTimes(2)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].chats[0].message.splice(0, 1)
     })
     instantConfirmation.resolve(true)
@@ -743,7 +799,7 @@ describe('Chat parser dependencies', () => {
     seedDatabase(rows)
     chatParserMocks.canUseServerCommands.mockReturnValue(true)
     chatParserMocks.alertConfirm.mockReturnValueOnce(confirmation.promise)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().askRemoval = true
     })
     mountHarness(rows)
@@ -753,7 +809,7 @@ describe('Chat parser dependencies', () => {
     removeButtons[1]?.click()
     await settle()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].chats[0].message.splice(1, 1)
     })
     confirmation.resolve(true)
@@ -777,7 +833,7 @@ describe('Chat parser dependencies', () => {
     const rows = makeRows(1)
     chatParserMocks.risuChatParser.mockImplementation((message: string) => message)
     seedDatabase(rows)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().enableBlockPartialEdit = true
     })
     mountHarness(rows)
@@ -809,7 +865,7 @@ describe('Chat parser dependencies', () => {
     await tick()
 
     vi.mocked(dispatchUpdateMessageScoped).mockClear()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].chats[0].message[0].data = 'newer live data'
     })
 
@@ -818,5 +874,132 @@ describe('Chat parser dependencies', () => {
 
     expect(dispatchUpdateMessageScoped).not.toHaveBeenCalled()
     expect(getResourceDatabase().characters[0].chats[0].message[0].data).toBe('newer live data')
+  })
+
+  function stubPartialEditEnvironment() {
+    vi.stubGlobal('IntersectionObserver', VisibleIntersectionObserver)
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(1)
+      return 1
+    })
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: vi.fn(),
+    })
+  }
+
+  function makeRawTranslation(text: string) {
+    return {
+      source: 'raw' as const,
+      text,
+      sourceHash: 'source-hash',
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'google' as const,
+      settingsHash: 'settings-hash',
+      updatedAt: 1,
+    }
+  }
+
+  async function openPartialEditOnFirstBlock() {
+    const bodyRoot = target.querySelector<HTMLElement>('.chattext')
+    const block = target.querySelector<HTMLElement>('.chattext .risu-chat')
+    expect(bodyRoot).not.toBeNull()
+    expect(block).not.toBeNull()
+    setRect(bodyRoot!, 20, 80, 260, 60)
+    setRect(block!, 20, 80, 260, 60)
+    vi.spyOn(document, 'elementFromPoint').mockImplementation((x: number, y: number) => {
+      const rect = block!.getBoundingClientRect()
+      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+        return block
+      }
+      return null
+    })
+
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 40, clientY: 100, bubbles: true }))
+    await settle()
+    document.querySelector<HTMLButtonElement>('.partial-edit-btn-edit')?.click()
+    await settle()
+
+    const textarea = document.querySelector<HTMLTextAreaElement>('.partial-edit-textarea')
+    expect(textarea).not.toBeNull()
+    return { block: block!, textarea: textarea! }
+  }
+
+  it('routes translation-view partial edits to the persisted translation and keeps the original', async () => {
+    stubPartialEditEnvironment()
+
+    const rows = makeRows(1)
+    chatParserMocks.risuChatParser.mockImplementation((message: string) => message)
+    seedDatabase(rows)
+    withTestDatabaseWrite(() => {
+      const db = getResourceDatabase()
+      db.enableBlockPartialEdit = true
+      db.translator = 'ko'
+      db.translatorType = 'google'
+      db.characters[0].chats[0].autoTranslate = true
+      db.characters[0].chats[0].message[0].translation = makeRawTranslation('translated body line')
+    })
+    mountHarness(rows)
+    await settle()
+
+    const { block, textarea } = await openPartialEditOnFirstBlock()
+    expect(block.textContent).toContain('translated body line')
+    expect(textarea.value).toBe('translated body line')
+
+    textarea.value = 'polished translation line'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    vi.mocked(dispatchUpdateMessageScoped).mockClear()
+    document.querySelector<HTMLButtonElement>('.partial-edit-save-btn')?.click()
+    await settle()
+
+    const liveMessage = getResourceDatabase().characters[0].chats[0].message[0]
+    expect(liveMessage.data).toBe('visible message 0')
+    expect(liveMessage.translation?.text).toBe('polished translation line')
+
+    const call = vi.mocked(dispatchUpdateMessageScoped).mock.calls.at(-1)
+    expect(call?.[0]).toBe('row-0')
+    expect(call?.[1]).toMatchObject({
+      translation: { source: 'raw', text: 'polished translation line' },
+    })
+    expect(call?.[1]).not.toHaveProperty('data')
+  })
+
+  it('invalidates a stale translation when an original-layer partial edit saves', async () => {
+    stubPartialEditEnvironment()
+    chatParserMocks.canUseServerCommands.mockReturnValue(true)
+
+    const rows = makeRows(1)
+    chatParserMocks.risuChatParser.mockImplementation((message: string) => message)
+    seedDatabase(rows)
+    withTestDatabaseWrite(() => {
+      const db = getResourceDatabase()
+      db.enableBlockPartialEdit = true
+      db.characters[0].chats[0].message[0].translation = makeRawTranslation('translated body line')
+    })
+    mountHarness(rows)
+    await settle()
+
+    const { block, textarea } = await openPartialEditOnFirstBlock()
+    expect(block.textContent).toContain('visible message 0')
+    expect(textarea.value).toBe('visible message 0')
+
+    textarea.value = 'visible edited 0'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    vi.mocked(dispatchUpdateMessageScoped).mockClear()
+    document.querySelector<HTMLButtonElement>('.partial-edit-save-btn')?.click()
+    await settle()
+
+    // A source edit must invalidate the raw translation just like the full
+    // message editor; otherwise the old translation remains visibly attached
+    // to content with a different source hash.
+    const call = vi.mocked(dispatchUpdateMessageScoped).mock.calls.at(-1)
+    expect(call?.[0]).toBe('row-0')
+    expect(call?.[1]).toEqual({ data: 'visible edited 0', translation: null })
   })
 })

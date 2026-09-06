@@ -1,7 +1,11 @@
 import { getNodeServerProxyAuth } from '../../storage/fastifyStorage'
 import { parseSseEvent } from './sseParse'
 import type { RequestDataArgumentExtended, requestDataResponse } from './request'
-import { validateServerToolCalls, validateServerToolDefinitions, validateServerToolRounds } from './serverToolProtocol'
+import {
+  validateServerToolCalls,
+  validateServerToolDefinitions,
+  validateServerToolRounds,
+} from '@risuai/protocol/server-tool'
 
 export { formatToServerProvider } from './providerCapability'
 

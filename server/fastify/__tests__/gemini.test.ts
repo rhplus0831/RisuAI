@@ -227,6 +227,38 @@ describe('runGemini', () => {
     expect(sent.contents).toEqual([{ role: 'user', parts: [{ text: 'hello' }] }])
     expect(sent.systemInstruction).toEqual({ parts: [{ text: 'be brief' }] })
     expect(sent.generationConfig).toEqual({ maxOutputTokens: 128, temperature: 0.4 })
+    expect(sent.safetySettings).toEqual([
+      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_CIVIC_INTEGRITY', threshold: 'BLOCK_NONE' },
+    ])
+  })
+
+  it('uses OFF safety thresholds for flagged models and omits unsupported civic integrity', async () => {
+    let sent: Record<string, unknown> = {}
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(String(init.body)) as Record<string, unknown>
+      return ok({ candidates: [{ content: { parts: [{ text: 'x' }] } }] })
+    })
+    const resolved = resolveGeminiRequest({
+      model: 'gemini-2.5-flash-lite-preview-02-05',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      geminiBlockOff: true,
+      noCivilIntegrity: true,
+      signal: new AbortController().signal,
+    })!
+
+    await runGemini(resolved)
+
+    expect(sent.safetySettings).toEqual([
+      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'OFF' },
+      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'OFF' },
+      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'OFF' },
+      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'OFF' },
+    ])
   })
 
   it('url-encodes the apiKey so chars like & or = stay intact', async () => {
@@ -274,6 +306,164 @@ describe('runGemini', () => {
     expect(JSON.parse(captured!.body as string).generationConfig.thinkingConfig).toEqual({
       thinkingBudget: 256,
       includeThoughts: true,
+    })
+  })
+
+  it.each([
+    { model: 'gemini-3.6-flash', level: 'minimal' as const, noMinimal: false, expected: 'minimal' },
+    { model: 'gemini-3.1-pro-preview', level: 'minimal' as const, noMinimal: true, expected: 'low' },
+    { model: 'gemini-3-flash-preview', level: 'medium' as const, noMinimal: false, expected: 'medium' },
+    { model: 'gemini-3-pro-preview', level: 'high' as const, noMinimal: false, expected: 'high' },
+  ])('sends $model thinkingLevel $expected without a numeric budget or zero topK', async (testCase) => {
+    let sent: Record<string, unknown> = {}
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(String(init.body)) as Record<string, unknown>
+      return ok({ candidates: [{ content: { parts: [{ text: 'x' }] } }] })
+    })
+    const resolved = resolveGeminiRequest({
+      model: testCase.model,
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      thinkingLevel: testCase.level,
+      thinkingLevelNoMinimal: testCase.noMinimal,
+      topK: 0,
+      signal: new AbortController().signal,
+    })!
+
+    await runGemini(resolved)
+
+    const generationConfig = sent.generationConfig as Record<string, unknown>
+    expect(generationConfig.thinkingConfig).toEqual({
+      thinkingLevel: testCase.expected,
+      includeThoughts: true,
+    })
+    expect(generationConfig.thinkingConfig).not.toHaveProperty('thinkingBudget')
+    expect(generationConfig).not.toHaveProperty('topK')
+  })
+
+  it('emits Gemini JSON response controls in generationConfig', async () => {
+    let sent: Record<string, unknown> = {}
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(String(init.body)) as Record<string, unknown>
+      return ok({ candidates: [{ content: { parts: [{ text: '{"answer":"ok"}' }] } }] })
+    })
+    const responseSchema = {
+      type: 'object',
+      properties: { answer: { type: 'string' } },
+      required: ['answer'],
+    }
+    const resolved = resolveGeminiRequest({
+      model: 'gemini-2.5-flash',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      responseSchema,
+      signal: new AbortController().signal,
+    })!
+
+    await runGemini(resolved)
+
+    expect(sent.generationConfig).toMatchObject({
+      response_mime_type: 'application/json',
+      response_schema: responseSchema,
+    })
+  })
+
+  it('does not forward a Chat Completions stream override into the Gemini body', async () => {
+    let sent: Record<string, unknown> = {}
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(String(init.body)) as Record<string, unknown>
+      return ok({ candidates: [{ content: { parts: [{ text: 'x' }] } }] })
+    })
+    const resolved = resolveGeminiRequest({
+      model: 'gemini-2.5-flash',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      additionalParams: [['stream', 'true']],
+      signal: new AbortController().signal,
+    })!
+
+    await runGemini(resolved)
+
+    expect(sent.stream).toBeUndefined()
+  })
+
+  it('emits responseModalities in generationConfig', async () => {
+    let sent: Record<string, unknown> = {}
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(String(init.body)) as Record<string, unknown>
+      return ok({ candidates: [{ content: { parts: [{ text: 'x' }] } }] })
+    })
+    const resolved = resolveGeminiRequest({
+      model: 'gemini-image',
+      messages: [{ role: 'user', content: 'draw' }],
+      apiKey: 'k',
+      responseModalities: ['TEXT', 'IMAGE'],
+      signal: new AbortController().signal,
+    })!
+
+    await runGemini(resolved)
+
+    expect(sent.generationConfig).toMatchObject({ responseModalities: ['TEXT', 'IMAGE'] })
+  })
+
+  it.each([
+    { label: 'image', mimeType: 'image/png' },
+    { label: 'audio', mimeType: 'audio/wav' },
+  ])('persists a text-free $label inlineData part and returns its inlay marker', async ({ mimeType }) => {
+    const persistInlineData = vi.fn(async () => 'a'.repeat(64))
+    vi.stubGlobal('fetch', async () =>
+      ok({
+        candidates: [{ content: { parts: [{ inlineData: { mimeType, data: 'cGF5bG9hZA==' } }] } }],
+      }),
+    )
+    const resolved = resolveGeminiRequest({
+      model: 'gemini-media',
+      messages: [{ role: 'user', content: 'create media' }],
+      apiKey: 'k',
+      persistInlineData,
+      signal: new AbortController().signal,
+    })!
+
+    await expect(runGemini(resolved)).resolves.toEqual({
+      type: 'success',
+      result: `{{inlay::${'a'.repeat(64)}}}`,
+    })
+    expect(persistInlineData).toHaveBeenCalledWith({ mimeType, data: 'cGF5bG9hZA==' })
+  })
+
+  it('warns loudly and skips inlineData that cannot be persisted', async () => {
+    const onWarning = vi.fn()
+    vi.stubGlobal('fetch', async () =>
+      ok({
+        candidates: [
+          {
+            content: {
+              parts: [{ text: 'kept text' }, { inlineData: { mimeType: 'audio/unsupported', data: 'cGF5bG9hZA==' } }],
+            },
+          },
+        ],
+      }),
+    )
+    const resolved = resolveGeminiRequest({
+      model: 'gemini-media',
+      messages: [{ role: 'user', content: 'create media' }],
+      apiKey: 'k',
+      persistInlineData: async () => {
+        throw new Error('Unsupported content-type: audio/unsupported')
+      },
+      onWarning,
+      signal: new AbortController().signal,
+    })!
+
+    await expect(runGemini(resolved)).resolves.toEqual({ type: 'success', result: 'kept text' })
+    expect(onWarning).toHaveBeenCalledWith({
+      message: 'Gemini returned audio output that could not be persisted and was skipped.',
+      context: {
+        kind: 'gemini_inline_data_persistence_failed',
+        mediaType: 'audio',
+        mimeType: 'audio/unsupported',
+        error: 'Unsupported content-type: audio/unsupported',
+      },
     })
   })
 
@@ -508,7 +698,7 @@ describe('runGemini', () => {
         audioPartCount: 0,
         videoPartCount: 0,
         toolCount: 0,
-        safetySettingCount: 0,
+        safetySettingCount: 5,
         generationConfigKeyCount: 2,
       })
       expect(metric.requestBodyBytes).toBe(Buffer.byteLength(capturedBody, 'utf8'))
@@ -815,6 +1005,36 @@ describe('runGeminiStream', () => {
     expect((frames[0] as { error: string }).error).not.toContain('key=')
   })
 
+  it('treats a valid 200 SSE error frame as the single terminal result', async () => {
+    vi.stubGlobal('fetch', async () =>
+      sseUpstream([
+        `data: ${JSON.stringify({
+          error: { message: 'quota depleted', status: 'RESOURCE_EXHAUSTED' },
+        })}\n\n`,
+        geminiFrame('must not be emitted', 'STOP'),
+      ]),
+    )
+    const resolved = resolveGeminiRequest({
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+
+    for await (const frame of runGeminiStream(resolved)) frames.push(frame)
+
+    expect(frames).toEqual([
+      {
+        kind: 'error',
+        error:
+          'Provider request failed: HTTP 200 from https://generativelanguage.googleapis.com/v1beta/models/m:streamGenerateContent (RESOURCE_EXHAUSTED): quota depleted',
+        status: 200,
+        code: 'RESOURCE_EXHAUSTED',
+      },
+    ])
+  })
+
   it('surfaces a missing upstream stream body as an error frame', async () => {
     vi.stubGlobal('fetch', async () => new Response(null, { status: 200 }))
     const resolved = resolveGeminiRequest({
@@ -885,7 +1105,7 @@ describe('runGeminiStream', () => {
     ])
   })
 
-  it('L22: bounds the accumulation buffer when upstream never sends an event delimiter', async () => {
+  it('bounds the accumulation buffer when upstream never sends an event delimiter', async () => {
     // > MAX_STREAM_BUFFER_CHARS of delimiter-less bytes, streamed in 1 MB
     // chunks. Without the cap the adapter would buffer the whole stream.
     const chunk = 'x'.repeat(1024 * 1024)
@@ -1025,40 +1245,43 @@ describe('Vertex AI Gemini routing', () => {
     )
   })
 
-  it('forces gemini-3-* preview models onto the global endpoint regardless of region', async () => {
-    let predictionUrl = ''
-    vi.stubGlobal('fetch', async (url: string) => {
-      if (url === 'https://oauth2.googleapis.com/token') {
-        return new Response(JSON.stringify({ access_token: 't', expires_in: 3599 }), {
-          status: 200,
-        })
-      }
-      predictionUrl = url
-      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'g' }] } }] }), { status: 200 })
-    })
+  it.each(['gemini-3-pro-preview', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.6-flash'])(
+    'forces %s onto the global endpoint regardless of region',
+    async (model) => {
+      let predictionUrl = ''
+      vi.stubGlobal('fetch', async (url: string) => {
+        if (url === 'https://oauth2.googleapis.com/token') {
+          return new Response(JSON.stringify({ access_token: 't', expires_in: 3599 }), {
+            status: 200,
+          })
+        }
+        predictionUrl = url
+        return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'g' }] } }] }), { status: 200 })
+      })
 
-    const { privateKey } = (await import('node:crypto')).generateKeyPairSync('rsa', {
-      modulusLength: 2048,
-      publicKeyEncoding: { type: 'spki', format: 'pem' },
-      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-    })
-    const { _resetVertexTokenCacheForTesting } = await import('../src/generation/vertexAuth.js')
-    _resetVertexTokenCacheForTesting()
+      const { privateKey } = (await import('node:crypto')).generateKeyPairSync('rsa', {
+        modulusLength: 2048,
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+      })
+      const { _resetVertexTokenCacheForTesting } = await import('../src/generation/vertexAuth.js')
+      _resetVertexTokenCacheForTesting()
 
-    const resolved = resolveGeminiRequest({
-      model: 'gemini-3-pro-preview',
-      messages: [{ role: 'user', content: 'hi' }],
-      vertex: {
-        projectId: 'p',
-        region: 'us-east1',
-        clientEmail: 'svc@p.iam.gserviceaccount.com',
-        privateKey,
-      },
-      signal: new AbortController().signal,
-    })!
-    await runGemini(resolved)
-    expect(predictionUrl).toContain('https://aiplatform.googleapis.com/v1/projects/p/locations/global/')
-  })
+      const resolved = resolveGeminiRequest({
+        model,
+        messages: [{ role: 'user', content: 'hi' }],
+        vertex: {
+          projectId: 'p',
+          region: 'us-east1',
+          clientEmail: 'svc@p.iam.gserviceaccount.com',
+          privateKey,
+        },
+        signal: new AbortController().signal,
+      })!
+      await runGemini(resolved)
+      expect(predictionUrl).toContain('https://aiplatform.googleapis.com/v1/projects/p/locations/global/')
+    },
+  )
 
   it('returns fail with the vertexAuth error when token exchange fails', async () => {
     vi.stubGlobal('fetch', async (url: string) => {
@@ -1090,15 +1313,6 @@ describe('Vertex AI Gemini routing', () => {
     const r = await runGemini(resolved)
     expect(r.type).toBe('fail')
     expect((r as { result: string }).result).toContain('invalid_grant')
-  })
-
-  it('resolveGeminiRequest returns null when neither apiKey nor vertex is provided', () => {
-    const r = resolveGeminiRequest({
-      model: 'gemini-2.5-pro',
-      messages: [{ role: 'user', content: 'hi' }],
-      signal: new AbortController().signal,
-    })
-    expect(r).toBeNull()
   })
 
   it('resolveGeminiRequest returns null when vertex is partially populated', () => {

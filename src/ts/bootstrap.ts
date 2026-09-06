@@ -1,22 +1,27 @@
 import { get } from 'svelte/store'
-import { getDatabase, setResourceWriteGuardEnabled, type Database } from './storage/database.svelte'
-import { botMakerMode, selectedCharID, loadedStore, LoadingStatusState } from './stores.svelte'
-import { loadPlugins, startPluginRuntimeSync } from './plugins/plugins.svelte'
-import { alertError, alertMd, alertTOS, waitAlert } from './alert'
+import { botMakerMode } from './stores.svelte'
+import { LoadingStatusState, selectedCharID } from './stores/coreStores.svelte'
+import { currentRoute } from './router'
+import { isPreWriterObserverShellEnabled } from './observerShellFlag'
+import {
+  isPluginRuntimeReady,
+  loadPlugins,
+  startPluginRuntimeSync,
+  stopPluginRuntimeSync,
+} from './plugins/plugins.svelte'
+import { alertError, alertMd, alertRequiredSelect, waitAlert } from './alert'
 import { updateReducedMotion } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
-import { language } from 'src/lang'
-import { startObserveDom } from './observer.svelte'
+import { awaitLanguageReady, changeLanguage, language } from 'src/lang'
+import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
 import { updateGuisize } from './gui/guisize'
-import { moduleUpdate } from './process/modules'
-import { registerModelDynamic } from './model/modellist'
 import { fetchServerBootstrap, fetchServerBootstrapReadOnly, type ServerBootstrapRuntime } from './server/bootstrap'
-import { subscribeServerCommandEvents, type ServerMemoryEvent } from './server/events'
+import { subscribeServerCommandEvents, type ServerMemoryEvent, type ServerMemoryJobSnapshot } from './server/events'
 import { publishServerMemoryJobEvent } from './server/memoryJobEvents'
+import { publishServerBardWikiJobEvent, publishServerBardWikiJobSnapshot } from './server/bardWikiJobEvents'
 import {
-  canUseServerCommands,
   deferOwnServerCommandReconciliation,
-  initializeServerDatabase,
+  initializeServerDatabaseForBootstrap,
   notifyServerCommandLocalEffectApplied,
   peekAppliedServerResourceRevision,
   peekCachedServerCommandRevision,
@@ -37,17 +42,23 @@ import {
 } from './server/commands'
 import {
   adoptPendingMutationWriterSessionId,
+  beginWriterAccessRecovery,
+  completeWriterAccessRecovery,
   enterWriterTakeoverFlow,
   getActiveWriterSessionId,
   peekActiveWriterSessionId,
 } from './server/activeWriterSession'
-import { startBridgePatchLifecycleFlush } from './server/bridgeFlush'
+import { observerShellLifecycleStore, setObserverShellLifecycleMode } from './observerShellLifecycle.svelte'
+import { startOwnerMutationLifecycleFlush } from './server/ownerMutationLifecycle'
 import { replayPendingMutations } from './server/pendingMutationReplay'
+import { applyGenerationOperationBootstrap, configureGenerationOperationProtocol } from './server/generationOperations'
+import { configureDisplaySourceProtocol } from './server/displaySources'
 import {
-  countPendingMutationRecords,
+  countBlockingPendingMutationRecords,
   preparePendingMutationOutbox,
   readSinglePendingMutationOwner,
 } from './server/pendingMutationOutbox'
+import { initializeDraftRecoveryScope } from './server/draftRecoveryScope'
 import {
   flushPendingMutationReceiptAcknowledgements,
   setPendingMutationDiscardNotifier,
@@ -59,26 +70,47 @@ import {
   hydrateActiveChat,
   invalidateChatHydration,
   resetChatHydration,
+  requestActiveChatReadinessRefresh,
+  setActiveChatReadinessRefreshHook,
   startChatMessageHydration,
+  stopChatMessageHydration,
 } from './server/chatMessageHydration.svelte'
+import {
+  hydrateSelectedCharacterShell,
+  startSelectedCharacterShellHydration,
+  stopSelectedCharacterShellHydration,
+} from './server/characterShellHydration.svelte'
 import {
   isCharacterLorebookHydrated,
   recordHydratedCharacterLorebooks,
   resetLorebookHydration,
-} from './server/lorebookBridge.svelte'
+} from './server/lorebookOwner.svelte'
 import {
-  setActiveGenerationJobs,
+  prepareOpenChatGenerationReattach,
+  setActiveGenerationReattachReadinessPredicate,
   startActiveGenerationReattach,
+  stopActiveGenerationReattach,
   triggerOpenChatGenerationReattach,
 } from './process/reattach'
-import { setActiveMessageTranslations, startActiveMessageTranslationRefresh } from './server/messageTranslationJobs'
-import { applyServerHypaV3Progress } from './process/request/serverMemory'
-import { shouldAcceptMemoryJobUpdate } from './server/memoryJobOrdering'
+import { subscribeBrowserLifecycleRecovery } from './server/lifecycleRecovery'
 import {
-  initializePushNotificationCoordinator,
-  reconcileChatCompletionPushNotificationSetting,
-} from './server/pushNotificationSetting'
+  setGenerationFinalizationPersistences,
+  startGenerationFinalizationPersistenceRefresh,
+  stopGenerationFinalizationPersistenceRefresh,
+} from './process/generationPersistenceState'
+import {
+  setActiveMessageTranslations,
+  startActiveMessageTranslationRefresh,
+  stopActiveMessageTranslationRefresh,
+} from './server/messageTranslationJobs'
+import {
+  setActiveGreetingTranslations,
+  startActiveGreetingTranslationRefresh,
+  stopActiveGreetingTranslationRefresh,
+} from './server/greetingTranslations.svelte'
+import { applyServerMemoryJobEvent, applyServerMemoryJobSnapshot } from './server/memoryJobProjection.svelte'
 import { loadInitialServerResources, refreshInvalidatedServerResources } from './server/resourceInvalidation'
+import { ensureResourceSurfaces, stopRouteResourceLoader } from './server/routeResourceLoader'
 import {
   forceServerDatabaseReplacementRefresh,
   forceServerResourceRefresh,
@@ -125,6 +157,9 @@ import {
   applyGlobalLorebookMutationLocalEffect,
   applyLoadoutMutationLocalEffect,
   applyLorebookMutationLocalEffect,
+  charactersResourceState,
+  collectionsResourceState,
+  getCharacterResourceOwner,
   hasChatBodyProjectionEpochChanged,
   hasCharacterLorebookProjectionEpochChanged,
   hasCharacterRowProjectionEpochChanged,
@@ -135,8 +170,8 @@ import {
   isCollectionAcknowledgementTainted,
   isSettingsAcknowledgementTainted,
   isSettingsGroupAcknowledgementTainted,
+  settingsResourceState,
 } from './server/resourceState.svelte'
-import { withServerResourceApply, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { hasDestructiveRefreshEpochChanged } from './server/staleStateGuards'
 import {
   ensurePromptTemplateHydrated,
@@ -148,7 +183,33 @@ import {
 } from './server/promptTemplateHydration'
 import { setSettingsRuntimeProjectionHook } from './server/settingsRuntimeProjectionHooks'
 import { updateHeightMode } from './gui/heightMode'
-import { normalizeLegacyCustomBackgroundSetting } from './server/customBackgroundSetting'
+import {
+  discardPendingRecoveredGenerationEffects,
+  reconcilePendingRecoveredGenerationEffects,
+  setPendingRecoveredGenerationEffects,
+} from './process/recoveredGenerationEffects'
+import {
+  backgroundReady,
+  beginStartupAttempt,
+  canRenderShell,
+  canMutate,
+  completeStartupAttempt,
+  configureStartupObserverShell,
+  failStartupAttempt,
+  recordStartupCapabilityFailure,
+  recordStartupMilestone,
+  restoreStartupWriterCapabilities,
+  retryStartupCapability,
+  runStartupStep,
+  settleStartupChatReadiness,
+  settleStartupGenerationRecoveryReadiness,
+  startupRetryTargetForMilestone,
+  type StartupAttemptFailureCode,
+  type StartupMilestone,
+  type StartupRetryTarget,
+} from './startupReadiness'
+import { startStartupTelemetryPublisher } from './server/startupTelemetry'
+import { cacheDisplaySettings } from './gui/displaySettingsCache'
 
 setPendingMutationDiscardNotifier((key, error) => {
   alertError(`${language.pendingMutationDiscarded}\n\n${language.pendingMutationDiscardedDetail(key, error)}`)
@@ -160,19 +221,34 @@ const GUI_SIZE_RUNTIME_KEYS = new Set(['textAreaSize', 'textAreaTextSize', 'side
 
 class FatalBootstrapError extends Error {}
 
+class StartupChatDependencyError extends Error {
+  constructor(
+    readonly failureCode: Extract<
+      StartupAttemptFailureCode,
+      | 'selected-character-hydration-failed'
+      | 'selected-chat-hydration-failed'
+      | 'selected-prompt-template-hydration-failed'
+    >,
+    message: string,
+  ) {
+    super(message)
+  }
+}
+
 function hasProjectedRuntimeKey(keys: readonly string[], candidates: ReadonlySet<string>): boolean {
   return keys.some((key) => candidates.has(key))
 }
 
 setSettingsRuntimeProjectionHook((keys) => {
+  cacheDisplaySettings(settingsResourceState.value, keys)
   const colorSchemeChanged = hasProjectedRuntimeKey(keys, COLOR_SCHEME_RUNTIME_KEYS)
   if (colorSchemeChanged) updateColorScheme()
   if (colorSchemeChanged || hasProjectedRuntimeKey(keys, TEXT_THEME_RUNTIME_KEYS)) updateTextThemeAndCSS()
   if (hasProjectedRuntimeKey(keys, GUI_SIZE_RUNTIME_KEYS)) updateGuisize()
   if (keys.includes('animationSpeed') || keys.includes('reducedMotion')) updateReducedMotion()
   if (keys.includes('heightMode')) updateHeightMode()
-  if (get(loadedStore) && keys.includes('notification')) {
-    void reconcileChatCompletionPushNotificationSetting(getDatabase().notification === true)
+  if (backgroundReady() && keys.includes('notification')) {
+    void reconcileProjectedPushNotificationSetting(settingsResourceState.value.notification === true)
   }
 })
 
@@ -182,7 +258,7 @@ const SERVER_RESOURCE_RECONNECT_JITTER_RATIO = 0.2
 const SERVER_RESOURCE_EVENT_STALE_TIMEOUT_MS = 60_000
 
 let serverResourceEventSubscription: { unsubscribe: () => void } | null = null
-let stopBridgePatchLifecycleFlush: (() => void) | null = null
+let stopOwnerMutationLifecycleFlush: (() => void) | null = null
 // Serializes resource invalidation so the applied revision cursor advances in
 // command-event order.
 let serverResourceSyncChain: Promise<void> = Promise.resolve()
@@ -195,41 +271,327 @@ let serverResourceEventWatchdogTimer: ReturnType<typeof setTimeout> | null = nul
 let stopServerResourceRecoveryListeners: (() => void) | null = null
 let reconnectPendingMutationReplay: Promise<void> | null = null
 let serverResourceRuntimeReplayEnabled = false
+let stopStartupChatReadinessSync: (() => void) | null = null
+let startupChatReadinessEpoch = 0
+let startupChatReadinessTarget: string | null = null
+let startupChatReattachReady = false
+let startupGenerationRecoveryReady = false
+let stopStoreRuntimeEffects: (() => void) | null = null
+let stopDomObserver: (() => void) | null = null
+let stopGlobalErrorHandlers: (() => void) | null = null
+let stopPushRuntime: (() => void) | null = null
 
-function initialSelectedCharFromDatabase(db: Database): number {
-  const currentChar = (db as { currentChar?: unknown }).currentChar
-  const characterCount = Array.isArray(db.characters) ? db.characters.length : 0
+setActiveGenerationReattachReadinessPredicate(
+  () => startupChatReattachReady && startupGenerationRecoveryReady && isPluginRuntimeReady(),
+)
+
+function initialSelectedCharacterIndex(): number {
+  const currentChar = charactersResourceState.currentChar
+  const characterCount = charactersResourceState.characters.length
   if (Number.isInteger(currentChar) && (currentChar as number) >= 0 && (currentChar as number) < characterCount) {
     return currentChar as number
   }
   return -1
 }
 
+function applyResourceOwnerMutation<T>(mutation: () => T): T {
+  return mutation()
+}
+
+let loadDataInFlight: Promise<void> | null = null
+let observerWriterPromotionRetryInFlight: Promise<boolean> | null = null
+
 /**
- * Loads the application data.
+ * Loads the application data. Concurrent callers share one attempt loop, and a
+ * retry resumes at its failed capability because successful coordinator steps
+ * are retained.
  */
-export async function loadData(): Promise<void> {
-  const loaded = get(loadedStore)
-  if (!loaded) {
+export function loadData(): Promise<void> {
+  startStartupTelemetryPublisher()
+  if (backgroundReady()) return Promise.resolve()
+  if (loadDataInFlight) return loadDataInFlight
+
+  const running = loadDataUntilSettled().finally(() => {
+    loadDataInFlight = null
+  })
+  loadDataInFlight = running
+  return running
+}
+
+async function loadDataUntilSettled(): Promise<void> {
+  let retryTarget: StartupRetryTarget | null = null
+  while (!backgroundReady()) {
+    const outcome = retryTarget
+      ? await retryStartupCapability(retryTarget, runLoadDataAttempt)
+      : await runLoadDataAttempt()
+    if (!outcome) return
+    retryTarget = outcome
+  }
+}
+
+async function runLoadDataAttempt(): Promise<StartupRetryTarget | null> {
+  const startupAttemptId = beginStartupAttempt()
+  const failureCode: StartupAttemptFailureCode = 'writer-bootstrap-failed'
+  const observerShellEnabled = isPreWriterObserverShellEnabled()
+  configureStartupObserverShell(observerShellEnabled)
+  try {
+    if (observerShellEnabled) {
+      await runStartupStep('observer-shell', loadPreWriterObserverShell)
+    }
+    await runStartupStep('writer-shell', () => loadWebInitialDatabase({ coordinated: true }))
+    await runStartupStep('chat-hydration-runtime', () => {
+      startSelectedCharacterShellHydration()
+      startChatMessageHydration()
+    })
+    const backgroundReadiness = runStartupStep('background-readiness', () =>
+      settleStartupBackgroundReadiness(startupAttemptId),
+    )
+    const pluginRuntimeReady = await settleStartupPluginRuntime(startupAttemptId)
+    if (pluginRuntimeReady) await settleStartupGenerationRecovery(startupAttemptId)
+    try {
+      await runStartupStep('chat-readiness', ensureStartupChatReadiness)
+      settleStartupChatReadiness(true)
+    } catch (error) {
+      const dependencyError =
+        error instanceof StartupChatDependencyError
+          ? error
+          : new StartupChatDependencyError('selected-chat-hydration-failed', 'Selected chat hydration failed')
+      recordStartupCapabilityFailure(startupAttemptId, dependencyError.failureCode, 'chat-ready')
+      settleStartupChatReadiness(false)
+      console.warn(dependencyError.message)
+    }
+    startStartupChatReadinessSync(startupAttemptId)
+    await backgroundReadiness
+    await reconcileProjectedPushNotificationSetting(settingsResourceState.value.notification === true)
+    recordStartupMilestone('background-ready')
+    completeStartupAttempt(startupAttemptId)
+    return null
+  } catch (error) {
+    const observerReady = observerShellEnabled && canRenderShell()
+    const failureMilestone: StartupMilestone = observerReady ? 'writer-ready' : 'observer-ready'
+    if (
+      observerShellEnabled &&
+      get(observerShellLifecycleStore).mode !== 'takeover-denied' &&
+      get(observerShellLifecycleStore).mode !== 'auth-lost'
+    ) {
+      setObserverShellLifecycleMode('unavailable')
+    }
+    failStartupAttempt(startupAttemptId, failureCode, failureMilestone)
+    if (observerReady) {
+      console.warn('Writer startup deferred while the observer shell remains available:', error)
+      return null
+    }
+    alertError(error)
+    await waitAlert()
+    if (error instanceof FatalBootstrapError) return null
+    return startupRetryTargetForMilestone(failureMilestone)
+  }
+}
+
+async function loadPreWriterObserverShell(): Promise<boolean> {
+  setObserverShellLifecycleMode('waiting')
+  LoadingStatusState.text = 'Loading Server Data...'
+  const runtime = await fetchServerBootstrapReadOnly(null, { cacheRevision: false })
+  if (runtime.status !== 'ok' || !runtime.bootstrap.initialized) {
+    if (runtime.status === 'error') console.warn(`Observer bootstrap failed: ${runtime.error}`)
+    return false
+  }
+
+  // The observer projection is authenticated server state, not a recovered or
+  // optimistic mutation. Load it into the explicit owners before rendering.
+  const resources = await loadInitialServerResources()
+  if (resources.status !== 'ok') {
+    if (resources.status === 'error') console.warn(`Observer shell load failed: ${resources.error}`)
+    return false
+  }
+
+  selectedCharID.set(initialSelectedCharacterIndex())
+  resetChatHydration()
+  resetLorebookHydration()
+  setAppliedServerResourceRevision(resources.revision)
+  updateColorScheme()
+  updateTextThemeAndCSS()
+  updateReducedMotion()
+  updateHeightMode()
+  updateGuisize()
+  if (settingsResourceState.value.botSettingAtStart) botMakerMode.set(true)
+  // A resumed projection step must retry a failed chunk even when hydration
+  // was already completed in an earlier startup attempt.
+  void changeLanguage(settingsResourceState.value.language)
+  await awaitLanguageReady()
+  recordStartupMilestone('observer-ready')
+  return true
+}
+
+/** Idempotent targeted takeover/recovery used by the permanent observer UI. */
+export function retryObserverWriterPromotion(): Promise<boolean> {
+  if (observerWriterPromotionRetryInFlight) return observerWriterPromotionRetryInFlight
+
+  const retry = (async () => {
+    setObserverShellLifecycleMode('retrying')
+    if (!backgroundReady()) {
+      await loadData()
+      return canMutate()
+    }
+
+    const startupAttemptId = beginStartupAttempt()
+    const recoveringLostWriter = beginWriterAccessRecovery()
     try {
       await loadWebInitialDatabase()
-      const db = getDatabase()
-      await initializePushNotificationCoordinator()
-      void reconcileChatCompletionPushNotificationSetting(db.notification === true)
-      LoadingStatusState.text = 'Loading Plugins...'
+      if (!serverResourceEventSubscription) {
+        throw new Error('Server event subscription is unavailable')
+      }
+      startSelectedCharacterShellHydration()
+      startChatMessageHydration()
       try {
-        await loadPlugins()
-      } catch (error) {}
+        await ensureStartupChatReadiness()
+        settleStartupChatReadiness(true)
+      } catch (error) {
+        const dependencyError =
+          error instanceof StartupChatDependencyError
+            ? error
+            : new StartupChatDependencyError('selected-chat-hydration-failed', 'Selected chat hydration failed')
+        recordStartupCapabilityFailure(startupAttemptId, dependencyError.failureCode, 'chat-ready')
+        settleStartupChatReadiness(false)
+      }
+      startStartupChatReadinessSync(startupAttemptId)
+      restoreStartupWriterCapabilities()
+      if (recoveringLostWriter) completeWriterAccessRecovery(true)
+      setObserverShellLifecycleMode('promoted')
+      completeStartupAttempt(startupAttemptId)
+      return canMutate()
+    } catch (error) {
+      stopFailedWriterPromotionRuntimes()
+      if (recoveringLostWriter) completeWriterAccessRecovery(false)
+      setObserverShellLifecycleMode('unavailable')
+      failStartupAttempt(startupAttemptId, 'writer-bootstrap-failed', 'writer-ready')
+      console.warn('Observer writer promotion retry failed:', error)
+      return false
+    }
+  })().finally(() => {
+    if (observerWriterPromotionRetryInFlight === retry) observerWriterPromotionRetryInFlight = null
+  })
+
+  observerWriterPromotionRetryInFlight = retry
+  return retry
+}
+
+function stopFailedWriterPromotionRuntimes(): void {
+  stopServerResourceEvents()
+  stopActiveMessageTranslationRefresh()
+  stopActiveGreetingTranslationRefresh()
+  stopActiveGenerationReattach()
+  stopGenerationFinalizationPersistenceRefresh()
+  stopChatMessageHydration()
+}
+
+async function settleStartupPluginRuntime(startupAttemptId: number): Promise<boolean> {
+  LoadingStatusState.text = 'Loading Plugins...'
+  try {
+    await runStartupStep('plugin-runtime', async () => {
+      await ensureResourceSurfaces(['runtime:plugins'])
+      await loadPlugins()
       startPluginRuntimeSync()
+      recordStartupMilestone('plugins-ready')
+    })
+    return true
+  } catch (error) {
+    startupGenerationRecoveryReady = false
+    settleStartupGenerationRecoveryReadiness(false)
+    recordStartupCapabilityFailure(startupAttemptId, 'plugin-initialization-failed', 'plugins-ready')
+    console.warn('Plugin runtime initialization failed:', error)
+    return false
+  }
+}
+
+async function settleStartupGenerationRecovery(
+  startupAttemptId: number,
+  recovery: () => Promise<void> = reconcilePendingRecoveredGenerationEffects,
+): Promise<boolean> {
+  startupGenerationRecoveryReady = false
+  try {
+    await runStartupStep('generation-recovery', recovery)
+    startupGenerationRecoveryReady = true
+    settleStartupGenerationRecoveryReadiness(true)
+    return true
+  } catch (error) {
+    startupGenerationRecoveryReady = false
+    settleStartupGenerationRecoveryReadiness(false)
+    recordStartupCapabilityFailure(startupAttemptId, 'generation-recovery-failed', 'chat-ready')
+    console.warn('Generation recovery initialization failed:', error)
+    return false
+  }
+}
+
+/** Targeted retry for a localized generation-recovery startup failure. */
+export function retryGenerationRecoveryStartup(): Promise<boolean> {
+  return retryStartupCapability('canGenerate', async () => {
+    const startupAttemptId = beginStartupAttempt()
+    const generationRecoveryReady = await settleStartupGenerationRecovery(startupAttemptId)
+    completeStartupAttempt(startupAttemptId)
+    return generationRecoveryReady
+  })
+}
+
+/** Permanently skip unfinished recovered effects and reopen generation. */
+export function discardGenerationRecoveryStartup(): Promise<boolean> {
+  return retryStartupCapability('canGenerate', async () => {
+    const startupAttemptId = beginStartupAttempt()
+    const generationRecoveryReady = await settleStartupGenerationRecovery(
+      startupAttemptId,
+      discardPendingRecoveredGenerationEffects,
+    )
+    completeStartupAttempt(startupAttemptId)
+    return generationRecoveryReady
+  })
+}
+
+/** Localized retry used by the plugin-readiness status surface. */
+export function retryPluginStartup(): Promise<boolean> {
+  return retryStartupCapability('pluginsReady', async () => {
+    const startupAttemptId = beginStartupAttempt()
+    const pluginRuntimeReady = await settleStartupPluginRuntime(startupAttemptId)
+    if (!pluginRuntimeReady) {
+      completeStartupAttempt(startupAttemptId)
+      return false
+    }
+
+    const generationRecoveryReady = await settleStartupGenerationRecovery(startupAttemptId)
+    if (generationRecoveryReady) {
+      try {
+        await runStartupStep('chat-readiness', ensureStartupChatReadiness)
+        settleStartupChatReadiness(true)
+      } catch (error) {
+        const dependencyError =
+          error instanceof StartupChatDependencyError
+            ? error
+            : new StartupChatDependencyError('selected-chat-hydration-failed', 'Selected chat hydration failed')
+        recordStartupCapabilityFailure(startupAttemptId, dependencyError.failureCode, 'chat-ready')
+        settleStartupChatReadiness(false)
+      }
+    }
+    completeStartupAttempt(startupAttemptId)
+    return generationRecoveryReady
+  })
+}
+
+async function settleStartupBackgroundReadiness(startupAttemptId: number): Promise<void> {
+  const resourceReadiness = ensureResourceSurfaces(['runtime:background-effects'])
+  const results = await Promise.allSettled([
+    runStartupStep('push-runtime', async () => {
+      await resourceReadiness
+      const pushRuntime = await import('./server/pushNotificationSetting')
+      stopPushRuntime ??= pushRuntime.stopPushNotificationCoordinator
+      const { initializePushNotificationCoordinator, reconcileChatCompletionPushNotificationSetting } = pushRuntime
+      await initializePushNotificationCoordinator()
+      await reconcileChatCompletionPushNotificationSetting(settingsResourceState.value.notification === true)
+    }),
+    runStartupStep('background-runtime', async () => {
+      await resourceReadiness
       LoadingStatusState.text = 'Checking For Format Update...'
 
       LoadingStatusState.text = 'Updating States...'
-      updateColorScheme()
-      updateTextThemeAndCSS()
-      updateReducedMotion()
-      updateHeightMode()
       updateErrorHandling()
-      updateGuisize()
       if (!localStorage.getItem('nightlyWarned') && window.location.hostname === 'nightly.risuai.xyz') {
         alertMd(language.nightlyWarning)
         await waitAlert()
@@ -241,42 +603,212 @@ export async function loadData(): Promise<void> {
         await waitAlert()
         localStorage.setItem('insecureOriginWarned', 'true')
       }
-      if (db.botSettingAtStart) {
-        botMakerMode.set(true)
-      }
-      loadedStore.set(true)
-      void reconcileChatCompletionPushNotificationSetting(getDatabase().notification === true)
-      selectedCharID.set(initialSelectedCharFromDatabase(db))
-      startObserveDom()
-      registerModelDynamic()
-      moduleUpdate()
-      alertTOS().then((a) => {
-        if (a === false) {
-          location.reload()
-        }
+      const [runtimeEffects, observer, modelList, modules, customBackground, legacyMemoryNotice] = await Promise.all([
+        import('./stores/runtimeEffects.svelte'),
+        import('./observer.svelte'),
+        import('./model/modellist'),
+        import('./process/modules'),
+        import('./server/customBackgroundSetting'),
+        import('./process/legacyMemoryMigrationNotice'),
+      ])
+      stopStoreRuntimeEffects ??= runtimeEffects.installStoreRuntimeEffects()
+      stopDomObserver ??= observer.startObserveDom()
+      customBackground.normalizeLegacyCustomBackgroundSetting()
+      legacyMemoryNotice.showLegacyMemoryMigrationNoticeIfNeeded()
+      const settings = settingsResourceState.status === 'ready' ? settingsResourceState.value : {}
+      await modelList.registerModelDynamic({
+        dynamicModelRegistry: settings.dynamicModelRegistry,
+        googleAccessToken: settings.google?.accessToken,
+        claudeAPIKey: settings.claudeAPIKey,
       })
-    } catch (error) {
-      alertError(error)
-      await waitAlert()
-      if (error instanceof FatalBootstrapError) return
-      if (!get(loadedStore)) await loadData()
+      modules.moduleUpdate()
+    }),
+  ])
+
+  const labels = ['push runtime', 'optional background runtime'] as const
+  const failureCodes: StartupAttemptFailureCode[] = ['push-initialization-failed', 'runtime-initialization-failed']
+  results.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      recordStartupCapabilityFailure(startupAttemptId, failureCodes[index]!, 'background-ready')
+      console.warn(`Failed to initialize ${labels[index]}:`, result.reason)
     }
+  })
+}
+
+/** App/remount cleanup for optional and plugin runtimes that may outlive SSE. */
+export function stopDeferredStartupRuntimes(): void {
+  stopGlobalErrorHandlers?.()
+  stopGlobalErrorHandlers = null
+  stopStoreRuntimeEffects?.()
+  stopStoreRuntimeEffects = null
+  stopDomObserver?.()
+  stopDomObserver = null
+  stopPushRuntime?.()
+  stopPushRuntime = null
+  stopPluginRuntimeSync()
+  stopRouteResourceLoader()
+}
+
+async function reconcileProjectedPushNotificationSetting(enabled: boolean): Promise<void> {
+  try {
+    const pushRuntime = await import('./server/pushNotificationSetting')
+    stopPushRuntime ??= pushRuntime.stopPushNotificationCoordinator
+    await pushRuntime.reconcileChatCompletionPushNotificationSetting(enabled)
+  } catch (error) {
+    console.warn('Failed to reconcile projected push notification setting:', error)
   }
 }
 
-export async function loadWebInitialDatabase() {
+async function ensureStartupChatReadiness(): Promise<void> {
+  startupChatReattachReady = false
+  await ensureResourceSurfaces(['runtime:chat-generation'])
+  if (!(await hydrateSelectedCharacterShell())) {
+    throw new StartupChatDependencyError(
+      'selected-character-hydration-failed',
+      'Selected character detail hydration failed',
+    )
+  }
+  const promptPresetId = currentStartupPromptTemplateOwnerId()
+  const [chatHydrated, promptHydrated] = await Promise.all([
+    hydrateActiveChat(),
+    ensurePromptTemplateHydrated({
+      ...(promptPresetId !== currentGlobalPromptTemplateOwnerId() ? { applyProjection: false } : {}),
+      promptPresetId,
+      minimumRevision: peekAppliedServerResourceRevision() ?? undefined,
+    }),
+  ])
+  if (!chatHydrated) {
+    throw new StartupChatDependencyError('selected-chat-hydration-failed', 'Selected chat hydration failed')
+  }
+  if (!promptHydrated) {
+    throw new StartupChatDependencyError(
+      'selected-prompt-template-hydration-failed',
+      'Selected prompt-template owner hydration failed',
+    )
+  }
+  startupChatReattachReady = true
+  startActiveGenerationReattach()
+  await prepareOpenChatGenerationReattach()
+}
+
+function startStartupChatReadinessSync(startupAttemptId: number): void {
+  if (stopStartupChatReadinessSync) return
+  startupChatReadinessTarget = currentStartupChatReadinessTarget()
+  const refreshReadiness = (options: { force?: boolean } = {}) => {
+    const target = currentStartupChatReadinessTarget()
+    if (!options.force && target === startupChatReadinessTarget) return
+    startupChatReadinessTarget = target
+    const readinessEpoch = startupChatReadinessEpoch + 1
+    startupChatReadinessEpoch = readinessEpoch
+    settleStartupChatReadiness(false)
+    void ensureStartupChatReadiness()
+      .then(() => {
+        if (readinessEpoch === startupChatReadinessEpoch) settleStartupChatReadiness(true)
+      })
+      .catch((error) => {
+        if (readinessEpoch !== startupChatReadinessEpoch) return
+        const dependencyError =
+          error instanceof StartupChatDependencyError
+            ? error
+            : new StartupChatDependencyError('selected-chat-hydration-failed', 'Selected chat hydration failed')
+        recordStartupCapabilityFailure(startupAttemptId, dependencyError.failureCode, 'chat-ready')
+        console.warn(dependencyError.message)
+      })
+  }
+  let initialEmission = true
+  const stopSelectedCharacterSync = selectedCharID.subscribe(() => {
+    if (initialEmission) {
+      initialEmission = false
+      return
+    }
+    refreshReadiness()
+  })
+  let initialRouteEmission = true
+  const stopRouteSync = currentRoute.subscribe(() => {
+    if (initialRouteEmission) {
+      initialRouteEmission = false
+      return
+    }
+    refreshReadiness()
+  })
+  setActiveChatReadinessRefreshHook(refreshReadiness)
+  stopStartupChatReadinessSync = () => {
+    stopSelectedCharacterSync()
+    stopRouteSync()
+    setActiveChatReadinessRefreshHook(null)
+    startupChatReadinessTarget = null
+  }
+}
+
+function currentStartupChatReadinessTarget(): string {
+  const route = get(currentRoute)
+  const selectedIndex = get(selectedCharID)
+  const character = charactersResourceState.characters[selectedIndex]
+  const chatId = character?.chats?.[character?.chatPage ?? 0]?.id
+  const promptPresetId = currentStartupPromptTemplateOwnerId()
+  return `${route.kind}\u0000${route.path}\u0000${selectedIndex}\u0000${character?.chaId ?? ''}\u0000${chatId ?? ''}\u0000${promptPresetId ?? ''}`
+}
+
+function currentStartupPromptTemplateOwnerId(): string | null {
+  const selectedIndex = get(selectedCharID)
+  const character = charactersResourceState.characters[selectedIndex]
+  const chat = character?.chats?.[character?.chatPage ?? 0]
+  const chatPromptPresetId = chat?.generationSettings?.promptPresetId
+  if (typeof chatPromptPresetId === 'string' && chatPromptPresetId.trim() !== '') {
+    return chatPromptPresetId.trim()
+  }
+
+  return currentGlobalPromptTemplateOwnerId()
+}
+
+export function currentGlobalPromptTemplateOwnerId(): string | null {
+  const promptPresets = collectionsResourceState.values.promptPresets
+  const selectedPromptPresetIndex = settingsResourceState.value.promptPresetsId
+  if (!Number.isInteger(selectedPromptPresetIndex) || selectedPromptPresetIndex < 0) return null
+  if (!Array.isArray(promptPresets)) return null
+  const selectedPromptPreset = promptPresets[selectedPromptPresetIndex]
+  const selectedPromptPresetId = selectedPromptPreset?.id
+  if (typeof selectedPromptPresetId !== 'string' || selectedPromptPresetId.trim() === '') return null
+  return resolveUniquePromptPreset(promptPresets, selectedPromptPresetId)?.id ?? null
+}
+
+export async function loadWebInitialDatabase(options: { coordinated?: boolean } = {}) {
+  const runWriterStep: typeof runStartupStep = options.coordinated
+    ? runStartupStep
+    : (_step, operation) => Promise.resolve().then(operation)
   LoadingStatusState.text = 'Loading Server Data...'
-  const pendingMutationOwner = await readSinglePendingMutationOwner()
-  if (pendingMutationOwner) {
-    adoptPendingMutationWriterSessionId(pendingMutationOwner.writerSessionId)
-  }
-  const firstBootstrap = await fetchServerBootstrap()
-  if (firstBootstrap.status !== 'ok') {
-    throw new Error(firstBootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : firstBootstrap.error)
-  }
-  const runtime = firstBootstrap.bootstrap.initialized
-    ? firstBootstrap.bootstrap
-    : await initializeFreshServerDatabase(firstBootstrap.bootstrap)
+  await runWriterStep('writer-owner-adoption', async () => {
+    const pendingMutationOwner = await readSinglePendingMutationOwner()
+    if (pendingMutationOwner) {
+      adoptPendingMutationWriterSessionId(pendingMutationOwner.writerSessionId)
+    }
+  })
+  const firstBootstrap = await runWriterStep('writer-bootstrap', async () => {
+    let result = await fetchServerBootstrap()
+    if (result.status === 'active-writer-connected') {
+      const selection = await alertRequiredSelect(
+        [language.writerConnectDisconnectExisting, language.cancel],
+        language.writerConnectConflictBody,
+        language.writerConnectConflictTitle,
+      )
+      if (selection !== '0') {
+        setObserverShellLifecycleMode('takeover-denied')
+        throw new FatalBootstrapError(language.writerConnectCancelled)
+      }
+      result = await fetchServerBootstrap(null, { disconnectExistingWriter: true })
+    }
+    if (result.status !== 'ok') {
+      throw new Error(result.status === 'unavailable' ? 'Server bootstrap is unavailable' : result.error)
+    }
+    return result
+  })
+  const runtime = await runWriterStep('writer-initialize', () =>
+    firstBootstrap.bootstrap.initialized
+      ? firstBootstrap.bootstrap
+      : initializeFreshServerDatabase(firstBootstrap.bootstrap),
+  )
+  configureGenerationOperationProtocol(runtime.generationOperationProtocol, runtime.databaseLineage)
+  configureDisplaySourceProtocol(runtime.displaySourceProtocol, runtime.databaseLineage, runtime.writerEpoch)
 
   const { databaseLineage, requestedWriterWasActive, writerEpoch } = firstBootstrap.bootstrap
   if (
@@ -287,65 +819,95 @@ export async function loadWebInitialDatabase() {
   ) {
     throw new Error('Server bootstrap is missing durable mutation ownership metadata')
   }
-  const pendingMutationPreparation = await preparePendingMutationOutbox({
+  initializeDraftRecoveryScope({
     writerSessionId: getActiveWriterSessionId(),
-    writerEpoch,
     databaseLineage,
-    requestedWriterWasActive,
   })
-  if (pendingMutationPreparation.discarded > 0) {
-    alertError(language.pendingMutationDiscarded)
-  }
-  await flushPendingMutationReceiptAcknowledgements()
-  const pendingMutationReplay = await replayPendingMutations()
-  const remainingPendingMutationRecords = await countPendingMutationRecords()
-  if (
-    pendingMutationReplay.retained > 0 ||
-    remainingPendingMutationRecords === null ||
-    remainingPendingMutationRecords > 0
-  ) {
-    throw new Error(language.pendingMutationReplayRetained)
-  }
+  await runWriterStep('writer-outbox-prepare', async () => {
+    const pendingMutationPreparation = await preparePendingMutationOutbox({
+      writerSessionId: getActiveWriterSessionId(),
+      writerEpoch,
+      databaseLineage,
+      requestedWriterWasActive,
+    })
+    if (pendingMutationPreparation.discarded > 0) {
+      alertError(language.pendingMutationDiscarded)
+    }
+  })
+  await runWriterStep('writer-receipt-flush', flushPendingMutationReceiptAcknowledgements)
+  await runWriterStep('writer-pending-replay', async () => {
+    const pendingMutationReplay = await replayPendingMutations()
+    const remainingPendingMutationRecords = await countBlockingPendingMutationRecords()
+    if (
+      pendingMutationReplay.retained > 0 ||
+      remainingPendingMutationRecords === null ||
+      remainingPendingMutationRecords > 0
+    ) {
+      throw new Error(language.pendingMutationReplayRetained)
+    }
+  })
 
-  const resources = await loadInitialServerResources({ hooks: serverResourceInvalidationHooks })
-  if (resources.status !== 'ok') {
-    throw new Error(
-      resources.status === 'unavailable'
-        ? 'Server resource APIs are unavailable'
-        : `Server resource load failed: ${resources.error}`,
+  const resources = await runWriterStep('writer-resource-hydration', async () => {
+    // From this point on the explicit resource owners are authoritative.
+    // Hydration and reconciliation apply only through those owner boundaries.
+    const result = await loadInitialServerResources({ hooks: serverResourceInvalidationHooks })
+    if (result.status !== 'ok') {
+      throw new Error(
+        result.status === 'unavailable'
+          ? 'Server resource APIs are unavailable'
+          : `Server resource load failed: ${result.error}`,
+      )
+    }
+    return result
+  })
+
+  await runWriterStep('writer-projection-install', async () => {
+    selectedCharID.set(initialSelectedCharacterIndex())
+    resetChatHydration()
+    resetLorebookHydration()
+    recordHydratedCharacterLorebooks(charactersResourceState.characters)
+    setCachedServerCommandRevision(resources.revision)
+    setAppliedServerResourceRevision(resources.revision)
+    markReplacementDatabaseOwnershipRefreshed({ databaseLineage, writerEpoch })
+    setServerCommandSuccessReconciler((event, coalescedEvents, localEffects) =>
+      enqueueServerResourceSync(() =>
+        processServerCommandEvents(coalescedEvents.length > 0 ? coalescedEvents : [event], localEffects),
+      ),
     )
-  }
-
-  const database = getDatabase()
-  selectedCharID.set(initialSelectedCharFromDatabase(database))
-  resetChatHydration()
-  resetLorebookHydration()
-  recordHydratedCharacterLorebooks(database.characters)
-  if (!(await ensurePromptTemplateHydrated({ minimumRevision: resources.revision }))) {
-    throw new Error('Selected prompt-template owner hydration failed')
-  }
-  setCachedServerCommandRevision(resources.revision)
-  setAppliedServerResourceRevision(resources.revision)
-  markReplacementDatabaseOwnershipRefreshed({ databaseLineage, writerEpoch })
-  setServerCommandSuccessReconciler((event, coalescedEvents, localEffects) =>
-    enqueueServerResourceSync(() =>
-      processServerCommandEvents(coalescedEvents.length > 0 ? coalescedEvents : [event], localEffects),
-    ),
-  )
-  setServerCommandConflictGapHandler(handleServerCommandConflictGap)
-  setResourceWriteGuardEnabled(true)
-  setActiveGenerationJobs(runtime.activeGenerationJobs ?? [])
-  setActiveMessageTranslations(runtime.activeMessageTranslations ?? [])
-  startActiveMessageTranslationRefresh()
-  startActiveGenerationReattach()
-  startChatMessageHydration()
-  void hydrateActiveChat()
-  stopBridgePatchLifecycleFlush?.()
-  stopBridgePatchLifecycleFlush = startBridgePatchLifecycleFlush()
-  serverResourceRuntimeReplayEnabled = false
-  await startServerResourceEvents({ replayPendingMutations: false })
-  serverResourceRuntimeReplayEnabled = true
-  normalizeLegacyCustomBackgroundSetting()
+    setServerCommandConflictGapHandler(handleServerCommandConflictGap)
+    // The conservative shell boundary is writer-ready, so every visual and
+    // selection input used by the root UI must be coherent before events can
+    // publish that capability.
+    updateColorScheme()
+    updateTextThemeAndCSS()
+    updateReducedMotion()
+    updateHeightMode()
+    updateGuisize()
+    if (settingsResourceState.value.botSettingAtStart) botMakerMode.set(true)
+    void changeLanguage(settingsResourceState.value.language)
+    await awaitLanguageReady()
+    recordStartupMilestone('observer-ready')
+  })
+  await runWriterStep('writer-runtime-services', () => {
+    applyGenerationOperationBootstrap(runtime, 'startup')
+    setPendingRecoveredGenerationEffects(runtime.pendingGenerationEffects ?? [])
+    setGenerationFinalizationPersistences(runtime.generationFinalizations ?? [])
+    startGenerationFinalizationPersistenceRefresh()
+    setActiveMessageTranslations(runtime.activeMessageTranslations ?? [])
+    setActiveGreetingTranslations(runtime.activeGreetingTranslations ?? [])
+    startActiveMessageTranslationRefresh()
+    startActiveGreetingTranslationRefresh()
+    stopOwnerMutationLifecycleFlush?.()
+    stopOwnerMutationLifecycleFlush = startOwnerMutationLifecycleFlush()
+  })
+  await runWriterStep('writer-event-subscription', async () => {
+    serverResourceRuntimeReplayEnabled = false
+    try {
+      await startServerResourceEvents({ replayPendingMutations: false })
+    } finally {
+      serverResourceRuntimeReplayEnabled = true
+    }
+  })
 }
 
 /**
@@ -355,11 +917,7 @@ export async function loadWebInitialDatabase() {
  * different client initialized the database first.
  */
 async function initializeFreshServerDatabase(initialRuntime: ServerBootstrapRuntime): Promise<ServerBootstrapRuntime> {
-  if (!canUseServerCommands()) {
-    throw new Error('Initial server database seed failed: server commands unavailable')
-  }
-
-  const result = await initializeServerDatabase()
+  const result = await initializeServerDatabaseForBootstrap()
   if (result.status === 'ok') {
     setCachedServerCommandRevision(result.revision)
     if (result.initialized === true) {
@@ -388,7 +946,7 @@ async function initializeFreshServerDatabase(initialRuntime: ServerBootstrapRunt
 }
 
 function serverCommandFailureMessage(
-  result: Exclude<Awaited<ReturnType<typeof initializeServerDatabase>>, { status: 'ok' }>,
+  result: Exclude<Awaited<ReturnType<typeof initializeServerDatabaseForBootstrap>>, { status: 'ok' }>,
 ): string {
   switch (result.status) {
     case 'conflict':
@@ -407,10 +965,16 @@ export function stopServerResourceEvents() {
   teardownServerResourceSubscription()
   stopServerResourceRecoveryListeners?.()
   stopServerResourceRecoveryListeners = null
-  stopBridgePatchLifecycleFlush?.()
-  stopBridgePatchLifecycleFlush = null
+  stopOwnerMutationLifecycleFlush?.()
+  stopOwnerMutationLifecycleFlush = null
+  stopStartupChatReadinessSync?.()
+  stopStartupChatReadinessSync = null
+  setActiveChatReadinessRefreshHook(null)
+  startupChatReadinessTarget = null
+  startupChatReadinessEpoch += 1
   setServerCommandSuccessReconciler(null)
   setServerCommandConflictGapHandler(null)
+  stopSelectedCharacterShellHydration()
   if (serverResourceReconnectTimer) {
     clearTimeout(serverResourceReconnectTimer)
     serverResourceReconnectTimer = null
@@ -428,6 +992,8 @@ async function startServerResourceEvents(options: { replayPendingMutations?: boo
     sinceRevision: peekAppliedServerResourceRevision(),
     onCommandEvent: handleServerCommandEvent,
     onMemoryEvent: applyServerMemoryEvent,
+    onBardWikiEvent: publishServerBardWikiJobEvent,
+    onMemorySnapshot: applyServerMemorySnapshot,
     onWriterEvent: (event) => {
       if (event.sessionId !== null && event.sessionId !== getActiveWriterSessionId()) {
         enterWriterTakeoverFlow()
@@ -461,6 +1027,8 @@ async function startServerResourceEvents(options: { replayPendingMutations?: boo
     serverResourceReconnectAttempt = 0
     serverResourceEventSubscription = subscription
     recordServerResourceEventFrame(eventEpoch)
+    recordStartupMilestone('writer-ready')
+    setObserverShellLifecycleMode('promoted')
     if (options.replayPendingMutations !== false) triggerReconnectPendingMutationReplay()
     if (hasPendingReplacementDatabaseRefresh()) {
       enqueueServerResourceSync(async () => {
@@ -470,9 +1038,11 @@ async function startServerResourceEvents(options: { replayPendingMutations?: boo
       })
     }
   } else if (subscription.status === 'error') {
+    setObserverShellLifecycleMode('unavailable')
     console.warn(`Server event subscription failed: ${subscription.error}`)
     scheduleServerResourceReconnect(eventEpoch)
   } else if (subscription.status === 'replay-unavailable') {
+    setObserverShellLifecycleMode('unavailable')
     console.warn(`Server event replay unavailable at revision ${subscription.currentRevision}; refreshing resources`)
     enqueueServerResourceSync(async () => {
       if (!isCurrentServerResourceEventEpoch(eventEpoch)) return
@@ -571,16 +1141,7 @@ function isCurrentServerResourceEventEpoch(eventEpoch: number): boolean {
 
 function ensureServerResourceRecoveryListeners(): void {
   if (stopServerResourceRecoveryListeners || typeof window === 'undefined' || typeof document === 'undefined') return
-  const handleVisibilityChange = () => {
-    if (document.visibilityState === 'visible') restartServerResourceEvents()
-  }
-  const handleOnline = () => restartServerResourceEvents()
-  document.addEventListener('visibilitychange', handleVisibilityChange)
-  window.addEventListener('online', handleOnline)
-  stopServerResourceRecoveryListeners = () => {
-    document.removeEventListener('visibilitychange', handleVisibilityChange)
-    window.removeEventListener('online', handleOnline)
-  }
+  stopServerResourceRecoveryListeners = subscribeBrowserLifecycleRecovery(() => restartServerResourceEvents())
 }
 
 function restartServerResourceEvents(): void {
@@ -636,11 +1197,17 @@ export function calculateServerResourceReconnectDelayMs(attempt: number, random:
 }
 
 function applyServerMemoryEvent(event: ServerMemoryEvent) {
-  if (!shouldAcceptMemoryJobUpdate({ chatId: event.chatId, ...event.job })) return
-  if (event.sideEffect?.kind === 'hypav3_progress') {
-    applyServerHypaV3Progress(event.sideEffect.payload)
-  }
+  if (!applyServerMemoryJobEvent(event)) return
   publishServerMemoryJobEvent(event)
+}
+
+function applyServerMemorySnapshot(snapshot: ServerMemoryJobSnapshot) {
+  applyServerMemoryJobSnapshot(snapshot)
+  publishServerBardWikiJobSnapshot({
+    streamId: snapshot.streamId,
+    version: snapshot.version,
+    jobs: snapshot.bardWikiJobs,
+  })
 }
 
 /**
@@ -724,7 +1291,7 @@ function applyLegacyPresetPatchAcknowledgement(
   ) {
     return false
   }
-  return withServerResourceApply(() =>
+  return applyResourceOwnerMutation(() =>
     applyLegacyPresetPatchLocalEffect({
       revision: event.revision,
       presetId: localEffect.presetId,
@@ -759,7 +1326,7 @@ function applyPresetReorderAcknowledgement(event: CommandEvent, localEffect: Pre
   ) {
     return false
   }
-  return withTrustedResourceWrite(() =>
+  return applyResourceOwnerMutation(() =>
     applyPresetReorderLocalEffect({
       revision: event.revision,
       presetKind: localEffect.presetKind,
@@ -787,7 +1354,7 @@ function applyPersonaPatchAcknowledgement(event: CommandEvent, localEffect: Pers
   ) {
     return false
   }
-  return withTrustedResourceWrite(() =>
+  return applyResourceOwnerMutation(() =>
     applyPersonaPatchLocalEffect({
       revision: event.revision,
       personaId: localEffect.personaId,
@@ -824,7 +1391,7 @@ function applyPersonaMutationAcknowledgement(event: CommandEvent, localEffect: P
   ) {
     return false
   }
-  return withTrustedResourceWrite(() =>
+  return applyResourceOwnerMutation(() =>
     applyPersonaMutationLocalEffect({
       revision: event.revision,
       operation: localEffect.operation,
@@ -854,7 +1421,7 @@ function applyAgentPresetCollectionMutationAcknowledgement(
   ) {
     return false
   }
-  return withTrustedResourceWrite(() =>
+  return applyResourceOwnerMutation(() =>
     applyAgentPresetCollectionMutationLocalEffect({
       revision: event.revision,
       operation: localEffect.operation,
@@ -878,7 +1445,7 @@ function applyAgentPresetPatchAcknowledgement(event: CommandEvent, localEffect: 
   ) {
     return false
   }
-  return withTrustedResourceWrite(() =>
+  return applyResourceOwnerMutation(() =>
     applyAgentPresetPatchLocalEffect({
       revision: event.revision,
       presetId: localEffect.presetId,
@@ -905,7 +1472,7 @@ function applyAgentPresetStepPatchAcknowledgement(
   ) {
     return false
   }
-  return withTrustedResourceWrite(() =>
+  return applyResourceOwnerMutation(() =>
     applyAgentPresetStepPatchLocalEffect({
       revision: event.revision,
       presetId: localEffect.presetId,
@@ -920,9 +1487,12 @@ function applyTranslatorPresetPatchAcknowledgement(
   event: CommandEvent,
   localEffect: TranslatorPresetPatchLocalEffect,
 ): boolean {
-  const database = getDatabase()
-  const selectedIndex = database.translatorPresetId
-  const selectedPreset = Number.isInteger(selectedIndex) ? database.translatorPresets?.[selectedIndex] : undefined
+  const translatorPresets = collectionsResourceState.values.translatorPresets
+  const selectedId = settingsResourceState.value.translatorPresetId
+  const selectedPreset =
+    typeof selectedId === 'string' && Array.isArray(translatorPresets)
+      ? translatorPresets.find((preset) => preset.id === selectedId)
+      : undefined
   if (
     event.type !== 'translatorPreset.updated' ||
     event.resource !== 'translatorPreset' ||
@@ -941,7 +1511,7 @@ function applyTranslatorPresetPatchAcknowledgement(
   ) {
     return false
   }
-  return withTrustedResourceWrite(() =>
+  return applyResourceOwnerMutation(() =>
     applyTranslatorPresetPatchLocalEffect({
       revision: event.revision,
       presetId: localEffect.presetId,
@@ -992,7 +1562,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyChatGenerationSettingsLocalEffect({
           revision: event.revision,
           characterId: localEffect.characterId,
@@ -1003,7 +1573,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       )
     case 'characterPatch':
       if (event.resource !== 'characterRow' || event.id !== localEffect.characterId) return false
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyCharacterPatchLocalEffect({
           revision: event.revision,
           characterId: localEffect.characterId,
@@ -1012,7 +1582,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       )
     case 'characterSelection':
       if (event.resource !== 'characterSelection' || event.id !== localEffect.characterId) return false
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyCharacterSelectionLocalEffect({
           revision: event.revision,
           characterId: localEffect.characterId,
@@ -1034,7 +1604,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyCharacterCollectionMutationLocalEffect({
           revision: event.revision,
           operation: localEffect.operation,
@@ -1051,7 +1621,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyChatPatchLocalEffect({
           revision: event.revision,
           characterId: localEffect.characterId,
@@ -1118,7 +1688,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
 
       let createdChatMatches: Array<{ characterId: string; message: unknown }> = []
       if (createsTranscript) {
-        createdChatMatches = (getDatabase().characters ?? []).flatMap((character) =>
+        createdChatMatches = charactersResourceState.characters.flatMap((character) =>
           (character.chats ?? [])
             .filter((chat) => chat.id === localEffect.targetId)
             .map((chat) => ({ characterId: character.chaId, message: chat.message })),
@@ -1132,7 +1702,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
         }
       }
 
-      return withServerResourceApply(() => {
+      return applyResourceOwnerMutation(() => {
         if (
           !applyCharacterRowMutationLocalEffect({
             revision: event.revision,
@@ -1143,9 +1713,9 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
           return false
         }
         if (createsTranscript && localEffect.targetId) {
-          const createdChat = (getDatabase().characters ?? [])
-            .find((character) => character.chaId === localEffect.characterId)
-            ?.chats?.find((chat) => chat.id === localEffect.targetId)
+          const createdChat = getCharacterResourceOwner(localEffect.characterId)?.chats?.find(
+            (chat) => chat.id === localEffect.targetId,
+          )
           if (
             createdChat &&
             JSON.stringify(createdChat.generationSettings ?? null) ===
@@ -1185,7 +1755,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applySettingsPatchLocalEffect({
           revision: event.revision,
           group: localEffect.group,
@@ -1203,7 +1773,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
             : 'pluginStorage.bulkUpdated'
       if (event.resource !== 'pluginStorage' || event.type !== expectedType) return false
       if (localEffect.operation === 'bulk' ? event.id !== undefined : event.id !== localEffect.key) return false
-      return withServerResourceApply(() => applyPluginStorageLocalEffect({ revision: event.revision }))
+      return applyResourceOwnerMutation(() => applyPluginStorageLocalEffect({ revision: event.revision }))
     }
     case 'pluginCollectionMutation': {
       const expectedType =
@@ -1218,7 +1788,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
                 : 'plugin.reordered'
       if (event.resource !== 'pluginCollection' || event.type !== expectedType) return false
       if (localEffect.operation === 'reorder' ? event.id !== undefined : event.id !== localEffect.pluginId) return false
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyPluginCollectionMutationLocalEffect({
           revision: event.revision,
           operation: localEffect.operation,
@@ -1235,7 +1805,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyPluginProviderLocalEffect({ revision: event.revision, provider: localEffect.provider }),
       )
     case 'moduleCollectionMutation': {
@@ -1277,7 +1847,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyModuleCollectionMutationLocalEffect({
           revision: event.revision,
           operation: localEffect.operation,
@@ -1295,7 +1865,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyModuleEnabledLocalEffect({
           revision: event.revision,
           moduleId: localEffect.moduleId,
@@ -1334,7 +1904,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
         return false
       }
 
-      return withServerResourceApply(() => {
+      return applyResourceOwnerMutation(() => {
         if (
           !applyPromptItemMutationLocalEffect({
             revision: event.revision,
@@ -1406,7 +1976,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
         }
       }
 
-      return withServerResourceApply(() => {
+      return applyResourceOwnerMutation(() => {
         if (
           !applySplitPresetPatchLocalEffect({
             revision: event.revision,
@@ -1489,7 +2059,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
         return false
       }
 
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyGlobalLorebookMutationLocalEffect({
           revision: event.revision,
           operation: localEffect.operation,
@@ -1559,7 +2129,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
         return false
       }
 
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyLorebookMutationLocalEffect({
           revision: event.revision,
           scope: localEffect.scope,
@@ -1600,7 +2170,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyLoadoutMutationLocalEffect({
           revision: event.revision,
           operation: localEffect.operation,
@@ -1622,7 +2192,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyCharacterRowMutationLocalEffect({
           revision: event.revision,
           characterId: localEffect.characterId,
@@ -1639,7 +2209,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyMessageTranslationLocalEffect(localEffect.chatId, localEffect.messageId, localEffect.translation),
       )
     case 'messageMutation': {
@@ -1664,7 +2234,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() => acknowledgeMessageMutationLocalEffect(localEffect.chatId))
+      return applyResourceOwnerMutation(() => acknowledgeMessageMutationLocalEffect(localEffect.chatId))
     }
     case 'characterRowMutation': {
       const expectedType =
@@ -1677,7 +2247,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyCharacterRowMutationLocalEffect({
           revision: event.revision,
           characterId: localEffect.characterId,
@@ -1689,35 +2259,40 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       if (event.type !== 'character.reordered' || event.resource !== 'characterOrder' || event.id !== undefined) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyCharacterOrderLocalEffect({ revision: event.revision, attemptedOrder: localEffect.attemptedOrder }),
       )
   }
 }
 
 function currentSplitPresetId(kind: 'model' | 'prompt'): string | null {
-  const database = getDatabase()
-  const presets = kind === 'model' ? database.modelPresets : database.promptPresets
-  const selectedIndex = kind === 'model' ? database.modelPresetsId : database.promptPresetsId
+  const presets =
+    kind === 'model' ? collectionsResourceState.values.modelPresets : collectionsResourceState.values.promptPresets
+  const selectedIndex =
+    kind === 'model' ? settingsResourceState.value.modelPresetsId : settingsResourceState.value.promptPresetsId
   if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || !Array.isArray(presets)) return null
+  if (kind === 'prompt') {
+    return resolveUniquePromptPreset(presets, presets[selectedIndex]?.id)?.id ?? null
+  }
   const id = presets[selectedIndex]?.id
   return typeof id === 'string' && id.trim() !== '' ? id : null
 }
 
 function currentPresetReorderSelection(kind: PresetReorderLocalEffect['presetKind']): string | null {
   if (kind === 'model') return currentSplitPresetId('model')
-  const database = getDatabase()
-  const selectedIndex = database.botPresetsId
-  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || !Array.isArray(database.botPresets)) return null
-  const id = database.botPresets[selectedIndex]?.id
+  const botPresets = collectionsResourceState.values.botPresets
+  const selectedIndex = settingsResourceState.value.botPresetsId
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || !Array.isArray(botPresets)) return null
+  const id = botPresets[selectedIndex]?.id
   return typeof id === 'string' && id.trim() !== '' ? id : null
 }
 
 function selectedPromptPresetOwnsTemplate(promptPresetId: string): boolean {
-  const database = getDatabase()
-  const selectedIndex = database.promptPresetsId
-  if (!Number.isInteger(selectedIndex) || selectedIndex < 0) return false
-  const preset = database.promptPresets?.[selectedIndex] as Record<string, unknown> | undefined
+  const promptPresets = collectionsResourceState.values.promptPresets
+  const selectedIndex = settingsResourceState.value.promptPresetsId
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || !Array.isArray(promptPresets)) return false
+  const preset = resolveUniquePromptPreset(promptPresets, promptPresetId) as Record<string, unknown> | undefined
+  if (!preset || preset !== promptPresets[selectedIndex]) return false
   return preset?.id === promptPresetId && Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')
 }
 
@@ -1773,10 +2348,11 @@ async function processAuthoritativeServerCommandEvents(events: readonly CommandE
       // transcript is still fetched from its body endpoint.
       resetChatHydration()
       resetLorebookHydration()
-      recordHydratedCharacterLorebooks(getDatabase().characters)
+      recordHydratedCharacterLorebooks(charactersResourceState.characters)
+      requestActiveChatReadinessRefresh()
       void hydrateActiveChat({ force: true })
     } else {
-      recordHydratedCharacterLorebooks(getDatabase().characters)
+      recordHydratedCharacterLorebooks(charactersResourceState.characters)
     }
 
     if (
@@ -1794,6 +2370,7 @@ async function processAuthoritativeServerCommandEvents(events: readonly CommandE
 
     advanceKnownServerCommandRevision(result.revision)
     setAppliedServerResourceRevision(result.revision)
+    void hydrateSelectedCharacterShell({ supersede: true })
     return true
   } finally {
     selectionTracker.stop()
@@ -1825,7 +2402,15 @@ async function reconcileReplacementDatabaseOwnership(): Promise<{
     databaseLineage,
     writerEpoch,
   }
+  initializeDraftRecoveryScope({
+    writerSessionId: getActiveWriterSessionId(),
+    databaseLineage,
+  })
   const adoption = await adoptReplacementDatabaseOwnership(ownership)
+  if (adoption.ownershipChanged) {
+    const { discardObserverProjectionState } = await import('./observerProjectionLifecycle')
+    await discardObserverProjectionState('lineage-change')
+  }
   if (adoption.discarded > 0) alertError(language.backupQueuedChangesDiscarded)
   return { ownership, ownershipChanged: adoption.ownershipChanged }
 }
@@ -1834,9 +2419,8 @@ function reconcileSelectedCharacterAfterResourceRefresh(
   events: readonly CommandEvent[],
   selection: SelectedCharacterRefreshSnapshot,
 ): void {
-  const database = getDatabase()
   if (!selection.selectionChanged && events.some((event) => event.resource === 'characterSelection')) {
-    selectedCharID.set(initialSelectedCharFromDatabase(database))
+    selectedCharID.set(initialSelectedCharacterIndex())
     return
   }
   if (selection.target.selectedIndex < 0) return
@@ -1881,9 +2465,14 @@ export function createGlobalErrorHandlers() {
 }
 
 function updateErrorHandling() {
+  if (stopGlobalErrorHandlers) return
   const { errorHandler, rejectHandler } = createGlobalErrorHandlers()
   window.addEventListener('error', errorHandler)
   window.addEventListener('unhandledrejection', rejectHandler)
+  stopGlobalErrorHandlers = () => {
+    window.removeEventListener('error', errorHandler)
+    window.removeEventListener('unhandledrejection', rejectHandler)
+  }
 }
 
 function getGlobalErrorLogPayload(event: ErrorEvent | Event): unknown {

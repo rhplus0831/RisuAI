@@ -1,4 +1,4 @@
-import { getDatabase, setCurrentChat, type Chat, type Message, type character } from '../../storage/database.svelte'
+import { setCurrentChat, type Chat, type Database, type Message, type character } from '../../storage/database.svelte'
 import type { ChatTokenizer } from '../../tokenizer'
 import { getUserName } from '../../utilState'
 import { exampleMessage } from '../exampleMessages'
@@ -11,11 +11,13 @@ import { runTrigger } from '../triggers'
 export interface BuildHistoryWindowArgs {
   currentChar: character
   currentChat: Chat
+  modelId: string
   usingPromptTemplate: boolean
   tokenizer: ChatTokenizer
   findCharacterbyIdwithCache: (id: string) => character
   depthPrompts: LoreActive[]
   resolvePosition: (text: string) => string
+  database: Database
 }
 
 /**
@@ -47,8 +49,16 @@ export type BuildHistoryWindowResult =
  * additonalSysPrompt processing.
  */
 export async function buildHistoryWindow(args: BuildHistoryWindowArgs): Promise<BuildHistoryWindowResult> {
-  const { currentChar, usingPromptTemplate, tokenizer, findCharacterbyIdwithCache, depthPrompts, resolvePosition } =
-    args
+  const {
+    currentChar,
+    modelId,
+    usingPromptTemplate,
+    tokenizer,
+    findCharacterbyIdwithCache,
+    depthPrompts,
+    resolvePosition,
+    database,
+  } = args
   let currentChat = args.currentChat
   const nowChatroom = currentChar
 
@@ -61,7 +71,7 @@ export async function buildHistoryWindow(args: BuildHistoryWindowArgs): Promise<
 
   const chats: OpenAIChat[] = examples
 
-  if (!getDatabase().aiModel.startsWith('novelai') && !getDatabase().promptSettings?.trimStartNewChat) {
+  if (!modelId.startsWith('novelai') && !database.promptSettings?.trimStartNewChat) {
     chats.push({
       role: 'system',
       content: '[Start a new chat]',
@@ -98,7 +108,7 @@ export async function buildHistoryWindow(args: BuildHistoryWindowArgs): Promise<
       content: await processScript(nowChatroom, risuChatParser(firstMsg, { chara: currentChar }), 'editprocess'),
     }
 
-    if (usingPromptTemplate && getDatabase().promptSettings.sendName) {
+    if (usingPromptTemplate && database.promptSettings.sendName) {
       chat.content = `${currentChar.name}: ${chat.content}`
       chat.attr = ['nameAdded']
     }
@@ -124,8 +134,10 @@ export async function buildHistoryWindow(args: BuildHistoryWindowArgs): Promise<
       index,
       totalCount: ms.length,
       currentChar,
+      modelId,
       usingPromptTemplate,
       findCharacterbyIdwithCache,
+      database,
     })
     chats.push(chat)
     addedTokens += await tokenizer.tokenizeChat(chat)

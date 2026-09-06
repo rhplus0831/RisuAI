@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ArrowLeft } from '@lucide/svelte'
   import { language } from 'src/lang'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import TextInput from './GUI/TextInput.svelte'
 
@@ -43,7 +44,10 @@
   <!-- Backdrop click is supplemental to the dialog's Back button and Escape handling. -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div data-modal-root class="fixed inset-0 bg-black/50 z-50 flex justify-center items-center" onclick={closePicker}>
+  <div
+    use:modalBackdropDismiss={closePicker}
+    data-modal-root
+    class="fixed inset-0 bg-black/50 z-50 flex justify-center items-center">
     <div
       use:modalFocusTrap
       class="w-96 max-w-[calc(100vw-1rem)] max-h-[calc(100vh-1rem)] overflow-y-auto overflow-x-hidden bg-bgcolor p-4 rounded-md flex flex-col"

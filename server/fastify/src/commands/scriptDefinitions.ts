@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 import { type CharacterRecord, readCharacterId, readJsonObject } from './characters.js'
 import { ensureModuleCollection, readModuleId, requireModule, type ModuleRecord } from './lorebooks.js'
-import { serializeScriptDefinitionCollectionDigestInput } from '../../../../src/ts/server/scriptDefinitionMutations.js'
+import { serializeScriptDefinitionCollectionDigestInput } from '@risuai/shared-core/mutation-certificates'
 
 type JsonRecord = Record<string, unknown>
 

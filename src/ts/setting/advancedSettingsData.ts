@@ -1,5 +1,9 @@
 import type { SettingItem } from './types'
 import { updateHeightMode } from '../gui/heightMode'
+import {
+  MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB,
+  MIN_REGEX_OUTPUT_SIZE_LIMIT_MIB,
+} from '@risuai/shared-core/regex-output-size-limit'
 
 export const advancedSettingsItems: SettingItem[] = [
   {
@@ -15,6 +19,8 @@ export const advancedSettingsItems: SettingItem[] = [
     labelKey: 'advancedSettingsWarn',
     options: { level: 'warning' },
   },
+
+  { type: 'custom', id: 'adv.diagnostics', componentId: 'DiagnosticsPanel' },
 
   // LoreBook Settings
   {
@@ -88,6 +94,23 @@ export const advancedSettingsItems: SettingItem[] = [
     bindKey: 'genTime',
     helpKey: 'genTimes',
     options: { min: 0, max: 4096 },
+  },
+  {
+    id: 'adv.chatLoadInitial',
+    type: 'number',
+    labelKey: 'chatLoadInitialPages',
+    bindKey: 'chatLoadInitialPages',
+    helpKey: 'chatLoadInitialPages',
+    classes: 'mt-4',
+    options: { min: 1 },
+  },
+  {
+    id: 'adv.chatLoadAdditional',
+    type: 'number',
+    labelKey: 'chatLoadAdditionalPages',
+    bindKey: 'chatLoadAdditionalPages',
+    helpKey: 'chatLoadAdditionalPages',
+    options: { min: 1 },
   },
   {
     id: 'adv.assetAlloc',
@@ -362,6 +385,15 @@ export const advancedSettingsItems: SettingItem[] = [
     classes: 'mt-4',
   },
   {
+    id: 'adv.openAIFlex',
+    type: 'check',
+    labelKey: 'openAIFlexProcessing',
+    bindKey: 'openAIFlexProcessing',
+    helpKey: 'openAIFlexProcessing',
+    showExperimental: true,
+    classes: 'mt-4',
+  },
+  {
     id: 'adv.claudeCache',
     type: 'check',
     labelKey: 'claude1HourCaching',
@@ -420,6 +452,20 @@ export const advancedSettingsItems: SettingItem[] = [
     helpKey: 'strictScriptCheck',
     keywords: ['lua', 'script', 'alertInput', 'alertSelect', 'alertConfirm'],
     classes: 'mt-4',
+  },
+  {
+    id: 'adv.regexOutputSizeLimitMiB',
+    type: 'number',
+    labelKey: 'regexOutputSizeLimitMiB',
+    bindKey: 'regexOutputSizeLimitMiB',
+    helpKey: 'regexOutputSizeLimitMiB',
+    keywords: ['regex', 'regular expression', 'out', 'replacement', 'output', 'size', 'limit'],
+    classes: 'mt-4',
+    options: {
+      min: MIN_REGEX_OUTPUT_SIZE_LIMIT_MIB,
+      max: MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB,
+      step: 1,
+    },
   },
   {
     id: 'adv.complexRegexCompatibilityMode',
@@ -505,6 +551,18 @@ export const advancedSettingsItems: SettingItem[] = [
     condition: (ctx) => ctx.db.showUnrecommended,
     helpKey: 'unrecommended',
     helpUnrecommended: true,
+    classes: 'mt-4',
+  },
+  {
+    id: 'adv.enableRisuaiProTools',
+    type: 'check',
+    labelKey: 'enableRisuaiProTools',
+    bindKey: 'enableRisuaiProTools',
+    condition: (ctx) => ctx.db.showUnrecommended || ctx.db.enableRisuaiProTools === true,
+    helpKey: 'risuaiProToolsDeprecated',
+    helpUnrecommended: true,
+    deprecated: true,
+    keywords: ['pro', 'tools', 'easy panel', 'deprecated', 'legacy', 'advanced'],
     classes: 'mt-4',
   },
 

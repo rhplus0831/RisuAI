@@ -1,4 +1,6 @@
+import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult } from './frames.js'
+import { extractApiResponseMetadata } from './apiMetadata.js'
 import { flattenForLegacyInstruct } from './openaiLegacyInstruct.js'
 import { readBoundedBodyText } from './body.js'
 
@@ -31,6 +33,7 @@ export interface OobaLegacyRequest {
   skipSpecialTokens?: boolean
   stoppingStrings?: string[]
   apiKey?: string
+  additionalParams?: Array<[string, string]>
   signal: AbortSignal
 }
 
@@ -63,12 +66,30 @@ interface ResolveInput {
   skipSpecialTokens?: unknown
   stoppingStrings?: unknown
   apiKey?: unknown
+  additionalParams?: Array<[string, string]>
   signal: AbortSignal
 }
 
 interface RawChatMessage {
   role?: unknown
   content?: unknown
+}
+
+const OOBA_LEGACY_USER_MARKERS = ['user', 'human', 'input', 'inst', 'instruction']
+
+function toTitleCase(value: string): string {
+  return value[0].toUpperCase() + value.slice(1).toLowerCase()
+}
+
+/** Mirrors the retained SPA `getStopStrings(false)` construction. */
+export function buildOobaLegacyStopStrings(userPrefix: string, username: string): string[] {
+  const stopStrings = ['GPT4 User', '</s>', '<|end', '<|im_end', userPrefix, `${username}:`]
+  for (const marker of OOBA_LEGACY_USER_MARKERS) {
+    for (const value of [marker.toLowerCase(), marker.toUpperCase(), marker.replace(/\w\S*/gu, toTitleCase)]) {
+      stopStrings.push(`${value}:`, `<<${value}>>`, `### ${value}`)
+    }
+  }
+  return [...new Set(stopStrings)]
 }
 
 export function resolveOobaLegacyRequest(input: ResolveInput): OobaLegacyRequest | null {
@@ -132,14 +153,24 @@ export function resolveOobaLegacyRequest(input: ResolveInput): OobaLegacyRequest
     skipSpecialTokens: boolean(input.skipSpecialTokens),
     stoppingStrings,
     apiKey,
+    additionalParams: input.additionalParams,
     signal: input.signal,
   }
 }
 
 function endpoint(req: OobaLegacyRequest): string {
-  // Local code normalizes a user-supplied base by replacing `/api...` with
-  // `/api/v1/generate`. Replicate that.
-  return req.baseUrl.replace(/\/api.*/, '') + '/api/v1/generate'
+  // Normalize only the path. Applying `/api...` to the whole URL corrupts
+  // hosts such as `api.example.com`.
+  try {
+    const url = new URL(req.baseUrl)
+    const basePath = url.pathname.replace(/\/api(?:\/.*)?$/u, '').replace(/\/+$/u, '')
+    url.pathname = `${basePath}/api/v1/generate`
+    return url.toString()
+  } catch {
+    const match = req.baseUrl.match(/^([^?#]*)(.*)$/u)
+    const base = (match?.[1] ?? req.baseUrl).replace(/\/api(?:\/.*)?$/u, '').replace(/\/+$/u, '')
+    return `${base}/api/v1/generate${match?.[2] ?? ''}`
+  }
 }
 
 function buildPayload(req: OobaLegacyRequest): Record<string, unknown> {
@@ -180,6 +211,15 @@ function headers(req: OobaLegacyRequest): Record<string, string> {
   return h
 }
 
+function buildRequestInit(req: OobaLegacyRequest): { body: string; headers: Record<string, string> } {
+  const body = buildPayload(req)
+  const requestHeaders = headers(req)
+  if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
+    applyAdditionalParameters(body, requestHeaders, req.additionalParams)
+  }
+  return { body: JSON.stringify(body), headers: requestHeaders }
+}
+
 interface OobaResponse {
   results?: Array<{ text?: unknown }>
 }
@@ -191,10 +231,11 @@ export async function runOobaLegacy(req: OobaLegacyRequest): Promise<CompletionR
 
   let response: Response
   try {
+    const init = buildRequestInit(req)
     response = await fetch(endpoint(req), {
       method: 'POST',
-      headers: headers(req),
-      body: JSON.stringify(buildPayload(req)),
+      headers: init.headers,
+      body: init.body,
       signal: req.signal,
     })
   } catch (err) {
@@ -227,5 +268,6 @@ export async function runOobaLegacy(req: OobaLegacyRequest): Promise<CompletionR
   if (typeof text !== 'string') {
     return { type: 'fail', result: 'upstream returned no text' }
   }
-  return { type: 'success', result: text }
+  const apiMetadata = extractApiResponseMetadata(body, ['results'])
+  return { type: 'success', result: text, ...(apiMetadata ? { apiMetadata } : {}) }
 }

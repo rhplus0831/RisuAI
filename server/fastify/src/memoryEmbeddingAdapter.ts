@@ -367,7 +367,7 @@ function normalizeVector(raw: unknown): { vector: Float32Array } | MemoryEmbeddi
   const vector = new Float32Array(raw.length)
   for (let i = 0; i < raw.length; i += 1) {
     const value = raw[i]
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isFinite(Math.fround(value))) {
       return { error: 'embedding vector values must be finite numbers', code: 'invalid-response' }
     }
     vector[i] = value

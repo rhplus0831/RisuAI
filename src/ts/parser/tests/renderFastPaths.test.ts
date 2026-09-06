@@ -1,7 +1,17 @@
 import { writable } from 'svelte/store'
+import DOMPurify from 'dompurify'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { language } from '../../../lang'
-import { ParseMarkdown, parseThoughtsAndTools, risuChatParser } from '../parser.svelte'
+import {
+  ParseMarkdown,
+  chatHtmlRenderPolicyKey,
+  parseThoughtsAndTools,
+  risuChatParser,
+  trimMarkdown,
+} from '../parser.svelte'
+import { createChatBodyRenderMemo } from '../../../lib/ChatScreens/ChatBodyRenderMemo'
+import { pruneEmptyBilingualPairs } from '../../translator/bilingualInterleave'
+import { settingsResourceState } from '../../server/resourceState.svelte'
 
 const mocks = vi.hoisted(() => ({
   db: {
@@ -18,7 +28,7 @@ vi.mock(
       getCurrentCharacter: () => ({}),
       getDatabase: () => mocks.db,
       reapplyPendingPresetProjections: () => {},
-    }) as typeof import('../../storage/database.svelte'),
+    }) as unknown as typeof import('../../storage/database.svelte'),
 )
 
 vi.mock(import('../../globalApi.svelte'), () => ({
@@ -46,6 +56,10 @@ const toolCallHtml = (payload: string) =>
 beforeEach(() => {
   mocks.db.paragraphBreakBySentences = false
   mocks.db.paragraphBreakSentenceCount = 3
+  settingsResourceState.value = mocks.db
+  settingsResourceState.status = 'ready'
+  settingsResourceState.groupStatuses = { display: 'ready' }
+  settingsResourceState.standaloneStatuses = {}
 })
 
 afterEach(() => {
@@ -53,6 +67,16 @@ afterEach(() => {
 })
 
 describe('ParseMarkdown sentence paragraph mode gating', () => {
+  it('renders display-delimited formulas through real KaTeX MathML', async () => {
+    const output = await ParseMarkdown('before $$x^2 + y^2$$ after', null, 'notrim')
+    const root = document.createElement('div')
+    root.innerHTML = output
+
+    expect(root.querySelector('math[xmlns="http://www.w3.org/1998/Math/MathML"]')).not.toBeNull()
+    expect(root.querySelector('msup')).not.toBeNull()
+    expect(output).not.toContain('$$x^2 + y^2$$')
+  })
+
   it('applies paragraph breaks in notrim mode but not pretranslate or back mode', async () => {
     const input = 'First sentence. Second sentence. Third sentence.'
     mocks.db.paragraphBreakBySentences = true
@@ -64,10 +88,76 @@ describe('ParseMarkdown sentence paragraph mode gating', () => {
     await expect(ParseMarkdown(input, null, 'pretranslate')).resolves.toBe(input)
     await expect(ParseMarkdown(input, null, 'back')).resolves.toBe(input)
   })
+
+  it('uses ready display settings and never falls back after a settings error', async () => {
+    const input = 'First sentence. Second sentence.'
+    settingsResourceState.value = {
+      paragraphBreakBySentences: true,
+      paragraphBreakSentenceCount: 1,
+    }
+    settingsResourceState.status = 'ready'
+    settingsResourceState.groupStatuses.display = 'ready'
+
+    await expect(ParseMarkdown(input, null, 'notrim')).resolves.toContain(
+      '<p>First sentence.</p>\n<p>Second sentence.</p>',
+    )
+
+    mocks.db.paragraphBreakBySentences = true
+    settingsResourceState.groupStatuses.display = 'error'
+    await expect(ParseMarkdown(input, null, 'notrim')).resolves.not.toContain('<p>First sentence.</p>\n<p>')
+  })
 })
 
-describe('parseThoughtsAndTools render fast paths (L39)', () => {
-  it('L39: marker-free thoughts/tools parsing returns unchanged without slicing', () => {
+describe('trimMarkdown decoded-style sanitization', () => {
+  it('skips empty initial output while still sanitizing whitespace and nonempty markup', () => {
+    const sanitize = vi.spyOn(DOMPurify, 'sanitize')
+    expect(trimMarkdown('')).toBe('')
+    expect(sanitize).not.toHaveBeenCalled()
+
+    expect(trimMarkdown(' ')).toBe(' ')
+    expect(sanitize).toHaveBeenCalledTimes(1)
+    expect(trimMarkdown('<p onclick="alert(1)">safe</p><script>alert(1)</script>')).toBe('<p>safe</p>')
+    expect(sanitize).toHaveBeenCalledTimes(2)
+  })
+
+  it('re-sanitizes markup introduced by decodeStyle', () => {
+    const injectedCss = '</style><script data-security-marker>alert(1)</script>{color:red}'
+    const payload = `<risu-style>${Buffer.from(injectedCss).toString('hex')}</risu-style>`
+
+    const output = trimMarkdown(payload)
+    const root = document.createElement('div')
+    root.innerHTML = output
+
+    expect(root.querySelector('script')).toBeNull()
+    expect(output).not.toContain('<script')
+  })
+
+  it('reuses sanitized HTML without retaining stale image policy or decoded unsafe markup', () => {
+    const sanitize = vi.spyOn(DOMPurify, 'sanitize')
+    const render = createChatBodyRenderMemo((html) => pruneEmptyBilingualPairs(trimMarkdown(html)))
+    const injected = Buffer.from('</style><script>alert(1)</script>{color:red}').toString('hex')
+    const input = `<img src="https://example.test/image.png"><risu-style>${injected}</risu-style>`
+    const visible = render(input, '', chatHtmlRenderPolicyKey())
+    const calls = sanitize.mock.calls.length
+    expect(visible).toContain('https://example.test/image.png')
+    expect(visible).not.toContain('<script')
+    expect(render(input, '', chatHtmlRenderPolicyKey())).toBe(visible)
+    expect(sanitize).toHaveBeenCalledTimes(calls)
+    settingsResourceState.value.hideAllImages = true
+    const hidden = render(input, '', chatHtmlRenderPolicyKey())
+    expect(hidden).toContain('/none.webp')
+    expect(hidden).not.toContain('https://example.test/image.png')
+    expect(hidden).not.toContain('<script')
+    const hiddenCalls = sanitize.mock.calls.length
+    // Loading/error policies use the same effective value as the sanitizer.
+    settingsResourceState.groupStatuses.display = 'error'
+    expect(render(input, '', chatHtmlRenderPolicyKey())).toBe(visible)
+    expect(sanitize).toHaveBeenCalledTimes(hiddenCalls)
+  })
+})
+
+describe('parseThoughtsAndTools render fast paths', () => {
+  it('marker-free thoughts/tools parsing returns unchanged without slicing', () => {
     const input = 'plain markdown with a stray </Thoughts> close marker only'
     const sliceSpy = vi.spyOn(String.prototype, 'slice')
 
@@ -117,8 +207,8 @@ describe('parseThoughtsAndTools render fast paths (L39)', () => {
   })
 })
 
-describe('risuChatParser function render path logging (L38)', () => {
-  it('L38: function definition and call parsing writes nothing to console.log', () => {
+describe('risuChatParser function render path logging', () => {
+  it('function definition and call parsing writes nothing to console.log', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     const output = risuChatParser('before {{#function greet}}Hello {{arg::1}}{{/}}{{call::greet::Ada}} after')

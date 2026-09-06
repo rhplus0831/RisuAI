@@ -161,20 +161,6 @@ const FILE_SYSTEM_TOOLS: MCPTool[] = [
     },
   },
   {
-    name: 'fs_watch_directory',
-    description: 'Watch a directory for changes',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        path: {
-          type: 'string',
-          description: 'Directory to watch (default: root)',
-        },
-      },
-      required: [],
-    },
-  },
-  {
     name: 'fs_find_duplicates',
     description: 'Find duplicate files by content or name',
     inputSchema: {
@@ -217,6 +203,7 @@ const FILE_SYSTEM_TOOLS: MCPTool[] = [
 ]
 
 const DIRECTORY_PERMISSION_DENIED = 'Directory access permission was denied.'
+const DIRECTORY_NOT_CONNECTED = 'No directory is connected. Reinitialize the File System MCP and select a directory.'
 export const FILESYSTEM_TEXT_READ_LIMIT_BYTES = 100000
 export const FILESYSTEM_IMAGE_READ_LIMIT_BYTES = 5 * 1024 * 1024
 export const FILESYSTEM_PDF_MAX_INPUT_BYTES = 16 * 1024 * 1024
@@ -666,7 +653,7 @@ export class FileSystemClient extends MCPClientLike {
       return [
         {
           type: 'text',
-          text: 'No directory selected. Use fs_select_directory first.',
+          text: DIRECTORY_NOT_CONNECTED,
         },
       ]
     }
@@ -689,7 +676,7 @@ export class FileSystemClient extends MCPClientLike {
       return [
         {
           type: 'text',
-          text: 'No directory selected. Use fs_select_directory first.',
+          text: DIRECTORY_NOT_CONNECTED,
         },
       ]
     }
@@ -715,7 +702,7 @@ export class FileSystemClient extends MCPClientLike {
       return [
         {
           type: 'text',
-          text: 'No directory selected. Use fs_select_directory first.',
+          text: DIRECTORY_NOT_CONNECTED,
         },
       ]
     }
@@ -735,7 +722,7 @@ export class FileSystemClient extends MCPClientLike {
       return [
         {
           type: 'text',
-          text: 'No directory selected. Use fs_select_directory first.',
+          text: DIRECTORY_NOT_CONNECTED,
         },
       ]
     }

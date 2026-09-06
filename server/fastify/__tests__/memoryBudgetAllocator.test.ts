@@ -108,6 +108,25 @@ describe('memory budget allocator', () => {
     expect(result.diagnostics.remainingTokens).toBe(0)
   })
 
+  it('clamps invalid selection ratios and exposes the applied values in diagnostics', () => {
+    const summaries = [summary({ id: 'summary-1', tokens: 5 }), summary({ id: 'summary-2', tokens: 5 })]
+
+    const result = allocateMemorySummaries({
+      summaries,
+      rankedSimilarSummaries: [ranked(summaries[0], 0.9)],
+      availableTokens: 10,
+      settings: { recentMemoryRatio: -0.25, similarMemoryRatio: 1.25 },
+    })
+
+    expect(result.recent).toEqual([])
+    expect(result.similar.map((row) => row.id)).toEqual(['summary-1'])
+    expect(result.diagnostics).toMatchObject({
+      recentMemoryRatio: 0,
+      similarMemoryRatio: 1,
+      randomMemoryRatio: 0,
+    })
+  })
+
   it('uses deterministic randomness controlled by seed', () => {
     const summaries = [
       summary({ id: 'summary-a', tokens: 5 }),

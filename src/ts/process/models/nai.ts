@@ -1,9 +1,18 @@
-import { getDatabase } from 'src/ts/storage/database.svelte'
+import type { Database } from 'src/ts/storage/database.svelte'
+import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
 import { getUserName } from 'src/ts/utilState'
 import type { OpenAIChat } from '../index.svelte'
 
+function getNovelAISettingsOwner(): Database {
+  const status = settingsResourceState.groupStatuses.providers ?? 'idle'
+  if (settingsResourceState.status !== 'error' && status === 'ready') {
+    return settingsResourceState.value as Database
+  }
+  throw new Error('NovelAI settings owner unavailable')
+}
+
 export function stringlizeNAIChat(formated: OpenAIChat[], char: string, continued: boolean) {
-  const db = getDatabase()
+  const db = getNovelAISettingsOwner()
   let seperator = db.NAIsettings.seperator.replaceAll('\\n', '\n') || '\n'
   let starter = db.NAIsettings.starter.replaceAll('\\n', '\n') || '⁂'
   let resultString: string[] = []

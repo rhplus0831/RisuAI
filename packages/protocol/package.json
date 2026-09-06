@@ -1,0 +1,37 @@
+{
+  "name": "@risuai/protocol",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./chat-metadata": "./src/chatMetadata.ts",
+    "./chat-messages-resource": "./src/chatMessagesResource.ts",
+    "./character-resource": "./src/characterResource.ts",
+    "./character-summary-resource": "./src/characterSummaryResource.ts",
+    "./client-context": "./src/clientContext.ts",
+    "./display-source": "./src/displaySource.ts",
+    "./durable-command-operation": "./src/durableCommandOperation.ts",
+    "./diagnostics": "./src/diagnostics.ts",
+    "./embedding-operation": "./src/embeddingOperation.ts",
+    "./generation-sse": "./src/generationSse.ts",
+    "./hypa-context-truncation": "./src/hypaContextTruncation.ts",
+    "./image-generation-operation": "./src/imageGenerationOperation.ts",
+    "./mcp-oauth-refresh": "./src/mcpOAuthRefresh.ts",
+    "./local-file-import": "./src/localFileImport.ts",
+    "./lore-token-counts": "./src/loreTokenCounts.ts",
+    "./module-organization": "./src/moduleOrganization.ts",
+    "./provider-operation": "./src/providerOperation.ts",
+    "./route-operation": "./src/routeOperation.ts",
+    "./server-tool": "./src/serverTool.ts",
+    "./shell-resource": "./src/shellResource.ts",
+    "./standalone-settings": "./src/standaloneSettings.ts",
+    "./startup-telemetry": "./src/startupTelemetry.ts",
+    "./storage-usage": "./src/storageUsage.ts",
+    "./tts-synthesis": "./src/ttsSynthesis.ts"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "0.34.52"
+  }
+}

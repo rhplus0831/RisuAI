@@ -13,6 +13,9 @@ import {
   listBackups,
   restoreBackup,
 } from '../repository.js'
+import { reconcileGenerationOperationsAtStartup } from '../generationOperations.js'
+import { MaintenanceBusyError } from '../maintenanceCoordinator.js'
+import { attachMaintenanceAbort } from '../maintenanceRequest.js'
 
 interface CreateBody {
   label?: unknown
@@ -24,7 +27,7 @@ export function registerBackupRoutes(
   authState: AuthState,
   dataDir: string,
   eventSink: CommandEventSink,
-  options: { automaticBackupRetention?: number } = {},
+  options: { automaticBackupRetention?: number; serverInstanceId?: string } = {},
 ): void {
   app.post('/api/v1/backups', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
@@ -37,16 +40,28 @@ export function registerBackupRoutes(
       }
       label = body.label
     }
+    const requestAbort = attachMaintenanceAbort(req, reply)
     try {
-      const manifest = await createBackup(db, dataDir, label)
+      const manifest = await createBackup(db, dataDir, label, { signal: requestAbort.signal })
       reply.code(201)
       return manifest
     } catch (err) {
+      if (err instanceof MaintenanceBusyError) {
+        reply.code(503)
+        return { error: err.code }
+      }
+      if (err instanceof Error && err.name === 'AbortError') {
+        reply.header('connection', 'close')
+        reply.code(499)
+        return { error: 'backup_aborted' }
+      }
       if (err instanceof WalCheckpointError) {
         reply.code(503)
         return { error: err.code, detail: err.message }
       }
       throw err
+    } finally {
+      requestAbort.cleanup()
     }
   })
 
@@ -57,13 +72,29 @@ export function registerBackupRoutes(
 
   app.post<{ Params: { id: string } }>('/api/v1/backups/:id/restore', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
+    const requestAbort = attachMaintenanceAbort(req, reply)
     try {
       const { revision, event, databaseLineage, writerEpoch } = await restoreBackup(db, dataDir, req.params.id, {
         automaticBackupRetention: options.automaticBackupRetention,
+        signal: requestAbort.signal,
+        onCommitted({ event }) {
+          if (options.serverInstanceId) {
+            reconcileGenerationOperationsAtStartup(db, options.serverInstanceId, req.log)
+          }
+          eventSink.emit(event)
+        },
       })
-      eventSink.emit(event)
       return { revision, event, databaseLineage, writerEpoch }
     } catch (err) {
+      if (err instanceof MaintenanceBusyError) {
+        reply.code(503)
+        return { error: err.code }
+      }
+      if (err instanceof Error && err.name === 'AbortError') {
+        reply.header('connection', 'close')
+        reply.code(499)
+        return { error: 'backup_aborted' }
+      }
       if (err instanceof EntityNotFoundError) {
         reply.code(404)
         return { error: err.message }
@@ -77,15 +108,21 @@ export function registerBackupRoutes(
         return { error: err.code }
       }
       throw err
+    } finally {
+      requestAbort.cleanup()
     }
   })
 
   app.delete<{ Params: { id: string } }>('/api/v1/backups/:id', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     try {
-      deleteBackup(dataDir, req.params.id)
+      await deleteBackup(dataDir, req.params.id)
       return { id: req.params.id }
     } catch (err) {
+      if (err instanceof MaintenanceBusyError) {
+        reply.code(503)
+        return { error: err.code }
+      }
       if (err instanceof EntityNotFoundError) {
         reply.code(404)
         return { error: err.message }

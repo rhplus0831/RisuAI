@@ -1,6 +1,8 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { canUseServerResourceReads } from './resourceReads'
+import { isServerBulkChatMessagesResource, isServerChatMessagesResource } from '@risuai/protocol/chat-messages-resource'
 import {
+  captureResourceCacheGeneration,
   isResourceCacheMetadata,
   persistResourceCache,
   prepareResourceCacheRequest,
@@ -180,6 +182,8 @@ export type ServerChatMessagesResult =
       chatId: string
       message: unknown[]
       hypaV3Data?: unknown
+      /** False only for a narrow generation suffix that deliberately omitted chat-wide Hypa state. */
+      hypaV3DataIncluded: boolean
       messageStart?: number
       messageTotal?: number
       // Persisted reroll candidates for this chat's turn (the alternate rows).
@@ -198,6 +202,7 @@ export type ServerBulkChatMessagesResult =
         chatId: string
         message: unknown[]
         hypaV3Data?: unknown
+        alternates: unknown[]
       }>
       missing: string[]
     }
@@ -273,6 +278,7 @@ async function fetchServerChatMessagesFromEndpoint(
   }
 
   if (!response.ok) {
+    await discardHydrationAuthLoss(response.status)
     return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
   }
   if (!body || typeof body !== 'object') {
@@ -280,12 +286,11 @@ async function fetchServerChatMessagesFromEndpoint(
   }
 
   const record = body as Record<string, unknown>
+  const generationRequest = nonEmptyString(options.generationMessageId)
+  const hypaV3DataIncluded = !generationRequest || Object.prototype.hasOwnProperty.call(record, 'hypaV3Data')
   const revision = record.revision
   if (!Number.isInteger(revision) || (revision as number) < 0) {
     return { status: 'error', error: 'Invalid resource revision' }
-  }
-  if (!Array.isArray(record.message)) {
-    return { status: 'error', error: 'Invalid chat-messages response' }
   }
   if (
     (record.messageStart !== undefined || record.messageTotal !== undefined) &&
@@ -297,12 +302,16 @@ async function fetchServerChatMessagesFromEndpoint(
   ) {
     return { status: 'error', error: 'Invalid chat-messages range' }
   }
+  if (!isServerChatMessagesResource(record)) {
+    return { status: 'error', error: 'Invalid chat-messages response' }
+  }
   return {
     status: 'ok',
     revision: revision as number,
     chatId: typeof record.chatId === 'string' ? record.chatId : chatId,
     message: record.message as unknown[],
     hypaV3Data: record.hypaV3Data,
+    hypaV3DataIncluded,
     ...(typeof record.messageStart === 'number' && typeof record.messageTotal === 'number'
       ? {
           messageStart: record.messageStart,
@@ -345,6 +354,7 @@ export async function fetchServerBulkChatMessages(
   }
 
   if (!response.ok) {
+    await discardHydrationAuthLoss(response.status)
     return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
   }
   if (!body || typeof body !== 'object') {
@@ -356,33 +366,32 @@ export async function fetchServerBulkChatMessages(
   if (!Number.isInteger(revision) || (revision as number) < 0) {
     return { status: 'error', error: 'Invalid resource revision' }
   }
-  if (!Array.isArray(record.chats)) {
+  if (
+    Array.isArray(record.chats) &&
+    record.chats.some(
+      (chat) =>
+        !chat ||
+        typeof chat !== 'object' ||
+        typeof (chat as Record<string, unknown>).chatId !== 'string' ||
+        !Array.isArray((chat as Record<string, unknown>).message),
+    )
+  ) {
+    return { status: 'error', error: 'Invalid bulk chat-messages entry' }
+  }
+  if (!isServerBulkChatMessagesResource(record)) {
     return { status: 'error', error: 'Invalid bulk chat-messages response' }
   }
 
-  const chats: Extract<ServerBulkChatMessagesResult, { status: 'ok' }>['chats'] = []
-  for (const raw of record.chats) {
-    if (!raw || typeof raw !== 'object') {
-      return { status: 'error', error: 'Invalid bulk chat-messages entry' }
-    }
-    const chat = raw as Record<string, unknown>
-    if (typeof chat.chatId !== 'string' || !Array.isArray(chat.message)) {
-      return { status: 'error', error: 'Invalid bulk chat-messages entry' }
-    }
-    chats.push({
-      chatId: chat.chatId,
-      message: chat.message as unknown[],
-      hypaV3Data: chat.hypaV3Data,
-    })
-  }
+  const chats: Extract<ServerBulkChatMessagesResult, { status: 'ok' }>['chats'] = record.chats.map((chat) => ({
+    ...chat,
+    alternates: chat.alternates ?? [],
+  }))
 
   return {
     status: 'ok',
     revision: revision as number,
     chats,
-    missing: Array.isArray(record.missing)
-      ? record.missing.filter((value): value is string => typeof value === 'string')
-      : [],
+    missing: record.missing.filter((value): value is string => typeof value === 'string'),
   }
 }
 
@@ -447,10 +456,14 @@ export async function fetchServerCharacterLorebook(
   if (!Array.isArray(record.globalLore)) {
     return { status: 'error', error: 'Invalid character-lorebook response' }
   }
+  const responseCharacterId = typeof record.characterId === 'string' ? record.characterId : characterId
+  if (responseCharacterId !== characterId) {
+    return { status: 'error', error: 'Invalid character-lorebook identity' }
+  }
   return {
     status: 'ok',
     revision: revision as number,
-    characterId: typeof record.characterId === 'string' ? record.characterId : characterId,
+    characterId: responseCharacterId,
     globalLore: record.globalLore as unknown[],
   }
 }
@@ -487,6 +500,7 @@ export async function fetchServerBulkCharacterLorebooks(
   }
 
   if (!response.ok) {
+    await discardHydrationAuthLoss(response.status)
     return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
   }
   if (!body || typeof body !== 'object') {
@@ -545,6 +559,7 @@ async function requestCacheNegotiatedHydrationJson(
     prepared: PreparedResourceCacheRequest,
   ) => Promise<ReconstructedHydrationCacheResponse | null>,
 ): Promise<HydrationJsonRequestResult> {
+  const cacheGeneration = captureResourceCacheGeneration()
   const auth = await getNodeServerProxyAuth()
   const prepared = await prepareResourceCacheRequest(descriptors)
   if (!prepared) return requestHydrationJson(url, auth, signal)
@@ -561,7 +576,7 @@ async function requestCacheNegotiatedHydrationJson(
   try {
     const reconstructed = await reconstruct(result.body, prepared)
     if (!reconstructed) return requestHydrationJson(url, auth, signal)
-    await persistResourceCache(reconstructed.updates)
+    void persistResourceCache(reconstructed.updates, cacheGeneration)
     return { status: 'ok', body: reconstructed.body }
   } catch {
     return requestHydrationJson(url, auth, signal)
@@ -598,6 +613,7 @@ async function requestHydrationJson(
     // Reported via HTTP status or response validation by the caller.
   }
   if (!response.ok) {
+    await discardHydrationAuthLoss(response.status)
     return {
       status: 'error',
       error: errorMessageFromBody(body, `HTTP ${response.status}`),
@@ -605,6 +621,12 @@ async function requestHydrationJson(
     }
   }
   return { status: 'ok', body }
+}
+
+async function discardHydrationAuthLoss(status: number): Promise<void> {
+  if (status !== 401) return
+  const { discardObserverProjectionState } = await import('../observerProjectionLifecycle')
+  await discardObserverProjectionState('auth-loss')
 }
 
 function shouldFallbackHydrationCachePost(result: HydrationJsonRequestResult): boolean {

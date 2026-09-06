@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { SettingItem, SettingContext } from 'src/ts/setting/types'
+  import type { Database } from 'src/ts/storage/database.svelte'
   import type { LLMModel } from 'src/ts/model/types'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { getModelInfo } from 'src/ts/model/modellist'
   import { settingRegistry } from 'src/ts/setting/settingRegistry'
   import { checkCondition } from 'src/ts/setting/utils'
@@ -16,14 +17,22 @@
   }
 
   let { items, modelInfo, subModelInfo, presetMirrorTarget = 'auto' }: Props = $props()
+  let rendererSettings = $derived(
+    settingsResourceState.status === 'ready' ? settingsResourceState.value : ({} as typeof settingsResourceState.value),
+  )
+  let modelCatalog = $derived({
+    customModels: rendererSettings.customModels,
+    enableCustomFlags: rendererSettings.enableCustomFlags,
+    customFlags: rendererSettings.customFlags,
+  })
 
   // Derive modelInfo if not provided
-  let effectiveModelInfo = $derived(modelInfo ?? getModelInfo(getDatabase().aiModel))
-  let effectiveSubModelInfo = $derived(subModelInfo ?? getModelInfo(getDatabase().subModel))
+  let effectiveModelInfo = $derived(modelInfo ?? getModelInfo(rendererSettings.aiModel ?? '', modelCatalog))
+  let effectiveSubModelInfo = $derived(subModelInfo ?? getModelInfo(rendererSettings.subModel ?? '', modelCatalog))
 
   // Build context for condition checks
   let ctx: SettingContext = $derived({
-    db: getDatabase(),
+    db: rendererSettings as unknown as Database,
     modelInfo: effectiveModelInfo,
     subModelInfo: effectiveSubModelInfo,
     presetMirrorTarget,

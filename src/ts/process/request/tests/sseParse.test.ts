@@ -62,6 +62,40 @@ describe('iterateSseEvents', () => {
     expect(seen).toEqual([{ event: 'prompt', data: '{"ok":true}' }])
   })
 
+  it('preserves a multibyte character split across byte chunks', async () => {
+    const enc = new TextEncoder()
+    const prefix = enc.encode('event: token\ndata: {"content":"')
+    const bytes = enc.encode('event: token\ndata: {"content":"안"}\n\n')
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes.slice(0, prefix.length + 1))
+        controller.enqueue(bytes.slice(prefix.length + 1))
+        controller.close()
+      },
+    })
+    const seen = []
+    for await (const frame of iterateSseEvents(body, null)) seen.push(frame)
+    expect(seen).toEqual([{ event: 'token', data: '{"content":"안"}' }])
+  })
+
+  it('recognizes a CRLF separator split across chunks', async () => {
+    const enc = new TextEncoder()
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(enc.encode('event: stage\r\ndata: {}\r'))
+        controller.enqueue(enc.encode('\n\r'))
+        controller.enqueue(enc.encode('\nevent: done\r\ndata: {}\r\n\r\n'))
+        controller.close()
+      },
+    })
+    const seen = []
+    for await (const frame of iterateSseEvents(body, null)) seen.push(frame)
+    expect(seen).toEqual([
+      { event: 'stage', data: '{}' },
+      { event: 'done', data: '{}' },
+    ])
+  })
+
   it('supports CRLF separators and a final unterminated frame', async () => {
     const body = streamOf('event: stage\r\ndata: {"s":1}\r\n\r\nevent: done\r\ndata: {}')
     const seen: Array<{ event: string; data: string }> = []
@@ -79,5 +113,38 @@ describe('iterateSseEvents', () => {
     const seen: unknown[] = []
     for await (const frame of iterateSseEvents(body, controller.signal)) seen.push(frame)
     expect(seen).toEqual([])
+  })
+
+  it('cancels a pending read when the signal aborts', async () => {
+    let cancelled = false
+    const body = new ReadableStream<Uint8Array>({
+      pull: () => new Promise<void>(() => {}),
+      cancel() {
+        cancelled = true
+      },
+    })
+    const controller = new AbortController()
+    const iterator = iterateSseEvents(body, controller.signal)
+    const pending = iterator.next()
+    controller.abort()
+    await expect(pending).resolves.toEqual({ value: undefined, done: true })
+    expect(cancelled).toBe(true)
+  })
+
+  it('cancels the source when its consumer returns before the stream closes', async () => {
+    const enc = new TextEncoder()
+    let cancelled = false
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(enc.encode('event: error\ndata: {}\n\n'))
+      },
+      cancel() {
+        cancelled = true
+      },
+    })
+    const iterator = iterateSseEvents(body, null)
+    await expect(iterator.next()).resolves.toEqual({ value: { event: 'error', data: '{}' }, done: false })
+    await iterator.return(undefined)
+    expect(cancelled).toBe(true)
   })
 })

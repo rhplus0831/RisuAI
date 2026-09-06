@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -8,6 +8,10 @@ import {
   deleteCharacterRow,
   deletePluginStorageKey,
   loadPersisted,
+  loadPersistedDatabaseFields,
+  loadPersistedDatabaseForMemoryJob,
+  loadPersistedForCollectionMutation,
+  replaceAllCharactersInTable,
   writePersistedWithMessages,
   writePluginStorageKey,
   writeSettingsOnly,
@@ -17,6 +21,16 @@ import {
   writeSingleCollectionRow,
   writeSingleCollectionTable,
 } from '../src/repository.js'
+import {
+  getGreetingTranslation,
+  sourceHash,
+  upsertGreetingTranslation,
+} from '../src/translation/greetingTranslationStore.js'
+import {
+  EXPECTED_CANONICAL_OWNER_PERSISTENCE_SNAPSHOT,
+  canonicalOwnerPersistenceDatabase,
+  canonicalOwnerPersistenceSnapshot,
+} from './helpers/canonicalOwnerPersistence.js'
 
 // Targeted writer kit: each writer must touch exactly its rows and leave every
 // unrelated character / chat / collection rowid stable. A SQLite rowid only
@@ -111,11 +125,79 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   db.close()
   rmSync(dataDir, { recursive: true, force: true })
 })
 
 describe('targeted writer kit', () => {
+  it('rehydrates canonical owner identities after the repository is reopened', () => {
+    writePersistedWithMessages(db, dataDir, {
+      _version: 1,
+      database: canonicalOwnerPersistenceDatabase(),
+      assets: [],
+    })
+
+    db.close()
+    db = openDatabase(dataDir)
+
+    expect(canonicalOwnerPersistenceSnapshot(loadPersisted(db, dataDir).database)).toEqual(
+      EXPECTED_CANONICAL_OWNER_PERSISTENCE_SNAPSHOT,
+    )
+  })
+
+  it('broad character rewrites drop poisoned greeting cache rows but preserve valid rows', () => {
+    const validTranslation = {
+      text: 'translated',
+      source: 'raw' as const,
+      sourceHash: sourceHash('source'),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'google' as const,
+      settingsHash: 'valid-settings',
+      updatedAt: 123,
+    }
+    upsertGreetingTranslation(db, 'char-a', -1, validTranslation)
+    db.prepare(
+      `INSERT INTO greeting_translations
+       (character_id, greeting_index, settings_hash, source_hash, translation_json, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'char-a',
+      0,
+      'poisoned-settings',
+      sourceHash('poisoned'),
+      JSON.stringify({ ...validTranslation, settingsHash: 'poisoned-settings', translatorType: 'future-provider' }),
+      123,
+    )
+    const database = loadPersisted(db, dataDir).database as { characters: Array<Record<string, unknown>> }
+    database.characters[0].name = 'A rewritten'
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    replaceAllCharactersInTable(db, database)
+
+    expect(
+      (loadPersisted(db, dataDir).database as { characters: Array<Record<string, unknown>> }).characters[0].name,
+    ).toBe('A rewritten')
+    expect(getGreetingTranslation(db, 'char-a', -1, 'valid-settings')?.translation).toEqual(validTranslation)
+    expect(
+      db
+        .prepare(
+          `SELECT 1 FROM greeting_translations
+           WHERE character_id = ? AND greeting_index = ? AND settings_hash = ?`,
+        )
+        .get('char-a', 0, 'poisoned-settings'),
+    ).toBeUndefined()
+    expect(warning).toHaveBeenCalledTimes(1)
+    expect(warning).toHaveBeenCalledWith(
+      'Dropped invalid greeting translation cache rows during broad character rewrite',
+      {
+        droppedKeys: [{ characterId: 'char-a', greetingIndex: 0, settingsHash: 'poisoned-settings' }],
+      },
+    )
+    warning.mockRestore()
+  })
+
   it('writeSettingsOnly rewrites only the settings row', () => {
     const charsBefore = rowids('characters', 'id')
     const chatsBefore = rowids('chats', 'id')
@@ -232,6 +314,102 @@ describe('targeted writer kit', () => {
     expect(rowids('chats', 'id')).toEqual(chatsBefore)
   })
 
+  it('hydrates the selected modern prompt body over a stale compatibility mirror', () => {
+    const canonicalTemplate = [{ id: 'canonical-row', type: 'plain', text: 'canonical body' }]
+    writeSingleCollectionTable(db, 'promptPresets', [
+      { id: 'prompt-owner', name: 'Prompt Owner', promptTemplate: canonicalTemplate },
+    ])
+    writeSingleCollectionTable(db, 'promptTemplate', [{ id: 'stale-row', type: 'plain', text: 'stale mirror' }])
+    const settings = readSettings()
+    settings.promptPresetsId = 0
+    writeSettingsOnly(db, settings)
+
+    expect((loadPersisted(db, dataDir).database as Record<string, unknown>).promptTemplate).toEqual(canonicalTemplate)
+    expect(loadPersistedDatabaseFields(db, dataDir, ['promptPresets', 'promptTemplate']).promptTemplate).toEqual(
+      canonicalTemplate,
+    )
+  })
+
+  it('does not project a body from an ambiguous modern prompt selection', () => {
+    writeSingleCollectionTable(db, 'promptPresets', [
+      { id: 'prompt-duplicate', name: 'Prompt A', promptTemplate: [{ id: 'canonical-a' }] },
+      { id: 'prompt-duplicate', name: 'Prompt B', promptTemplate: [{ id: 'canonical-b' }] },
+    ])
+    const staleTemplate = [{ id: 'stale-row', type: 'plain', text: 'stale mirror' }]
+    writeSingleCollectionTable(db, 'promptTemplate', staleTemplate)
+    const settings = readSettings()
+    settings.promptPresetsId = 0
+    writeSettingsOnly(db, settings)
+
+    expect((loadPersisted(db, dataDir).database as Record<string, unknown>).promptTemplate).toEqual(staleTemplate)
+  })
+
+  it('projects an explicit missing modern prompt body as disabled', () => {
+    writeSingleCollectionTable(db, 'promptPresets', [{ id: 'prompt-disabled', name: 'Disabled Prompt' }])
+    writeSingleCollectionTable(db, 'promptTemplate', [{ id: 'stale-row', type: 'plain', text: 'stale mirror' }])
+    const settings = readSettings()
+    settings.promptPresetsId = 0
+    writeSettingsOnly(db, settings)
+
+    expect((loadPersisted(db, dataDir).database as Record<string, unknown>).promptTemplate).toBeNull()
+  })
+
+  it('derives the Hypa V3 numeric compatibility pointer in full and scoped projections without persisting it', () => {
+    writeSingleCollectionTable(db, 'hypaV3Presets', [
+      { id: 'memory-a', name: 'A', settings: {} },
+      { id: 'memory-b', name: 'B', settings: {} },
+    ])
+    const settings = readSettings()
+    settings.selectedHypaV3PresetId = 'memory-b'
+    settings.hypaV3PresetId = 0
+    writeSettingsOnly(db, settings)
+
+    expect((loadPersisted(db, dataDir).database as Record<string, unknown>).hypaV3PresetId).toBe(1)
+    expect(
+      (loadPersistedForCollectionMutation(db, dataDir, ['hypaV3Presets']).database as Record<string, unknown>)
+        .hypaV3PresetId,
+    ).toBe(1)
+    expect((loadPersistedDatabaseForMemoryJob(db, dataDir) as Record<string, unknown>).hypaV3PresetId).toBe(1)
+    expect(readSettings().hypaV3PresetId).toBe(0)
+  })
+
+  it('fails closed on ambiguous Hypa V3 stable identity without repairing ordinary repository reads', () => {
+    const damagedPresets = [
+      { id: 'duplicate-memory', name: 'A', settings: {} },
+      { id: 'duplicate-memory', name: 'B', settings: {} },
+    ]
+    writeSingleCollectionTable(db, 'hypaV3Presets', damagedPresets)
+    const settings = readSettings()
+    settings.selectedHypaV3PresetId = 'duplicate-memory'
+    settings.hypaV3PresetId = 0
+    writeSettingsOnly(db, settings)
+
+    expect((loadPersisted(db, dataDir).database as Record<string, unknown>).hypaV3PresetId).toBe(-1)
+    expect(
+      (loadPersistedForCollectionMutation(db, dataDir, ['hypaV3Presets']).database as Record<string, unknown>)
+        .hypaV3PresetId,
+    ).toBe(-1)
+    expect(readCollection('hypa_v3_presets')).toEqual(damagedPresets)
+    expect(readSettings()).toMatchObject({
+      selectedHypaV3PresetId: 'duplicate-memory',
+      hypaV3PresetId: 0,
+    })
+  })
+
+  it('does not bind a memory job to an ambiguous prompt preset row', () => {
+    writeSingleCollectionTable(db, 'promptPresets', [
+      { id: 'prompt-duplicate', name: 'Prompt A' },
+      { id: 'prompt-duplicate', name: 'Prompt B' },
+    ])
+    const chat = db.prepare('SELECT data_json FROM chats WHERE id = ?').get('chat-a-1') as { data_json: string }
+    const chatBody = JSON.parse(chat.data_json) as Record<string, unknown>
+    chatBody.generationSettings = { promptPresetId: 'prompt-duplicate' }
+    db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(JSON.stringify(chatBody), 'chat-a-1')
+
+    const scoped = loadPersistedDatabaseForMemoryJob(db, dataDir, 'chat-a-1') as Record<string, unknown>
+    expect(scoped).not.toHaveProperty('promptPresets')
+  })
+
   it('writeSingleCollectionTable rebuilds one table and leaves the other eight + characters alone', () => {
     const collectionsBefore = allCollectionRowids()
     const charsBefore = rowids('characters', 'id')
@@ -284,7 +462,7 @@ describe('targeted writer kit', () => {
     expect(rowids('characters', 'id')).toEqual(charsBefore)
   })
 
-  it('L9: deleteCharacterRow alone cascades the chats rows via the FK (no explicit chats DELETE)', () => {
+  it('deleteCharacterRow alone cascades the chats rows via the FK (no explicit chats DELETE)', () => {
     // Precondition the cascade depends on: the pragma is actually enabled on
     // this connection (a connection-level setting, not a schema property).
     expect(db.prepare('PRAGMA foreign_keys').get()).toEqual({ foreign_keys: 1 })

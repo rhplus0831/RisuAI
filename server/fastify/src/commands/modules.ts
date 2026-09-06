@@ -2,9 +2,17 @@ import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 import { validateAssetTriples } from './assets.js'
-import { type CharacterRecord, ensureCharacterCollection, readCharacterId, readJsonObject } from './characters.js'
-import { ensureCharacterChats } from './chats.js'
-import { isImportableMCPIdentifier } from '../../../../src/ts/process/mcp/mcpIdentifier.js'
+import {
+  type CharacterRecord,
+  ensureCharacterCollection,
+  readCharacterId,
+  readJsonObject,
+  readStrictCharacterRecord,
+} from './characters.js'
+import { isImportableMCPIdentifier } from '@risuai/shared-core/mcp-identifier'
+import { repairCreatedLorebookEntries, validateStoredLorebookEntries } from './lorebooks.js'
+import { normalizeScriptModelOverrides, readScriptModelOverrides } from '@risuai/shared-core/script-model-overrides'
+import type { ModuleFolder } from '@risuai/protocol/module-organization'
 
 type JsonRecord = Record<string, unknown>
 
@@ -13,6 +21,7 @@ export interface ModuleRecord extends JsonRecord {
   name: string
   description: string
   mcp?: unknown
+  folderId?: string
 }
 
 const MODULE_PATCH_EXCLUDED_KEYS = new Set(['id', 'mcp', 'lorebook', 'regex', 'trigger'])
@@ -24,6 +33,7 @@ const MODULE_PATCH_DELETABLE_KEYS = new Set([
   'customModuleToggle',
   'cjs',
   'assets',
+  'folderId',
 ])
 
 const MODULE_SCALAR_FIELD_TYPES = new Map<string, readonly string[]>([
@@ -35,6 +45,7 @@ const MODULE_SCALAR_FIELD_TYPES = new Map<string, readonly string[]>([
   ['backgroundEmbedding', ['string', 'undefined']],
   ['customModuleToggle', ['string', 'undefined']],
   ['cjs', ['string', 'undefined']],
+  ['folderId', ['string', 'undefined']],
 ])
 
 export function ensureModuleCommandDatabase(database: unknown): JsonRecord {
@@ -71,6 +82,47 @@ export function ensureModuleRecords(database: JsonRecord): ModuleRecord[] {
   return modules
 }
 
+/**
+ * Read persisted module identities without repairing any row. All identities
+ * are checked together so target lookup cannot silently choose one duplicate.
+ */
+export function readStrictModuleRecords(database: JsonRecord): ModuleRecord[] {
+  if (!Array.isArray(database.modules)) {
+    throw new ValidationError('modules must be an array')
+  }
+  const seen = new Set<string>()
+  return database.modules.map((raw, index) => {
+    const module = readJsonObject(raw, `module[${index}]`) as ModuleRecord
+    const id = readModuleId(module.id, `module[${index}].id`)
+    if (seen.has(id)) {
+      throw new ValidationError(`Duplicate module id: ${id}`)
+    }
+    seen.add(id)
+    return module
+  })
+}
+
+/** Validate one stored module exactly as represented, without normalization. */
+export function validateStoredModuleRecord(
+  module: ModuleRecord,
+  label = 'module',
+  options: { allowMcp?: boolean; validateLorebook?: boolean } = {},
+): ModuleRecord {
+  if (typeof module.name !== 'string' || module.name.trim() === '') {
+    throw new ValidationError(`${label}.name must be a non-empty string`)
+  }
+  if (typeof module.description !== 'string') {
+    throw new ValidationError(`${label}.description must be a string`)
+  }
+  // Some shared validators canonicalize their argument. Validate a shallow
+  // copy so the stored row returned to the command remains byte-faithful.
+  validateModuleRecord({ ...module }, label, options)
+  if (options.validateLorebook && module.lorebook !== undefined) {
+    validateStoredLorebookEntries(module.lorebook, `${label}.lorebook`)
+  }
+  return module
+}
+
 export function createModuleRecord(
   input: unknown,
   label = 'module',
@@ -81,6 +133,9 @@ export function createModuleRecord(
   module.id = readModuleId(module.id, `${label}.id`)
   module.name = typeof module.name === 'string' && module.name.trim() ? module.name : 'New Module'
   module.description = typeof module.description === 'string' ? module.description : ''
+  if (Array.isArray(module.lorebook)) {
+    module.lorebook = repairCreatedLorebookEntries(module.lorebook, `${label}.lorebook`)
+  }
   validateModuleRecord(module, label, options, assetOptions)
   return module
 }
@@ -95,6 +150,9 @@ function repairModuleRecord(
   module.id = typeof module.id === 'string' && module.id.trim() ? module.id : randomUUID()
   module.name = typeof module.name === 'string' && module.name.trim() ? module.name : 'New Module'
   module.description = typeof module.description === 'string' ? module.description : ''
+  const scriptModelOverrides = normalizeScriptModelOverrides(module.scriptModelOverrides)
+  if (Object.keys(scriptModelOverrides).length > 0) module.scriptModelOverrides = scriptModelOverrides
+  else delete module.scriptModelOverrides
   validateModuleRecord(module, label, options, assetOptions)
   return module
 }
@@ -122,6 +180,91 @@ export function readModuleIdList(input: unknown, label = 'moduleIds'): string[] 
   return input.map((id, index) => readModuleId(id, `${label}[${index}]`))
 }
 
+export function createModuleFolderRecord(input: unknown, label = 'folder'): ModuleFolder {
+  const record = readJsonObject(input, label)
+  for (const key of Object.keys(record)) {
+    if (key !== 'id' && key !== 'name') throw new ValidationError(`${label}.${key} is not supported`)
+  }
+  const id = readModuleId(record.id, `${label}.id`)
+  if (id.trim() !== id) throw new ValidationError(`${label}.id must be a trimmed non-empty string`)
+  return {
+    id,
+    name: readModuleFolderName(record.name, `${label}.name`),
+  }
+}
+
+export function readModuleFolderPatch(input: unknown): Pick<ModuleFolder, 'name'> {
+  const patch = readJsonObject(input, 'patch')
+  if (Object.keys(patch).length !== 1 || !Object.prototype.hasOwnProperty.call(patch, 'name')) {
+    throw new ValidationError('patch must contain only name')
+  }
+  return { name: readModuleFolderName(patch.name, 'patch.name') }
+}
+
+export function readStrictModuleFolders(database: JsonRecord): ModuleFolder[] {
+  if (database.moduleFolders === undefined) return []
+  if (!Array.isArray(database.moduleFolders)) throw new ValidationError('moduleFolders must be an array')
+  const ids = new Set<string>()
+  return database.moduleFolders.map((value, index) => {
+    const folder = createModuleFolderRecord(value, `moduleFolders[${index}]`)
+    if (ids.has(folder.id)) throw new ValidationError(`Duplicate module folder id: ${folder.id}`)
+    ids.add(folder.id)
+    return folder
+  })
+}
+
+export function readModuleFolderIdList(input: unknown, label = 'folderIds'): string[] {
+  return readModuleIdList(input, label)
+}
+
+export function validateFullModuleFolderOrder(folders: readonly ModuleFolder[], folderIds: readonly string[]): void {
+  const existing = new Set(folders.map((folder) => folder.id))
+  const seen = new Set<string>()
+  for (const folderId of folderIds) {
+    if (!existing.has(folderId)) throw new ValidationError(`Unknown module folder id in folderIds: ${folderId}`)
+    if (seen.has(folderId)) throw new ValidationError(`Duplicate module folder id in folderIds: ${folderId}`)
+    seen.add(folderId)
+  }
+  if (seen.size !== existing.size) throw new ValidationError('folderIds must include every module folder')
+}
+
+export function readModuleFolderAssignments(
+  input: unknown,
+  modules: readonly ModuleRecord[],
+  folders: readonly ModuleFolder[],
+): Record<string, string | null> {
+  const assignments = readJsonObject(input, 'folderByModuleId')
+  const moduleIds = new Set(modules.map((module) => module.id))
+  const folderIds = new Set(folders.map((folder) => folder.id))
+  const result: Record<string, string | null> = {}
+  for (const [moduleId, value] of Object.entries(assignments)) {
+    if (!moduleIds.has(moduleId)) throw new ValidationError(`Unknown module id in folderByModuleId: ${moduleId}`)
+    if (value === null) {
+      result[moduleId] = null
+      continue
+    }
+    if (typeof value !== 'string' || !folderIds.has(value)) {
+      throw new ValidationError(`Unknown module folder id in folderByModuleId: ${String(value)}`)
+    }
+    result[moduleId] = value
+  }
+  if (Object.keys(result).length !== moduleIds.size) {
+    throw new ValidationError('folderByModuleId must include every module')
+  }
+  return result
+}
+
+export function validateModuleFolderReference(
+  module: ModuleRecord,
+  folders: readonly ModuleFolder[],
+  label = 'module',
+): void {
+  if (module.folderId === undefined) return
+  if (!folders.some((folder) => folder.id === module.folderId)) {
+    throw new ValidationError(`${label}.folderId must reference an existing module folder`)
+  }
+}
+
 export function readModuleEnabled(input: unknown): boolean {
   if (typeof input !== 'boolean') {
     throw new ValidationError('enabled must be a boolean')
@@ -134,11 +277,17 @@ export function requireModuleIndex(
   moduleId: string,
   options: { allowMcp?: boolean } = {},
 ): number {
-  const index = modules.findIndex((module) => module.id === moduleId && (options.allowMcp || !module.mcp))
-  if (index === -1) {
+  const matches = modules.map((module, index) => ({ module, index })).filter(({ module }) => module.id === moduleId)
+  if (matches.length === 0) {
     throw new EntityNotFoundError(`Module not found: ${moduleId}`)
   }
-  return index
+  if (matches.length !== 1) {
+    throw new ValidationError(`Duplicate module id: ${moduleId}`)
+  }
+  if (!options.allowMcp && matches[0].module.mcp) {
+    throw new EntityNotFoundError(`Module not found: ${moduleId}`)
+  }
+  return matches[0].index
 }
 
 export function validateFullModuleOrder(modules: readonly ModuleRecord[], moduleIds: readonly string[]): void {
@@ -186,26 +335,93 @@ export function validateNormalModuleLinks(
   }
 }
 
-export function removeModuleReferences(database: JsonRecord, moduleId: string): void {
-  database.enabledModules = ensureEnabledModules(database).filter((id) => id !== moduleId)
-  for (const character of ensureCharacterCollection(database)) {
-    character.modules = readStringArray(character.modules, `character ${character.chaId}.modules`).filter(
-      (id) => id !== moduleId,
-    )
-    for (const chat of ensureCharacterChats(character)) {
-      chat.modules = readStringArray(chat.modules, `chat ${chat.id}.modules`).filter((id) => id !== moduleId)
+export interface RemovedModuleReferences {
+  settingsChanged: boolean
+  changedPersonaIndexes: number[]
+  changedLoadoutIndexes: number[]
+  changedCharacters: Array<{ characterId: string; character: CharacterRecord }>
+  changedChats: Array<{ chatId: string; chat: JsonRecord }>
+}
+
+export function removeModuleReferences(database: JsonRecord, moduleId: string): RemovedModuleReferences {
+  const enabledModules = readStrictEnabledModules(database)
+  const nextEnabledModules = enabledModules.filter((id) => id !== moduleId)
+  const result: RemovedModuleReferences = {
+    settingsChanged: nextEnabledModules.length !== enabledModules.length,
+    changedPersonaIndexes: [],
+    changedLoadoutIndexes: [],
+    changedCharacters: [],
+    changedChats: [],
+  }
+  if (result.settingsChanged) database.enabledModules = nextEnabledModules
+
+  if (Array.isArray(database.personas)) {
+    for (let index = 0; index < database.personas.length; index++) {
+      const record = readJsonObject(database.personas[index], `persona[${index}]`)
+      if (record.modules === undefined) continue
+      const modules = readStrictStringArray(record.modules, `persona[${index}].modules`)
+      const next = modules.filter((id) => id !== moduleId)
+      if (next.length === modules.length) continue
+      record.modules = next
+      result.changedPersonaIndexes.push(index)
+    }
+  }
+
+  if (!Array.isArray(database.characters)) {
+    throw new ValidationError('characters must be an array')
+  }
+  const seenCharacterIds = new Set<string>()
+  const seenChatIds = new Set<string>()
+  for (let characterIndex = 0; characterIndex < database.characters.length; characterIndex++) {
+    const character = readJsonObject(
+      database.characters[characterIndex],
+      `character[${characterIndex}]`,
+    ) as CharacterRecord
+    const characterId = readCharacterId(character.chaId, `character[${characterIndex}].chaId`)
+    if (seenCharacterIds.has(characterId)) {
+      throw new ValidationError(`Duplicate character id: ${characterId}`)
+    }
+    seenCharacterIds.add(characterId)
+    if (character.modules !== undefined) {
+      const modules = readStrictStringArray(character.modules, `character ${characterId}.modules`)
+      const next = modules.filter((id) => id !== moduleId)
+      if (next.length !== modules.length) {
+        character.modules = next
+        result.changedCharacters.push({ characterId, character })
+      }
+    }
+    if (character.chats === undefined) continue
+    if (!Array.isArray(character.chats)) {
+      throw new ValidationError(`character ${characterId}.chats must be an array`)
+    }
+    for (let chatIndex = 0; chatIndex < character.chats.length; chatIndex++) {
+      const chat = readJsonObject(character.chats[chatIndex], `character ${characterId}.chats[${chatIndex}]`)
+      const chatId = readModuleId(chat.id, `character ${characterId}.chats[${chatIndex}].id`)
+      if (seenChatIds.has(chatId)) {
+        throw new ValidationError(`Duplicate chat id: ${chatId}`)
+      }
+      seenChatIds.add(chatId)
+      if (chat.modules === undefined) continue
+      const modules = readStrictStringArray(chat.modules, `chat ${chatId}.modules`)
+      const next = modules.filter((id) => id !== moduleId)
+      if (next.length === modules.length) continue
+      chat.modules = next
+      result.changedChats.push({ chatId, chat })
     }
   }
 
   if (Array.isArray(database.loadouts)) {
-    for (const loadout of database.loadouts) {
-      if (!loadout || typeof loadout !== 'object' || Array.isArray(loadout)) continue
-      const record = loadout as JsonRecord
-      if (Array.isArray(record.modules)) {
-        record.modules = record.modules.filter((id) => id !== moduleId)
-      }
+    for (let index = 0; index < database.loadouts.length; index++) {
+      const record = readJsonObject(database.loadouts[index], `loadout[${index}]`)
+      if (record.modules === undefined) continue
+      const modules = readStrictStringArray(record.modules, `loadout[${index}].modules`)
+      const next = modules.filter((id) => id !== moduleId)
+      if (next.length === modules.length) continue
+      record.modules = next
+      result.changedLoadoutIndexes.push(index)
     }
   }
+  return result
 }
 
 export function ensureEnabledModules(database: JsonRecord): string[] {
@@ -213,13 +429,34 @@ export function ensureEnabledModules(database: JsonRecord): string[] {
   return database.enabledModules as string[]
 }
 
+export function readStrictEnabledModules(database: JsonRecord): string[] {
+  if (!Array.isArray(database.enabledModules)) {
+    throw new ValidationError('enabledModules must be an array')
+  }
+  const seen = new Set<string>()
+  return database.enabledModules.map((value, index) => {
+    const id = readModuleId(value, `enabledModules[${index}]`)
+    if (seen.has(id)) {
+      throw new ValidationError(`Duplicate module id in enabledModules: ${id}`)
+    }
+    seen.add(id)
+    return id
+  })
+}
+
 export function findCharacterForModuleCommand(database: JsonRecord, characterId: string): CharacterRecord {
-  const characters = ensureCharacterCollection(database)
-  const character = characters.find((candidate) => candidate.chaId === characterId)
-  if (!character) {
+  const characters = Array.isArray(database.characters) ? database.characters : []
+  const matches = characters.filter(
+    (candidate): candidate is JsonRecord =>
+      !!candidate && typeof candidate === 'object' && !Array.isArray(candidate) && candidate.chaId === characterId,
+  )
+  if (matches.length === 0) {
     throw new EntityNotFoundError(`Character not found: ${characterId}`)
   }
-  return character
+  if (matches.length !== 1) {
+    throw new ValidationError(`Duplicate character id: ${characterId}`)
+  }
+  return readStrictCharacterRecord(matches[0], characterId)
 }
 
 export { readCharacterId }
@@ -260,6 +497,16 @@ function validateModulePatch(
   options: { allowId?: boolean; allowChildren?: boolean; allowMcp?: boolean; allowDeleteSentinel?: boolean } = {},
   assetOptions: { assetDb?: DatabaseSync } = {},
 ): void {
+  if ('scriptModelOverrides' in record) {
+    try {
+      record.scriptModelOverrides = readScriptModelOverrides(
+        record.scriptModelOverrides,
+        `${label}.scriptModelOverrides`,
+      )
+    } catch (error) {
+      throw new ValidationError(error instanceof Error ? error.message : String(error))
+    }
+  }
   for (const key of Object.keys(record)) {
     if ((!options.allowId || key !== 'id') && MODULE_PATCH_EXCLUDED_KEYS.has(key)) {
       if (options.allowChildren && ['lorebook', 'regex', 'trigger'].includes(key)) {
@@ -286,6 +533,16 @@ function validateModulePatch(
   if (assetOptions.assetDb && 'assets' in record && record.assets !== null) {
     validateAssetTriples(assetOptions.assetDb, record.assets, `${label}.assets`)
   }
+  if ('folderId' in record && record.folderId !== null && record.folderId !== undefined) {
+    readModuleId(record.folderId, `${label}.folderId`)
+  }
+}
+
+function readModuleFolderName(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new ValidationError(`${label} must be a non-empty string`)
+  }
+  return value.trim()
 }
 
 function readStringArray(input: unknown, label: string): string[] {
@@ -294,6 +551,21 @@ function readStringArray(input: unknown, label: string): string[] {
     throw new ValidationError(`${label} must be an array`)
   }
   return input.filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+}
+
+function readStrictStringArray(input: unknown, label: string): string[] {
+  if (!Array.isArray(input)) {
+    throw new ValidationError(`${label} must be an array`)
+  }
+  const seen = new Set<string>()
+  return input.map((value, index) => {
+    const id = readModuleId(value, `${label}[${index}]`)
+    if (seen.has(id)) {
+      throw new ValidationError(`Duplicate module id in ${label}: ${id}`)
+    }
+    seen.add(id)
+    return id
+  })
 }
 
 function readOptionalJsonObject(value: unknown): JsonRecord {

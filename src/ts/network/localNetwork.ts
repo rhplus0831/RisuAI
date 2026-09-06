@@ -3,6 +3,7 @@ function normalizeHost(hostname: string): string {
     .trim()
     .toLowerCase()
     .replace(/^\[|\]$/g, '')
+    .replace(/\.$/, '')
     .split('%')[0]
 }
 
@@ -28,7 +29,7 @@ function isLocalIPv4(host: string): boolean {
     return false
   }
   const [a, b] = host.split('.').map((v) => Number(v))
-  if (a === 10) {
+  if (a === 0 || a === 10 || a === 127) {
     return true
   }
   if (a === 172 && b >= 16 && b <= 31) {
@@ -43,6 +44,17 @@ function isLocalIPv4(host: string): boolean {
   return false
 }
 
+function mappedIPv4FromIPv6(host: string): string | null {
+  const dottedTail = host.match(/(?:^|:)(\d+\.\d+\.\d+\.\d+)$/)?.[1]
+  if (dottedTail && isIPv4(dottedTail)) return dottedTail
+
+  const mapped = /^(?:::ffff:)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(host)
+  if (!mapped) return null
+  const high = Number.parseInt(mapped[1], 16)
+  const low = Number.parseInt(mapped[2], 16)
+  return `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`
+}
+
 function isLocalIPv6(host: string): boolean {
   if (!host.includes(':')) {
     return false
@@ -51,6 +63,9 @@ function isLocalIPv6(host: string): boolean {
   if (host === '::1') {
     return true
   }
+
+  const mappedIPv4 = mappedIPv4FromIPv6(host)
+  if (mappedIPv4) return isLocalIPv4(mappedIPv4)
 
   const first = host.split(':')[0]
   if (!first) {
@@ -89,11 +104,6 @@ export function isLocalNetworkHost(hostname: string): boolean {
     return true
   }
 
-  // Docker/lan internal DNS labels like "litellm" or "model-server"
-  if (/^[a-z0-9_-]+$/i.test(host) && !host.includes('.')) {
-    return true
-  }
-
   if (isLocalIPv4(host)) {
     return true
   }
@@ -108,6 +118,7 @@ export function isLocalNetworkHost(hostname: string): boolean {
 export function isLocalNetworkUrl(url: string): boolean {
   try {
     const parsed = new URL(url)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
     return isLocalNetworkHost(parsed.hostname)
   } catch {
     return false

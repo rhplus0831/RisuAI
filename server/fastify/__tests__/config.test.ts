@@ -8,6 +8,25 @@ import { DEFAULT_GENERATION_TRACE_MAX_GZIP_BYTES } from '../src/generation/gener
 
 const BASE_ENV = { RISU_API_DATA_DIR: '/tmp/risu-config-test' }
 
+describe('loadConfig agent auth bypass', () => {
+  it('accepts the bypass only on loopback binds', () => {
+    for (const host of ['localhost', 'agent.localhost', '127.0.0.1', '127.42.0.9', '::1', '0:0:0:0:0:0:0:1']) {
+      expect(
+        loadConfig({ ...BASE_ENV, RISU_API_HOST: host, RISU_AGENT_DEV_AUTH_BYPASS: 'true' }).agentDevAuthBypass,
+      ).toBe(true)
+    }
+  })
+
+  it('rejects the bypass on the default or an explicit non-loopback bind', () => {
+    expect(() => loadConfig({ ...BASE_ENV, RISU_AGENT_DEV_AUTH_BYPASS: 'true' })).toThrow(/requires a loopback/)
+    for (const host of ['0.0.0.0', '::', '192.0.2.1', 'example.test']) {
+      expect(() => loadConfig({ ...BASE_ENV, RISU_API_HOST: host, RISU_AGENT_DEV_AUTH_BYPASS: 'true' })).toThrow(
+        /requires a loopback/,
+      )
+    }
+  })
+})
+
 describe('loadConfig missing database override', () => {
   it('requires an explicit truthy value', () => {
     expect(loadConfig({ ...BASE_ENV }).allowMissingDatabase).toBe(false)

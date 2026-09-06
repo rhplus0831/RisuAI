@@ -1,6 +1,13 @@
 import { Template } from '@huggingface/jinja'
+import { get } from 'svelte/store'
 import type { OpenAIChat } from '../index.svelte'
-import { getCurrentCharacter, getDatabase } from 'src/ts/storage/database.svelte'
+import type { Database } from 'src/ts/storage/database.svelte'
+import { selectedCharID } from 'src/ts/stores.svelte'
+import {
+  charactersResourceState,
+  getCharacterResourceOwner,
+  settingsResourceState,
+} from 'src/ts/server/resourceState.svelte'
 import { getUserName } from 'src/ts/utilState'
 
 export const chatTemplates = {
@@ -29,16 +36,28 @@ export const applyChatTemplate = (
   arg: {
     type?: string
     custom?: string
+    settings?: Pick<Database, 'instructChatTemplate' | 'JinjaTemplate'>
   } = {},
 ) => {
-  const db = getDatabase()
-  const currentChar = getCurrentCharacter()
-  const type = arg.type ?? db.instructChatTemplate
+  const providerStatus = settingsResourceState.groupStatuses.providers ?? settingsResourceState.status
+  const settings: Partial<Pick<Database, 'instructChatTemplate' | 'JinjaTemplate'>> =
+    arg.settings ??
+    (providerStatus === 'ready' && settingsResourceState.status !== 'error' ? settingsResourceState.value : {})
+  const selectedIndex = get(selectedCharID)
+  const selectedCandidate = charactersResourceState.characters[selectedIndex]
+  const currentChar =
+    charactersResourceState.status === 'ready'
+      ? selectedCandidate?.chaId
+        ? getCharacterResourceOwner(selectedCandidate.chaId)
+        : undefined
+      : undefined
+  const type = arg.type ?? settings.instructChatTemplate
   if (!type) {
     throw new Error('Template type is not set')
   }
   let clonedMessages = safeStructuredClone(messages)
-  const template = type === 'jinja' ? new Template(arg.custom ?? db.JinjaTemplate) : new Template(chatTemplates[type])
+  const template =
+    type === 'jinja' ? new Template(arg.custom ?? settings.JinjaTemplate ?? '') : new Template(chatTemplates[type])
   let formatedMessages: {
     role: 'user' | 'assistant' | 'system'
     content: string
@@ -93,7 +112,7 @@ export const applyChatTemplate = (
   return template.render({
     messages: formatedMessages,
     add_generation_prompt: true,
-    risu_char: currentChar.name,
+    risu_char: currentChar?.name ?? '',
     risu_user: getUserName(),
     eos_token: '',
     bos_token: '',

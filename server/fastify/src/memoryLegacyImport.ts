@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { createMemoryChunk, createMemorySummary, getMemoryChunk, getMemorySummary } from './memoryRepository.js'
 import { LEGACY_HYPA_V3_SUMMARY_MODEL } from './memorySummaryCompatibility.js'
+import type { PortableMemoryLegacySummaryTombstone } from './risuSave/portableMetadata.js'
 
 export { LEGACY_HYPA_V3_SUMMARY_MODEL } from './memorySummaryCompatibility.js'
 
@@ -41,6 +42,12 @@ interface LegacySummary {
 export interface LegacyHypaV3BackfillResult {
   chunksCreated: number
   summariesCreated: number
+  skippedSummaries: LegacyHypaV3SkippedSummary[]
+}
+
+export interface LegacyHypaV3SkippedSummary {
+  path: string
+  reason: 'summary must be an object' | 'summary.text must be a non-empty string'
 }
 
 interface LegacySummaryPlan {
@@ -71,6 +78,7 @@ export function replaceLegacyHypaV3MemoryRows(db: DatabaseSync, database: unknow
 export function replaceLegacyHypaV3MemoryRowsInTransaction(
   db: DatabaseSync,
   database: unknown,
+  tombstones: readonly PortableMemoryLegacySummaryTombstone[] = [],
 ): LegacyHypaV3BackfillResult {
   db.exec(`
     DELETE FROM memory_jobs;
@@ -79,11 +87,36 @@ export function replaceLegacyHypaV3MemoryRowsInTransaction(
     DELETE FROM memory_chunks;
     DELETE FROM memory_legacy_summary_tombstones;
   `)
+  insertLegacySummaryTombstonesInTransaction(db, tombstones)
   return backfillLegacyHypaV3MemoryRows(db, database)
 }
 
+export function listLegacySummaryTombstones(db: DatabaseSync): PortableMemoryLegacySummaryTombstone[] {
+  return db
+    .prepare(
+      `SELECT summary_id AS summaryId, chat_id AS chatId, deleted_at AS deletedAt
+       FROM memory_legacy_summary_tombstones
+       ORDER BY summary_id ASC`,
+    )
+    .all() as unknown as PortableMemoryLegacySummaryTombstone[]
+}
+
+export function insertLegacySummaryTombstonesInTransaction(
+  db: DatabaseSync,
+  tombstones: readonly PortableMemoryLegacySummaryTombstone[],
+): void {
+  if (tombstones.length === 0) return
+  const insert = db.prepare(
+    `INSERT INTO memory_legacy_summary_tombstones (summary_id, chat_id, deleted_at)
+     VALUES (?, ?, ?)`,
+  )
+  for (const tombstone of tombstones) {
+    insert.run(tombstone.summaryId, tombstone.chatId, tombstone.deletedAt)
+  }
+}
+
 export function backfillLegacyHypaV3MemoryRows(db: DatabaseSync, database: unknown): LegacyHypaV3BackfillResult {
-  const plans = collectLegacySummaryPlans(database)
+  const { plans, skippedSummaries } = collectLegacySummaryPlans(database)
   const isDeleted = db.prepare('SELECT 1 FROM memory_legacy_summary_tombstones WHERE summary_id = ? LIMIT 1')
   let chunksCreated = 0
   let summariesCreated = 0
@@ -116,15 +149,19 @@ export function backfillLegacyHypaV3MemoryRows(db: DatabaseSync, database: unkno
     }
   }
 
-  return { chunksCreated, summariesCreated }
+  return { chunksCreated, summariesCreated, skippedSummaries }
 }
 
-function collectLegacySummaryPlans(database: unknown): LegacySummaryPlan[] {
-  if (!isRecord(database)) return []
+function collectLegacySummaryPlans(database: unknown): {
+  plans: LegacySummaryPlan[]
+  skippedSummaries: LegacyHypaV3SkippedSummary[]
+} {
+  if (!isRecord(database)) return { plans: [], skippedSummaries: [] }
   const db = database as LegacyDatabase
-  if (!Array.isArray(db.characters)) return []
+  if (!Array.isArray(db.characters)) return { plans: [], skippedSummaries: [] }
 
   const plans: LegacySummaryPlan[] = []
+  const skippedSummaries: LegacyHypaV3SkippedSummary[] = []
   db.characters.forEach((character, characterIndex) => {
     if (!Array.isArray(character?.chats)) return
     const characterId = stringOrFallback(character.chaId, `character-${characterIndex}`)
@@ -142,7 +179,13 @@ function collectLegacySummaryPlans(database: unknown): LegacySummaryPlan[] {
       })
 
       summaries.forEach((summary, summaryIndex) => {
-        if (!isRecord(summary) || typeof summary.text !== 'string' || summary.text.length === 0) {
+        const path = `characters[${characterIndex}].chats[${chatIndex}].hypaV3Data.summaries[${summaryIndex}]`
+        if (!isRecord(summary)) {
+          skippedSummaries.push({ path, reason: 'summary must be an object' })
+          return
+        }
+        if (typeof summary.text !== 'string' || summary.text.length === 0) {
+          skippedSummaries.push({ path, reason: 'summary.text must be a non-empty string' })
           return
         }
         const chatMemos = normalizeChatMemos(summary.chatMemos)
@@ -172,7 +215,7 @@ function collectLegacySummaryPlans(database: unknown): LegacySummaryPlan[] {
     })
   })
 
-  return plans
+  return { plans, skippedSummaries }
 }
 
 function buildChunkText(messages: LegacyMessage[], chatMemos: string[], summaryText: string): string {

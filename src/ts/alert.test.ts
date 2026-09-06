@@ -4,7 +4,8 @@ const alertTestState = vi.hoisted(() => ({
   alertStoreValue: { type: 'none', msg: '' } as Record<string, unknown>,
   alertStoreSet: vi.fn(),
   alertStoreSubscribers: new Set<(value: Record<string, unknown>) => void>(),
-  getDatabase: vi.fn(() => ({ usePlainFetch: false })),
+  settings: { usePlainFetch: false } as Record<string, unknown>,
+  characters: [] as Array<Record<string, unknown>>,
 }))
 
 vi.mock('./stores/coreStores.svelte', () => ({
@@ -34,7 +35,11 @@ vi.mock('./stores/coreStores.svelte', () => ({
 vi.mock('./storage/database.svelte', () => ({
   appVer: 'test',
   getCurrentCharacter: vi.fn(() => undefined),
-  getDatabase: alertTestState.getDatabase,
+}))
+
+vi.mock('./server/resourceState.svelte', () => ({
+  settingsResourceState: { value: alertTestState.settings },
+  charactersResourceState: { characters: alertTestState.characters },
 }))
 
 vi.mock('../lang', () => ({
@@ -72,7 +77,7 @@ import {
   alertSelect,
   alertSelectChar,
   alertToast,
-  alertTOS,
+  alertRealmTerms,
   alertWait,
   beginAlertWait,
   cardExportCancelMessage,
@@ -85,16 +90,13 @@ import {
   alertStore,
   updateAlertWait,
 } from './alert'
-import { registerAlertDatabaseAccessor } from './alertDatabase'
-
 beforeEach(() => {
   vi.unstubAllEnvs()
   alertTestState.alertStoreValue = { type: 'none', msg: '' }
   for (const subscriber of alertTestState.alertStoreSubscribers) subscriber(alertTestState.alertStoreValue)
   alertTestState.alertStoreSet.mockClear()
-  alertTestState.getDatabase.mockClear()
-  alertTestState.getDatabase.mockReturnValue({ usePlainFetch: false })
-  registerAlertDatabaseAccessor(alertTestState.getDatabase as never)
+  alertTestState.settings.usePlainFetch = false
+  alertTestState.characters.length = 0
   localStorage.clear()
 })
 
@@ -498,7 +500,7 @@ describe('select results', () => {
 })
 
 describe('alertError', () => {
-  it('L37/I21: accepts non-string payloads with String coercion after Error handling', () => {
+  it('accepts non-string payloads with String coercion after Error handling', () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     try {
       expect(() => alertError(undefined)).not.toThrow()
@@ -609,20 +611,28 @@ describe('owned wait alerts', () => {
   })
 })
 
-describe('alertTOS', () => {
-  it('returns accepted without opening the modal in the agent dev browser environment', async () => {
-    vi.stubEnv('VITE_RISU_AGENT_DEV_IGNORE_TOS', 'TRUE')
+describe('alertRealmTerms', () => {
+  it('honors acceptance recorded by the original shared prompt', async () => {
+    localStorage.setItem('tos4', 'true')
 
-    await expect(alertTOS()).resolves.toBe(true)
+    await expect(alertRealmTerms()).resolves.toBe(true)
+
+    expect(alertTestState.alertStoreSet).not.toHaveBeenCalled()
+  })
+
+  it('returns accepted without opening the modal in the agent dev browser environment', async () => {
+    vi.stubEnv('VITE_RISU_AGENT_DEV_IGNORE_REALM_TERMS', 'TRUE')
+
+    await expect(alertRealmTerms()).resolves.toBe(true)
 
     expect(alertTestState.alertStoreSet).not.toHaveBeenCalled()
     expect(localStorage.getItem('tos4')).toBeNull()
   })
 
   it('does not let an unrelated notice resolve the acceptance workflow', async () => {
-    vi.stubEnv('VITE_RISU_AGENT_DEV_IGNORE_TOS', 'FALSE')
+    vi.stubEnv('VITE_RISU_AGENT_DEV_IGNORE_REALM_TERMS', 'FALSE')
     let settled = false
-    const result = alertTOS().then((accepted) => {
+    const result = alertRealmTerms().then((accepted) => {
       settled = true
       return accepted
     })
@@ -632,7 +642,7 @@ describe('alertTOS', () => {
     await Promise.resolve()
 
     expect(settled).toBe(false)
-    expect(alertTestState.alertStoreValue).toMatchObject({ type: 'tos', dialogOwner: owner })
+    expect(alertTestState.alertStoreValue).toMatchObject({ type: 'realmTerms', dialogOwner: owner })
     resolveAlertWorkflow(owner, 'yes')
     await expect(result).resolves.toBe(true)
     expect(localStorage.getItem('tos4')).toBe('true')

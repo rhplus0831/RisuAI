@@ -1,16 +1,22 @@
-import { applyAdditionalParameters } from './additionalParams.js'
+import { applyAdditionalParameters, setCanonicalHeader } from './additionalParams.js'
 import type { CompletionResult } from './frames.js'
+import { extractApiResponseMetadata } from './apiMetadata.js'
 import { readBoundedBodyText } from './body.js'
+import { appendOpenAIResponsesToolRounds, parseOpenAIResponsesToolCalls } from './serverTools.js'
+import type { ServerToolRound } from '@risuai/protocol/server-tool'
+import { normalizeLegacyOpenAIModelId } from '@risuai/shared-core/legacy-openai-model-aliases'
 
 export interface OpenAIResponsesRequest {
   model: string
   input: ResponseItem[]
   apiKey: string
   baseUrl: string
+  endpointUrl?: string
   maxOutputTokens?: number
   temperature?: number
   topP?: number
   reasoningEffort?: string
+  reasoningSummary?: boolean
   verbosity?: string
   responseFormat?: Record<string, unknown>
   tools?: unknown[]
@@ -31,13 +37,16 @@ interface ResolveInput {
   messages?: unknown
   apiKey?: unknown
   baseUrl?: unknown
+  endpointUrl?: unknown
   maxOutputTokens?: unknown
   temperature?: unknown
   topP?: unknown
   reasoningEffort?: unknown
+  reasoningSummary?: unknown
   verbosity?: unknown
   responseFormat?: unknown
   tools?: unknown
+  toolRounds?: readonly ServerToolRound[]
   store?: unknown
   developerRole?: unknown
   visionQuality?: unknown
@@ -58,11 +67,13 @@ type ResponseInputContent =
   | { type: 'input_text'; text: string }
   | { type: 'input_image'; image_url: string; detail: 'auto' | 'low' | 'high' }
   | { type: 'input_file'; file_data: string }
-type ResponseOutputContent = {
-  type: 'output_text'
-  text: string
-  annotations: never[]
-}
+type ResponseOutputContent =
+  | {
+      type: 'output_text'
+      text: string
+      annotations: unknown[]
+    }
+  | { type: 'refusal'; refusal: string }
 
 interface ResponseInputItem {
   role: 'user' | 'system' | 'developer'
@@ -76,7 +87,21 @@ interface ResponseOutputItem {
   content: ResponseOutputContent[]
 }
 
-type ResponseItem = ResponseInputItem | ResponseOutputItem
+interface ResponseFunctionCallItem {
+  type: 'function_call'
+  call_id: string
+  name: string
+  arguments: string
+  status: 'completed'
+}
+
+interface ResponseFunctionCallOutputItem {
+  type: 'function_call_output'
+  call_id: string
+  output: string
+}
+
+type ResponseItem = ResponseInputItem | ResponseOutputItem | ResponseFunctionCallItem | ResponseFunctionCallOutputItem
 
 interface RawMultimodal {
   type?: unknown
@@ -88,10 +113,10 @@ const DEFAULT_BASE_URL = 'https://api.openai.com/v1'
 /**
  * The Responses API takes `input: ResponseItem[]` rather than `messages[]`.
  * user/system rows become input_text wrappers; assistant rows become
- * output_text wrappers (with `status: complete` except for a trailing
+ * output_text wrappers (with `status: completed` except for a trailing
  * assistant which is marked `incomplete` so the model continues from there).
- * Derived from `requestOpenAIResponseAPI`; this server adapter currently keeps
- * text user/system/assistant rows and omits multimodal/function/tool rows.
+ * Tool continuation rows are appended separately from the validated bounded
+ * tool-round protocol.
  */
 export function buildResponseInput(
   messages: RawChatMessage[],
@@ -158,6 +183,7 @@ export function resolveOpenAIResponsesRequest(input: ResolveInput): OpenAIRespon
     typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
   const topP = typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
   const reasoningEffort = typeof input.reasoningEffort === 'string' ? input.reasoningEffort : undefined
+  const reasoningSummary = input.reasoningSummary === true || reasoningEffort !== undefined
   const verbosity = typeof input.verbosity === 'string' ? input.verbosity : undefined
   const responseFormat =
     input.responseFormat && typeof input.responseFormat === 'object' && !Array.isArray(input.responseFormat)
@@ -167,18 +193,23 @@ export function resolveOpenAIResponsesRequest(input: ResolveInput): OpenAIRespon
   const store = typeof input.store === 'boolean' ? input.store : undefined
 
   return {
-    model: input.model,
-    input: buildResponseInput(input.messages as RawChatMessage[], {
-      developerRole: input.developerRole === true,
-      visionQuality: input.visionQuality,
-      newOAIHandle: input.newOAIHandle !== false,
-    }),
+    model: normalizeLegacyOpenAIModelId(input.model),
+    input: appendOpenAIResponsesToolRounds(
+      buildResponseInput(input.messages as RawChatMessage[], {
+        developerRole: input.developerRole === true,
+        visionQuality: input.visionQuality,
+        newOAIHandle: input.newOAIHandle !== false,
+      }),
+      input.toolRounds ?? [],
+    ) as ResponseItem[],
     apiKey: input.apiKey,
     baseUrl,
+    endpointUrl: typeof input.endpointUrl === 'string' && input.endpointUrl.length > 0 ? input.endpointUrl : undefined,
     maxOutputTokens,
     temperature,
     topP,
     reasoningEffort,
+    reasoningSummary,
     verbosity,
     responseFormat,
     tools,
@@ -190,8 +221,18 @@ export function resolveOpenAIResponsesRequest(input: ResolveInput): OpenAIRespon
 }
 
 function endpoint(req: OpenAIResponsesRequest): string {
-  const base = req.baseUrl.endsWith('/') ? req.baseUrl.slice(0, -1) : req.baseUrl
-  return `${base}/responses`
+  if (req.endpointUrl !== undefined) return req.endpointUrl
+  try {
+    const url = new URL(req.baseUrl)
+    const pathname = url.pathname.replace(/\/+$/u, '')
+    if (!pathname.endsWith('/responses')) url.pathname = `${pathname}/responses`
+    return url.toString()
+  } catch {
+    const match = req.baseUrl.match(/^([^?#]*)(.*)$/u)
+    const base = (match?.[1] ?? req.baseUrl).replace(/\/+$/u, '')
+    const suffix = match?.[2] ?? ''
+    return `${base.endsWith('/responses') ? base : `${base}/responses`}${suffix}`
+  }
 }
 
 function buildHeaders(req: OpenAIResponsesRequest): Record<string, string> {
@@ -208,6 +249,7 @@ function buildRequestInit(req: OpenAIResponsesRequest): { body: string; headers:
   if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
     applyAdditionalParameters(body, headers, req.additionalParams)
   }
+  setCanonicalHeader(headers, 'authorization', `Bearer ${req.apiKey}`)
   return { body: JSON.stringify(body), headers }
 }
 
@@ -220,8 +262,11 @@ function buildPayload(req: OpenAIResponsesRequest): Record<string, unknown> {
   if (req.maxOutputTokens !== undefined) body.max_output_tokens = req.maxOutputTokens
   if (req.temperature !== undefined) body.temperature = req.temperature
   if (req.topP !== undefined) body.top_p = req.topP
-  if (req.reasoningEffort !== undefined) {
-    body.reasoning = { effort: req.reasoningEffort, summary: 'auto' }
+  if (req.reasoningEffort !== undefined || req.reasoningSummary === true) {
+    body.reasoning = {
+      ...(req.reasoningEffort !== undefined ? { effort: req.reasoningEffort } : {}),
+      ...(req.reasoningSummary === true ? { summary: 'auto' } : {}),
+    }
   }
   if (req.verbosity !== undefined) body.text = { verbosity: req.verbosity }
   if (req.responseFormat !== undefined) {
@@ -235,13 +280,21 @@ interface ResponsesAPIBody {
   output_text?: unknown
   output?: Array<{
     type?: unknown
-    content?: Array<{ type?: unknown; text?: unknown; refusal?: unknown }>
+    id?: unknown
+    call_id?: unknown
+    name?: unknown
+    arguments?: unknown
+    status?: unknown
+    content?: unknown
     summary?: unknown
     text?: unknown
+    summary_text?: unknown
     reasoning_text?: unknown
     reasoning?: unknown
   }>
   model?: unknown
+  status?: unknown
+  incomplete_details?: { reason?: unknown }
   error?: { message?: unknown }
 }
 
@@ -256,24 +309,30 @@ function collectReasoningText(value: unknown): string[] {
 }
 
 function extractResponsesResult(body: ResponsesAPIBody): string | null {
-  const texts: string[] = typeof body.output_text === 'string' ? [body.output_text] : []
+  const hasTopLevelOutputText = typeof body.output_text === 'string'
+  const texts: string[] = hasTopLevelOutputText ? [body.output_text as string] : []
   const refusals: string[] = []
   const thoughts: string[] = []
   for (const item of body.output ?? []) {
     if (item.type === 'reasoning') {
       thoughts.push(
         ...collectReasoningText(item.summary),
+        ...collectReasoningText(item.content),
         ...collectReasoningText(item.text),
+        ...collectReasoningText(item.summary_text),
         ...collectReasoningText(item.reasoning_text),
         ...collectReasoningText(item.reasoning),
       )
     }
     if (item.type !== 'message') continue
-    for (const content of item.content ?? []) {
-      if (content.type === 'output_text' && typeof content.text === 'string' && body.output_text === undefined) {
-        texts.push(content.text)
+    if (!Array.isArray(item.content)) continue
+    for (const content of item.content) {
+      if (!content || typeof content !== 'object') continue
+      const record = content as Record<string, unknown>
+      if (record.type === 'output_text' && typeof record.text === 'string' && !hasTopLevelOutputText) {
+        texts.push(record.text)
       }
-      if (content.type === 'refusal' && typeof content.refusal === 'string') refusals.push(content.refusal)
+      if (record.type === 'refusal' && typeof record.refusal === 'string') refusals.push(record.refusal)
     }
   }
   let result = texts.length > 0 ? texts.join('\n') : refusals.join('\n')
@@ -281,6 +340,24 @@ function extractResponsesResult(body: ResponsesAPIBody): string | null {
     result = `<Thoughts>\n\n${thoughts.join('\n\n')}\n\n</Thoughts>\n${result}`
   }
   return result.length > 0 ? result : null
+}
+
+function responseFunctionToolNames(tools: readonly unknown[] | undefined): Set<string> {
+  const names = new Set<string>()
+  for (const tool of tools ?? []) {
+    if (!tool || typeof tool !== 'object' || Array.isArray(tool)) continue
+    const record = tool as Record<string, unknown>
+    if (record.type === 'function' && typeof record.name === 'string') names.add(record.name)
+  }
+  return names
+}
+
+function responseFailureText(value: unknown): string {
+  try {
+    return JSON.stringify(value) || 'upstream Responses request failed'
+  } catch {
+    return 'upstream Responses request failed'
+  }
 }
 
 export async function runOpenAIResponses(req: OpenAIResponsesRequest): Promise<CompletionResult> {
@@ -334,10 +411,30 @@ export async function runOpenAIResponses(req: OpenAIResponsesRequest): Promise<C
   }
 
   const text = extractResponsesResult(body)
-  if (text === null) {
+  if (body.status === 'failed' || body.error) {
+    return { type: 'fail', result: responseFailureText(body.error ?? body) }
+  }
+  if (body.status === 'incomplete') {
+    const reason =
+      typeof body.incomplete_details?.reason === 'string'
+        ? `Incomplete response: ${body.incomplete_details.reason}`
+        : 'Incomplete response'
+    return { type: 'fail', result: text === null ? reason : `${reason}\n${text}` }
+  }
+
+  const hasFunctionCalls = body.output?.some((item) => item.type === 'function_call') === true
+  let toolCalls
+  if (hasFunctionCalls) {
+    const parsed = parseOpenAIResponsesToolCalls(body.output, responseFunctionToolNames(req.tools))
+    if (parsed.ok === false) return { type: 'fail', result: parsed.error }
+    toolCalls = parsed.value
+  }
+  if (text === null && !toolCalls) {
     return { type: 'fail', result: 'upstream returned no output text' }
   }
-  const result: CompletionResult = { type: 'success', result: text }
+  const result: CompletionResult = { type: 'success', result: text ?? '', ...(toolCalls ? { toolCalls } : {}) }
   if (typeof body.model === 'string') result.model = body.model
+  const apiMetadata = extractApiResponseMetadata(body, ['output_text', 'output', 'error', 'model'])
+  if (apiMetadata) result.apiMetadata = apiMetadata
   return result
 }

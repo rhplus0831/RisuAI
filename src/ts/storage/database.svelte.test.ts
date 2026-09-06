@@ -37,7 +37,6 @@ import {
   extractLegacyBotPresetByIndex,
   flushPendingSplitPresetPatch,
   flushPendingSplitPresetPatches,
-  getDatabase,
   mergeServerResourceCharacterRow,
   mergeServerResourceFields,
   normalizePromptTemplateIds,
@@ -51,19 +50,17 @@ import {
   setDatabase,
   setDatabaseLite,
   setPreset,
-  setResourceWriteGuardEnabled,
   selectModelPreset,
   selectPromptPreset,
   updatePreset,
   updateModelPreset,
   updatePromptPreset,
-  withTrustedResourceWrite,
   type botPreset,
   type Database,
   type ModelPreset,
   type PromptPreset,
 } from './database.svelte'
-import { flushRegisteredPendingBridgePatches } from '../server/pendingBridgeFlushRegistry'
+import { flushRegisteredPendingOwnerMutations } from '../server/pendingOwnerMutationRegistry'
 import {
   beginPendingMutationDispatch,
   clearPendingMutationOutbox,
@@ -77,12 +74,15 @@ import { markPromptTemplateProjectionApplied, resetPromptTemplateHydration } fro
 import {
   queuePromptItemProjectionUpdate,
   resetPromptTemplateSelectionDirtyState,
-} from '../server/promptTemplateBridge.svelte'
+} from '../server/promptTemplateMutations.svelte'
 import { replayPendingMutations } from '../server/pendingMutationReplay'
-import { MODEL_ROLES } from '../model/modelRoles'
+import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
 import { LLMFlags, LLMFormat, LLMTokenizer } from '../model/types'
-import { changeLanguage, language as activeLanguage } from '../../lang'
+import { awaitLanguageReady, changeLanguage, language as activeLanguage } from '../../lang'
 import { SETTINGS_BRIDGE_MUTATION_KEY } from '../server/settingsMutationKey'
+import { defaultColorScheme } from '../gui/colorscheme'
+import { MASKED_PROVIDER_SECRET } from '../providerSecretMask'
+import { getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface CapturedFetch {
   url: string
@@ -302,6 +302,7 @@ function makePreset(id: string, name: string, patch: Partial<botPreset> = {}): b
         id: `${id}-prompt`,
         type: 'plain',
         text: `${name} prompt item`,
+        role: 'system',
       },
     ] as any,
     NAISettings: { cfg_scale: 4, mirostat_tau: 5, mirostat_lr: 6 } as any,
@@ -368,6 +369,252 @@ describe('promptTemplateIdsNeedNormalization', () => {
 })
 
 describe('settings database normalization', () => {
+  it('initializes the browser loadout name compatibility projection explicitly', () => {
+    seedPresetDatabase()
+    const database = clonePlain(getDatabase())
+    delete (database as Partial<Database>).lastLoadedLoadoutName
+
+    setDatabase(database)
+
+    expect(getDatabase().loadouts).toEqual([])
+    expect(getDatabase().lastLoadedLoadoutName).toBe('')
+  })
+
+  it('derives a missing stable persona selection only from one unique row id', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase())
+    legacyData.personas = [
+      { id: 'persona-a', name: 'A', displayName: '', personaPrompt: '', icon: '' },
+      { id: 'persona-b', name: 'B', displayName: '', personaPrompt: '', icon: '' },
+    ]
+    legacyData.selectedPersona = 1
+    delete (legacyData as Partial<Database>).selectedPersonaId
+
+    setDatabase(legacyData)
+    expect(getDatabase().selectedPersonaId).toBe('persona-b')
+
+    const ambiguous = clonePlain(getDatabase())
+    ambiguous.personas[0].id = 'duplicate'
+    ambiguous.personas[1].id = 'duplicate'
+    delete (ambiguous as Partial<Database>).selectedPersonaId
+    setDatabase(ambiguous)
+    expect(getDatabase().selectedPersonaId).toBeNull()
+    expect(ambiguous.personas.map(({ id }) => id)).toEqual(['duplicate', 'duplicate'])
+  })
+
+  it('prefers legacy Hypa settings over the stale Supa prompt during first-preset migration', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase()) as Database & { supaMemoryPrompt?: string }
+    delete legacyData.hypaV3Presets
+    legacyData.hypaV3Settings = {
+      summarizationPrompt: 'canonical legacy Hypa prompt',
+      recentMemoryRatio: 0.2,
+    } as any
+    legacyData.supaMemoryPrompt = 'stale legacy Supa prompt'
+
+    setDatabase(legacyData)
+
+    expect(getDatabase().hypaV3Presets).toEqual([
+      expect.objectContaining({
+        settings: expect.objectContaining({
+          summarizationPrompt: 'canonical legacy Hypa prompt',
+          recentMemoryRatio: 0.2,
+        }),
+      }),
+    ])
+  })
+
+  it('repairs legacy Hypa V3 preset ids deterministically and preserves stable selection precedence', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase())
+    legacyData.hypaV3Presets = [
+      { id: '', name: 'Missing', settings: {} },
+      { id: 'owned', name: 'Owned', settings: {} },
+      { id: 'duplicate', name: 'First duplicate', settings: {} },
+      { id: 'duplicate', name: 'Second duplicate', settings: {} },
+    ] as any
+    legacyData.hypaV3PresetId = 3
+    legacyData.selectedHypaV3PresetId = 'owned'
+
+    setDatabase(legacyData)
+
+    expect(getDatabase().hypaV3Presets.map(({ id }) => id)).toEqual([
+      'hypa-v3-preset-1',
+      'owned',
+      'duplicate',
+      'hypa-v3-preset-4',
+    ])
+    expect(getDatabase().selectedHypaV3PresetId).toBe('owned')
+    expect(getDatabase().hypaV3PresetId).toBe(1)
+
+    const reopened = clonePlain(getDatabase())
+    setDatabase(reopened)
+    expect(getDatabase().hypaV3Presets.map(({ id }) => id)).toEqual([
+      'hypa-v3-preset-1',
+      'owned',
+      'duplicate',
+      'hypa-v3-preset-4',
+    ])
+    expect(getDatabase().selectedHypaV3PresetId).toBe('owned')
+    expect(getDatabase().hypaV3PresetId).toBe(1)
+  })
+
+  it('preserves a legacy custom palette separately and defaults presets to the standard palette', () => {
+    seedPresetDatabase()
+    const legacyCustomData = clonePlain(getDatabase())
+    legacyCustomData.colorSchemeName = 'custom'
+    legacyCustomData.colorScheme = { ...defaultColorScheme, bgcolor: '#123456' }
+    delete (legacyCustomData as Partial<Database>).customColorScheme
+
+    setDatabase(legacyCustomData)
+
+    expect(getDatabase().customColorScheme).toEqual(legacyCustomData.colorScheme)
+    expect(getDatabase().customColorScheme).not.toBe(getDatabase().colorScheme)
+
+    const legacyPresetData = clonePlain(getDatabase())
+    legacyPresetData.colorSchemeName = 'light'
+    legacyPresetData.colorScheme = { ...defaultColorScheme, bgcolor: '#abcdef' }
+    delete (legacyPresetData as Partial<Database>).customColorScheme
+
+    setDatabase(legacyPresetData)
+
+    expect(getDatabase().customColorScheme).toEqual(defaultColorScheme)
+  })
+
+  it('defaults OpenAI Flex processing off while preserving an explicit opt-in', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase())
+    delete (legacyData as Partial<Database>).openAIFlexProcessing
+
+    setDatabase(legacyData)
+    expect(getDatabase().openAIFlexProcessing).toBe(false)
+
+    const enabledData = clonePlain(getDatabase())
+    enabledData.openAIFlexProcessing = true
+    setDatabase(enabledData)
+    expect(getDatabase().openAIFlexProcessing).toBe(true)
+  })
+
+  it('defaults complex regex compatibility to 15-second worker timeouts', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase())
+    delete (legacyData as Partial<Database>).complexRegexCompatibilityMode
+    delete (legacyData as Partial<Database>).complexRegexInputTimeoutMs
+    delete (legacyData as Partial<Database>).complexRegexOutputTimeoutMs
+    delete (legacyData as Partial<Database>).complexRegexDisplayTimeoutMs
+    delete (legacyData as Partial<Database>).regexOutputSizeLimitMiB
+
+    setDatabase(legacyData)
+
+    expect(getDatabase()).toMatchObject({
+      complexRegexCompatibilityMode: 'worker',
+      complexRegexInputTimeoutMs: 15000,
+      complexRegexOutputTimeoutMs: 15000,
+      complexRegexDisplayTimeoutMs: 15000,
+      regexOutputSizeLimitMiB: 16,
+    })
+
+    const configuredData = clonePlain(getDatabase())
+    configuredData.complexRegexCompatibilityMode = 'strict'
+    configuredData.complexRegexInputTimeoutMs = 1000
+    configuredData.complexRegexOutputTimeoutMs = 2000
+    configuredData.complexRegexDisplayTimeoutMs = 3000
+    configuredData.regexOutputSizeLimitMiB = 32
+
+    setDatabase(configuredData)
+
+    expect(getDatabase()).toMatchObject({
+      complexRegexCompatibilityMode: 'strict',
+      complexRegexInputTimeoutMs: 1000,
+      complexRegexOutputTimeoutMs: 2000,
+      complexRegexDisplayTimeoutMs: 3000,
+      regexOutputSizeLimitMiB: 32,
+    })
+  })
+
+  it('normalizes chat load counts and migrates the fork legacy initial-tail setting', () => {
+    seedPresetDatabase()
+    const data = clonePlain(getDatabase())
+    data.chatDisplayTailCount = 18
+    delete data.chatLoadInitialPages
+    data.chatLoadAdditionalPages = 7.9
+
+    setDatabase(data)
+
+    expect(getDatabase().chatLoadInitialPages).toBe(18)
+    expect(getDatabase().chatLoadAdditionalPages).toBe(7)
+  })
+
+  it('normalizes prompt roles across top-level, legacy, and modern preset templates', () => {
+    seedPresetDatabase()
+    const data = clonePlain(getDatabase()) as unknown as Record<string, unknown>
+    data.promptTemplate = [{ id: 'top-row', type: 'description', role2: 'assistant' }]
+    ;(data.botPresets as Array<Record<string, unknown>>)[0].promptTemplate = [
+      { id: 'legacy-row', type: 'authornote', role2: 'char' },
+    ]
+    data.promptPresets = [
+      {
+        id: 'modern-preset',
+        name: 'Modern',
+        promptTemplate: [{ id: 'modern-row', type: 'cache', role: 'bot', name: '', depth: 1 }],
+      },
+    ]
+    data.promptPresetsId = 0
+
+    setDatabase(data as unknown as Database)
+
+    const normalized = getDatabase() as unknown as Record<string, unknown>
+    expect((normalized.promptTemplate as Array<Record<string, unknown>>)[0].role2).toBe('bot')
+    expect(((normalized.botPresets as Array<Record<string, unknown>>)[0].promptTemplate as any[])[0].role2).toBe('bot')
+    expect(((normalized.promptPresets as Array<Record<string, unknown>>)[0].promptTemplate as any[])[0].role).toBe(
+      'assistant',
+    )
+  })
+
+  it('keeps a present null top-level prompt template null', () => {
+    seedPresetDatabase()
+    const data = clonePlain(getDatabase()) as unknown as Record<string, unknown>
+    data.promptTemplate = null
+
+    setDatabase(data as unknown as Database)
+
+    const normalized = getDatabase() as unknown as Record<string, unknown>
+    expect(Object.prototype.hasOwnProperty.call(normalized, 'promptTemplate')).toBe(true)
+    expect(normalized.promptTemplate).toBeNull()
+  })
+
+  it('defaults popup editing to plain text while preserving explicit Monaco preferences', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase())
+    delete legacyData.useMonacoEditorOnDesktop
+    delete legacyData.useMonacoEditorOnMobile
+
+    setDatabase(legacyData)
+    expect(getDatabase().useMonacoEditorOnDesktop).toBe(false)
+    expect(getDatabase().useMonacoEditorOnMobile).toBe(false)
+
+    const monacoData = clonePlain(getDatabase())
+    monacoData.useMonacoEditorOnDesktop = true
+    monacoData.useMonacoEditorOnMobile = true
+    setDatabase(monacoData)
+    expect(getDatabase().useMonacoEditorOnDesktop).toBe(true)
+    expect(getDatabase().useMonacoEditorOnMobile).toBe(true)
+  })
+
+  it('defaults the saving icon on while preserving an explicit opt-out', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase())
+    delete (legacyData as Partial<Database>).showSavingIcon
+
+    setDatabase(legacyData)
+    expect(getDatabase().showSavingIcon).toBe(true)
+
+    const optedOutData = clonePlain(getDatabase())
+    optedOutData.showSavingIcon = false
+    setDatabase(optedOutData)
+    expect(getDatabase().showSavingIcon).toBe(false)
+  })
+
   it('rejects unsupported group rows instead of silently deleting them', () => {
     seedPresetDatabase()
     const before = clonePlain(getDatabase())
@@ -422,6 +669,9 @@ describe('settings database normalization', () => {
 describe('model profile database normalization', () => {
   it('normalizes durable profile scaffold fields through setDatabase', () => {
     seedPresetDatabase({
+      providerCredentials: [
+        { id: ' credential-a ', name: ' Primary key ', type: 'apiKey', apiKey: ' profile-secret ' },
+      ],
       modelProfiles: [
         {
           id: ' profile-a ',
@@ -429,6 +679,7 @@ describe('model profile database normalization', () => {
           providerId: ' openai ',
           modelId: ' gpt-5 ',
           providerOptions: {
+            credentialId: ' credential-a ',
             requestModel: ' wire-model ',
             baseUrl: ' https://profile.example.com/v1 ',
             apiKey: ' profile-secret ',
@@ -455,6 +706,12 @@ describe('model profile database normalization', () => {
         { id: 'profile-b', name: 'Identity Only', modelId: '   ' } as any,
         { id: 'profile-c' } as any,
       ],
+      modelProfileOrder: [
+        { kind: 'profile', profileId: 'profile-b' },
+        { kind: 'divider', id: ' divider-a ' },
+        { kind: 'profile', profileId: 'missing' },
+        { kind: 'profile', profileId: 'profile-a' },
+      ],
       modelRoleProfiles: {
         memory: { mode: 'profile', profileId: 'profile-a' },
         translate: { mode: 'legacy' },
@@ -471,6 +728,9 @@ describe('model profile database normalization', () => {
 
     setDatabase(data)
 
+    expect(getDatabase().providerCredentials).toEqual([
+      { id: 'credential-a', name: 'Primary key', type: 'apiKey', apiKey: 'profile-secret' },
+    ])
     expect(getDatabase().modelProfiles).toEqual([
       {
         id: 'profile-a',
@@ -478,9 +738,9 @@ describe('model profile database normalization', () => {
         providerId: 'openai',
         modelId: 'gpt-5',
         providerOptions: {
+          credentialId: 'credential-a',
           requestModel: 'wire-model',
           baseUrl: 'https://profile.example.com/v1',
-          apiKey: 'profile-secret',
           extraHeaders: { 'X-Test': 'yes' },
           additionalParams: [['header::X-Test', 'true']],
           openrouter: {
@@ -493,14 +753,18 @@ describe('model profile database normalization', () => {
           vertex: {
             projectId: 'project-a',
             region: 'us-central1',
-            clientEmail: 'svc@example.iam.gserviceaccount.com',
-            privateKey: 'private-key',
           },
           customApi: { tokenizer: LLMTokenizer.Mistral, flags: [LLMFlags.hasStreaming] },
         },
       },
       { id: 'profile-b', name: 'Identity Only' },
       { id: 'profile-c', name: 'profile-c' },
+    ])
+    expect(getDatabase().modelProfileOrder).toEqual([
+      { kind: 'profile', profileId: 'profile-b' },
+      { kind: 'divider', id: 'divider-a' },
+      { kind: 'profile', profileId: 'profile-a' },
+      { kind: 'profile', profileId: 'profile-c' },
     ])
     expect(getDatabase().modelRoleProfiles).toEqual({
       ...Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
@@ -519,6 +783,10 @@ describe('model profile database normalization', () => {
       modelProfiles: [
         { id: 'profile-a', name: 'Profile A', modelId: 'gpt-5', providerOptions: { requestModel: 'wire-model' } },
       ],
+      modelProfileOrder: [
+        { kind: 'divider', id: 'divider-a' },
+        { kind: 'profile', profileId: 'profile-a' },
+      ],
       modelRoleProfiles: normalizedModelRoleProfiles({
         memory: { mode: 'profile', profileId: 'profile-a' },
       }) as Database['modelRoleProfiles'],
@@ -534,6 +802,10 @@ describe('model profile database normalization', () => {
     expect(command.body.patch).toMatchObject({
       modelProfiles: [
         { id: 'profile-a', name: 'Profile A', modelId: 'gpt-5', providerOptions: { requestModel: 'wire-model' } },
+      ],
+      modelProfileOrder: [
+        { kind: 'divider', id: 'divider-a' },
+        { kind: 'profile', profileId: 'profile-a' },
       ],
       modelRoleProfiles: expect.objectContaining({
         memory: { mode: 'profile', profileId: 'profile-a' },
@@ -565,6 +837,10 @@ describe('model profile database normalization', () => {
           } as never,
           { id: 'target-profile', name: 'Duplicate' } as never,
         ],
+        modelProfileOrder: [
+          { kind: 'divider', id: 'target-divider' },
+          { kind: 'profile', profileId: 'target-profile' },
+        ],
         modelRoleProfiles: {
           memory: { mode: 'profile', profileId: ' target-profile ' },
           translate: { mode: 'legacy' },
@@ -589,6 +865,10 @@ describe('model profile database normalization', () => {
         providerOptions: { requestModel: 'target-wire' },
       },
     ])
+    expect(getDatabase().modelProfileOrder).toEqual([
+      { kind: 'divider', id: 'target-divider' },
+      { kind: 'profile', profileId: 'target-profile' },
+    ])
     expect(getDatabase().modelRoleProfiles).toEqual(
       normalizedModelRoleProfiles({
         memory: { mode: 'profile', profileId: 'target-profile' },
@@ -599,8 +879,9 @@ describe('model profile database normalization', () => {
       modelTools: ['preset-tool'],
     })
     expect(getDatabase().agentPresets).toEqual([
-      { id: 'agent-target', name: 'Target Agent', enabled: true, version: 1, steps: [] },
+      { id: 'agent-target', name: 'Target Agent', enabled: true, version: 1, agentUses: [], steps: [] },
     ])
+    expect(getDatabase().agents).toEqual([])
     expect(getDatabase().agentPresetDefaultId).toBe('agent-target')
   })
 
@@ -643,23 +924,31 @@ describe('agent preset database normalization', () => {
         name: 'Research',
         enabled: true,
         version: 1,
-        steps: [
+        agentUses: [
           {
             id: 'aps_context',
-            name: 'aps_context',
+            agentId: 'aps_context',
             enabled: true,
             phase: 'beforeMain',
             dependencies: [],
-            instruction: '',
-            model: { mode: 'inheritMain' },
-            runtime: {},
-            inputScopes: [],
             outputKey: 'context',
-            outputFormat: 'text',
             destination: 'promptOutput',
             failurePolicy: { mode: 'required' },
           },
         ],
+        steps: [],
+      },
+    ])
+    expect(getDatabase().agents).toEqual([
+      {
+        id: 'aps_context',
+        name: 'aps_context',
+        version: 1,
+        instruction: '',
+        modelDefaults: { mode: 'inheritMain' },
+        runtimeDefaults: {},
+        inputScopes: [],
+        outputFormat: 'text',
       },
     ])
     expect(getDatabase().agentPresetDefaultId).toBeUndefined()
@@ -680,6 +969,34 @@ describe('accessibility database normalization', () => {
     setDatabase(enabledData)
     expect(getDatabase().reducedMotion).toBe(true)
   })
+
+  it('defaults the floating chat input to enabled and preserves an opt-out', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase())
+    delete (legacyData as unknown as Record<string, unknown>).floatingChatInput
+
+    setDatabase(legacyData)
+    expect(getDatabase().floatingChatInput).toBe(true)
+
+    const disabledData = clonePlain(getDatabase())
+    disabledData.floatingChatInput = false
+    setDatabase(disabledData)
+    expect(getDatabase().floatingChatInput).toBe(false)
+  })
+
+  it('defaults the all-model additional-parameters opt-in to false and preserves true', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase())
+    delete (legacyData as unknown as Record<string, unknown>).applyAdditionalParamsToAll
+
+    setDatabase(legacyData)
+    expect(getDatabase().applyAdditionalParamsToAll).toBe(false)
+
+    const enabledData = clonePlain(getDatabase())
+    enabledData.applyAdditionalParamsToAll = true
+    setDatabase(enabledData)
+    expect(getDatabase().applyAdditionalParamsToAll).toBe(true)
+  })
 })
 
 describe('sentence paragraph database normalization', () => {
@@ -699,6 +1016,26 @@ describe('sentence paragraph database normalization', () => {
     setDatabase(configuredData)
     expect(getDatabase().paragraphBreakBySentences).toBe(true)
     expect(getDatabase().paragraphBreakSentenceCount).toBe(6)
+  })
+})
+
+describe('model parameter database normalization', () => {
+  it('defaults missing reasoning effort and verbosity without replacing configured values', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase())
+    delete (legacyData as unknown as Record<string, unknown>).reasoningEffort
+    delete (legacyData as unknown as Record<string, unknown>).verbosity
+
+    setDatabase(legacyData)
+    expect(getDatabase().reasoningEffort).toBe(0)
+    expect(getDatabase().verbosity).toBe(1)
+
+    const configuredData = clonePlain(getDatabase())
+    configuredData.reasoningEffort = 3
+    configuredData.verbosity = 2
+    setDatabase(configuredData)
+    expect(getDatabase().reasoningEffort).toBe(3)
+    expect(getDatabase().verbosity).toBe(2)
   })
 })
 
@@ -832,13 +1169,11 @@ function seedPresetDatabase(patch: Partial<Database> = {}): void {
 beforeEach(() => {
   clearCachedServerCommandRevision()
   setServerCommandSuccessReconciler(null)
-  setResourceWriteGuardEnabled(false)
   resetPendingPresetMutationsForTests()
 })
 
 afterEach(() => {
   resetPendingPresetMutationsForTests()
-  setResourceWriteGuardEnabled(false)
   setServerCommandSuccessReconciler(null)
   setDatabaseLite({
     characters: [],
@@ -871,7 +1206,7 @@ describe('mergeServerResourceCharacterRow', () => {
     expect(captureDestructiveRefreshEpoch()).toBe(afterFullReplace)
   })
 
-  it('applies the runtime language side effect when a targeted projection merges language', () => {
+  it('applies the runtime language side effect when a targeted projection merges language', async () => {
     seedDatabase([])
     changeLanguage('en')
     expect(activeLanguage.showHelp).toBe('Show Help')
@@ -879,6 +1214,7 @@ describe('mergeServerResourceCharacterRow', () => {
     mergeServerResourceFields({ language: 'ko' } as Partial<Database>)
 
     expect(getDatabase().language).toBe('ko')
+    await awaitLanguageReady()
     expect(activeLanguage.showHelp).toBe('도움말 보기')
   })
 
@@ -894,7 +1230,7 @@ describe('mergeServerResourceCharacterRow', () => {
     expect(getDatabase().promptTemplate).toEqual([{ id: 'prompt-live', type: 'plain', text: 'keep me' }])
   })
 
-  it('L35: preserves hydrated hypaV3Data on message-empty chat stubs', () => {
+  it('preserves hydrated hypaV3Data on message-empty chat stubs', () => {
     const hypaV3Data = {
       memories: [{ id: 'memory-1', text: 'remember this' }],
     }
@@ -990,7 +1326,53 @@ describe('mergeServerResourceCharacterRow', () => {
   })
 })
 
-describe('preset command rollback (L21)', () => {
+describe('preset command rollback', () => {
+  it.each([
+    {
+      kind: 'model' as const,
+      presetId: 'model-a',
+      presetPath: '/model-presets/model-a',
+    },
+    {
+      kind: 'prompt' as const,
+      presetId: 'prompt-a',
+      presetPath: '/prompt-presets/prompt-a',
+    },
+  ])('preserves masked projected credentials when updating the selected $kind preset', async (testCase) => {
+    seedPresetDatabase({
+      providerCredentials: [
+        {
+          id: 'credential-api',
+          name: 'OpenAI',
+          type: 'apiKey',
+          apiKey: MASKED_PROVIDER_SECRET,
+        },
+      ],
+      modelPresets: [makePreset('model-a', 'Model A') as unknown as ModelPreset],
+      modelPresetsId: 0,
+      promptPresets: [makePreset('prompt-a', 'Prompt A') as unknown as PromptPreset],
+      promptPresetsId: 0,
+    })
+    setCachedServerCommandRevision(100)
+    const calls = stubSuccessfulSplitPresetCommands()
+
+    if (testCase.kind === 'model') updateModelPreset(0, { temperature: 22 })
+    else updatePromptPreset(0, { mainPrompt: 'edited prompt' })
+
+    expect(getDatabase().providerCredentials).toEqual([
+      {
+        id: 'credential-api',
+        name: 'OpenAI',
+        type: 'apiKey',
+        apiKey: MASKED_PROVIDER_SECRET,
+      },
+    ])
+
+    flushPendingSplitPresetPatch(testCase.kind, testCase.presetId)
+    await waitForPresetCommand(calls, testCase.presetPath)
+    expect(getDatabase().providerCredentials).toHaveLength(1)
+  })
+
   it('applies a prompt preset legacy regex alias when presetRegex is empty', async () => {
     const liveRegex = [{ id: 'live-regex', in: 'hi', out: 'LIVE', type: 'editinput' }]
     const selectedRegex = [{ id: 'selected-regex', in: 'hi', out: 'SELECTED', type: 'editinput' }]
@@ -1069,7 +1451,6 @@ describe('preset command rollback (L21)', () => {
       botPresets: [preset],
       botPresetsId: 0,
     })
-    setResourceWriteGuardEnabled(true)
     const before = getDatabase()
 
     expect(botPresetIdsNeedNormalization(getDatabase())).toBe(false)
@@ -1098,7 +1479,6 @@ describe('preset command rollback (L21)', () => {
         botPresets: scenario.botPresets,
         botPresetsId: 0,
       })
-      setResourceWriteGuardEnabled(true)
       const fetchSpy = vi.fn(async () => {
         throw new Error(`unexpected preset hydration fetch for ${scenario.name}`)
       })
@@ -1112,8 +1492,6 @@ describe('preset command rollback (L21)', () => {
       expect(fetchSpy).not.toHaveBeenCalled()
       expect(getDatabase()).toBe(before)
       expect(JSON.stringify(getDatabase())).toBe(beforeJson)
-
-      setResourceWriteGuardEnabled(false)
       vi.unstubAllGlobals()
     }
   })
@@ -1123,7 +1501,6 @@ describe('preset command rollback (L21)', () => {
       botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
       botPresetsId: 0,
     })
-    setResourceWriteGuardEnabled(true)
     const fetchSpy = vi.fn(async () => {
       throw new Error('unexpected preset hydration fetch for invalid index')
     })
@@ -1143,7 +1520,6 @@ describe('preset command rollback (L21)', () => {
       botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
       botPresetsId: 0,
     })
-    setResourceWriteGuardEnabled(true)
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
@@ -1172,7 +1548,6 @@ describe('preset command rollback (L21)', () => {
       botPresets: [{ id: 'preset-minimal', name: 'Minimal', image: 'minimal.png' } as botPreset],
       botPresetsId: 0,
     })
-    setResourceWriteGuardEnabled(true)
     const fetchSpy = vi.fn(async () =>
       jsonResponse({
         revision: 7,
@@ -1188,7 +1563,7 @@ describe('preset command rollback (L21)', () => {
     vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
 
     await expect(ensureBotPresetHydrated(0)).resolves.toBe(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().botPresets[0] = clonePlain(getDatabase().botPresets[0])
     })
     await expect(ensureBotPresetHydrated(0)).resolves.toBe(true)
@@ -1208,7 +1583,6 @@ describe('preset command rollback (L21)', () => {
       botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
       botPresetsId: 0,
     })
-    setResourceWriteGuardEnabled(true)
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
@@ -1228,7 +1602,6 @@ describe('preset command rollback (L21)', () => {
     const betaShell = { id: 'preset-b', name: 'Beta', image: 'beta.png' } as botPreset
     seedPresetDatabase({ botPresets: [alpha, betaShell], botPresetsId: 0 })
     setCachedServerCommandRevision(100)
-    setResourceWriteGuardEnabled(true)
     const hydration = deferred<Response>()
     const command = deferred<Response>()
     const calls: CapturedFetch[] = []
@@ -1275,7 +1648,6 @@ describe('preset command rollback (L21)', () => {
     const betaShell = { id: 'preset-b', name: 'Beta', image: 'beta.png' } as botPreset
     seedPresetDatabase({ botPresets: [alpha, betaShell], botPresetsId: 0 })
     setCachedServerCommandRevision(100)
-    setResourceWriteGuardEnabled(true)
     const hydration = deferred<Response>()
     const command = deferred<Response>()
     const calls: CapturedFetch[] = []
@@ -1321,7 +1693,6 @@ describe('preset command rollback (L21)', () => {
       promptPresets: [],
     })
     setCachedServerCommandRevision(100)
-    setResourceWriteGuardEnabled(true)
     const hydration = deferred<Response>()
     const command = deferred<Response>()
     const calls: CapturedFetch[] = []
@@ -1363,7 +1734,6 @@ describe('preset command rollback (L21)', () => {
       botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
       botPresetsId: 0,
     })
-    setResourceWriteGuardEnabled(true)
     setCachedServerCommandRevision(5)
     const response = deferred<Response>()
     const fetchSpy = vi.fn((input: RequestInfo | URL) => {
@@ -1398,7 +1768,6 @@ describe('preset command rollback (L21)', () => {
       botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
       botPresetsId: 0,
     })
-    setResourceWriteGuardEnabled(true)
     setCachedServerCommandRevision(5)
     const response = deferred<Response>()
     const fetchSpy = vi.fn(() => response.promise)
@@ -1735,7 +2104,6 @@ describe('preset command rollback (L21)', () => {
       botPresetsId: 0,
     })
     delete (getDatabase() as unknown as { promptTemplate?: unknown }).promptTemplate
-    setResourceWriteGuardEnabled(true)
     const calls = stubFailedPresetCommand()
 
     saveCurrentPreset()
@@ -1753,7 +2121,6 @@ describe('preset command rollback (L21)', () => {
       promptTemplate: [{ id: 'live-only-prompt', type: 'plain', text: 'live only prompt row' }] as any,
     })
     const beforePresetTemplate = clonePlain(getDatabase().botPresets[0].promptTemplate)
-    setResourceWriteGuardEnabled(true)
     const calls = stubFailedPresetCommand()
 
     saveCurrentPreset()
@@ -1768,7 +2135,6 @@ describe('preset command rollback (L21)', () => {
       botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
       botPresetsId: 0,
     })
-    setResourceWriteGuardEnabled(true)
     setCachedServerCommandRevision(9)
     vi.stubGlobal(
       'fetch',
@@ -1788,7 +2154,7 @@ describe('preset command rollback (L21)', () => {
     expect(getDatabase().botPresets[0]).toEqual({ id: 'preset-stub', name: 'Stub', image: 'img' })
   })
 
-  it('L21: failed save restores the saved preset collection and selected index', async () => {
+  it('failed save restores the saved preset collection and selected index', async () => {
     seedPresetDatabase({ temperature: 91 })
     const calls = stubFailedPresetCommand(() => {
       getDatabase().botPresets[0].name = 'Alpha edited after dispatch'
@@ -2550,7 +2916,7 @@ describe('preset command rollback (L21)', () => {
         promptPresetsId: 0,
         promptTemplate: clonePlain(promptA.promptTemplate),
       })
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().promptPresets[0].promptTemplate = clonePlain(draftItems)
       })
       markPromptTemplateProjectionApplied('prompt-a', 100)
@@ -3033,6 +3399,13 @@ describe('preset command rollback (L21)', () => {
         makePreset('model-b', 'Model B') as unknown as ModelPreset,
       ],
       modelPresetsId: 0,
+      promptPresets: [
+        {
+          ...(makePreset('prompt-a', 'Prompt A') as unknown as PromptPreset),
+          recommendedModelPresetId: 'model-a',
+        },
+      ],
+      promptPresetsId: 0,
       characters: [
         {
           chaId: 'char-a',
@@ -3075,12 +3448,14 @@ describe('preset command rollback (L21)', () => {
 
     expect(getDatabase().characters[0].chats[0].generationSettings?.modelPresetId).toBe('model-b')
     expect(getDatabase().loadouts[0]).toMatchObject({ modelPresetId: 'model-b', modelPresetName: 'Model B' })
+    expect(getDatabase().promptPresets[0].recommendedModelPresetId).toBeNull()
 
     await waitForPresetCommand(calls, '/model-presets/model-a')
     await waitForState(() => {
       expect(getDatabase().modelPresets.map((preset) => preset.id)).toEqual(['model-a', 'model-b'])
       expect(getDatabase().characters[0].chats[0].generationSettings?.modelPresetId).toBe('model-a')
       expect(getDatabase().loadouts[0]).toMatchObject({ modelPresetId: 'model-a', modelPresetName: 'Model A' })
+      expect(getDatabase().promptPresets[0].recommendedModelPresetId).toBe('model-a')
     })
   })
 
@@ -3165,7 +3540,7 @@ describe('preset command rollback (L21)', () => {
         promptPresetsId: 0,
         promptTemplate: clonePlain(promptA.promptTemplate),
       })
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().promptPresets[0].promptTemplate = clonePlain(draftItems)
       })
       markPromptTemplateProjectionApplied('prompt-a', 100)
@@ -3308,7 +3683,7 @@ describe('preset command rollback (L21)', () => {
     const calls = stubSuccessfulSplitPresetCommands()
 
     updatePromptPreset(0, { name: 'Prompt before pagehide' })
-    flushRegisteredPendingBridgePatches({ keepalive: true })
+    flushRegisteredPendingOwnerMutations({ keepalive: true })
 
     const command = await waitForPresetCommand(calls, '/prompt-presets/prompt-a')
     expect(command.body.patch).toEqual({ name: 'Prompt before pagehide' })
@@ -3870,7 +4245,7 @@ describe('preset command rollback (L21)', () => {
         id: 'model-profile',
         name: 'Model Profile',
         modelId: 'model-ai',
-        providerOptions: { requestModel: 'model-wire', apiKey: 'model-secret' },
+        providerOptions: { requestModel: 'model-wire' },
       },
     ])
     expect(getDatabase().modelRoleProfiles).toEqual(
@@ -3904,7 +4279,7 @@ describe('preset command rollback (L21)', () => {
     expect(getDatabase().temperature).toBe(88)
   })
 
-  it('L21: failed copy restores the original collection after save-current and generated copy id', async () => {
+  it('failed copy restores the original collection after save-current and generated copy id', async () => {
     seedPresetDatabase({ temperature: 88 })
     let generatedCopyId: string | undefined
     const calls = stubFailedPresetCommand(() => {
@@ -3931,7 +4306,7 @@ describe('preset command rollback (L21)', () => {
     })
   })
 
-  it('L21: shared preset boundary keeps copy as one rollback-safe command', async () => {
+  it('shared preset boundary keeps copy as one rollback-safe command', async () => {
     seedPresetDatabase({ temperature: 77 })
     const beforeSourceTemperature = getDatabase().botPresets[0].temperature
     const beforeSelected = getDatabase().botPresetsId
@@ -3959,7 +4334,7 @@ describe('preset command rollback (L21)', () => {
     expect(presetCommands[0].body.newPresetId).toBeTruthy()
   })
 
-  it('L21: failed create removes the optimistic preset and generated id', async () => {
+  it('failed create removes the optimistic preset and generated id', async () => {
     seedPresetDatabase()
     let optimisticPresetId: string | undefined
     const calls = stubFailedPresetCommand(() => {
@@ -3986,7 +4361,7 @@ describe('preset command rollback (L21)', () => {
     })
   })
 
-  it('L21: failed update restores the patched preset row', async () => {
+  it('failed update restores the patched preset row', async () => {
     seedPresetDatabase()
     const calls = stubFailedPresetCommand(() => {
       getDatabase().botPresets[1].name = 'Newer Beta edit after dispatch'
@@ -4008,7 +4383,7 @@ describe('preset command rollback (L21)', () => {
     })
   })
 
-  it('L21: failed delete restores collection, selection, and setPreset scalars', async () => {
+  it('failed delete restores collection, selection, and setPreset scalars', async () => {
     seedPresetDatabase()
     const calls = stubFailedPresetCommand(() => {
       getDatabase().botPresets.push(makePreset('preset-c', 'Gamma appended after dispatch'))
@@ -4044,7 +4419,7 @@ describe('preset command rollback (L21)', () => {
     await waitForPresetCommand(calls, '/presets/preset-a')
   })
 
-  it('L21: failed reorder restores collection order and selected index', async () => {
+  it('failed reorder restores collection order and selected index', async () => {
     seedPresetDatabase({
       botPresets: [makePreset('preset-a', 'Alpha'), makePreset('preset-b', 'Beta'), makePreset('preset-c', 'Gamma')],
       botPresetsId: 1,
@@ -4091,7 +4466,7 @@ describe('preset command rollback (L21)', () => {
     })
   })
 
-  it('L21: failed select restores setPreset scalars without overwriting unrelated fields', async () => {
+  it('failed select restores setPreset scalars without overwriting unrelated fields', async () => {
     seedPresetDatabase()
     const beforePresets = clonePlain(getDatabase().botPresets)
     const beforePrompt = getDatabase().mainPrompt
@@ -4165,7 +4540,7 @@ describe('preset command rollback (L21)', () => {
     expect(getDatabase().modelPresets.some((preset) => preset.name === 'Alpha Model')).toBe(true)
     expect(getDatabase().promptPresets.some((preset) => preset.name === 'Alpha Prompt')).toBe(true)
     expect(getDatabase().promptPresets.find((preset) => preset.name === 'Alpha Prompt')?.promptTemplate).toEqual([
-      { id: 'preset-a-prompt', type: 'plain', text: 'Alpha prompt item' },
+      { id: 'preset-a-prompt', type: 'plain', text: 'Alpha prompt item', role: 'system' },
     ])
     await waitForPresetCommand(calls, '/legacy-bot-presets/preset-a/extract')
     await waitForState(() => {

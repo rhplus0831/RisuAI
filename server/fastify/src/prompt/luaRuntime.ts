@@ -1,22 +1,51 @@
+import Ajv from 'ajv'
+import { PromptChatRowSchema } from '@risuai/protocol/generation-sse'
 import { LuaFactory, type LuaEngine } from 'wasmoon'
 import { readFile } from 'node:fs/promises'
+import type { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { isIP } from 'node:net'
 import { lookup as dnsLookup } from 'node:dns/promises'
 import { request as httpsRequest } from 'node:https'
-import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
-import type { triggerscript } from '../../../../src/ts/process/triggers'
-import type { simpleCharacterArgument } from '../../../../src/ts/parser/parser.svelte'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
-import type { ModelRole } from '../../../../src/ts/model/modelRoles.js'
-import { resolveModelProfile } from '../../../../src/ts/model/modelProfileResolver.js'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+  FastifyLoreBook as loreBook,
+  FastifyMessage as Message,
+} from './serverTypes.js'
+import type { PromptMessage } from './promptMessage.js'
+import type { ServerTriggerScript as triggerscript } from './triggerDescriptors.js'
+import type { ModelRole } from '@risuai/shared-core/model-roles'
+import {
+  resolveModelProfile,
+  resolveModelProfileByProfileId,
+  resolveModelProfileWithLegacyCompatibility,
+  type ResolvedModelProfile,
+} from '@risuai/shared-core/model-profile-resolver'
+import { normalizeModelRoleProfiles } from '@risuai/shared-core/model-profile-records'
+import { scriptModelOverrideProfileId } from '@risuai/shared-core/script-model-overrides'
 import type { TriggerVarEngine } from './triggerVars.js'
 import { expandVariables } from './variables.js'
-import { tokenize, encodingForModel } from './tokens.js'
+import { tokenize } from './tokens.js'
+import { ensureTokenizerLoadedForDb, tokenizerEncodingFromDb } from './tokenizerConfig.js'
 import { dispatchChatProvider } from './chatDispatch.js'
 import { getActiveModules, getModuleLorebooks } from './modules.js'
+import { activateLorebookAsync } from './lorebook.js'
+import { embedTextGroups, embedTexts } from '../memoryEmbeddingAdapter.js'
+import { resolveMemoryEmbeddingModel } from '../memoryEmbeddingModel.js'
+import { armMemoryProviderFetchDeadline, resolveMemoryProviderFetchDeadlineMs } from '../memoryProviderDeadline.js'
+import { selectedPersonaIndexFromStableId } from '@risuai/shared-core/persona-selection-identity'
+import {
+  executeImageGeneration,
+  parseImageGenerationRequest,
+  type GeneratedImage,
+  type ImageGenerationExecutionOptions,
+} from '../imageGeneration.js'
+import { persistServerInlayAsset } from '../inlayAssetPersistence.js'
+import type { ImageGenerationRequest } from '@risuai/protocol/image-generation-operation'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import { emitProtocolMetric, protocolMetricsEnabled } from '../protocolMetrics.js'
 import {
@@ -33,6 +62,17 @@ import {
   type ServerLuaRuntimeTraceSink,
 } from './luaPostGenerationTrace.js'
 import type { PostGenerationLuaProgressTracker, ServerLuaRuntimeProgressSink } from './luaPostGenerationProgress.js'
+
+/**
+ * The Lua runtime only needs the narrow character shape used by edit-trigger
+ * ownership. Keep this structural type local so Fastify does not depend on the
+ * browser markdown parser module for a type-only declaration.
+ */
+type SimpleCharacterArgument = {
+  type: 'simple'
+  chaId: string
+  triggerscript?: triggerscript[]
+}
 
 /**
  * Server-side Lua runtime under the single-user self-host security model.
@@ -53,7 +93,7 @@ import type { PostGenerationLuaProgressTracker, ServerLuaRuntimeProgressSink } f
  *    generic `Error` whose message contains "timeout" (the `LuaTimeoutError` class is
  *    lost across the Lua→JS error boundary), so we detect it by message.
  * 2. **`json.lua` is read from disk at boot**, path resolved relative to this module
- *    (`import.meta.url`) so it is deterministic under `pnpm api:test` regardless of
+ *    (`import.meta.url`) so it is deterministic under focused server Vitest regardless of
  *    cwd. Mounted once into a module-singleton {@link LuaFactory}.
  * 3. **Per-call engine isolation, pre-warmed.** The factory (wasm +
  *    mounted json.lua) is a singleton; each {@link runServerLua} call still gets an
@@ -76,7 +116,7 @@ import type { PostGenerationLuaProgressTracker, ServerLuaRuntimeProgressSink } f
  *    exhausted budget short-circuits before any engine boots — so a card stacking
  *    many runaway hooks is bounded by ~`totalMs` (+ at most one per-run limit for
  *    a dispatch already in flight), not `hooks × execTimeoutMs`.
- * 5. **`OpenAIChat` round-trip** is byte-faithful for the text-send subset (proven by
+ * 5. **`PromptMessage` round-trip** is byte-faithful for the text-send subset (proven by
  *    the editRequest unit test).
  */
 
@@ -96,6 +136,8 @@ const MAX_RESPONSE_BYTES = 2_000_000
 /** `sleep()` caps: per-call and per-run (the browser caps neither). */
 const MAX_SLEEP_MS = 2000
 const MAX_TOTAL_SLEEP_MS = 6000
+const SERVER_UNSUPPORTED_LUA_API_ERROR = 'Lua API is unsupported on the server'
+const LUA_IMAGE_GENERATION_FAILURE = 'Error: Image generation failed'
 
 /**
  * Default aggregate Lua wall-clock budget per request. Shared by
@@ -129,7 +171,7 @@ let luaFactoryPromise: Promise<LuaFactory> | null = null
 
 /**
  * Resolve `public/lua/json.lua` from this module's location so the path holds
- * under any cwd (`pnpm api:test` runs with `root: server/fastify`). This file is
+ * under any cwd (server Vitest runs with `root: server/fastify`). This file is
  * at `server/fastify/src/prompt/`, so the repo root is four levels up.
  */
 function resolveJsonLuaPath(): string {
@@ -393,7 +435,7 @@ function pinnedHttpsFetch(
         let size = 0
         res.setEncoding('utf8')
         res.on('data', (chunk: string) => {
-          size += chunk.length
+          size += Buffer.byteLength(chunk, 'utf8')
           if (size > MAX_RESPONSE_BYTES) {
             req.destroy(new Error('response too large'))
             return
@@ -458,6 +500,9 @@ export async function serverLuaRequest(
   try {
     const fetchImpl = deps.fetchImpl ?? pinnedHttpsFetch
     const result = await fetchImpl(url, verdict.addresses, signal)
+    if (Buffer.byteLength(result.data, 'utf8') > MAX_RESPONSE_BYTES) {
+      throw new Error('response too large')
+    }
     return JSON.stringify({ status: result.status, data: result.data })
   } catch (error) {
     // Abort is a cancellation, not a fetch failure: rethrow so the
@@ -491,6 +536,10 @@ end
 
 function getFullChat(id)
     return json.decode(getFullChatMain(id))
+end
+
+function getRecentChats(id, count)
+    return json.decode(getRecentChatsMain(id, count))
 end
 
 function setFullChat(id, value)
@@ -567,6 +616,11 @@ end
 function setState(id, name, value)
     local escapedName = "__"..name
     setChatVar(id, escapedName, json.encode(value))
+end
+
+function setStateChanged(id, name, value)
+    local escapedName = "__"..name
+    return setChatVarChanged(id, escapedName, json.encode(value))
 end
 
 function async(callback)
@@ -653,7 +707,7 @@ export interface ServerLuaRuntimeContext {
    */
   varEngine: TriggerVarEngine
   /** Working character (cbs `chara`, `getName`/`getDescription`, setters). */
-  char?: character | simpleCharacterArgument
+  char?: character | SimpleCharacterArgument
   /** Active model id, for `getTokens` encoding selection. */
   model?: string
   /** Egress dependency overrides (tests inject fake DNS/fetch/clock). */
@@ -675,10 +729,30 @@ export interface ServerLuaRuntimeContext {
    * before any engine boots.
    */
   execBudget?: LuaExecBudget
+  /** SQLite handle for durable LLM diagnostics and generated-inlay metadata. */
+  requestHistoryDb?: DatabaseSync
+  /** Server asset root used to persist Lua-generated inlays. */
+  assetDataDir?: string
+  /** Test/alternate adapter seam; production uses the shared embedding adapters. */
+  luaSimilarity?: {
+    embed?: typeof embedTexts
+    embedGroups?: typeof embedTextGroups
+    deadlineMs?: number
+  }
+  /** Test/alternate image execution/persistence seams. */
+  luaImageGeneration?: {
+    execute?: (
+      request: ImageGenerationRequest,
+      settings: Record<string, unknown>,
+      options?: ImageGenerationExecutionOptions,
+    ) => Promise<GeneratedImage>
+    persist?: (image: GeneratedImage) => Promise<string> | string
+  }
 }
 
 interface RuntimeState {
   ctx: ServerLuaRuntimeContext
+  source?: TriggerSourceAttribution
   safeIds: Set<string>
   lowLevelIds: Set<string>
   editDisplayIds: Set<string>
@@ -694,7 +768,7 @@ interface RuntimeState {
 export interface RunServerLuaOptions {
   code: string
   mode: string
-  data?: string | OpenAIChat[]
+  data?: string | PromptMessage[]
   meta?: object
   /** Grants the low-level host fns (`request`/`LLM`/`similarity`/…). Edit hooks run
    * with this `false` (browser parity, `scriptings.ts`). */
@@ -782,13 +856,23 @@ export function throwServerLuaFailure(result: ServerLuaResult, context: string):
 
 function asCharacter(ctx: ServerLuaRuntimeContext): character | undefined {
   const char = ctx.char
-  if (!char) return undefined
-  const type = (char as { type?: unknown }).type
-  if (type === 'character') return char as character
-  if ((type === undefined || type === null) && typeof (char as { chaId?: unknown }).chaId === 'string') {
-    return char as character
+  // Exclude edit-only owners before checking the nullable legacy character tag.
+  // This narrowing also holds for browser test consumers without strictNullChecks.
+  if (!char || char.type === 'simple') return undefined
+  const { type, chaId } = char
+  if (type === 'character') return char
+  if ((type === undefined || type === null) && typeof chaId === 'string') {
+    return char
   }
   return undefined
+}
+
+function selectedPersonaProfileField(database: Database, field: 'name' | 'personaPrompt'): string | undefined {
+  const personas = Array.isArray(database.personas) ? database.personas : []
+  const persona = personas[selectedPersonaIndexFromStableId(database)]
+  if (!persona || typeof persona.id !== 'string') return undefined
+  const value = persona[field]
+  return typeof value === 'string' ? value : ''
 }
 
 /** Sleep that wakes early when `signal` fires, so an aborted request never
@@ -930,15 +1014,15 @@ function luaLlmFailure(message: string): LuaLlmResult {
   return { success: false, result: message.startsWith('Error: ') ? message : `Error: ${message}` }
 }
 
-function normalizeLuaLlmRole(role: unknown): OpenAIChat['role'] {
+function normalizeLuaLlmRole(role: unknown): PromptMessage['role'] {
   if (role === 'system' || role === 'sys') return 'system'
   if (role === 'user') return 'user'
   return 'assistant'
 }
 
-function parseLuaLlmPrompt(promptStr: string, useMultimodal: boolean): OpenAIChat[] | LuaLlmResult {
+function parseLuaLlmPrompt(promptStr: string, useMultimodal: boolean): PromptMessage[] | LuaLlmResult {
   if (useMultimodal) {
-    return luaLlmFailure('Multimodal Lua LLM input is not supported by server prompt assembly')
+    throw new Error(`${SERVER_UNSUPPORTED_LUA_API_ERROR}: multimodal LLM`)
   }
 
   let parsed: unknown
@@ -952,7 +1036,7 @@ function parseLuaLlmPrompt(promptStr: string, useMultimodal: boolean): OpenAICha
     return luaLlmFailure('Lua LLM prompt must be an array')
   }
 
-  const rows: OpenAIChat[] = []
+  const rows: PromptMessage[] = []
   for (const item of parsed) {
     if (typeof item !== 'object' || item === null || Array.isArray(item)) {
       return luaLlmFailure('Lua LLM prompt entries must be objects')
@@ -964,7 +1048,7 @@ function parseLuaLlmPrompt(promptStr: string, useMultimodal: boolean): OpenAICha
     rows.push({
       role: normalizeLuaLlmRole(row.role),
       content: row.content ?? '',
-    } as OpenAIChat)
+    } as PromptMessage)
   }
 
   return rows
@@ -997,16 +1081,17 @@ async function collectLuaLlmFrames(frames: AsyncIterable<CompletionStreamFrame>)
 async function runLuaLlm(
   state: RuntimeState,
   role: ModelRole,
-  prompt: OpenAIChat[],
+  prompt: PromptMessage[],
   options: { streaming?: boolean } = {},
 ): Promise<LuaLlmResult> {
   try {
-    const profile = resolveModelProfile({ database: state.ctx.database, role })
-    const database = {
+    const profile = resolveLuaLlmProfile(state, role)
+    const database: Database = {
       ...state.ctx.database,
       aiModel: profile.modelId,
+      halfStreaming: false,
       useStreaming: options.streaming === true,
-    } as Database
+    }
     if (profile.runtimeOptions.maxResponse !== undefined) database.maxResponse = profile.runtimeOptions.maxResponse
     if (profile.runtimeOptions.rawTemperature !== undefined)
       database.temperature = profile.runtimeOptions.rawTemperature
@@ -1015,6 +1100,28 @@ async function runLuaLlm(
       formated: prompt,
       profile,
       signal: state.ctx.signal ?? new AbortController().signal,
+      ...(state.ctx.requestHistoryDb
+        ? {
+            history: {
+              db: state.ctx.requestHistoryDb,
+              source: 'script',
+              context: {
+                ...(state.ctx.char && 'chaId' in state.ctx.char && typeof state.ctx.char.chaId === 'string'
+                  ? { characterId: state.ctx.char.chaId }
+                  : {}),
+                ...(state.ctx.char && 'name' in state.ctx.char && typeof state.ctx.char.name === 'string'
+                  ? { characterName: state.ctx.char.name }
+                  : {}),
+                ...(state.ctx.chat.id ? { chatId: state.ctx.chat.id } : {}),
+                ...(state.ctx.chat.name ? { chatName: state.ctx.chat.name } : {}),
+              },
+              ...(state.ctx.chat.generationSettings?.sidebarToggles
+                ? { toggles: { ...state.ctx.chat.generationSettings.sidebarToggles } }
+                : {}),
+              metadata: { modelRole: role },
+            },
+          }
+        : {}),
     })
     return collectLuaLlmFrames(frames)
   } catch (error) {
@@ -1022,12 +1129,42 @@ async function runLuaLlm(
   }
 }
 
+function resolveLuaLlmProfile(state: RuntimeState, role: ModelRole): ResolvedModelProfile {
+  const source = state.source
+  const overrides =
+    source?.ownerType === 'module'
+      ? state.ctx.database.modules?.find((module) => module.id === source.ownerId)?.scriptModelOverrides
+      : asCharacter(state.ctx)?.scriptModelOverrides
+  const profileId =
+    role === 'scriptMain' || role === 'scriptAux' ? scriptModelOverrideProfileId(overrides, role) : undefined
+  if (!profileId) {
+    const args = { database: state.ctx.database, role }
+    return normalizeModelRoleProfiles(state.ctx.database.modelRoleProfiles)[role].mode === 'legacy'
+      ? resolveModelProfileWithLegacyCompatibility(args)
+      : resolveModelProfile(args)
+  }
+
+  const profile = resolveModelProfileByProfileId({
+    database: state.ctx.database,
+    role,
+    profileId,
+  })
+  if (!profile) {
+    const ownerLabel =
+      source?.ownerType === 'module'
+        ? `module ${source.ownerName ? `"${source.ownerName}"` : (source.ownerId ?? '')}`.trim()
+        : `character ${state.ctx.char && 'name' in state.ctx.char ? `"${state.ctx.char.name}"` : ''}`.trim()
+    throw new Error(`${ownerLabel} references missing script model profile "${profileId}"`)
+  }
+  return profile
+}
+
 async function runLuaLlmMain(
   state: RuntimeState,
   role: ModelRole,
   promptStr: string,
-  useMultimodal = false,
-  optionsStr = '',
+  useMultimodal: boolean = false,
+  optionsStr: string = '',
   traceFn?: 'LLM' | 'axLLM',
 ): Promise<string | undefined> {
   const fn = traceFn ?? (role === 'scriptAux' ? 'axLLM' : 'LLM')
@@ -1067,6 +1204,329 @@ async function runLuaLlmMain(
   }
 }
 
+function dotProduct(a: Float32Array, b: Float32Array): number | null {
+  if (a.length !== b.length) return null
+  let dot = 0
+  for (let index = 0; index < a.length; index += 1) {
+    dot += a[index] * b[index]
+  }
+  return Number.isFinite(dot) ? dot : null
+}
+
+async function settleLuaProviderCall<T>(promise: Promise<T>, signal: AbortSignal): Promise<T | undefined> {
+  if (signal.aborted) return undefined
+  return await new Promise<T | undefined>((resolve) => {
+    let settled = false
+    const finish = (value: T | undefined): void => {
+      if (settled) return
+      settled = true
+      signal.removeEventListener('abort', onAbort)
+      resolve(value)
+    }
+    const onAbort = (): void => finish(undefined)
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise.then(
+      (value) => finish(value),
+      () => finish(undefined),
+    )
+  })
+}
+
+async function runLuaSimilarity(state: RuntimeState, source: string, values: unknown): Promise<string[] | undefined> {
+  if (!Array.isArray(values) || values.some((value) => typeof value !== 'string')) return undefined
+  if (values.length === 0) return []
+
+  const model = resolveMemoryEmbeddingModel(state.ctx.database)
+  if (model.ok === false) return undefined
+
+  const deadlineController = new AbortController()
+  const deadlineMs = resolveMemoryProviderFetchDeadlineMs(state.ctx.luaSimilarity?.deadlineMs)
+  const signal = state.ctx.signal
+    ? AbortSignal.any([deadlineController.signal, state.ctx.signal])
+    : deadlineController.signal
+  const clearDeadline = armMemoryProviderFetchDeadline(deadlineController, deadlineMs)
+
+  try {
+    const run = (async (): Promise<{ documents: Float32Array[]; query: Float32Array } | null> => {
+      const documents: Float32Array[] = []
+      const chunks: string[][] = []
+      for (let index = 0; index < values.length; index += 50) {
+        chunks.push((values as string[]).slice(index, index + 50))
+      }
+
+      if (model.request.provider === 'voyage-contextual') {
+        const embedGroups = state.ctx.luaSimilarity?.embedGroups ?? embedTextGroups
+        let expectedDim: number | undefined
+        for (const chunk of chunks) {
+          const result = await embedGroups({
+            request: model.request,
+            groups: chunk.map((value) => [value]),
+            inputType: 'document',
+            signal,
+            ...(expectedDim === undefined ? {} : { expectedDim }),
+          })
+          if ('error' in result) return null
+          expectedDim = result.dim
+          documents.push(...result.groups.flatMap((group) => (group[0] ? [group[0]] : [])))
+        }
+        const query = await embedGroups({
+          request: model.request,
+          groups: [[String(source ?? '')]],
+          inputType: 'query',
+          signal,
+          ...(expectedDim === undefined ? {} : { expectedDim }),
+        })
+        if ('error' in query || !query.groups[0]?.[0]) return null
+        return { documents, query: query.groups[0][0] }
+      }
+
+      const embed = state.ctx.luaSimilarity?.embed ?? embedTexts
+      let expectedDim: number | undefined
+      for (const chunk of chunks) {
+        const result = await embed({
+          request: model.request,
+          input: chunk,
+          signal,
+          ...(expectedDim === undefined ? {} : { expectedDim }),
+        })
+        if ('error' in result) return null
+        expectedDim = result.dim
+        documents.push(...result.vectors)
+      }
+      const query = await embed({
+        request: model.request,
+        input: [String(source ?? '')],
+        signal,
+        ...(expectedDim === undefined ? {} : { expectedDim }),
+      })
+      if ('error' in query || !query.vectors[0]) return null
+      return { documents, query: query.vectors[0] }
+    })()
+
+    const embedded = await settleLuaProviderCall(run, signal)
+    if (!embedded || embedded.documents.length !== values.length) return undefined
+
+    const scored = (values as string[]).map((content, index) => ({
+      content,
+      similarity: dotProduct(embedded.query, embedded.documents[index]),
+    }))
+    if (scored.some((item) => item.similarity === null)) return undefined
+    return scored
+      .sort((a, b) => ((a.similarity as number) > (b.similarity as number) ? -1 : 0))
+      .map((item) => item.content)
+  } catch {
+    return undefined
+  } finally {
+    clearDeadline()
+  }
+}
+
+function randomImageSeed(): number {
+  return Math.floor(Math.random() * 0x1_0000_0000)
+}
+
+function requiredImageSetting<T>(value: T | undefined, field: string): T {
+  if (value === undefined) throw new Error(`image generation setting ${field} is missing`)
+  return value
+}
+
+function buildLuaImageGenerationRequest(
+  database: Database,
+  prompt: string,
+  negativePrompt: string,
+): ImageGenerationRequest {
+  const credential = { source: 'stored' as const }
+  switch (database.sdProvider) {
+    case 'novelai': {
+      const config = requiredImageSetting(database.NAIImgConfig, 'NAIImgConfig')
+      const model = requiredImageSetting(database.NAIImgModel, 'NAIImgModel')
+      const isV2OrV3 =
+        model.includes('nai-diffusion-3') ||
+        model.includes('nai-diffusion-furry-3') ||
+        model.includes('nai-diffusion-2')
+      const normalizedPrompt = prompt
+        .replaceAll('\\(', '♧')
+        .replaceAll('\\)', '♤')
+        .replaceAll('(', '{')
+        .replaceAll(')', '}')
+        .replaceAll('♧', '(')
+        .replaceAll('♤', ')')
+      let skipCfgAboveSigma: number | null = null
+      if (config.variety_plus) {
+        if (
+          model.includes('nai-diffusion-4-full') ||
+          model.includes('nai-diffusion-4-curated') ||
+          model.includes('nai-diffusion-3') ||
+          model.includes('nai-diffusion-furry-3')
+        ) {
+          skipCfgAboveSigma =
+            Math.sqrt(
+              requiredImageSetting(config.width, 'NAIImgConfig.width') *
+                requiredImageSetting(config.height, 'NAIImgConfig.height'),
+            ) * 0.01889
+        }
+        if (model.includes('nai-diffusion-4-5-full') || model.includes('nai-diffusion-4-5-curated')) {
+          skipCfgAboveSigma =
+            Math.sqrt(
+              requiredImageSetting(config.width, 'NAIImgConfig.width') *
+                requiredImageSetting(config.height, 'NAIImgConfig.height'),
+            ) * 0.05766
+        }
+      }
+      const parameters: Record<string, unknown> = {
+        params_version: 3,
+        add_original_image: true,
+        cfg_rescale: config.cfg_rescale,
+        controlnet_strength: 1,
+        dynamic_thresholding: isV2OrV3 ? config.decrisp : false,
+        n_samples: 1,
+        width: config.width,
+        height: config.height,
+        sampler: config.sampler,
+        steps: config.steps,
+        scale: config.scale,
+        negative_prompt: negativePrompt,
+        sm: isV2OrV3 ? config.sm : undefined,
+        sm_dyn:
+          model.includes('nai-diffusion-3') || model.includes('nai-diffusion-furry-3') ? config.sm_dyn : undefined,
+        noise_schedule: config.noise_schedule,
+        normalize_reference_strength_multiple: true,
+        ucPreset: 3,
+        uncond_scale: 1,
+        qualityToggle: false,
+        legacy_v3_extend: false,
+        legacy: false,
+        autoSmea: false,
+        use_coords: false,
+        legacy_uc: config.legacy_uc,
+        v4_prompt: {
+          caption: { base_caption: normalizedPrompt, char_captions: [] },
+          use_coords: false,
+          use_order: true,
+        },
+        v4_negative_prompt: {
+          caption: { base_caption: negativePrompt, char_captions: [] },
+          legacy_uc: config.legacy_uc,
+        },
+        reference_image_multiple: [],
+        reference_strength_multiple: [],
+        seed: randomImageSeed(),
+        extra_noise_seed: randomImageSeed(),
+        prefer_brownian: true,
+        deliberate_euler_ancestral_bug: false,
+        skip_cfg_above_sigma: skipCfgAboveSigma,
+        director_reference_images: [],
+        director_reference_descriptions: [],
+        director_reference_information_extracted: [],
+        director_reference_strength_values: [],
+      }
+      const inlineImage = typeof config.base64image === 'string' ? config.base64image : ''
+      if (database.NAII2I && inlineImage) {
+        parameters.image = inlineImage
+        parameters.strength = config.strength || 0.7
+        parameters.noise = config.noise || 0
+      }
+      return {
+        provider: 'novelai',
+        credential,
+        payload: {
+          input: normalizedPrompt,
+          model,
+          parameters,
+          action: database.NAII2I && inlineImage ? 'img2img' : 'generate',
+        },
+      }
+    }
+    case 'dalle':
+      return { provider: 'dalle', credential, prompt, quality: database.dallEQuality || 'standard' }
+    case 'stability':
+      return {
+        provider: 'stability',
+        credential,
+        prompt,
+        negativePrompt,
+        model: requiredImageSetting(database.stabilityModel, 'stabilityModel'),
+        style: database.stabllityStyle || '',
+      }
+    case 'fal':
+      return {
+        provider: 'fal',
+        credential,
+        prompt,
+        model: requiredImageSetting(database.falModel, 'falModel'),
+        width: requiredImageSetting(database.sdConfig, 'sdConfig').width,
+        height: requiredImageSetting(database.sdConfig, 'sdConfig').height,
+        ...(database.falModel === 'fal-ai/flux-lora' && database.falLora?.trim()
+          ? { lora: { path: database.falLora, scale: requiredImageSetting(database.falLoraScale, 'falLoraScale') } }
+          : {}),
+      }
+    case 'Imagen':
+      return {
+        provider: 'imagen',
+        credential,
+        prompt,
+        model: requiredImageSetting(database.ImagenModel, 'ImagenModel'),
+        imageSize: requiredImageSetting(database.ImagenImageSize, 'ImagenImageSize'),
+        aspectRatio: requiredImageSetting(database.ImagenAspectRatio, 'ImagenAspectRatio'),
+        personGeneration: requiredImageSetting(database.ImagenPersonGeneration, 'ImagenPersonGeneration'),
+      }
+    case 'openai-compat':
+      return { provider: 'openai-compat', credential, prompt }
+    case 'wavespeed': {
+      const config = requiredImageSetting(database.wavespeedImage, 'wavespeedImage')
+      const loras = Array.isArray(config.loras)
+        ? config.loras
+            .filter((lora) => lora?.path?.trim())
+            .map((lora) => ({
+              path: lora.path,
+              scale: typeof lora.scale === 'number' ? lora.scale : 1,
+            }))
+        : undefined
+      return {
+        provider: 'wavespeed',
+        credential,
+        prompt,
+        model: config.model,
+        ...(config.reference_base64image ? { images: [config.reference_base64image] } : {}),
+        ...(loras?.length ? { loras } : {}),
+      }
+    }
+    case 'kei':
+      return { provider: 'kei', credential, prompt }
+    default:
+      throw new Error('configured image provider is unsupported by the server')
+  }
+}
+
+async function persistLuaGeneratedImage(state: RuntimeState, image: GeneratedImage): Promise<string> {
+  if (state.ctx.luaImageGeneration?.persist) {
+    return await state.ctx.luaImageGeneration.persist(image)
+  }
+  if (!state.ctx.requestHistoryDb || !state.ctx.assetDataDir) {
+    throw new Error('server asset persistence is unavailable')
+  }
+  return persistServerInlayAsset(state.ctx.requestHistoryDb, state.ctx.assetDataDir, {
+    bytes: image.bytes,
+    contentType: image.contentType,
+  })
+}
+
+async function runLuaImageGeneration(state: RuntimeState, prompt: string, negativePrompt: string): Promise<string> {
+  try {
+    const request = parseImageGenerationRequest(
+      buildLuaImageGenerationRequest(state.ctx.database, String(prompt ?? ''), String(negativePrompt ?? '')),
+    )
+    const execute = state.ctx.luaImageGeneration?.execute ?? executeImageGeneration
+    const image = await execute(request, state.ctx.database, {
+      signal: state.ctx.signal,
+    })
+    const assetId = await persistLuaGeneratedImage(state, image)
+    return assetId ? `{{inlay::${assetId}}}` : LUA_IMAGE_GENERATION_FAILURE
+  } catch {
+    return LUA_IMAGE_GENERATION_FAILURE
+  }
+}
+
 // ── Host functions ─
 
 /**
@@ -1081,8 +1541,8 @@ const UNBOUND_RUNTIME_STATE: RuntimeState = (() => {
   aborted.abort()
   return {
     ctx: {
-      chat: { message: [] } as unknown as Chat,
-      database: {} as Database,
+      chat: { message: [], note: '', name: '', localLore: [] },
+      database: { characters: [] },
       selectedCharID: 0,
       chatPage: 0,
       varEngine: null as unknown as TriggerVarEngine,
@@ -1101,9 +1561,8 @@ const UNBOUND_RUNTIME_STATE: RuntimeState = (() => {
  * Declare the full browser host-fn surface on `engine`:
  *   - **Pure** fns operate on the server's in-memory chat / vars / char / db;
  *   - **Gated** fns (`request`) run behind the SSRF guard + low-level access;
- *   - **Unsupported** privileged fns (`similarity`/`generateImage`/image
- *     getters/lorebook loaders) return an explicit error/empty so callers do
- *     not crash;
+ *   - **Unsupported** multimodal LLM/image getter APIs raise explicit
+ *     script-facing server errors;
  *   - **Interactive** fns (`alert*Input/Select/Confirm`) throw and flag the run;
  *   - **Browser-only** fns (`alertError`/`alertNormal`/`reloadDisplay`/`reloadChat`)
  *     are no-ops.
@@ -1117,10 +1576,10 @@ const UNBOUND_RUNTIME_STATE: RuntimeState = (() => {
  */
 function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
   let state: RuntimeState = UNBOUND_RUNTIME_STATE
-  const declare = (name: string, fn: (...args: any[]) => unknown) => {
+  const declare = <Args extends unknown[]>(name: string, fn: (...args: Args) => unknown) => {
     // Every host fn is the abort checkpoint: once the request signal
     // fires, the next host call throws, terminating the surrounding pcall.
-    engine.global.set(name, (...args: any[]) => {
+    engine.global.set(name, (...args: Args) => {
       if (state.ctx.signal?.aborted) {
         throw new LuaAbortError('request aborted')
       }
@@ -1137,6 +1596,10 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
   declare('setChatVar', (id: string, key: string, value: string) => {
     if (!canWriteVar(id)) return
     state.ctx.varEngine.setVar(key, value)
+  })
+  declare('setChatVarChanged', (id: string, key: string, value: string) => {
+    if (!canWriteVar(id)) return
+    if (state.ctx.varEngine.setVar(key, value) === true) return true
   })
   declare('getGlobalVar', (_id: string, key: string) => {
     const value = (state.ctx.database.globalChatVariables ?? {})[key]
@@ -1195,6 +1658,20 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
     const message = state.ctx.chat.message.at(index)
     if (!message) return JSON.stringify(null)
     return JSON.stringify({ role: message.role, data: message.data, time: message.time ?? 0 })
+  })
+  declare('getChatData', (_id: string, index: number) => state.ctx.chat.message.at(index)?.data ?? '')
+  declare('getChatRole', (_id: string, index: number) => state.ctx.chat.message.at(index)?.role ?? '')
+  declare('getRecentChatsMain', (_id: string, count: number) => {
+    const chats = state.ctx.chat.message
+    const safeCount = Math.max(0, Math.floor(count || 0))
+    const start = Math.max(0, chats.length - safeCount)
+    return JSON.stringify(
+      chats.slice(start).map((message: Message) => ({
+        role: message.role,
+        data: message.data,
+        time: message.time ?? 0,
+      })),
+    )
   })
   declare('setChat', (id: string, index: number, value: string) => {
     if (!canWrite(id)) {
@@ -1365,15 +1842,18 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
   })
   declare('getChatLength', (_id: string) => state.ctx.chat.message.length)
   declare('getFullChatMain', (_id: string) =>
-    JSON.stringify(state.ctx.chat.message.map((v) => ({ role: v.role, data: v.data, time: v.time ?? 0 }))),
+    JSON.stringify(state.ctx.chat.message.map((v: Message) => ({ role: v.role, data: v.data, time: v.time ?? 0 }))),
   )
   declare('setFullChatMain', (id: string, value: string) => {
     if (!canWrite(id)) return
-    const parsed = JSON.parse(value) as Array<{ role: string; data: string }>
-    state.ctx.chat.message = parsed.map((v) => ({
-      role: v.role === 'user' ? 'user' : 'char',
-      data: v.data,
-    }))
+    const parsed: unknown = JSON.parse(value)
+    if (!Array.isArray(parsed)) throw new Error('setFullChat expects an array')
+    state.ctx.chat.message = parsed.map((row: unknown): Message => {
+      if (!row || typeof row !== 'object' || !('data' in row) || typeof row.data !== 'string') {
+        throw new Error('setFullChat expects text message records')
+      }
+      return { role: 'role' in row && row.role === 'user' ? 'user' : 'char', data: row.data }
+    })
   })
   declare('getCharacterLastMessage', (_id: string) => {
     const messages = state.ctx.chat.message
@@ -1393,7 +1873,7 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
   // ── Pure: tokens / cbs / hash (server adapters) ──
   declare('getTokens', async (id: string, value: string) => {
     if (!canWrite(id)) return
-    return tokenize(String(value ?? ''), encodingForModel(state.ctx.model))
+    return tokenize(String(value ?? ''), tokenizerEncodingFromDb(state.ctx.database))
   })
   declare(
     'cbs',
@@ -1435,11 +1915,19 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
     char.firstMessage = data
     return true
   })
-  declare('getPersonaName', (_id: string) => state.ctx.database.username ?? '')
+  declare(
+    'getPersonaName',
+    (_id: string) => selectedPersonaProfileField(state.ctx.database, 'name') ?? state.ctx.database.username ?? '',
+  )
   declare('getPersonaDescription', (_id: string) => {
-    // Browser parses the persona prompt against the current char; server persona
-    // assembly lives elsewhere, so this runtime returns an empty string.
-    return ''
+    const personaPrompt =
+      selectedPersonaProfileField(state.ctx.database, 'personaPrompt') ?? state.ctx.database.personaPrompt ?? ''
+    return expandVariables(String(personaPrompt), {
+      database: state.ctx.database,
+      selectedCharID: state.ctx.selectedCharID,
+      chatPage: state.ctx.chatPage,
+      chara: asCharacter(state.ctx),
+    }).text
   })
   declare('getAuthorsNote', (_id: string) => state.ctx.chat?.note ?? '')
   declare('getBackgroundEmbedding', (id: string) => {
@@ -1474,8 +1962,11 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
       if (!char) return
       const { alwaysActive = false, insertOrder = 100, key = '', regex = false, secondKey = '' } = options ?? {}
       const chat = state.ctx.chat
-      chat.localLore = (chat.localLore ?? []).filter((book) => book.comment !== name)
+      const previous = (chat.localLore ?? []).find((book: loreBook) => book.comment === name)
+      const entryId = typeof previous?.id === 'string' && previous.id.trim().length > 0 ? previous.id : randomUUID()
+      chat.localLore = (chat.localLore ?? []).filter((book: loreBook) => book.comment !== name)
       chat.localLore.push({
+        id: entryId,
         alwaysActive,
         comment: name,
         content,
@@ -1485,7 +1976,7 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
         secondkey: secondKey,
         selective: !!secondKey,
         useRegex: regex,
-      } as never)
+      })
     },
   )
   declare('getLoreBooksMain', (_id: string, search: string) => {
@@ -1514,11 +2005,26 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
     }
     return JSON.stringify(found)
   })
-  // loadLoreBooks reads activation state the runtime does not own; return empty
-  // so callers degrade rather than crash.
   declare('loadLoreBooksMain', async (id: string) => {
     if (!canLowLevel(id)) return
-    return JSON.stringify([])
+    const char = asCharacter(state.ctx)
+    if (!char) return
+    const report = await activateLorebookAsync({
+      database: state.ctx.database,
+      currentChar: structuredClone(char),
+      currentChat: structuredClone(state.ctx.chat),
+      writeChatVar: (key, value) => state.ctx.varEngine.setVar(key, value),
+    })
+    const books = report.actives.flatMap((book) => {
+      const data = expandVariables(book.prompt, {
+        database: state.ctx.database,
+        selectedCharID: state.ctx.selectedCharID,
+        chatPage: state.ctx.chatPage,
+        chara: char,
+      }).text.trim()
+      return data.length > 0 ? [{ data, role: book.role === 'assistant' ? ('char' as const) : book.role }] : []
+    })
+    return JSON.stringify(books)
   })
 
   // ── Gated: SSRF-guarded egress ──
@@ -1543,20 +2049,23 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
     return true
   })
 
-  // Unsupported privileged fns: explicit error / empty result.
-  declare('similarity', async (id: string) => {
+  declare('similarity', async (id: string, source: string, values: unknown) => {
     if (!canLowLevel(id)) return
-    return [] // similarity is unavailable in server prompt assembly
+    return runLuaSimilarity(state, String(source ?? ''), values)
   })
-  declare('generateImage', async (id: string) => {
+  declare('generateImage', async (id: string, prompt: string, negativePrompt: string = '') => {
     if (!canLowLevel(id)) return
-    return 'Error: Image generation is not supported by server prompt assembly'
+    return runLuaImageGeneration(state, prompt, negativePrompt)
   })
-  declare('getCharacterImageMain', async (_id: string) => '')
-  declare('getPersonaImageMain', async (_id: string) => '')
+  declare('getCharacterImageMain', async (_id: string) => {
+    throw new Error(`${SERVER_UNSUPPORTED_LUA_API_ERROR}: getCharacterImage`)
+  })
+  declare('getPersonaImageMain', async (_id: string) => {
+    throw new Error(`${SERVER_UNSUPPORTED_LUA_API_ERROR}: getPersonaImage`)
+  })
 
   // Supported low-level LLM host fns.
-  declare('LLMMain', async (id: string, promptStr: string, useMultimodal = false, optionsStr = '') => {
+  declare('LLMMain', async (id: string, promptStr: string, useMultimodal: boolean = false, optionsStr: string = '') => {
     const progressCall = state.progressSink?.beginLlmCall('LLM')
     if (!canLowLevel(id)) {
       progressCall?.finish()
@@ -1574,27 +2083,30 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
       progressCall?.finish()
     }
   })
-  declare('axLLMMain', async (id: string, promptStr: string, useMultimodal = false, optionsStr = '') => {
-    const progressCall = state.progressSink?.beginLlmCall('axLLM')
-    if (!canLowLevel(id)) {
-      progressCall?.finish()
-      state.traceSink?.recordHostEvent({
-        type: 'llm',
-        fn: 'axLLM',
-        status: 'blocked',
-        promptSummary: summarizeLuaTraceValue(promptStr),
-      })
-      return
-    }
-    try {
-      return await runLuaLlmMain(state, 'scriptAux', promptStr, useMultimodal, optionsStr, 'axLLM')
-    } finally {
-      progressCall?.finish()
-    }
-  })
+  declare(
+    'axLLMMain',
+    async (id: string, promptStr: string, useMultimodal: boolean = false, optionsStr: string = '') => {
+      const progressCall = state.progressSink?.beginLlmCall('axLLM')
+      if (!canLowLevel(id)) {
+        progressCall?.finish()
+        state.traceSink?.recordHostEvent({
+          type: 'llm',
+          fn: 'axLLM',
+          status: 'blocked',
+          promptSummary: summarizeLuaTraceValue(promptStr),
+        })
+        return
+      }
+      try {
+        return await runLuaLlmMain(state, 'scriptAux', promptStr, useMultimodal, optionsStr, 'axLLM')
+      } finally {
+        progressCall?.finish()
+      }
+    },
+  )
   declare('simpleLLM', async (id: string, prompt: string) => {
     if (!canLowLevel(id)) return
-    return runLuaLlm(state, 'scriptMain', [{ role: 'user', content: String(prompt ?? '') } as OpenAIChat])
+    return runLuaLlm(state, 'scriptMain', [{ role: 'user', content: String(prompt ?? '') } as PromptMessage])
   })
 
   return (next) => {
@@ -1817,6 +2329,7 @@ async function runStringWithTimeout(
  * on the result so callers can act on it.
  */
 export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRuntimeContext): Promise<ServerLuaResult> {
+  await ensureTokenizerLoadedForDb(ctx.database)
   const execTimeoutMs = opts.execTimeoutMs ?? DEFAULT_EXEC_TIMEOUT_MS
   const data = opts.data ?? ''
   const meta = opts.meta ?? {}
@@ -1888,6 +2401,7 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
 
   const state: RuntimeState = {
     ctx,
+    source: opts.source,
     safeIds: new Set<string>(),
     lowLevelIds: new Set<string>(),
     editDisplayIds: new Set<string>(),
@@ -2084,6 +2598,20 @@ function summarizeLuaEditContent(value: unknown): LuaEditContentSummary {
   return summary
 }
 
+type LuaEditContent = string | PromptMessage[]
+const isLuaEditPromptRow = new Ajv({ strict: false, strictNumbers: true }).compile<PromptMessage>(PromptChatRowSchema)
+
+/** Lua edit hooks may replace content, but cannot change its concrete channel. */
+function checkedLuaEditContent(value: unknown, previous: LuaEditContent): { value: LuaEditContent; error?: string } {
+  if (value === undefined || value === null) return { value: previous }
+  if (typeof previous === 'string') {
+    return typeof value === 'string' ? { value } : { value: previous, error: 'Lua edit hook expected text output' }
+  }
+  if (Array.isArray(value) && value.every((row: unknown): row is PromptMessage => isLuaEditPromptRow(row)))
+    return { value }
+  return { value: previous, error: 'Lua edit hook expected prompt row output' }
+}
+
 /**
  * Server port of `runLuaEditTrigger` (`scriptings.ts`). Remaps the edit-mode
  * casing, early-returns for `editprocess` (a browser no-op), then runs each
@@ -2093,13 +2621,27 @@ function summarizeLuaEditContent(value: unknown): LuaEditContentSummary {
  * Lua failures throw with context instead of returning the original `content`;
  * otherwise callers cannot distinguish a no-op hook from a broken hook.
  */
-export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
-  char: character | simpleCharacterArgument,
+export function runLuaEditTrigger(
+  char: character | SimpleCharacterArgument,
   mode: string,
-  content: T,
+  content: string,
   meta: object | undefined,
   ctx: ServerLuaEditTriggerContext,
-): Promise<T> {
+): Promise<string>
+export function runLuaEditTrigger(
+  char: character | SimpleCharacterArgument,
+  mode: string,
+  content: PromptMessage[],
+  meta: object | undefined,
+  ctx: ServerLuaEditTriggerContext,
+): Promise<PromptMessage[]>
+export async function runLuaEditTrigger(
+  char: character | SimpleCharacterArgument,
+  mode: string,
+  content: LuaEditContent,
+  meta: object | undefined,
+  ctx: ServerLuaEditTriggerContext,
+): Promise<LuaEditContent> {
   switch (mode) {
     case 'editinput':
       mode = 'editInput'
@@ -2115,7 +2657,7 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
   }
 
   try {
-    let data: T = content
+    let data: LuaEditContent = content
 
     const owner: LuaEditTriggerOwner = char
     const ownTriggers: triggerscript[] = (owner.triggerscript ?? []).map((trigger, index) => {
@@ -2126,7 +2668,7 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
           ownerType: 'character',
           ownerId: owner.chaId,
           ownerName: owner.name,
-          triggerId: (trigger as { id?: string }).id,
+          triggerId: trigger.id,
           triggerIndex: index,
           triggerComment: trigger.comment,
           triggerType: trigger.type,
@@ -2138,7 +2680,7 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
 
     for (const trigger of triggers) {
       if (trigger?.effect?.[0]?.type === 'triggerlua') {
-        const effect = trigger.effect[0] as { code: string; type: string }
+        const effect = trigger.effect[0]
         const source = withTriggerEffectSource(getTriggerSource(trigger), 0, effect.type)
         const before = summarizeLuaEditContent(data)
         const traceRun =
@@ -2184,8 +2726,10 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
           })
           throw error
         }
+        const checked = checkedLuaEditContent(runResult.res, data)
+        if (checked.error && !runResult.error) runResult.error = checked.error
         const failure = serverLuaFailureMessage(runResult, `Lua ${mode} edit trigger failed`)
-        const nextData = (runResult.res as T) ?? data
+        const nextData = checked.value
         progressRun?.finish(failure ? 'error' : 'finished')
         traceRun?.finish({
           status: failure ? 'error' : 'ok',

@@ -146,7 +146,7 @@ describe('chat generation settings contract', () => {
     ])
   })
 
-  it('resolves active module toggles from global, chat, character, and namespace links', () => {
+  it('resolves active module toggles from global, chat, character, Persona, and namespace links', () => {
     const toggles = resolveRequiredSidebarToggles({
       modelPresetId: 'model-a',
       promptPresetId: 'preset-empty',
@@ -156,6 +156,7 @@ describe('chat generation settings contract', () => {
         { id: 'enabled-module', customModuleToggle: 'enabled=Enabled module' },
         { id: 'chat-module', customModuleToggle: 'chat=Chat module=select=a,b' },
         { id: 'character-module', customModuleToggle: 'character=Character module=text' },
+        { id: 'persona-module', customModuleToggle: 'persona=Persona module' },
         {
           id: 'integrated-module',
           namespace: 'shared-space',
@@ -166,6 +167,7 @@ describe('chat generation settings contract', () => {
       enabledModuleIds: ['enabled-module'],
       chatModuleIds: ['chat-module'],
       characterModuleIds: ['character-module'],
+      personaModuleIds: ['persona-module'],
       moduleIntegration: ' shared-space ',
     })
 
@@ -173,8 +175,213 @@ describe('chat generation settings contract', () => {
       ['enabled', 'boolean', 'module', 'enabled-module'],
       ['chat', 'select', 'module', 'chat-module'],
       ['character', 'text', 'module', 'character-module'],
+      ['persona', 'boolean', 'module', 'persona-module'],
       ['integrated', 'textarea', 'module', 'integrated-module'],
     ])
+  })
+
+  it('derives required module toggles from the selected Persona links', () => {
+    const readiness = resolveChatGenerationSettingsReadiness(
+      readinessInput({
+        personas: [{ id: 'persona-a', modules: ['persona-module'] }],
+        modules: [{ id: 'persona-module', customModuleToggle: 'persona=Persona module' }],
+        promptPresets: [{ id: 'prompt-a' }],
+        settings: {
+          configured: true,
+          personaId: 'persona-a',
+          modelPresetId: 'model-a',
+          promptPresetId: 'prompt-a',
+          jailbreakToggle: false,
+          sidebarToggles: {},
+        },
+      }),
+    )
+
+    expect(readiness.requirements.sidebarToggles).toEqual([
+      expect.objectContaining({ key: 'persona', moduleId: 'persona-module' }),
+    ])
+    expect(readiness.missing).toContainEqual(
+      expect.objectContaining({ code: 'sidebar_toggle_missing', toggleKey: 'persona' }),
+    )
+  })
+
+  it('adds modules associated with the effective Agent Preset to Prompt module integration', () => {
+    const toggles = resolveRequiredSidebarToggles({
+      modelPresets,
+      promptPresets: [],
+      agentPresetId: 'agent-preset-a',
+      agentPresets: [
+        {
+          id: 'agent-preset-a',
+          enabled: true,
+          moduleIntergration: ' agent-space, exact-agent-module ',
+        },
+      ],
+      modules: [
+        {
+          id: 'prompt-module',
+          namespace: 'prompt-space',
+          customModuleToggle: 'prompt=Prompt module',
+        },
+        {
+          id: 'agent-module',
+          namespace: 'agent-space',
+          customModuleToggle: 'agentModule=Agent module',
+        },
+        {
+          id: 'exact-agent-module',
+          customModuleToggle: 'exact=Exact Agent module',
+        },
+      ],
+      moduleIntegration: 'prompt-space',
+    })
+
+    expect(toggles.map((toggle) => toggle.key)).toEqual(['prompt', 'agentModule', 'exact'])
+  })
+
+  it('does not activate modules associated with a disabled Agent Preset', () => {
+    const toggles = resolveRequiredSidebarToggles({
+      modelPresets,
+      promptPresets: [],
+      agentPresetId: 'agent-preset-disabled',
+      agentPresets: [
+        {
+          id: 'agent-preset-disabled',
+          enabled: false,
+          moduleIntergration: 'agent-space',
+        },
+      ],
+      modules: [
+        {
+          id: 'agent-module',
+          namespace: 'agent-space',
+          customModuleToggle: 'agentModule=Agent module',
+        },
+      ],
+    })
+
+    expect(toggles).toEqual([])
+  })
+
+  it('namespaces active Agent toggles by stable Agent id and deduplicates repeated uses', () => {
+    const toggles = resolveRequiredSidebarToggles({
+      modelPresets,
+      promptPresets: [],
+      agentPresetId: 'agent-preset-a',
+      agentPresets: [
+        {
+          id: 'agent-preset-a',
+          enabled: true,
+          agentUses: [
+            { agentId: 'agent-a', enabled: true },
+            { agentId: 'agent-a', enabled: true },
+            { agentId: 'agent-b', enabled: true },
+          ],
+        },
+      ],
+      agents: [
+        {
+          id: 'agent-a',
+          name: 'Researcher',
+          toggles: [{ key: 'tone', label: 'Tone', kind: 'select', options: ['Warm', 'Formal'] }],
+        },
+        {
+          id: 'agent-b',
+          name: 'Reviewer',
+          toggles: [{ key: 'tone', label: 'Tone', kind: 'boolean', options: [] }],
+        },
+      ],
+    })
+
+    expect(toggles).toEqual([
+      {
+        key: 'agent:agent-a:tone',
+        label: 'Tone',
+        kind: 'select',
+        options: ['Warm', 'Formal'],
+        source: 'agent',
+        agentId: 'agent-a',
+        agentName: 'Researcher',
+        localKey: 'tone',
+      },
+      {
+        key: 'agent:agent-b:tone',
+        label: 'Tone',
+        kind: 'boolean',
+        options: [],
+        source: 'agent',
+        agentId: 'agent-b',
+        agentName: 'Reviewer',
+        localKey: 'tone',
+      },
+    ])
+  })
+
+  it('reserves active Agent namespace keys from prompt toggle collisions', () => {
+    const toggles = resolveRequiredSidebarToggles({
+      modelPresets,
+      promptPresetId: 'prompt-a',
+      promptPresets: [
+        {
+          id: 'prompt-a',
+          customPromptTemplateToggle: 'agent:agent-a:tone=Prompt collision=text',
+        },
+      ],
+      agentPresetId: 'agent-preset-a',
+      agentPresets: [{ id: 'agent-preset-a', agentUses: [{ agentId: 'agent-a', enabled: true }] }],
+      agents: [
+        {
+          id: 'agent-a',
+          name: 'Researcher',
+          toggles: [{ key: 'tone', label: 'Agent tone', kind: 'boolean', options: [] }],
+        },
+      ],
+    })
+
+    expect(toggles).toEqual([
+      expect.objectContaining({
+        key: 'agent:agent-a:tone',
+        label: 'Agent tone',
+        kind: 'boolean',
+        source: 'agent',
+      }),
+    ])
+  })
+
+  it('requires toggle values from an effective default Agent Preset', () => {
+    const readiness = resolveChatGenerationSettingsReadiness(
+      readinessInput({
+        effectiveAgentPresetId: 'agent-preset-default',
+        agentPresets: [
+          {
+            id: 'agent-preset-default',
+            agentUses: [{ agentId: 'agent-a', enabled: true }],
+          },
+        ],
+        agents: [
+          {
+            id: 'agent-a',
+            toggles: [{ key: 'tone', label: 'Tone', kind: 'boolean', options: [] }],
+          },
+        ],
+        promptPresets: [{ id: 'prompt-a' }],
+        settings: {
+          configured: true,
+          personaId: 'persona-a',
+          modelPresetId: 'model-a',
+          promptPresetId: 'prompt-a',
+          jailbreakToggle: false,
+          sidebarToggles: {},
+        },
+      }),
+    )
+
+    expect(readiness.ready).toBe(false)
+    expect(readiness.missing).toContainEqual({
+      code: 'sidebar_toggle_missing',
+      field: 'generationSettings.sidebarToggles.agent:agent-a:tone',
+      toggleKey: 'agent:agent-a:tone',
+    })
   })
 
   it('preserves layout-only rows for display without making them required', () => {

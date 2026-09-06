@@ -2,10 +2,11 @@ import { mount, tick, unmount } from 'svelte'
 import { get } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { character, Database } from '../../ts/storage/database.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
+import { replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
 import { ReloadChatPointer, ReloadGUIPointer, VariableReloadGUIPointer, selectedCharID } from '../../ts/stores.svelte'
 import { RegexDisplayReloadPointer, reloadRegexDisplay } from '../../ts/process/regexDisplayReload'
-import { withTrustedResourceWrite } from '../../ts/server/resourceWriteGuard.svelte'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
+import { invalidateModuleRenderRevision } from '../../ts/moduleRenderRevision'
 
 const moduleMockState = vi.hoisted(() => ({
   modules: [] as any[],
@@ -257,7 +258,24 @@ afterEach(async () => {
 })
 
 describe('ChatBody content-keyed parse memo', () => {
-  it('L30: repeated parse-key builds reuse corpus signatures until invalidators change', async () => {
+  it('invalidates asset markup when a cached paint width is replaced by the authoritative default', async () => {
+    const character = seedDb()
+    const memo = await import('./ChatBodyParseMemo')
+    let paintWidth: number | undefined = 12
+    const input = {
+      data: '{{asset::portrait}}',
+      charArg: character.chaId,
+      owners: { ...memo.createChatBodyParseOwnerReaders(), assetWidthForPaint: () => paintWidth },
+      mode: 'notrim' as const,
+      chatID: 0,
+      cbsConditions: { firstmsg: false, chatRole: 'char' },
+    }
+    const cachedKey = memo.getChatBodyParseMemoKey(input)
+    paintWidth = undefined
+    expect(memo.getChatBodyParseMemoKey(input)).not.toBe(cachedKey)
+  })
+
+  it('repeated parse-key builds reuse corpus signatures until invalidators change', async () => {
     seedDb()
     const script = (id: string, out: string) => ({
       id,
@@ -306,6 +324,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const input = {
       data: 'L30 parse memo body one',
       charArg: dbChar.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
       mode: 'notrim' as const,
       chatID: 0,
       cbsConditions: { firstmsg: false, chatRole: 'char' },
@@ -365,6 +384,7 @@ describe('ChatBody content-keyed parse memo', () => {
     })
 
     moduleRegex[0].out = 'module two'
+    invalidateModuleRenderRevision()
     const moduleInvalidatedKey = memoModule.getChatBodyParseMemoKey(secondInput)
     expect(moduleInvalidatedKey).not.toBe(characterAssetInvalidatedKey)
     expect(memoModule.getChatBodyParseMemoDebugStats()).toMatchObject({
@@ -372,7 +392,7 @@ describe('ChatBody content-keyed parse memo', () => {
       characterSignatureBuilds: 4,
       activeChatSignatureBuilds: 1,
       moduleSignatureBuilds: 2,
-      settingsSignatureBuilds: 2,
+      settingsSignatureBuilds: 1,
     })
 
     getResourceDatabase().presetRegex[0].out = 'preset two'
@@ -383,10 +403,11 @@ describe('ChatBody content-keyed parse memo', () => {
       characterSignatureBuilds: 4,
       activeChatSignatureBuilds: 1,
       moduleSignatureBuilds: 2,
-      settingsSignatureBuilds: 3,
+      settingsSignatureBuilds: 2,
     })
 
     moduleAssets[0][1] = 'asset-b'
+    invalidateModuleRenderRevision()
     const moduleAssetInvalidatedKey = memoModule.getChatBodyParseMemoKey(secondInput)
     expect(moduleAssetInvalidatedKey).not.toBe(presetRegexInvalidatedKey)
     expect(memoModule.getChatBodyParseMemoDebugStats()).toMatchObject({
@@ -394,10 +415,11 @@ describe('ChatBody content-keyed parse memo', () => {
       characterSignatureBuilds: 4,
       activeChatSignatureBuilds: 1,
       moduleSignatureBuilds: 3,
-      settingsSignatureBuilds: 4,
+      settingsSignatureBuilds: 2,
     })
 
     moduleTriggers[0].comment = 'module trigger two'
+    invalidateModuleRenderRevision()
     const moduleTriggerInvalidatedKey = memoModule.getChatBodyParseMemoKey(secondInput)
     expect(moduleTriggerInvalidatedKey).not.toBe(moduleAssetInvalidatedKey)
     expect(memoModule.getChatBodyParseMemoDebugStats()).toMatchObject({
@@ -405,7 +427,7 @@ describe('ChatBody content-keyed parse memo', () => {
       characterSignatureBuilds: 4,
       activeChatSignatureBuilds: 1,
       moduleSignatureBuilds: 4,
-      settingsSignatureBuilds: 4,
+      settingsSignatureBuilds: 2,
     })
 
     getResourceDatabase().customQuotes = true
@@ -416,9 +438,10 @@ describe('ChatBody content-keyed parse memo', () => {
       characterSignatureBuilds: 4,
       activeChatSignatureBuilds: 1,
       moduleSignatureBuilds: 4,
-      settingsSignatureBuilds: 5,
+      settingsSignatureBuilds: 3,
     })
 
+    invalidateModuleRenderRevision()
     ReloadGUIPointer.update((value) => value + 1)
     const reloadInvalidatedKey = memoModule.getChatBodyParseMemoKey(secondInput)
     expect(reloadInvalidatedKey).not.toBe(settingsInvalidatedKey)
@@ -427,7 +450,7 @@ describe('ChatBody content-keyed parse memo', () => {
       characterSignatureBuilds: 5,
       activeChatSignatureBuilds: 2,
       moduleSignatureBuilds: 5,
-      settingsSignatureBuilds: 6,
+      settingsSignatureBuilds: 4,
     })
 
     VariableReloadGUIPointer.update((value) => value + 1)
@@ -438,8 +461,99 @@ describe('ChatBody content-keyed parse memo', () => {
       characterSignatureBuilds: 5,
       activeChatSignatureBuilds: 2,
       moduleSignatureBuilds: 5,
-      settingsSignatureBuilds: 6,
+      settingsSignatureBuilds: 4,
     })
+  })
+
+  it('keeps parse keys compact for an active module with 130,000 assets', async () => {
+    const char = seedDb()
+    const moduleAssets = Array.from({ length: 130_000 }, (_, index) => [
+      `asset-${index}`,
+      `server-asset-${index}`,
+      'png',
+    ]) as [string, string, string][]
+    moduleMockState.modules = [
+      {
+        id: 'asset-heavy-module',
+        assets: moduleAssets,
+      },
+    ]
+    moduleMockState.assets = moduleAssets
+
+    const memoModule = await import('./ChatBodyParseMemo')
+    memoModule.clearChatBodyParseMemo()
+    const input = {
+      data: 'asset-heavy parse memo body',
+      charArg: char.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
+      mode: 'notrim' as const,
+      chatID: 0,
+      cbsConditions: { firstmsg: false, chatRole: 'char' },
+    }
+
+    const firstKey = memoModule.getChatBodyParseMemoKey(input)
+    expect(firstKey).not.toContain('asset-129999')
+    expect(firstKey).not.toContain('server-asset-129999')
+    expect(firstKey.length).toBeLessThan(8_000)
+
+    moduleAssets[129_999][1] = 'changed-server-asset'
+    invalidateModuleRenderRevision()
+    const changedKey = memoModule.getChatBodyParseMemoKey(input)
+    expect(changedKey).not.toBe(firstKey)
+    expect(changedKey).not.toContain('changed-server-asset')
+    expect(changedKey.length).toBeLessThan(8_000)
+  })
+
+  it('retires prior parse entries when the module render revision advances', async () => {
+    const char = seedDb()
+    const parserModule = await import('../../ts/parser/parser.svelte')
+    const parseSpy = vi.spyOn(parserModule, 'ParseMarkdown').mockResolvedValue('parsed')
+    const memoModule = await import('./ChatBodyParseMemo')
+    memoModule.clearChatBodyParseMemo()
+    const input = {
+      data: 'module revision cache body',
+      charArg: char.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
+      mode: 'notrim' as const,
+      chatID: 0,
+      cbsConditions: { firstmsg: false, chatRole: 'char' },
+    }
+
+    await memoModule.memoizedChatBodyParse(input)
+    expect(memoModule.getChatBodyParseMemoStats().parseEntries).toBe(1)
+
+    invalidateModuleRenderRevision()
+    await memoModule.memoizedChatBodyParse(input)
+
+    expect(parseSpy).toHaveBeenCalledTimes(2)
+    expect(memoModule.getChatBodyParseMemoStats().parseEntries).toBe(1)
+  })
+
+  it('bounds retained parse keys by approximate bytes as well as entry count', async () => {
+    const char = seedDb()
+    const parserModule = await import('../../ts/parser/parser.svelte')
+    vi.spyOn(parserModule, 'ParseMarkdown').mockResolvedValue('parsed')
+    const memoModule = await import('./ChatBodyParseMemo')
+    memoModule.clearChatBodyParseMemo()
+    const repeatedBody = 'x'.repeat(600_000)
+    const owners = memoModule.createChatBodyParseOwnerReaders()
+
+    await Promise.all(
+      Array.from({ length: 16 }, (_, index) =>
+        memoModule.memoizedChatBodyParse({
+          data: `${index}:${repeatedBody}`,
+          charArg: char.chaId,
+          owners,
+          mode: 'notrim',
+          chatID: index,
+          cbsConditions: { firstmsg: false, chatRole: 'char' },
+        }),
+      ),
+    )
+
+    const stats = memoModule.getChatBodyParseMemoStats()
+    expect(stats.parseKeyBytes).toBeLessThanOrEqual(16 * 1024 * 1024)
+    expect(stats.parseEntries).toBeLessThan(16)
   })
 
   it('includes both sentence paragraph preferences in parser memo keys with legacy fallbacks', async () => {
@@ -449,6 +563,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const input = {
       data: 'Sentence paragraph memo body',
       charArg: getResourceDatabase().characters[0].chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
       mode: 'notrim' as const,
       chatID: 0,
       cbsConditions: { firstmsg: false, chatRole: 'char' },
@@ -498,6 +613,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const input = {
       data: 'active prompt regex memo body',
       charArg: char.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
       mode: 'notrim' as const,
       chatID: 0,
       cbsConditions: { firstmsg: false, chatRole: 'char' },
@@ -528,6 +644,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const input = {
       data: 'global regex memo body',
       charArg: char.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
       mode: 'notrim' as const,
       chatID: 0,
       cbsConditions: { firstmsg: false, chatRole: 'char' },
@@ -558,6 +675,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const input = {
       data: 'synthetic greeting body',
       charArg: char.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
       mode: 'notrim' as const,
       chatID: -1,
       cbsConditions: { firstmsg: true, chatRole: 'char' },
@@ -606,6 +724,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const input = {
       data: 'heavy lua memo body',
       charArg: char.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
       mode: 'notrim' as const,
       chatID: 0,
       cbsConditions: { firstmsg: false, chatRole: 'char' },
@@ -639,7 +758,7 @@ describe('ChatBody content-keyed parse memo', () => {
     expect(keyC.length).toBeLessThan(8_000)
   })
 
-  it('L30: cached-only LLM detection reuses a prebuilt parse key without rebuilding it', async () => {
+  it('cached-only LLM detection reuses a prebuilt parse key without rebuilding it', async () => {
     const char = seedDb({
       autoTranslate: true,
       autoTranslateCachedOnly: true,
@@ -662,6 +781,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const input = {
       data: 'prebuilt cached body',
       charArg: char.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
       chatID: 0,
       cbsConditions: { firstmsg: false, chatRole: 'char' },
       fallbackMode: 'notrim' as const,
@@ -669,6 +789,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const cachedOnlyParseKey = memoModule.getChatBodyParseMemoKey({
       data: input.data,
       charArg: input.charArg,
+      owners: input.owners,
       mode: 'pretranslate',
       chatID: input.chatID,
       cbsConditions: input.cbsConditions,
@@ -704,7 +825,25 @@ describe('ChatBody content-keyed parse memo', () => {
     expect(memoModule.getChatBodyParseMemoDebugStats().parseKeyBuilds).toBe(1)
   })
 
-  it('L40: unchanged ChatBody remount performs zero additional ParseMarkdown calls', async () => {
+  it.each([
+    { autoTranslate: false, translatorType: 'llm', autoTranslateCachedOnly: true },
+    { autoTranslate: false, translatorType: 'google', autoTranslateCachedOnly: false },
+  ])('builds just the display parse key when automatic translation is disabled ($translatorType)', async (settings) => {
+    const char = seedDb(settings as SeedDbOverrides)
+    const { ChatBody, memoModule } = await loadChatBodyWithParseSpy()
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mountChatBody(ChatBody, target, { character: char.chaId, msgDisplay: 'one display key' })
+    try {
+      await waitForText(target, 'one display key')
+      expect(memoModule.getChatBodyParseMemoDebugStats().parseKeyBuilds).toBe(1)
+    } finally {
+      await unmount(component)
+      target.remove()
+    }
+  })
+
+  it('unchanged ChatBody remount performs zero additional ParseMarkdown calls', async () => {
     const char = seedDb()
     const target = document.createElement('div')
     document.body.appendChild(target)
@@ -730,7 +869,7 @@ describe('ChatBody content-keyed parse memo', () => {
     unmount(component)
   })
 
-  it('L40: changed ChatBody content misses the parse memo and renders the new body', async () => {
+  it('changed ChatBody content misses the parse memo and renders the new body', async () => {
     const char = seedDb()
     const target = document.createElement('div')
     document.body.appendChild(target)
@@ -758,7 +897,7 @@ describe('ChatBody content-keyed parse memo', () => {
 
   it('defers projected regex edits until the display activation epoch advances', async () => {
     const char = seedDb()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].customscript = [
         {
           id: 'deferred-display-script',
@@ -781,7 +920,7 @@ describe('ChatBody content-keyed parse memo', () => {
     await waitForText(target, 'initial body')
     parseSpy.mockClear()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].customscript![0].out = 'activated'
     })
     await settleRenderWork()
@@ -811,7 +950,7 @@ describe('ChatBody content-keyed parse memo', () => {
 
     await waitForParagraphCount(target, 1)
     parseSpy.mockClear()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().paragraphBreakBySentences = true
     })
     reloadRegexDisplay()
@@ -825,7 +964,7 @@ describe('ChatBody content-keyed parse memo', () => {
     unmount(component)
   })
 
-  it('M17/L40: cached-only LLM detection shares in-flight parse work and hits the resolved memo', async () => {
+  it('cached-only LLM detection shares in-flight parse work and hits the resolved memo', async () => {
     const char = seedDb({
       autoTranslate: true,
       autoTranslateCachedOnly: true,
@@ -848,6 +987,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const input = {
       data: 'cached body',
       charArg: char.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
       chatID: 0,
       cbsConditions: { firstmsg: false, chatRole: 'char' },
       fallbackMode: 'notrim' as const,
@@ -874,7 +1014,7 @@ describe('ChatBody content-keyed parse memo', () => {
     expect(getLLMCacheSpy).toHaveBeenCalledTimes(2)
   })
 
-  it('M17: LLM cache import and clear invalidate cached-only decisions', async () => {
+  it('LLM cache import and clear invalidate cached-only decisions', async () => {
     const char = seedDb({
       autoTranslate: true,
       autoTranslateCachedOnly: true,
@@ -901,6 +1041,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const input = {
       data: 'epoch cached body',
       charArg: char.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
       chatID: 0,
       cbsConditions: { firstmsg: false, chatRole: 'char' },
       fallbackMode: 'notrim' as const,
@@ -930,7 +1071,98 @@ describe('ChatBody content-keyed parse memo', () => {
     expect(clearSpy).toHaveBeenCalledTimes(1)
   })
 
-  it('M17: explicit retranslate still calls translateHTML with regenerate enabled', async () => {
+  it('fails closed on duplicate character owners before invoking the parser', async () => {
+    const char = seedDb()
+    getResourceDatabase().characters.push(structuredClone(char))
+    const parserModule = await import('../../ts/parser/parser.svelte')
+    const parseSpy = vi.spyOn(parserModule, 'ParseMarkdown').mockResolvedValue('ownerless parse')
+    const memoModule = await import('./ChatBodyParseMemo')
+    memoModule.clearChatBodyParseMemo()
+    const owners = memoModule.createChatBodyParseOwnerReaders()
+
+    expect(owners.characterOwner(char.chaId)).toBeUndefined()
+    expect(owners.activeCharacterOwner()).toBeUndefined()
+    await memoModule.memoizedChatBodyParse({
+      data: 'duplicate owner body',
+      charArg: char.chaId,
+      owners,
+      mode: 'notrim',
+      chatID: 0,
+      cbsConditions: { firstmsg: false, chatRole: 'char' },
+    })
+
+    expect(parseSpy).toHaveBeenCalledWith(
+      'duplicate owner body',
+      null,
+      'notrim',
+      0,
+      { firstmsg: false, chatRole: 'char' },
+      expect.any(Object),
+    )
+  })
+
+  it('fails closed on duplicate active chat IDs', async () => {
+    seedDb()
+    const ownerCharacter = getResourceDatabase().characters[0]
+    ownerCharacter.chats.push({
+      ...(JSON.parse(JSON.stringify(ownerCharacter.chats[0])) as (typeof ownerCharacter.chats)[number]),
+      name: 'Duplicate chat',
+    })
+    const memoModule = await import('./ChatBodyParseMemo')
+    const owners = memoModule.createChatBodyParseOwnerReaders()
+
+    expect(owners.activeCharacterOwner()?.chaId).toBe(ownerCharacter.chaId)
+    expect(owners.activeChatOwner()).toBeUndefined()
+  })
+
+  it('keys display settings from the explicit settings owner', async () => {
+    const char = seedDb({ customQuotes: false })
+    const memoModule = await import('./ChatBodyParseMemo')
+    memoModule.clearChatBodyParseMemo()
+    let settingsOwner: Partial<Database> = { customQuotes: false }
+    const owners = {
+      ...memoModule.createChatBodyParseOwnerReaders(),
+      settingsOwner: () => settingsOwner,
+    }
+    const input = {
+      data: 'explicit settings owner body',
+      charArg: char.chaId,
+      owners,
+      mode: 'notrim' as const,
+      chatID: 0,
+      cbsConditions: { firstmsg: false, chatRole: 'char' },
+    }
+
+    const initialKey = memoModule.getChatBodyParseMemoKey(input)
+    getResourceDatabase().customQuotes = true
+    expect(memoModule.getChatBodyParseMemoKey(input)).toBe(initialKey)
+
+    settingsOwner = { customQuotes: true }
+    expect(memoModule.getChatBodyParseMemoKey(input)).not.toBe(initialKey)
+  })
+
+  it('keys identical rendered rows by their explicit owning chat', async () => {
+    const char = seedDb()
+    const memoModule = await import('./ChatBodyParseMemo')
+    memoModule.clearChatBodyParseMemo()
+    const input = {
+      data: 'shared cloned row body',
+      charArg: char.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
+      mode: 'notrim' as const,
+      chatID: 0,
+      cbsConditions: { firstmsg: false, chatRole: 'char' },
+      chatId: 'chat-a1',
+      messageId: 'shared-message',
+    }
+
+    const firstChatKey = memoModule.getChatBodyParseMemoKey(input)
+    const secondChatKey = memoModule.getChatBodyParseMemoKey({ ...input, chatId: 'chat-a2' })
+
+    expect(secondChatKey).not.toBe(firstChatKey)
+  })
+
+  it('explicit retranslate still calls translateHTML with regenerate enabled', async () => {
     const char = seedDb({
       autoTranslate: true,
       autoTranslateCachedOnly: true,

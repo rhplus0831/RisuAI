@@ -21,10 +21,12 @@ vi.mock('../../../server/providerOperations', () => ({
 }))
 
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../model/modelProfileResolver'
+import type { ModelProfileRecord } from '../../../model/modelProfileRecords'
 import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, OpenAIParameters, type LLMModel } from '../../../model/types'
-import { getDatabase, setDatabase, type Database } from '../../../storage/database.svelte'
+import { setDatabase, type Database } from '../../../storage/database.svelte'
 import { requestOpenAI } from '../openAI/requests'
 import type { RequestDataArgumentExtended } from '../request'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface PreviewPayload {
   url: string
@@ -87,11 +89,41 @@ function customModel(overrides: Partial<Database['customModels'][number]>): Data
   } as Database['customModels'][number]
 }
 
+function resolveDurableProfile(
+  database: Database,
+  record: Omit<ModelProfileRecord, 'id' | 'name'>,
+  apiKey?: string,
+  lookupModelInfo?: (database: Database, modelId: string) => LLMModel | null | undefined,
+): ResolvedModelProfile {
+  const profileId = 'request-profile'
+  const credentialId = apiKey ? 'request-profile-credential' : undefined
+  const durableDatabase = {
+    ...database,
+    providerCredentials: apiKey
+      ? [{ id: credentialId, name: 'Request profile credential', type: 'apiKey', apiKey }]
+      : database.providerCredentials,
+    modelProfiles: [
+      {
+        id: profileId,
+        name: 'Request profile',
+        ...record,
+        providerOptions: {
+          ...(record.providerOptions ?? {}),
+          ...(credentialId ? { credentialId } : {}),
+        },
+      },
+    ],
+    modelRoleProfiles: { chatMain: { mode: 'profile', profileId } },
+  } as unknown as Database
+  return resolveModelProfile({ database: durableDatabase, lookupModelInfo })
+}
+
 function makeArg(
   profile: ResolvedModelProfile,
   overrides: Partial<RequestDataArgumentExtended> = {},
 ): RequestDataArgumentExtended {
   return {
+    database: getDatabase(),
     formated: [
       { role: 'system', content: 'profile system' },
       { role: 'user', content: 'hello' },
@@ -128,22 +160,150 @@ afterEach(() => {
 })
 
 describe('requestOpenAI profile provider options', () => {
+  it('uses profile-owned DeepSeek thinking over conflicting flat settings', async () => {
+    const resolved = resolveDurableProfile(
+      db({ aiModel: 'gpt-5' } as Partial<Database>),
+      {
+        providerId: 'openai',
+        modelId: 'gpt-5',
+        runtimeOptions: { deepseekThinkingType: 'enabled', deepseekReasoningEffort: 'max' },
+      },
+      'sk-profile-openai',
+    )
+    const profile: ResolvedModelProfile = {
+      ...resolved,
+      runtimeOptions: {
+        ...resolved.runtimeOptions,
+        deepseekThinkingType: 'enabled',
+        deepseekReasoningEffort: 'max',
+      },
+      modelInfo: {
+        ...resolved.modelInfo,
+        flags: [...resolved.modelInfo.flags, LLMFlags.deepSeekThinkingToggle],
+      },
+    }
+    setDatabase(db({ deepseekThinkingType: 'off', deepseekReasoningEffort: 'high' } as Partial<Database>))
+
+    const payload = await preview(makeArg(profile))
+
+    expect(payload.body.thinking).toEqual({ type: 'enabled', reasoning_effort: 'max' })
+    expect(payload.body.temperature).toBeUndefined()
+  })
+
+  it('retains flat DeepSeek thinking for callers without a resolved profile', async () => {
+    setDatabase(db({ deepseekThinkingType: 'enabled', deepseekReasoningEffort: 'high' } as Partial<Database>))
+
+    const payload = await preview({
+      database: getDatabase(),
+      formated: [{ role: 'user', content: 'hello' }],
+      bias: {},
+      biasString: [],
+      aiModel: 'gpt-5',
+      maxTokens: 64,
+      useStreaming: false,
+      previewBody: true,
+      mode: 'model',
+      modelInfo: modelInfo({ flags: [LLMFlags.deepSeekThinkingToggle] }),
+    } as RequestDataArgumentExtended)
+
+    expect(payload.body.thinking).toEqual({ type: 'enabled', reasoning_effort: 'high' })
+  })
+
+  it('uses durable profile image capability instead of a conflicting flat model', async () => {
+    const modelId = 'xcustom:::vision-profile'
+    const profileDatabase = db({
+      aiModel: 'echo_model',
+      customModels: [
+        customModel({
+          id: modelId,
+          internalId: 'vision-wire-model',
+          flags: [LLMFlags.hasFullSystemPrompt, LLMFlags.hasImageInput],
+        }),
+      ] as Database['customModels'],
+      modelProfiles: [
+        {
+          id: 'vision-profile',
+          name: 'Vision Profile',
+          providerId: 'custom-api',
+          modelId,
+          providerOptions: { requestModel: 'vision-wire-model' },
+        },
+      ],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'vision-profile' } },
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database: profileDatabase })
+    const imageProfile: ResolvedModelProfile = {
+      ...profile,
+      modelInfo: {
+        ...profile.modelInfo,
+        flags: [...profile.modelInfo.flags, LLMFlags.hasImageInput],
+      },
+    }
+    setDatabase(db({ aiModel: 'echo_model' } as Partial<Database>))
+
+    const result = await preview(
+      makeArg(imageProfile, {
+        bias: { 42: -1 },
+      }),
+    )
+
+    expect(result.body.logit_bias).toBeUndefined()
+  })
+
+  it('adds Flex processing to official OpenAI Chat Completions requests only when enabled', async () => {
+    const profile = resolveDurableProfile(
+      db({ aiModel: 'gpt-5' } as Partial<Database>),
+      { providerId: 'openai', modelId: 'gpt-5' },
+      'sk-openai',
+    )
+    setDatabase(db({ aiModel: 'gpt-5', openAIKey: 'sk-openai', openAIFlexProcessing: true } as Partial<Database>))
+
+    const enabled = await preview(makeArg(profile))
+    expect(enabled.url).toBe('https://api.openai.com/v1/chat/completions')
+    expect(enabled.body.service_tier).toBe('flex')
+
+    setDatabase(db({ aiModel: 'gpt-5', openAIKey: 'sk-openai', openAIFlexProcessing: false } as Partial<Database>))
+    const disabled = await preview(makeArg(profile))
+    expect(disabled.body.service_tier).toBeUndefined()
+  })
+
+  it('adds Flex processing to a custom profile that targets the official OpenAI host', async () => {
+    const modelId = 'xcustom:::official-openai'
+    const profile = resolveDurableProfile(
+      db({ aiModel: modelId, openAIFlexProcessing: true } as Partial<Database>),
+      {
+        providerId: 'custom-api',
+        modelId: 'custom-api',
+        providerOptions: { baseUrl: 'https://api.openai.com/v1', requestModel: 'gpt-5' },
+      },
+      'sk-openai',
+    )
+    setDatabase(db({ openAIFlexProcessing: true } as Partial<Database>))
+
+    const payload = await preview(makeArg(profile))
+
+    expect(payload.url).toBe('https://api.openai.com/v1/chat/completions')
+    expect(payload.body.service_tier).toBe('flex')
+  })
+
   it('uses reverse_proxy profile URL, key, request model, additional params, Ooba hoist, and Ooba args over flat DB conflicts', async () => {
-    const profile = resolveModelProfile({
-      database: db({
-        aiModel: 'reverse_proxy',
-        forceReplaceUrl: 'risu::https://profile.proxy.example/v1',
-        proxyKey: 'sk-profile-proxy',
-        customProxyRequestModel: 'profile-proxy-model',
-        additionalParams: [
-          ['profile_param', '"from-profile"'],
-          ['header::X-Profile-Param', 'profile-header'],
-        ],
-        reverseProxyOobaMode: true,
-        reverseProxyOobaArgs: { profile_ooba_arg: 7 },
-        genTime: 4,
-      } as unknown as Partial<Database>),
-    })
+    const profile = resolveDurableProfile(
+      db({ aiModel: 'reverse_proxy' } as Partial<Database>),
+      {
+        modelId: 'reverse_proxy',
+        providerOptions: {
+          baseUrl: 'risu::https://profile.proxy.example/v1',
+          requestModel: 'profile-proxy-model',
+          additionalParams: [
+            ['profile_param', '"from-profile"'],
+            ['header::X-Profile-Param', 'profile-header'],
+          ],
+          reverseProxy: { autofillRequestUrl: true, oobaSystemHoist: true, oobaArgs: { profile_ooba_arg: 7 } },
+        },
+        runtimeOptions: { genTime: 4 },
+      },
+      'sk-profile-proxy',
+    )
     setDatabase(
       db({
         aiModel: 'reverse_proxy',
@@ -179,20 +339,22 @@ describe('requestOpenAI profile provider options', () => {
 
   it('uses xcustom profile URL, key, internal id, and params over flat custom model conflicts', async () => {
     const modelId = 'xcustom:::profile-openai'
-    const profile = resolveModelProfile({
-      database: db({
-        aiModel: modelId,
-        customModels: [
-          customModel({
-            id: modelId,
-            internalId: 'profile-custom-wire',
-            url: 'https://profile.custom.example/v1/chat/completions',
-            key: 'sk-profile-custom',
-            params: 'profile_param="custom-profile"\nheader::X-Custom-Profile=profile-header',
-          }),
-        ] as Database['customModels'],
-      }),
-    })
+    const profile = resolveDurableProfile(
+      db({ aiModel: modelId } as Partial<Database>),
+      {
+        providerId: 'custom-api',
+        modelId: 'custom-api',
+        providerOptions: {
+          baseUrl: 'https://profile.custom.example/v1',
+          requestModel: 'profile-custom-wire',
+          additionalParams: [
+            ['profile_param', '"custom-profile"'],
+            ['header::X-Custom-Profile', 'profile-header'],
+          ],
+        },
+      },
+      'sk-profile-custom',
+    )
     setDatabase(
       db({
         aiModel: modelId,
@@ -205,6 +367,7 @@ describe('requestOpenAI profile provider options', () => {
             params: 'flat_param="custom-flat"\nheader::X-Custom-Flat=flat-header',
           }),
         ] as Database['customModels'],
+        openAIFlexProcessing: true,
       }),
     )
 
@@ -225,22 +388,26 @@ describe('requestOpenAI profile provider options', () => {
     expect(payload.body.model).toBe('profile-custom-wire')
     expect(payload.body.profile_param).toBe('custom-profile')
     expect(payload.body.flat_param).toBeUndefined()
+    expect(payload.body.service_tier).toBeUndefined()
   })
 
   it('uses reverse_proxy Mistral profile URL, key, request model, extra headers, and params over flat and arg conflicts', async () => {
-    const profile = resolveModelProfile({
-      database: db({
-        aiModel: 'reverse_proxy',
-        customAPIFormat: LLMFormat.Mistral,
-        forceReplaceUrl: 'risu::https://profile-mistral.example.com',
-        proxyKey: 'sk-profile-mistral',
-        customProxyRequestModel: 'profile-mistral-model',
-        additionalParams: [
-          ['profile_param', '"from-profile"'],
-          ['header::X-Mistral-Profile', 'profile-header'],
-        ],
-      } as Partial<Database>),
-    })
+    const profile = resolveDurableProfile(
+      db({ aiModel: 'reverse_proxy' } as Partial<Database>),
+      {
+        modelId: 'reverse_proxy',
+        providerOptions: {
+          baseUrl: 'risu::https://profile-mistral.example.com',
+          requestModel: 'profile-mistral-model',
+          additionalParams: [
+            ['profile_param', '"from-profile"'],
+            ['header::X-Mistral-Profile', 'profile-header'],
+          ],
+          reverseProxy: { autofillRequestUrl: true, oobaSystemHoist: false },
+        },
+      },
+      'sk-profile-mistral',
+    )
     setDatabase(
       db({
         aiModel: 'reverse_proxy',
@@ -274,22 +441,22 @@ describe('requestOpenAI profile provider options', () => {
 
   it('uses xcustom Mistral profile URL, key, internal id, and params over flat custom model conflicts', async () => {
     const modelId = 'xcustom:::profile-mistral'
-    const profile = resolveModelProfile({
-      database: db({
-        aiModel: modelId,
-        customModels: [
-          customModel({
-            id: modelId,
-            internalId: 'profile-mistral-wire',
-            url: 'https://profile.custom-mistral.example/v1/chat/completions',
-            key: 'sk-profile-custom-mistral',
-            format: LLMFormat.Mistral,
-            tokenizer: LLMTokenizer.Mistral,
-            params: 'profile_param="custom-profile"\nheader::X-Mistral-Custom=profile-header',
-          }),
-        ] as Database['customModels'],
-      }),
-    })
+    const profile = resolveDurableProfile(
+      db({ aiModel: modelId } as Partial<Database>),
+      {
+        providerId: 'custom-api',
+        modelId: 'custom-api',
+        providerOptions: {
+          baseUrl: 'https://profile.custom-mistral.example/v1',
+          requestModel: 'profile-mistral-wire',
+          additionalParams: [
+            ['profile_param', '"custom-profile"'],
+            ['header::X-Mistral-Custom', 'profile-header'],
+          ],
+        },
+      },
+      'sk-profile-custom-mistral',
+    )
     setDatabase(
       db({
         aiModel: modelId,
@@ -328,20 +495,21 @@ describe('requestOpenAI profile provider options', () => {
   })
 
   it('uses OpenRouter profile key, request model, route, transforms, and provider filters over flat conflicts', async () => {
-    const profile = resolveModelProfile({
-      database: db({
-        aiModel: 'openrouter',
-        openrouterKey: 'sk-profile-openrouter',
-        openrouterRequestModel: 'profile/provider-model',
-        openrouterFallback: true,
-        openrouterMiddleOut: true,
-        openrouterProvider: {
-          order: ['ProfileProvider'],
-          only: ['profile-only'],
-          ignore: ['profile-ignore'],
+    const profile = resolveDurableProfile(
+      db({ aiModel: 'openrouter' } as Partial<Database>),
+      {
+        modelId: 'openrouter',
+        providerOptions: {
+          requestModel: 'profile/provider-model',
+          openrouter: {
+            fallback: true,
+            middleOut: true,
+            provider: { order: ['ProfileProvider'], only: ['profile-only'], ignore: ['profile-ignore'] },
+          },
         },
-      } as Partial<Database>),
-    })
+      },
+      'sk-profile-openrouter',
+    )
     setDatabase(
       db({
         aiModel: 'openrouter',
@@ -354,6 +522,7 @@ describe('requestOpenAI profile provider options', () => {
           only: ['flat-only'],
           ignore: ['flat-ignore'],
         },
+        openAIFlexProcessing: true,
       } as Partial<Database>),
     )
 
@@ -371,16 +540,15 @@ describe('requestOpenAI profile provider options', () => {
       only: ['profile-only'],
       ignore: ['profile-ignore'],
     })
+    expect(payload.body.service_tier).toBeUndefined()
   })
 
   it('uses the OpenRouter profile key for risu/free catalog lookup and sends the returned free model', async () => {
-    const profile = resolveModelProfile({
-      database: db({
-        aiModel: 'openrouter',
-        openrouterKey: 'sk-profile-openrouter-free',
-        openrouterRequestModel: 'risu/free',
-      } as Partial<Database>),
-    })
+    const profile = resolveDurableProfile(
+      db({ aiModel: 'openrouter' } as Partial<Database>),
+      { modelId: 'openrouter', providerOptions: { requestModel: 'risu/free' } },
+      'sk-profile-openrouter-free',
+    )
     setDatabase(
       db({
         aiModel: 'openrouter',
@@ -410,12 +578,12 @@ describe('requestOpenAI profile provider options', () => {
     const payload = await preview(makeArg(profile))
 
     expect(providerOperations.credential).toHaveBeenCalledWith('sk-profile-openrouter-free', {
-      profileId: undefined,
+      profileId: 'request-profile',
     })
     expect(providerOperations.request).toHaveBeenCalledWith('openrouter.models', {
       credential: expect.objectContaining({
         apiKey: 'sk-profile-openrouter-free',
-        profileId: undefined,
+        profileId: 'request-profile',
       }),
     })
     expect(payload.headers.Authorization).toBe('Bearer sk-profile-openrouter-free')
@@ -424,13 +592,11 @@ describe('requestOpenAI profile provider options', () => {
   })
 
   it('fails safely when the risu/free catalog is empty', async () => {
-    const profile = resolveModelProfile({
-      database: db({
-        aiModel: 'openrouter',
-        openrouterKey: 'sk-empty-openrouter-free',
-        openrouterRequestModel: 'risu/free',
-      } as Partial<Database>),
-    })
+    const profile = resolveDurableProfile(
+      db({ aiModel: 'openrouter' } as Partial<Database>),
+      { modelId: 'openrouter', providerOptions: { requestModel: 'risu/free' } },
+      'sk-empty-openrouter-free',
+    )
     setDatabase(
       db({
         aiModel: 'openrouter',
@@ -447,16 +613,17 @@ describe('requestOpenAI profile provider options', () => {
   })
 
   it('uses NanoGPT profile key, request model, provider header, and subscription endpoint over flat conflicts', async () => {
-    const profile = resolveModelProfile({
-      database: db({
-        aiModel: 'nanogpt',
-        nanogptKey: 'sk-profile-nano',
-        nanogptRequestModel: 'profile/nano-model',
-        nanogptProvider: 'profile-provider',
-        nanogptUseSubscriptionEndpoint: true,
-        nanogptSubscriptionState: 'active',
-      } as Partial<Database>),
-    })
+    const profile = resolveDurableProfile(
+      db({ aiModel: 'nanogpt' } as Partial<Database>),
+      {
+        modelId: 'nanogpt',
+        providerOptions: {
+          requestModel: 'profile/nano-model',
+          nanogpt: { providerHint: 'profile-provider', useSubscriptionEndpoint: true, subscriptionState: 'active' },
+        },
+      },
+      'sk-profile-nano',
+    )
     setDatabase(
       db({
         aiModel: 'nanogpt',
@@ -464,6 +631,7 @@ describe('requestOpenAI profile provider options', () => {
         nanogptRequestModel: 'flat/nano-model',
         nanogptProvider: 'flat-provider',
         nanogptUseSubscriptionEndpoint: false,
+        openAIFlexProcessing: true,
       } as Partial<Database>),
     )
 
@@ -473,6 +641,7 @@ describe('requestOpenAI profile provider options', () => {
     expect(payload.headers.Authorization).toBe('Bearer sk-profile-nano')
     expect(payload.headers['X-Provider']).toBe('profile-provider')
     expect(payload.body.model).toBe('profile/nano-model')
+    expect(payload.body.service_tier).toBeUndefined()
   })
 
   it('uses key-identifier profile key and base URL over conflicting flat OaiCompAPIKeys', async () => {
@@ -483,13 +652,12 @@ describe('requestOpenAI profile provider options', () => {
       endpoint: 'https://profile.keyed.example/v1/chat/completions',
       keyIdentifier: 'deepseek',
     })
-    const profile = resolveModelProfile({
-      database: db({
-        aiModel: 'profile-keyed-model',
-        OaiCompAPIKeys: { deepseek: 'sk-profile-keyed' },
-      } as Partial<Database>),
-      lookupModelInfo: () => keyedInfo,
-    })
+    const profile = resolveDurableProfile(
+      db({ aiModel: 'profile-keyed-model' } as Partial<Database>),
+      { modelId: 'profile-keyed-model' },
+      'sk-profile-keyed',
+      () => keyedInfo,
+    )
     setDatabase(
       db({
         aiModel: 'gpt-5',
@@ -514,16 +682,42 @@ describe('requestOpenAI profile provider options', () => {
     expect(payload.body.model).toBe('profile-keyed-model')
   })
 
+  it('omits json_schema response_format for models without structured-output support', async () => {
+    const database = db({
+      aiModel: 'gpt-5.4-pro',
+      jsonSchemaEnabled: true,
+      jsonSchema: '{"type":"object"}',
+    } as Partial<Database>)
+    const profile = resolveDurableProfile(
+      database,
+      {
+        providerId: 'openai',
+        modelId: 'gpt-5.4-pro',
+        runtimeOptions: { jsonSchemaEnabled: true, jsonSchema: '{"type":"object"}' },
+      },
+      'sk-pro',
+    )
+    setDatabase(database)
+
+    const payload = await preview(makeArg(profile))
+
+    expect(profile.modelInfo.flags).toContain(LLMFlags.noStructuredOutput)
+    expect(payload.body.response_format).toBeUndefined()
+  })
+
   it('uses ollama-cloud profile API key, request model, and base URL over flat conflicts', async () => {
-    const profile = resolveModelProfile({
-      database: db({
-        aiModel: 'ollama-cloud',
-        ollamaApiKey: 'sk-profile-ollama',
-        ollamaRequestFormat: LLMFormat.OpenAICompatible,
-        ollamaCloudModel: 'profile-ollama-model',
-        ollamaModelSource: 'cloud',
-      } as Partial<Database>),
-    })
+    const profile = resolveDurableProfile(
+      db({ aiModel: 'ollama-cloud' } as Partial<Database>),
+      {
+        providerId: 'ollama',
+        modelId: 'ollama-cloud',
+        providerOptions: {
+          requestModel: 'profile-ollama-model',
+          ollama: { requestFormat: LLMFormat.OpenAICompatible, modelSource: 'cloud' },
+        },
+      },
+      'sk-profile-ollama',
+    )
     setDatabase(
       db({
         aiModel: 'ollama-cloud',
@@ -570,6 +764,7 @@ describe('requestOpenAI profile provider options', () => {
     )
 
     const payload = await preview({
+      database: getDatabase(),
       formated: [
         { role: 'system', content: 'legacy system' },
         { role: 'user', content: 'hello' },
@@ -606,6 +801,7 @@ describe('requestOpenAI profile provider options', () => {
     )
 
     const payload = await preview({
+      database: getDatabase(),
       formated: [
         { role: 'system', content: 'legacy mistral system' },
         { role: 'user', content: 'hello' },

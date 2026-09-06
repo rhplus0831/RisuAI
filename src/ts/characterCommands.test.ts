@@ -33,6 +33,8 @@ vi.mock('./alert', async (importActual) => {
 import {
   applyAttemptedCharacterFieldRollback,
   applyCompatibleCharacterPatch,
+  applyCharacterRowMutationScoped,
+  applyCharacterSelectionOptimistically,
   changedCharacterFields,
   createCharacterOrderFolder,
   currentCharacterRowSnapshot,
@@ -46,6 +48,7 @@ import {
   dispatchCreateCharacter,
   dispatchDeleteCharacter,
   dispatchSelectCharacter,
+  dispatchSelectCharacterWithOutcome,
   dispatchUpdateCharacterScoped,
   moveCharacterOrderItem,
   moveCharacterOrderItemWithOutcome,
@@ -73,9 +76,15 @@ import {
 } from './server/pendingMutationOutbox'
 import { replayPendingMutations } from './server/pendingMutationReplay'
 import * as pendingMutationOutboxModule from './server/pendingMutationOutbox'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+
+import {
+  charactersResourceState,
+  replaceResourceDatabase,
+  resetServerResourceState,
+} from './server/resourceState.svelte'
 import { selectedCharID, selIdState } from './stores.svelte'
+import { installStoreRuntimeEffects } from './stores/runtimeEffects.svelte'
+import { restoreStartupWriterCapabilities, revokeStartupWriterCapabilities } from './startupReadiness'
 import { removeChar } from './characters'
 import {
   assertRollbackRestoresOnly,
@@ -85,6 +94,7 @@ import {
   withAsyncCloneInstrumentation,
   withCloneInstrumentation,
 } from './__tests__/cloneCostHarness'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {
@@ -326,8 +336,8 @@ async function withMockedNow<T>(now: number, fn: () => Promise<T>): Promise<T> {
 }
 
 beforeEach(() => {
+  resetServerResourceState()
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
   selectedCharID.set(0)
   alertConfirmState.messages = []
   alertConfirmState.responses = [true, true]
@@ -338,13 +348,13 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
 describe('character create command payloads', () => {
   it('dispatchCreateCharacter omits embedded chats from the server payload and preserves the optimistic character', async () => {
     const calls = stubCreateCharacterCommandFetch()
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const previous = currentCharacterStateSnapshot()
     const starterChat = {
       id: 'chat-created',
@@ -359,24 +369,59 @@ describe('character create command payloads', () => {
       chats: [starterChat],
     } as any
 
+    try {
+      const settlement = dispatchCreateCharacter(character, previous)
+      await waitForCallCount(calls, 2)
+
+      expect(calls[1]).toMatchObject({
+        url: '/api/v1/commands/characters',
+        method: 'POST',
+        body: {
+          baseRevision: 10,
+          character: {
+            chaId: 'char-created',
+            name: 'Imported card',
+            firstMessage: 'Hi',
+            chatPage: 0,
+          },
+        },
+      })
+      expect(calls[1].body).not.toHaveProperty('character.chats')
+      expect(character.chats).toEqual([starterChat])
+      await expect(settlement).resolves.toMatchObject({ status: 'accepted' })
+      expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('Character create would drop 1 chat'), {
+        characterId: 'char-created',
+      })
+    } finally {
+      consoleError.mockRestore()
+    }
+  })
+
+  it('dispatchCreateCharacter carries an id-bearing empty imported starter chat', async () => {
+    const calls = stubCreateCharacterCommandFetch()
+    const previous = currentCharacterStateSnapshot()
+    const starterChat = {
+      id: 'chat-imported',
+      name: 'Chat 1',
+      note: '',
+      message: [],
+      localLore: [{ id: 'local-lore', content: 'Local lore' }],
+    }
+    const character = {
+      chaId: 'char-created',
+      name: 'Imported card',
+      chatPage: 0,
+      chats: [starterChat],
+    } as any
+
     dispatchCreateCharacter(character, previous)
     await waitForCallCount(calls, 2)
 
-    expect(calls[1]).toMatchObject({
-      url: '/api/v1/commands/characters',
-      method: 'POST',
-      body: {
-        baseRevision: 10,
-        character: {
-          chaId: 'char-created',
-          name: 'Imported card',
-          firstMessage: 'Hi',
-          chatPage: 0,
-        },
-      },
+    expect(calls[1].body).toMatchObject({
+      character: { chaId: 'char-created', name: 'Imported card', chatPage: 0 },
+      initialChat: starterChat,
     })
-    expect(calls[1].body).not.toHaveProperty('character.chats')
-    expect(character.chats).toEqual([starterChat])
+    expect((calls[1].body as { character: Record<string, unknown> }).character).not.toHaveProperty('chats')
   })
 
   it('dispatchCreateAndSelectCharacter omits embedded chats while keeping local selection data intact', async () => {
@@ -431,7 +476,6 @@ describe('character list create/delete rollback', () => {
       characterOrder: ['char-a'],
       currentChar: 0,
     } as any
-    setResourceWriteGuardEnabled(true)
     const previous = {
       characters: [{ chaId: 'char-a', name: 'A', chats: [] }],
       characterOrder: ['char-a'],
@@ -441,7 +485,7 @@ describe('character list create/delete rollback', () => {
 
     dispatchCreateCharacter(testDatabaseState.db.characters[1], previous)
 
-    expect(testDatabaseState.db.characterOrder).toEqual(['char-a', 'char-created'])
+    expect(charactersResourceState.characterOrder).toEqual(['char-a', 'char-created'])
     await waitForCallCount(calls, 2)
   })
 
@@ -449,15 +493,15 @@ describe('character list create/delete rollback', () => {
     const calls = stubCharacterCollectionCommandFetch({
       failCreate: true,
       onCreate: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           testDatabaseState.db.characters[0].name = 'Sibling newer edit'
-          testDatabaseState.db.characterOrder = [
-            'char-created',
-            { id: 'folder-1', name: 'Newer Folder', color: 'green', data: ['char-a'], imgFile: 'asset-newer' },
-          ] as any
-          ;(testDatabaseState.db as any).currentChar = 0
           selectedCharID.set(0)
         })
+        charactersResourceState.characterOrder = [
+          'char-created',
+          { id: 'folder-1', name: 'Newer Folder', color: 'green', data: ['char-a'], imgFile: 'asset-newer' },
+        ] as any
+        charactersResourceState.currentChar = 0
       },
     })
     testDatabaseState.db = {
@@ -466,11 +510,10 @@ describe('character list create/delete rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
     const attempted = { chaId: 'char-created', name: 'Created', chats: [] } as any
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.push(attempted)
     })
     repairCharacterOrderOptimistically({ dispatchReorder: false })
@@ -481,11 +524,11 @@ describe('character list create/delete rollback', () => {
       expect(testDatabaseState.db.characters.map((character: any) => character.chaId)).toEqual(['char-a'])
     })
     expect(testDatabaseState.db.characters[0].name).toBe('Sibling newer edit')
-    expect(testDatabaseState.db.characterOrder).toEqual([
+    expect(charactersResourceState.characterOrder).toEqual([
       { id: 'folder-1', name: 'Newer Folder', color: 'green', data: ['char-a'], imgFile: 'asset-newer' },
     ])
     expect(get(selectedCharID)).toBe(0)
-    expect((testDatabaseState.db as any).currentChar).toBe(0)
+    expect(charactersResourceState.currentChar).toBe(0)
   })
 
   it('failed create-and-select removes attempted row and restores previous selection only when attempted row is still selected', async () => {
@@ -496,15 +539,14 @@ describe('character list create/delete rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
     const attempted = { chaId: 'char-selected', name: 'Selected', chats: [], lastInteraction: 1234 } as any
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.push(attempted)
-      ;(testDatabaseState.db as any).currentChar = 1
       selectedCharID.set(1)
     })
+    charactersResourceState.currentChar = 1
     repairCharacterOrderOptimistically({ dispatchReorder: false })
     dispatchCreateAndSelectCharacter(attempted, previous, 1234)
 
@@ -512,9 +554,9 @@ describe('character list create/delete rollback', () => {
     await vi.waitFor(() => {
       expect(testDatabaseState.db.characters.map((character: any) => character.chaId)).toEqual(['char-a'])
     })
-    expect(testDatabaseState.db.characterOrder).toEqual(['char-a'])
+    expect(charactersResourceState.characterOrder).toEqual(['char-a'])
     expect(get(selectedCharID)).toBe(0)
-    expect((testDatabaseState.db as any).currentChar).toBe(0)
+    expect(charactersResourceState.currentChar).toBe(0)
   })
 
   it('failed create-and-select preserves a later selected character by id after index compaction', async () => {
@@ -525,7 +567,6 @@ describe('character list create/delete rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
     const response = deferredResponse()
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
@@ -544,26 +585,29 @@ describe('character list create/delete rollback', () => {
     )
     const previous = currentCharacterStateSnapshot()
     const attempted = { chaId: 'char-playground', name: 'Playground', chats: [], lastInteraction: 1234 } as any
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.push(attempted)
-      ;(testDatabaseState.db as any).currentChar = 1
       selectedCharID.set(1)
     })
+    charactersResourceState.currentChar = 1
 
     const pending = dispatchCreateAndSelectCharacter(attempted, previous, 1234, {
       shouldRestoreSelection: () => false,
     })
     await vi.waitFor(() => expect(calls).toHaveLength(1))
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.push({ chaId: 'char-later', name: 'Later', chats: [] } as any)
-      ;(testDatabaseState.db as any).currentChar = 2
       selectedCharID.set(2)
     })
+    charactersResourceState.currentChar = 2
     response.resolve(jsonResponse({ error: 'invalid create' }, 400))
 
-    await expect(pending).resolves.toMatchObject({ status: 'error', reason: 'invalid-request' })
+    await expect(pending).resolves.toMatchObject({
+      status: 'failed',
+      result: { status: 'error', reason: 'invalid-request' },
+    })
     expect(testDatabaseState.db.characters.map((character) => character.chaId)).toEqual(['char-a', 'char-later'])
-    expect((testDatabaseState.db as any).currentChar).toBe(1)
+    expect(charactersResourceState.currentChar).toBe(1)
     expect(get(selectedCharID)).toBe(1)
   })
 
@@ -576,22 +620,22 @@ describe('character list create/delete rollback', () => {
     selectedCharID.set(0)
     const previous = currentCharacterStateSnapshot()
     const attempted = { chaId: 'char-playground', name: 'Playground', chats: [], lastInteraction: 1234 } as any
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.push(attempted)
-      ;(testDatabaseState.db as any).currentChar = 1
       selectedCharID.set(1)
     })
+    charactersResourceState.currentChar = 1
     const stage = vi.spyOn(pendingMutationOutboxModule, 'stagePendingMutation').mockImplementationOnce(() => {
       throw new RangeError('Pending mutation payload is too large')
     })
 
     try {
       await expect(dispatchCreateAndSelectCharacter(attempted, previous, 1234)).resolves.toMatchObject({
-        status: 'error',
-        reason: 'invalid-request',
+        status: 'failed',
+        result: { status: 'error', reason: 'invalid-request' },
       })
       expect(testDatabaseState.db.characters.map((character) => character.chaId)).toEqual(['char-a'])
-      expect((testDatabaseState.db as any).currentChar).toBe(0)
+      expect(charactersResourceState.currentChar).toBe(0)
       expect(get(selectedCharID)).toBe(0)
     } finally {
       stage.mockRestore()
@@ -602,13 +646,13 @@ describe('character list create/delete rollback', () => {
     const calls = stubCharacterCollectionCommandFetch({
       failCreate: true,
       onCreate: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           testDatabaseState.db.characters[0].name = 'Local edit after import dispatch'
-          testDatabaseState.db.characterOrder = [
-            { id: 'folder-1', name: 'Local Folder', color: 'purple', data: ['char-a'] },
-          ] as any
           selectedCharID.set(0)
         })
+        charactersResourceState.characterOrder = [
+          { id: 'folder-1', name: 'Local Folder', color: 'purple', data: ['char-a'] },
+        ] as any
       },
     })
     testDatabaseState.db = {
@@ -617,7 +661,6 @@ describe('character list create/delete rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
     const imported = { chaId: 'char-imported', name: 'Imported', chats: [] } as any
 
@@ -628,7 +671,7 @@ describe('character list create/delete rollback', () => {
     expect(testDatabaseState.db.characters).toEqual([
       { chaId: 'char-a', name: 'Local edit after import dispatch', chats: [] },
     ])
-    expect(testDatabaseState.db.characterOrder).toEqual([
+    expect(charactersResourceState.characterOrder).toEqual([
       { id: 'folder-1', name: 'Local Folder', color: 'purple', data: ['char-a'] },
     ])
     expect(get(selectedCharID)).toBe(0)
@@ -638,17 +681,17 @@ describe('character list create/delete rollback', () => {
     const calls = stubCharacterCollectionCommandFetch({
       failDelete: true,
       onDelete: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           testDatabaseState.db.characters[0].name = 'A newer edit'
           testDatabaseState.db.characters.push({ chaId: 'char-d', name: 'D appended', chats: [] } as any)
-          const folder = testDatabaseState.db.characterOrder.find(
+          const folder = charactersResourceState.characterOrder.find(
             (entry: any) => typeof entry !== 'string' && entry.id === 'folder-1',
           )
           if (folder && typeof folder !== 'string') {
             folder.name = 'Newer Folder'
             folder.color = 'green'
           }
-          testDatabaseState.db.characterOrder.push('char-d')
+          charactersResourceState.characterOrder.push('char-d')
         })
       },
     })
@@ -662,18 +705,15 @@ describe('character list create/delete rollback', () => {
       currentChar: 1,
     } as any
     selectedCharID.set(1)
-    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.splice(1, 1)
     })
     dispatchDeleteCharacter('char-b', previous)
     repairCharacterOrderOptimistically({ dispatchReorder: false })
-    withTrustedResourceWrite(() => {
-      ;(testDatabaseState.db as any).currentChar = undefined
-      selectedCharID.set(-1)
-    })
+    charactersResourceState.currentChar = -1
+    selectedCharID.set(-1)
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
@@ -690,13 +730,13 @@ describe('character list create/delete rollback', () => {
       'C',
       'D appended',
     ])
-    expect(testDatabaseState.db.characterOrder).toEqual([
+    expect(charactersResourceState.characterOrder).toEqual([
       'char-a',
       { id: 'folder-1', name: 'Newer Folder', color: 'green', data: ['char-b', 'char-c'] },
       'char-d',
     ])
     expect(get(selectedCharID)).toBe(1)
-    expect((testDatabaseState.db as any).currentChar).toBe(1)
+    expect(charactersResourceState.currentChar).toBe(1)
   })
 
   it('normalizes an out-of-range current character pointer during optimistic deletion', async () => {
@@ -710,16 +750,15 @@ describe('character list create/delete rollback', () => {
       currentChar: 1,
     } as any
     selectedCharID.set(1)
-    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.splice(1, 1)
     })
     dispatchDeleteCharacter('char-b', previous)
 
-    expect((testDatabaseState.db as any).currentChar).toBe(0)
-    expect(testDatabaseState.db.characterOrder).toEqual(['char-a'])
+    expect(charactersResourceState.currentChar).toBe(0)
+    expect(charactersResourceState.characterOrder).toEqual(['char-a'])
     await waitForCallCount(calls, 2)
   })
 
@@ -735,17 +774,16 @@ describe('character list create/delete rollback', () => {
       currentChar: 1,
     } as any
     selectedCharID.set(1)
-    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.splice(0, 1)
     })
     dispatchDeleteCharacter('char-trash', previous)
 
     expect(testDatabaseState.db.characters.map((character: any) => character.chaId)).toEqual(['char-b', 'char-c'])
-    expect((testDatabaseState.db as any).currentChar).toBe(0)
-    expect(testDatabaseState.db.characters[(testDatabaseState.db as any).currentChar].chaId).toBe('char-b')
+    expect(charactersResourceState.currentChar).toBe(0)
+    expect(testDatabaseState.db.characters[charactersResourceState.currentChar].chaId).toBe('char-b')
     await waitForCallCount(calls, 2)
   })
 
@@ -753,10 +791,8 @@ describe('character list create/delete rollback', () => {
     const calls = stubCharacterCollectionCommandFetch({
       failDelete: true,
       onDelete: () => {
-        withTrustedResourceWrite(() => {
-          ;(testDatabaseState.db as any).currentChar = 1
-          selectedCharID.set(1)
-        })
+        charactersResourceState.currentChar = 1
+        selectedCharID.set(1)
       },
     })
     testDatabaseState.db = {
@@ -769,10 +805,9 @@ describe('character list create/delete rollback', () => {
       currentChar: 1,
     } as any
     selectedCharID.set(1)
-    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.splice(1, 1)
     })
     dispatchDeleteCharacter('char-b', previous)
@@ -786,7 +821,7 @@ describe('character list create/delete rollback', () => {
         'char-c',
       ])
       expect(get(selectedCharID)).toBe(2)
-      expect((testDatabaseState.db as any).currentChar).toBe(2)
+      expect(charactersResourceState.currentChar).toBe(2)
     })
   })
 
@@ -802,24 +837,23 @@ describe('character list create/delete rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.splice(1, 1)
     })
     dispatchDeleteCharacter('char-b', previous)
     repairCharacterOrderOptimistically({ dispatchReorder: false })
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.push({ chaId: 'char-b', name: 'Replacement B', chats: [] } as any)
-      testDatabaseState.db.characterOrder.push('char-b')
     })
+    charactersResourceState.characterOrder.push('char-b')
 
     await waitForCallCount(calls, 2)
     await flushAsyncWork()
     const charBRows = testDatabaseState.db.characters.filter((character: any) => character.chaId === 'char-b')
     expect(charBRows).toEqual([{ chaId: 'char-b', name: 'Replacement B', chats: [] }])
-    expect(testDatabaseState.db.characterOrder).toEqual(['char-a', 'char-c', 'char-b'])
+    expect(charactersResourceState.characterOrder).toEqual(['char-a', 'char-c', 'char-b'])
   })
 
   it('holds a later selection behind a transient create-and-select owner', async () => {
@@ -841,14 +875,12 @@ describe('character list create/delete rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentCharacterStateSnapshot()
     const created = { chaId: 'char-new', name: 'New', chats: [], lastInteraction: 2_000 } as any
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.push(created)
-      testDatabaseState.db.characterOrder.push(created.chaId)
-      ;(testDatabaseState.db as any).currentChar = 2
+      charactersResourceState.characterOrder.push(created.chaId)
+      charactersResourceState.currentChar = 2
       selectedCharID.set(2)
     })
 
@@ -899,18 +931,22 @@ describe('character list create/delete rollback', () => {
     )
 
     try {
-      dispatchCreateAndSelectCharacter(created, previous, 2_000)
+      const createSettlement = dispatchCreateAndSelectCharacter(created, previous, 2_000)
       await vi.waitFor(() => expect(commands).toHaveLength(1))
 
       const previousB = currentCharacterSelectionSnapshot('char-b')
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         testDatabaseState.db.characters[1].lastInteraction = 3_000
-        ;(testDatabaseState.db as any).currentChar = 1
+        charactersResourceState.currentChar = 1
         selectedCharID.set(1)
       })
       dispatchSelectCharacter('char-b', previousB, 3_000)
       firstCreate.resolve(jsonResponse({ error: 'temporarily unavailable' }, 500))
 
+      await expect(createSettlement).resolves.toMatchObject({
+        status: 'queued',
+        result: { status: 'error', error: 'temporarily unavailable' },
+      })
       await vi.waitFor(() => expect(commands).toHaveLength(2))
       expect(commands.map(({ url }) => url)).toEqual([
         '/api/v1/commands/characters/create-and-select',
@@ -954,8 +990,6 @@ describe('character list create/delete rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
-
     const patchIntent: DurableMutationIntent = {
       version: 1,
       requests: [
@@ -969,7 +1003,7 @@ describe('character list create/delete rollback', () => {
     const predecessor = stagePendingMutation('character-owner:char-b', patchIntent)
     await expect(predecessor.ready).resolves.toBe('persisted')
     const previous = currentCharacterStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.splice(1, 1)
     })
 
@@ -1052,8 +1086,6 @@ describe('character list create/delete rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
-
     let recover = false
     let revision = 20
     let serverHasCharacter = true
@@ -1093,7 +1125,7 @@ describe('character list create/delete rollback', () => {
     )
 
     const beforeDelete = currentCharacterStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.splice(1, 1)
     })
 
@@ -1104,7 +1136,7 @@ describe('character list create/delete rollback', () => {
 
       // Simulate an authoritative row refresh racing the retained DELETE. The
       // restore PATCH must remain behind that predecessor and cannot send early.
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         testDatabaseState.db.characters.push({
           chaId: 'char-trash',
           name: 'Trashed',
@@ -1115,7 +1147,7 @@ describe('character list create/delete rollback', () => {
 
       const trashIndex = testDatabaseState.db.characters.findIndex((character) => character.chaId === 'char-trash')
       const beforeRestore = currentCharacterRowSnapshot(trashIndex)
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         testDatabaseState.db.characters[trashIndex].trashTime = null
       })
       dispatchUpdateCharacterScoped('char-trash', { trashTime: null }, beforeRestore)
@@ -1200,7 +1232,55 @@ describe('character select command rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
+  })
+
+  it('rolls back the exact selection owner when durable staging fails', async () => {
+    const previous = currentCharacterSelectionSnapshot('char-b')
+    expect(applyCharacterSelectionOptimistically('char-b', 2_000)).toBe(1)
+    const stage = vi.spyOn(pendingMutationOutboxModule, 'stagePendingMutation').mockImplementationOnce(() => {
+      throw new RangeError('Pending mutation payload is too large')
+    })
+
+    try {
+      await expect(dispatchSelectCharacterWithOutcome('char-b', previous, 2_000)).resolves.toMatchObject({
+        status: 'failed',
+        result: { status: 'error', reason: 'invalid-request' },
+      })
+      expect(charactersResourceState.currentChar).toBe(0)
+      expect(get(selectedCharID)).toBe(0)
+      expect(testDatabaseState.db.characters[1].lastInteraction).toBe(200)
+    } finally {
+      stage.mockRestore()
+    }
+  })
+
+  it('retains the exact optimistic selection when writer access is lost after durable staging', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-character-select-loss',
+      writerEpoch: 15,
+      databaseLineage: 'lineage-character-select-loss',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(40)
+    const previous = currentCharacterSelectionSnapshot('char-b')
+    expect(applyCharacterSelectionOptimistically('char-b', 2_000)).toBe(1)
+
+    try {
+      const settlement = dispatchSelectCharacterWithOutcome('char-b', previous, 2_000)
+      revokeStartupWriterCapabilities()
+
+      await expect(settlement).resolves.toMatchObject({ status: 'queued', result: { status: 'unavailable' } })
+      expect(charactersResourceState.currentChar).toBe(1)
+      expect(get(selectedCharID)).toBe(1)
+      expect(testDatabaseState.db.characters[1].lastInteraction).toBe(2_000)
+      expect((await listPendingMutations()).map((entry) => entry.handle.key)).toEqual(['character-selection'])
+    } finally {
+      restoreStartupWriterCapabilities()
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
   })
 
   it('orders a durable selection correction after an older character-owner patch', async () => {
@@ -1263,9 +1343,9 @@ describe('character select command rollback', () => {
     )
 
     const previous = currentCharacterSelectionSnapshot('char-b')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters[1].lastInteraction = 2_000
-      ;(testDatabaseState.db as any).currentChar = 1
+      charactersResourceState.currentChar = 1
       selectedCharID.set(1)
     })
 
@@ -1348,20 +1428,20 @@ describe('character select command rollback', () => {
 
     try {
       const previousB = currentCharacterSelectionSnapshot('char-b')
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         testDatabaseState.db.characters[1].lastInteraction = 2_000
-        ;(testDatabaseState.db as any).currentChar = 1
         selectedCharID.set(1)
       })
+      charactersResourceState.currentChar = 1
       dispatchSelectCharacter('char-b', previousB, 2_000)
       await vi.waitFor(() => expect(commands).toHaveLength(1))
 
       const previousC = currentCharacterSelectionSnapshot('char-c')
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         testDatabaseState.db.characters[2].lastInteraction = 3_000
-        ;(testDatabaseState.db as any).currentChar = 2
         selectedCharID.set(2)
       })
+      charactersResourceState.currentChar = 2
       dispatchSelectCharacter('char-c', previousC, 3_000)
       await vi.waitFor(() => expect(commands).toHaveLength(2))
       expect(commands.map(({ characterId }) => characterId)).toEqual(['char-b', 'char-b'])
@@ -1387,11 +1467,11 @@ describe('character select command rollback', () => {
     const calls = stubDelayedSelectCommandFetch(selectResponse.promise)
     const previous = currentCharacterSelectionSnapshot('char-b')
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters[1].lastInteraction = 2000
-      ;(testDatabaseState.db as any).currentChar = 1
       selectedCharID.set(1)
     })
+    charactersResourceState.currentChar = 1
     dispatchSelectCharacter('char-b', previous, 2000)
 
     await waitForCallCount(calls, 2)
@@ -1411,7 +1491,7 @@ describe('character select command rollback', () => {
     await vi.waitFor(() => {
       expect(get(selectedCharID)).toBe(0)
     })
-    expect((testDatabaseState.db as any).currentChar).toBe(0)
+    expect(charactersResourceState.currentChar).toBe(0)
     expect(testDatabaseState.db.characters[1].lastInteraction).toBe(200)
   })
 
@@ -1420,24 +1500,24 @@ describe('character select command rollback', () => {
     const calls = stubDelayedSelectCommandFetch(selectResponse.promise)
     const previous = currentCharacterSelectionSnapshot('char-b')
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters[1].lastInteraction = 2000
-      ;(testDatabaseState.db as any).currentChar = 1
       selectedCharID.set(1)
     })
+    charactersResourceState.currentChar = 1
     dispatchSelectCharacter('char-b', previous, 2000)
     await waitForCallCount(calls, 2)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters[2].lastInteraction = 3000
-      ;(testDatabaseState.db as any).currentChar = 2
       selectedCharID.set(2)
     })
+    charactersResourceState.currentChar = 2
     selectResponse.resolve(jsonResponse({ error: 'select failed' }, 500))
 
     await flushAsyncWork()
     expect(get(selectedCharID)).toBe(2)
-    expect((testDatabaseState.db as any).currentChar).toBe(2)
+    expect(charactersResourceState.currentChar).toBe(2)
     expect(testDatabaseState.db.characters[1].lastInteraction).toBe(2000)
     expect(testDatabaseState.db.characters[2].lastInteraction).toBe(3000)
   })
@@ -1500,11 +1580,9 @@ describe('character order command helpers', () => {
       '§playground',
       'char-c',
     ]
-    setResourceWriteGuardEnabled(true)
-
     expect(repairCharacterOrderOptimistically()).toBe(true)
 
-    expect(testDatabaseState.db.characterOrder).toEqual(expectedOrder)
+    expect(charactersResourceState.characterOrder).toEqual(expectedOrder)
     await waitForCallCount(calls, 2)
     expect(calls[1]).toEqual({
       url: '/api/v1/commands/characters/reorder',
@@ -1526,11 +1604,9 @@ describe('character order command helpers', () => {
       ],
       characterOrder: ['char-a'],
     } as any
-    setResourceWriteGuardEnabled(true)
-
     expect(repairCharacterOrderOptimistically({ dispatchReorder: false })).toBe(true)
 
-    expect(testDatabaseState.db.characterOrder).toEqual(['char-a', 'char-b'])
+    expect(charactersResourceState.characterOrder).toEqual(['char-a', 'char-b'])
     await flushAsyncWork()
     expect(calls).toHaveLength(0)
   })
@@ -1547,18 +1623,16 @@ describe('character order command helpers', () => {
       characterOrder: ['char-a', { id: 'folder-1', name: 'Folder', color: '', data: ['char-b'] }, 'char-c'],
       currentChar: 0,
     } as any
-    const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
+    const previousOrder = cloneForExpect(charactersResourceState.characterOrder)
     const expectedOrder = [
       { id: 'folder-1', name: 'Folder', color: '', data: ['char-b', 'char-a'] },
       'char-c',
       'char-d',
     ]
-    setResourceWriteGuardEnabled(true)
-
     const mutation = moveCharacterOrderItemWithOutcome({ index: 0 }, { folder: 'folder-1', index: 1 })
     expect(mutation.applied).toBe(true)
 
-    expect(testDatabaseState.db.characterOrder).toEqual(expectedOrder)
+    expect(charactersResourceState.characterOrder).toEqual(expectedOrder)
     await waitForCallCount(calls, 2)
     expect(calls[1]).toEqual({
       url: '/api/v1/commands/characters/reorder',
@@ -1570,7 +1644,7 @@ describe('character order command helpers', () => {
       },
     })
     await vi.waitFor(() => {
-      expect(testDatabaseState.db.characterOrder).toEqual(previousOrder)
+      expect(charactersResourceState.characterOrder).toEqual(previousOrder)
     })
     await expect(mutation.settlement).resolves.toMatchObject({ status: 'failed' })
   })
@@ -1579,8 +1653,8 @@ describe('character order command helpers', () => {
     const calls = stubReorderCommandFetch({
       failReorder: true,
       onReorder: () => {
-        withTrustedResourceWrite(() => {
-          ;(testDatabaseState.db as any).currentChar = 1
+        withTestDatabaseWrite(() => {
+          charactersResourceState.currentChar = 1
           selectedCharID.set(1)
         })
       },
@@ -1596,27 +1670,25 @@ describe('character order command helpers', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
+    const previousOrder = cloneForExpect(charactersResourceState.characterOrder)
     const attemptedOrder = [
       { id: 'folder-1', name: 'Folder', color: '', data: ['char-b', 'char-a'] },
       'char-c',
       'char-d',
     ]
-    setResourceWriteGuardEnabled(true)
-
     expect(moveCharacterOrderItem({ index: 0 }, { folder: 'folder-1', index: 1 })).toBe(true)
 
-    expect(testDatabaseState.db.characterOrder).toEqual(attemptedOrder)
+    expect(charactersResourceState.characterOrder).toEqual(attemptedOrder)
     await waitForCallCount(calls, 2)
     expect(calls[1].body).toEqual({
       baseRevision: 10,
       characterOrder: attemptedOrder,
     })
     await vi.waitFor(() => {
-      expect(testDatabaseState.db.characterOrder).toEqual(previousOrder)
+      expect(charactersResourceState.characterOrder).toEqual(previousOrder)
     })
     expect(get(selectedCharID)).toBe(1)
-    expect((testDatabaseState.db as any).currentChar).toBe(1)
+    expect(charactersResourceState.currentChar).toBe(1)
   })
 
   it('moves a root character to a root position with the existing index behavior and rollback', async () => {
@@ -1629,19 +1701,17 @@ describe('character order command helpers', () => {
       ],
       characterOrder: ['char-a', 'char-b', 'char-c'],
     } as any
-    const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
-    setResourceWriteGuardEnabled(true)
-
+    const previousOrder = cloneForExpect(charactersResourceState.characterOrder)
     expect(moveCharacterOrderItem({ index: 2 }, { index: 0 })).toBe(true)
 
-    expect(testDatabaseState.db.characterOrder).toEqual(['char-c', 'char-a', 'char-b'])
+    expect(charactersResourceState.characterOrder).toEqual(['char-c', 'char-a', 'char-b'])
     await waitForCallCount(calls, 2)
     expect(calls[1].body).toEqual({
       baseRevision: 10,
       characterOrder: ['char-c', 'char-a', 'char-b'],
     })
     await vi.waitFor(() => {
-      expect(testDatabaseState.db.characterOrder).toEqual(previousOrder)
+      expect(charactersResourceState.characterOrder).toEqual(previousOrder)
     })
   })
 
@@ -1650,8 +1720,8 @@ describe('character order command helpers', () => {
     const calls = stubReorderCommandFetch({
       failReorder: true,
       onReorder: () => {
-        withTrustedResourceWrite(() => {
-          testDatabaseState.db.characterOrder = cloneForExpect(newerOrder)
+        withTestDatabaseWrite(() => {
+          charactersResourceState.characterOrder = cloneForExpect(newerOrder)
         })
       },
     })
@@ -1663,26 +1733,24 @@ describe('character order command helpers', () => {
       ],
       characterOrder: ['char-a', 'char-b', 'char-c'],
     } as any
-    setResourceWriteGuardEnabled(true)
-
     expect(moveCharacterOrderItem({ index: 2 }, { index: 0 })).toBe(true)
 
-    expect(testDatabaseState.db.characterOrder).toEqual(['char-c', 'char-a', 'char-b'])
+    expect(charactersResourceState.characterOrder).toEqual(['char-c', 'char-a', 'char-b'])
     await waitForCallCount(calls, 2)
     expect(calls[1].body).toEqual({
       baseRevision: 10,
       characterOrder: ['char-c', 'char-a', 'char-b'],
     })
     await flushAsyncWork()
-    expect(testDatabaseState.db.characterOrder).toEqual(newerOrder)
+    expect(charactersResourceState.characterOrder).toEqual(newerOrder)
   })
 
   it('failed character reorder preserves newer folder metadata while restoring order structure', async () => {
     const calls = stubReorderCommandFetch({
       failReorder: true,
       onReorder: () => {
-        withTrustedResourceWrite(() => {
-          const folder = testDatabaseState.db.characterOrder.find(
+        withTestDatabaseWrite(() => {
+          const folder = charactersResourceState.characterOrder.find(
             (entry): entry is folder => typeof entry !== 'string' && entry.id === 'folder-1',
           )
           if (folder) {
@@ -1706,13 +1774,11 @@ describe('character order command helpers', () => {
         'char-c',
       ],
     } as any
-    setResourceWriteGuardEnabled(true)
-
     expect(moveCharacterOrderItem({ index: 1 }, { folder: 'folder-1', index: 1 })).toBe(true)
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(testDatabaseState.db.characterOrder).toEqual([
+      expect(charactersResourceState.characterOrder).toEqual([
         {
           id: 'folder-1',
           name: 'Newer Folder',
@@ -1739,13 +1805,11 @@ describe('character order command helpers', () => {
         { id: 'folder-b', name: 'Folder B', color: '', data: ['char-b'] },
       ],
     } as any
-    const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
-    setResourceWriteGuardEnabled(true)
-
+    const previousOrder = cloneForExpect(charactersResourceState.characterOrder)
     expect(moveCharacterOrderItem({ index: 0 }, { folder: 'folder-b', index: 0 })).toBe(false)
 
     await flushAsyncWork()
-    expect(testDatabaseState.db.characterOrder).toEqual(previousOrder)
+    expect(charactersResourceState.characterOrder).toEqual(previousOrder)
     expect(calls).toHaveLength(0)
   })
 
@@ -1760,16 +1824,14 @@ describe('character order command helpers', () => {
       characterOrder: ['char-a', 'char-b', 'char-c'],
       currentChar: 0,
     } as any
-    const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
+    const previousOrder = cloneForExpect(charactersResourceState.characterOrder)
     const expectedOrder = [
       { id: 'folder-new', name: 'Localized Folder', color: '', data: ['char-a', 'char-b'] },
       'char-c',
     ]
-    setResourceWriteGuardEnabled(true)
-
     expect(createCharacterOrderFolder({ index: 0 }, { index: 1 }, () => 'folder-new', 'Localized Folder')).toBe(true)
 
-    expect(testDatabaseState.db.characterOrder).toEqual(expectedOrder)
+    expect(charactersResourceState.characterOrder).toEqual(expectedOrder)
     await waitForCallCount(calls, 2)
     expect(calls[1]).toEqual({
       url: '/api/v1/commands/characters/reorder',
@@ -1781,7 +1843,7 @@ describe('character order command helpers', () => {
       },
     })
     await vi.waitFor(() => {
-      expect(testDatabaseState.db.characterOrder).toEqual(previousOrder)
+      expect(charactersResourceState.characterOrder).toEqual(previousOrder)
     })
   })
 
@@ -1794,14 +1856,12 @@ describe('character order command helpers', () => {
       ],
       characterOrder: ['char-a', 'char-b'],
     } as any
-    const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
-    setResourceWriteGuardEnabled(true)
-
+    const previousOrder = cloneForExpect(charactersResourceState.characterOrder)
     expect(moveCharacterOrderItem({ index: 0 }, { index: 0 })).toBe(false)
     expect(createCharacterOrderFolder({ index: 0 }, { index: 0 }, () => 'unused')).toBe(false)
 
     await flushAsyncWork()
-    expect(testDatabaseState.db.characterOrder).toEqual(previousOrder)
+    expect(charactersResourceState.characterOrder).toEqual(previousOrder)
     expect(calls).toHaveLength(0)
   })
 
@@ -1815,6 +1875,19 @@ describe('character order command helpers', () => {
       'color',
       { color: 'PURPLE' },
       { id: 'folder-b', name: 'Folder B', color: 'purple', data: ['char-b'], imgFile: 'asset-old', img: 'old-src' },
+    ],
+    [
+      'opening confirmation',
+      { askBeforeOpening: true },
+      {
+        id: 'folder-b',
+        name: 'Folder B',
+        color: 'blue',
+        data: ['char-b'],
+        askBeforeOpening: true,
+        imgFile: 'asset-old',
+        img: 'old-src',
+      },
     ],
     [
       'image reset',
@@ -1848,13 +1921,11 @@ describe('character order command helpers', () => {
         ],
         currentChar: 0,
       } as any
-      const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
+      const previousOrder = cloneForExpect(charactersResourceState.characterOrder)
       const expectedOrder = [previousOrder[0], expectedFolder]
-      setResourceWriteGuardEnabled(true)
-
       expect(updateCharacterOrderFolder({ id: 'folder-b', index: 0 }, patch)).toBe(true)
 
-      expect(testDatabaseState.db.characterOrder).toEqual(expectedOrder)
+      expect(charactersResourceState.characterOrder).toEqual(expectedOrder)
       await waitForCallCount(calls, 2)
       expect(calls[1]).toEqual({
         url: '/api/v1/commands/characters/reorder',
@@ -1866,7 +1937,7 @@ describe('character order command helpers', () => {
         },
       })
       await vi.waitFor(() => {
-        expect(testDatabaseState.db.characterOrder).toEqual(previousOrder)
+        expect(charactersResourceState.characterOrder).toEqual(previousOrder)
       })
     },
   )
@@ -1875,8 +1946,8 @@ describe('character order command helpers', () => {
     const calls = stubReorderCommandFetch({
       failReorder: true,
       onReorder: () => {
-        withTrustedResourceWrite(() => {
-          const folder = testDatabaseState.db.characterOrder.find(
+        withTestDatabaseWrite(() => {
+          const folder = charactersResourceState.characterOrder.find(
             (entry): entry is folder => typeof entry !== 'string' && entry.id === 'folder-b',
           )
           if (folder) folder.name = 'Newer Folder B'
@@ -1893,11 +1964,9 @@ describe('character order command helpers', () => {
         { id: 'folder-b', name: 'Folder B', color: 'blue', data: ['char-b'] },
       ],
     } as any
-    setResourceWriteGuardEnabled(true)
-
     expect(updateCharacterOrderFolder({ id: 'folder-b', index: 0 }, { name: 'Attempted Folder B' })).toBe(true)
 
-    expect(testDatabaseState.db.characterOrder[1]).toMatchObject({ id: 'folder-b', name: 'Attempted Folder B' })
+    expect(charactersResourceState.characterOrder[1]).toMatchObject({ id: 'folder-b', name: 'Attempted Folder B' })
     await waitForCallCount(calls, 2)
     expect(calls[1].body).toEqual({
       baseRevision: 10,
@@ -1907,15 +1976,15 @@ describe('character order command helpers', () => {
       ],
     })
     await flushAsyncWork()
-    expect(testDatabaseState.db.characterOrder[1]).toMatchObject({ id: 'folder-b', name: 'Newer Folder B' })
+    expect(charactersResourceState.characterOrder[1]).toMatchObject({ id: 'folder-b', name: 'Newer Folder B' })
   })
 
   it('failed folder metadata rollback does not restore selectedCharID or current character', async () => {
     const calls = stubReorderCommandFetch({
       failReorder: true,
       onReorder: () => {
-        withTrustedResourceWrite(() => {
-          ;(testDatabaseState.db as any).currentChar = 1
+        withTestDatabaseWrite(() => {
+          charactersResourceState.currentChar = 1
           selectedCharID.set(1)
         })
       },
@@ -1929,17 +1998,15 @@ describe('character order command helpers', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
-
     expect(updateCharacterOrderFolder({ id: 'folder-b', index: 0 }, { color: 'PURPLE' })).toBe(true)
 
-    expect(testDatabaseState.db.characterOrder[0]).toMatchObject({ id: 'folder-b', color: 'purple' })
+    expect(charactersResourceState.characterOrder[0]).toMatchObject({ id: 'folder-b', color: 'purple' })
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(testDatabaseState.db.characterOrder[0]).toMatchObject({ id: 'folder-b', color: 'blue' })
+      expect(charactersResourceState.characterOrder[0]).toMatchObject({ id: 'folder-b', color: 'blue' })
     })
     expect(get(selectedCharID)).toBe(1)
-    expect((testDatabaseState.db as any).currentChar).toBe(1)
+    expect(charactersResourceState.currentChar).toBe(1)
   })
 
   it('returns false without mutation or command for a missing folder target', async () => {
@@ -1948,14 +2015,12 @@ describe('character order command helpers', () => {
       characters: [{ chaId: 'char-a', name: 'A', chats: [] }],
       characterOrder: [{ id: 'folder-a', name: 'Folder A', color: '', data: ['char-a'] }],
     } as any
-    const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
-    setResourceWriteGuardEnabled(true)
-
+    const previousOrder = cloneForExpect(charactersResourceState.characterOrder)
     expect(updateCharacterOrderFolder({ id: 'missing-folder', index: 0 }, { name: 'Wrong' })).toBe(false)
     expect(updateCharacterOrderFolder({}, { name: 'Wrong' })).toBe(false)
 
     await flushAsyncWork()
-    expect(testDatabaseState.db.characterOrder).toEqual(previousOrder)
+    expect(charactersResourceState.characterOrder).toEqual(previousOrder)
     expect(calls).toHaveLength(0)
   })
 
@@ -1971,11 +2036,9 @@ describe('character order command helpers', () => {
         { id: 'folder-b', name: 'Folder B', color: '', data: ['char-b'] },
       ],
     } as any
-    setResourceWriteGuardEnabled(true)
-
     expect(updateCharacterOrderFolder({ id: 'folder-b', index: 0 }, { name: 'Updated B' })).toBe(true)
 
-    expect(testDatabaseState.db.characterOrder).toEqual([
+    expect(charactersResourceState.characterOrder).toEqual([
       { id: 'folder-a', name: 'Folder A', color: '', data: ['char-a'] },
       { id: 'folder-b', name: 'Updated B', color: '', data: ['char-b'] },
     ])
@@ -2016,7 +2079,6 @@ describe('character order command helpers', () => {
         ],
         characterOrder: ['char-a', 'char-b', 'char-c'],
       } as any
-      setResourceWriteGuardEnabled(true)
       const reorderRequests: Array<{ body: Record<string, unknown>; mutationId: string | null }> = []
       vi.stubGlobal(
         'fetch',
@@ -2050,7 +2112,7 @@ describe('character order command helpers', () => {
         },
         mutationId: expect.any(String),
       })
-      expect(testDatabaseState.db.characterOrder).toEqual(['char-c', 'char-a', 'char-b'])
+      expect(charactersResourceState.characterOrder).toEqual(['char-c', 'char-a', 'char-b'])
       await flushAsyncWork()
       expect(reorderRequests).toHaveLength(1)
     })
@@ -2066,7 +2128,6 @@ describe('character order command helpers', () => {
         ],
         characterOrder: cloneForExpect(previousOrder),
       } as any
-      setResourceWriteGuardEnabled(true)
       let recover = false
       let reorderRequests = 0
       vi.stubGlobal(
@@ -2079,8 +2140,8 @@ describe('character order command helpers', () => {
           }
           reorderRequests += 1
           if (!recover) {
-            withTrustedResourceWrite(() => {
-              testDatabaseState.db.characterOrder = cloneForExpect(previousOrder)
+            withTestDatabaseWrite(() => {
+              charactersResourceState.characterOrder = cloneForExpect(previousOrder)
             })
             return jsonResponse({ error: 'temporarily unavailable' }, 500)
           }
@@ -2097,7 +2158,7 @@ describe('character order command helpers', () => {
 
       await vi.waitFor(() => expect(reorderRequests).toBe(1))
       await expect(mutation.settlement).resolves.toMatchObject({ status: 'queued' })
-      await vi.waitFor(() => expect(testDatabaseState.db.characterOrder).toEqual(attemptedOrder))
+      await vi.waitFor(() => expect(charactersResourceState.characterOrder).toEqual(attemptedOrder))
       const retained = await listPendingMutations()
       expect(retained).toHaveLength(1)
       expect(retained[0]).toMatchObject({
@@ -2117,7 +2178,7 @@ describe('character order command helpers', () => {
       recover = true
       await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 1 })
       expect(reorderRequests).toBe(2)
-      expect(testDatabaseState.db.characterOrder).toEqual(attemptedOrder)
+      expect(charactersResourceState.characterOrder).toEqual(attemptedOrder)
       expect(await listPendingMutations()).toEqual([])
     })
 
@@ -2131,7 +2192,6 @@ describe('character order command helpers', () => {
         ],
         characterOrder: cloneForExpect(previousOrder),
       } as any
-      setResourceWriteGuardEnabled(true)
       let reorderRequests = 0
       vi.stubGlobal(
         'fetch',
@@ -2146,9 +2206,9 @@ describe('character order command helpers', () => {
       )
 
       expect(moveCharacterOrderItem({ index: 2 }, { index: 0 })).toBe(true)
-      expect(testDatabaseState.db.characterOrder).toEqual(['char-c', 'char-a', 'char-b'])
+      expect(charactersResourceState.characterOrder).toEqual(['char-c', 'char-a', 'char-b'])
 
-      await vi.waitFor(() => expect(testDatabaseState.db.characterOrder).toEqual(previousOrder))
+      await vi.waitFor(() => expect(charactersResourceState.characterOrder).toEqual(previousOrder))
       expect(reorderRequests).toBe(1)
       expect(await listPendingMutations()).toEqual([])
     })
@@ -2163,7 +2223,6 @@ describe('character order command helpers', () => {
         ],
         characterOrder: ['char-a', { id: 'folder-1', name: 'Folder', color: 'blue', data: ['char-b'] }, 'char-c'],
       } as any
-      setResourceWriteGuardEnabled(true)
       let revision = 30
       const reorderRequests: Array<{ body: Record<string, unknown>; mutationId: string | null }> = []
       vi.stubGlobal(
@@ -2198,12 +2257,12 @@ describe('character order command helpers', () => {
         'char-c',
         { id: 'folder-1', name: 'Later Folder', color: 'blue', data: ['char-b', 'char-a'] },
       ]
-      expect(testDatabaseState.db.characterOrder).toEqual(expectedOrder)
+      expect(charactersResourceState.characterOrder).toEqual(expectedOrder)
       firstResponse.resolve(jsonResponse({ error: 'invalid character order' }, 400))
 
       await vi.waitFor(() => expect(reorderRequests).toHaveLength(3))
       await vi.waitFor(async () => expect(await listPendingMutations()).toEqual([]))
-      expect(testDatabaseState.db.characterOrder).toEqual(expectedOrder)
+      expect(charactersResourceState.characterOrder).toEqual(expectedOrder)
       expect(reorderRequests.map(({ body }) => body.characterOrder)).toEqual([
         [{ id: 'folder-1', name: 'Folder', color: 'blue', data: ['char-b', 'char-a'] }, 'char-c'],
         [{ id: 'folder-1', name: 'Later Folder', color: 'blue', data: ['char-b', 'char-a'] }, 'char-c'],
@@ -2215,14 +2274,8 @@ describe('character order command helpers', () => {
 })
 
 describe('character command projection helpers', () => {
-  it('L34: setCharacterSupaMemory applies one-field optimistic command patch', async () => {
+  it('setCharacterSupaMemory applies one-field optimistic command patch', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      testDatabaseState.db.characters[0].supaMemory = true
-    }).toThrow()
-
     const mutation = setCharacterSupaMemoryWithOutcome('char-a', true)
 
     expect(testDatabaseState.db.characters[0].supaMemory).toBe(true)
@@ -2249,7 +2302,7 @@ describe('character command projection helpers', () => {
   })
 })
 
-describe('Phase 4 select supa memory flag patch (L34)', () => {
+describe('select supa memory flag patch', () => {
   it('retains a transient supaMemory toggle for replay without duplicate sends', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
@@ -2305,7 +2358,7 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
     }
   })
 
-  it('L34: supaMemory snapshots are scalar and restore only the target flag', () => {
+  it('supaMemory snapshots are scalar and restore only the target flag', () => {
     testDatabaseState.db = seedCloneCostDb() as any
     selectedCharID.set(1)
 
@@ -2336,7 +2389,7 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
     expect(get(selectedCharID)).toBe(2)
   })
 
-  it('L34: setCharacterSupaMemory captures no full character row or characters array clone', async () => {
+  it('setCharacterSupaMemory captures no full character row or characters array clone', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
       'fetch',
@@ -2388,7 +2441,7 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
     })
   })
 
-  it('L34: failed supaMemory command restores only supaMemory and preserves selection', async () => {
+  it('failed supaMemory command restores only supaMemory and preserves selection', async () => {
     const calls: CapturedFetch[] = []
     const patchResponse = deferredResponse()
     vi.stubGlobal(
@@ -2437,7 +2490,7 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
     expect(get(selectedCharID)).toBe(1)
   })
 
-  it('L34: selectedCharID auto-enable uses one-field patch without full row clone', async () => {
+  it('selectedCharID auto-enable uses one-field patch without full row clone', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
       'fetch',
@@ -2468,40 +2521,43 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
         messageBodySize: 500,
       }),
       hypaV3: true,
-      hypaV3PresetId: 'preset-on',
-      hypaV3Presets: {
-        'preset-on': { settings: { alwaysToggleOn: true } },
-      },
+      selectedHypaV3PresetId: 'preset-on',
+      hypaV3Presets: [{ id: 'preset-on', name: 'Always on', settings: { alwaysToggleOn: true } }],
     } as any
     const charactersSize = JSON.stringify(testDatabaseState.db.characters).length
     const targetRowSize = JSON.stringify(testDatabaseState.db.characters[1]).length
+    const disposeRuntimeEffects = installStoreRuntimeEffects()
 
-    const instrumented = await withAsyncCloneInstrumentation(async () => {
+    try {
+      const instrumented = await withAsyncCloneInstrumentation(async () => {
+        selectedCharID.set(1)
+        expect(selIdState.selId).toBe(1)
+        await waitForCharacterPatch(calls, 'char-1')
+      })
+
+      expect(testDatabaseState.db.characters[1].supaMemory).toBe(true)
+      expect(instrumented.maxClonedSize).toBeLessThan(targetRowSize)
+      expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
+      expect(calls.find((call) => call.url === '/api/v1/commands/characters/char-1')).toEqual({
+        url: '/api/v1/commands/characters/char-1',
+        method: 'PATCH',
+        authHeader: 'character-command-token',
+        body: {
+          baseRevision: 10,
+          patch: { supaMemory: true },
+        },
+      })
+
+      selectedCharID.set(-1)
       selectedCharID.set(1)
-      expect(selIdState.selId).toBe(1)
-      await waitForCharacterPatch(calls, 'char-1')
-    })
-
-    expect(testDatabaseState.db.characters[1].supaMemory).toBe(true)
-    expect(instrumented.maxClonedSize).toBeLessThan(targetRowSize)
-    expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
-    expect(calls.find((call) => call.url === '/api/v1/commands/characters/char-1')).toEqual({
-      url: '/api/v1/commands/characters/char-1',
-      method: 'PATCH',
-      authHeader: 'character-command-token',
-      body: {
-        baseRevision: 10,
-        patch: { supaMemory: true },
-      },
-    })
-
-    selectedCharID.set(-1)
-    selectedCharID.set(1)
-    await flushAsyncWork()
-    expect(calls.filter((call) => call.url === '/api/v1/commands/characters/char-1')).toHaveLength(1)
+      await flushAsyncWork()
+      expect(calls.filter((call) => call.url === '/api/v1/commands/characters/char-1')).toHaveLength(1)
+    } finally {
+      disposeRuntimeEffects()
+    }
   })
 
-  it('L34: selectedCharID auto-enable preserves all no-op gates', async () => {
+  it('selectedCharID auto-enable preserves all no-op gates', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
       'fetch',
@@ -2574,22 +2630,95 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
       ],
     ]
 
-    for (const [label, db] of cases) {
-      clearCachedServerCommandRevision()
-      calls.length = 0
-      selectedCharID.set(-1)
-      testDatabaseState.db = db as any
-      const beforeSupaMemory = testDatabaseState.db.characters?.[0]?.supaMemory
-      selectedCharID.set(0)
-      expect(selIdState.selId).toBe(0)
-      await flushAsyncWork()
-      expect(testDatabaseState.db.characters?.[0]?.supaMemory, label).toBe(beforeSupaMemory)
-      expect(calls, label).toHaveLength(0)
+    selectedCharID.set(-1)
+    const disposeRuntimeEffects = installStoreRuntimeEffects()
+    try {
+      for (const [label, db] of cases) {
+        clearCachedServerCommandRevision()
+        calls.length = 0
+        selectedCharID.set(-1)
+        testDatabaseState.db = db as any
+        const beforeSupaMemory = testDatabaseState.db.characters?.[0]?.supaMemory
+        selectedCharID.set(0)
+        expect(selIdState.selId).toBe(0)
+        await flushAsyncWork()
+        expect(testDatabaseState.db.characters?.[0]?.supaMemory, label).toBe(beforeSupaMemory)
+        expect(calls, label).toHaveLength(0)
+      }
+    } finally {
+      disposeRuntimeEffects()
     }
   })
 })
 
-describe('Phase 0 character-row snapshot kit', () => {
+describe('character-row snapshot kit', () => {
+  it.each(['idle', 'loading', 'error'] as const)(
+    'does not expose retained character rows while the owner is %s',
+    (status) => {
+      testDatabaseState.db = {
+        characters: [{ chaId: 'char-a', name: 'Retained', chats: [], supaMemory: true }],
+        characterOrder: ['char-a'],
+        currentChar: 0,
+      } as any
+      charactersResourceState.status = status
+
+      expect(currentCharacterRowSnapshot(0).character).toBeUndefined()
+      expect(currentCharacterSupaMemorySnapshot('char-a')).toBeNull()
+      expect(applyCharacterRowMutationScoped(0, 'char-a', (character) => (character.name = 'mutated'))).toBe(false)
+    },
+  )
+
+  it('fails closed for ordinary row mutation when the owner is missing, duplicated, or errored', () => {
+    const aggregate = { chaId: 'char-a', name: 'Aggregate', chats: [] }
+    testDatabaseState.db = {
+      characters: [aggregate],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    } as any
+    charactersResourceState.characters = [
+      { chaId: 'char-a', name: 'Owner A', chats: [] },
+      { chaId: 'char-a', name: 'Duplicate A', chats: [] },
+    ] as any
+    selectedCharID.set(0)
+
+    expect(applyCharacterRowMutationScoped(0, 'char-a', (character) => (character.name = 'mutated'))).toBe(false)
+    expect(charactersResourceState.characters.map((character) => character.name)).toEqual(['Owner A', 'Duplicate A'])
+
+    charactersResourceState.status = 'error'
+    expect(applyCharacterRowMutationScoped(0, 'char-a', (character) => (character.name = 'mutated'))).toBe(false)
+  })
+
+  it('fails closed when the ready owner collection contains duplicate stable IDs', () => {
+    testDatabaseState.db = {
+      characters: [{ chaId: 'char-a', name: 'Aggregate', chats: [], lastInteraction: 7 }],
+      characterOrder: [],
+      currentChar: 0,
+    } as any
+    charactersResourceState.characters = [
+      { chaId: 'char-a', name: 'Owner A', chats: [], lastInteraction: 11 },
+      { chaId: 'char-a', name: 'Owner duplicate', chats: [], lastInteraction: 13 },
+    ] as any
+    selectedCharID.set(0)
+
+    expect(currentCharacterSelectionSnapshot('char-a').lastInteraction).toBeUndefined()
+    expect(currentCharacterRowSnapshot(0).characterId).toBeUndefined()
+  })
+
+  it('captures row and trash snapshots from the ready owner instead of stale aggregate data', () => {
+    testDatabaseState.db = {
+      characters: [{ chaId: 'char-a', name: 'Aggregate stale', chats: [], trashTime: 3 }],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    } as any
+    const staleAggregate = getResourceDatabase().characters
+    charactersResourceState.characters = [{ chaId: 'char-a', name: 'Owner current', chats: [], trashTime: 17 }] as any
+    selectedCharID.set(0)
+
+    expect(staleAggregate[0].name).toBe('Aggregate stale')
+    expect(currentCharacterRowSnapshot(0).character?.name).toBe('Owner current')
+    expect(currentCharacterTrashTimeSnapshot(0).trashTime).toBe(17)
+  })
+
   it('captures one character row plus selection scalars, never the whole array', () => {
     testDatabaseState.db = seedCloneCostDb() as any
     selectedCharID.set(2)
@@ -2703,7 +2832,7 @@ describe('Phase 0 character-row snapshot kit', () => {
   })
 })
 
-describe('Phase 2 character-row scoped dispatch', () => {
+describe('character-row scoped dispatch', () => {
   it('dispatchCompatibleCharacterUpdateScoped rolls back only the target row on failure', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
@@ -2769,7 +2898,7 @@ describe('Phase 2 character-row scoped dispatch', () => {
   })
 })
 
-describe('Phase 3 kept-key character diff (M13)', () => {
+describe('kept-key character diff', () => {
   it('restores a rejected deletion without overwriting a newer field value', () => {
     const previous = { loreSettings: { scanDepth: 4 } }
     const deletedProjection: Record<string, unknown> = {}
@@ -2810,7 +2939,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
     expect(character).toHaveProperty('loreSettings')
   })
 
-  it('M13: changedCharacterFields diffs without cloning the chats payload', () => {
+  it('changedCharacterFields diffs without cloning the chats payload', () => {
     testDatabaseState.db = seedCloneCostDb() as any // char-0 carries a 40-message hydrated chat
     const previous = testDatabaseState.db.characters[0]
     const next = { ...previous, name: 'Renamed' }
@@ -2824,7 +2953,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
     expect(instrumented.result).toEqual({ name: 'Renamed' })
   })
 
-  it('M13: the per-key diff preserves ordinary semantics and emits supported deletion sentinels', () => {
+  it('the per-key diff preserves ordinary semantics and emits supported deletion sentinels', () => {
     const previous = {
       chaId: 'char-a',
       name: 'Old name',
@@ -2874,7 +3003,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
     expect('desc' in patch).toBe(false)
   })
 
-  it('M13: prepareCompatibleCharacterUpdate builds its factory without serializing the transcript', () => {
+  it('prepareCompatibleCharacterUpdate builds its factory without serializing the transcript', () => {
     testDatabaseState.db = seedCloneCostDb() as any
     const previous = testDatabaseState.db.characters[0]
     const next = { ...previous, name: 'Renamed' }
@@ -2889,7 +3018,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
     expect(instrumented.result.factories).toHaveLength(1)
   })
 
-  it('P2: prepareCompatibleCharacterUpdate builds local projection from the sanitized command patch', () => {
+  it('prepareCompatibleCharacterUpdate builds local projection from the sanitized command patch', () => {
     testDatabaseState.db = {
       characters: [
         {
@@ -2938,7 +3067,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
     })
   })
 
-  it('P2: prepareCompatibleCharacterUpdate is a no-op when only excluded or deleted fields change', () => {
+  it('prepareCompatibleCharacterUpdate is a no-op when only excluded or deleted fields change', () => {
     const previous = {
       chaId: 'char-a',
       name: 'Old name',
@@ -2962,7 +3091,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
     expect(prepared.factories).toHaveLength(0)
   })
 
-  it('P5: prepareCompatibleCharacterUpdateScoped rolls back attempted fields without restoring selection', () => {
+  it('prepareCompatibleCharacterUpdateScoped rolls back attempted fields without restoring selection', () => {
     testDatabaseState.db = {
       characters: [
         {
@@ -2995,7 +3124,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
     testDatabaseState.db.characters[0] = prepared.optimisticCharacter as any
 
     testDatabaseState.db.characters[1].name = 'Newer sibling name'
-    ;(testDatabaseState.db as any).currentChar = 1
+    charactersResourceState.currentChar = 1
     selectedCharID.set(1)
 
     prepared.rollback()
@@ -3006,7 +3135,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
       desc: 'Old desc',
     })
     expect(testDatabaseState.db.characters[1].name).toBe('Newer sibling name')
-    expect((testDatabaseState.db as any).currentChar).toBe(1)
+    expect(charactersResourceState.currentChar).toBe(1)
     expect(get(selectedCharID)).toBe(1)
   })
 
@@ -3166,7 +3295,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
     }
   })
 
-  it('P2: compatible character updates do not target a replacement chaId when the previous row has no id', async () => {
+  it('compatible character updates do not target a replacement chaId when the previous row has no id', async () => {
     const calls = stubCommandFetch()
     const previousCharacter = {
       name: 'Missing id',
@@ -3193,7 +3322,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
   })
 })
 
-describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
+describe('removeChar trashTime field rollback', () => {
   it('retains a transient soft-delete projection and replays its exact timestamp once', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
@@ -3223,8 +3352,8 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    testDatabaseState.db.characterOrder = ['char-a']
-    ;(testDatabaseState.db as unknown as { currentChar?: number }).currentChar = 0
+    charactersResourceState.characterOrder = ['char-a']
+    charactersResourceState.currentChar = 0
     selectedCharID.set(0)
 
     try {
@@ -3233,7 +3362,7 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
 
       expect(outcome).toMatchObject({ status: 'queued' })
       expect(testDatabaseState.db.characters[0].trashTime).toBe(654321)
-      expect(testDatabaseState.db.characterOrder).toEqual([])
+      expect(charactersResourceState.characterOrder).toEqual([])
       expect((await listPendingMutations()).map((entry) => entry.intent.requests[0].body)).toEqual([
         { patch: { trashTime: 654321 } },
       ])
@@ -3314,10 +3443,10 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
 
     const removal = withMockedNow(444444, () => removeChar(1, 'B', 'normal'))
     await vi.waitFor(() => expect(alertConfirmState.messages).toHaveLength(1))
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.splice(0, 1)
-      testDatabaseState.db.characterOrder = ['char-b', 'char-c']
-      ;(testDatabaseState.db as unknown as { currentChar?: number }).currentChar = 0
+      charactersResourceState.characterOrder = ['char-b', 'char-c']
+      charactersResourceState.currentChar = 0
       selectedCharID.set(0)
     })
     confirmation.resolve(true)
@@ -3345,14 +3474,14 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
 
     const removal = removeChar(1, 'B', 'permanent')
     await vi.waitFor(() => expect(alertConfirmState.messages).toHaveLength(2))
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters = [
         testDatabaseState.db.characters[2],
         testDatabaseState.db.characters[0],
         testDatabaseState.db.characters[1],
       ]
-      testDatabaseState.db.characterOrder = ['char-c', 'char-a', 'char-b']
-      ;(testDatabaseState.db as unknown as { currentChar?: number }).currentChar = 2
+      charactersResourceState.characterOrder = ['char-c', 'char-a', 'char-b']
+      charactersResourceState.currentChar = 2
       selectedCharID.set(2)
     })
     confirmation.resolve(true)
@@ -3366,7 +3495,7 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
     })
   })
 
-  it('L33: trashTime snapshots are scalar and restore only the target field plus order placement', () => {
+  it('trashTime snapshots are scalar and restore only the target field plus order placement', () => {
     testDatabaseState.db = seedCloneCostDb() as any
     selectedCharID.set(1)
 
@@ -3393,22 +3522,22 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
     testDatabaseState.db.characters[1].trashTime = 123
     testDatabaseState.db.characters[1].name = 'Same row concurrent edit'
     testDatabaseState.db.characters[0].name = 'Sibling concurrent edit'
-    testDatabaseState.db.characterOrder = ['char-0', 'char-2']
+    charactersResourceState.characterOrder = ['char-0', 'char-2']
 
     restoreCharacterTrashTime(snapshot)
 
     expect(Object.prototype.hasOwnProperty.call(testDatabaseState.db.characters[1], 'trashTime')).toBe(false)
     expect(testDatabaseState.db.characters[1].name).toBe('Same row concurrent edit')
     expect(testDatabaseState.db.characters[0].name).toBe('Sibling concurrent edit')
-    expect(testDatabaseState.db.characterOrder).toEqual(['char-0', 'char-1', 'char-2'])
+    expect(charactersResourceState.characterOrder).toEqual(['char-0', 'char-1', 'char-2'])
   })
 
-  it('L33: removeChar normal trash captures no whole-characters clone and reuses one timestamp', async () => {
+  it('removeChar normal trash captures no whole-characters clone and reuses one timestamp', async () => {
     testDatabaseState.db = seedCloneCostDb({
       hydratedMessageCount: 80,
       messageBodySize: 500,
     }) as any
-    testDatabaseState.db.characterOrder = ['char-0', 'char-1', 'char-2']
+    charactersResourceState.characterOrder = ['char-0', 'char-1', 'char-2']
     selectedCharID.set(1)
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
@@ -3458,7 +3587,7 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
     })
   })
 
-  it('L33: failed removeChar trash update restores only trashTime', async () => {
+  it('failed removeChar trash update restores only trashTime', async () => {
     const calls: CapturedFetch[] = []
     const patchResponse = deferredResponse()
     vi.stubGlobal(
@@ -3491,7 +3620,7 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
     const removal = withMockedNow(222222, () => removeChar(0, 'Character', 'normal'))
     await waitForCharacterPatch(calls, 'char-a')
     expect(testDatabaseState.db.characters[0].trashTime).toBe(222222)
-    expect(testDatabaseState.db.characterOrder).toEqual(['char-b'])
+    expect(charactersResourceState.characterOrder).toEqual(['char-b'])
     expect(get(selectedCharID)).toBe(-1)
 
     await expect(removeChar(0, 'Character', 'normal')).resolves.toBeNull()
@@ -3509,11 +3638,11 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
     })
     expect(testDatabaseState.db.characters[0].name).toBe('Same row concurrent edit')
     expect(testDatabaseState.db.characters[1].name).toBe('Sibling concurrent edit')
-    expect(testDatabaseState.db.characterOrder).toEqual(['char-a', 'char-b'])
+    expect(charactersResourceState.characterOrder).toEqual(['char-a', 'char-b'])
     expect(get(selectedCharID)).toBe(0)
   })
 
-  it('L33: trash rollback restores by stable id after index shifts', async () => {
+  it('trash rollback restores by stable id after index shifts', async () => {
     const calls: CapturedFetch[] = []
     const patchResponse = deferredResponse()
     vi.stubGlobal(

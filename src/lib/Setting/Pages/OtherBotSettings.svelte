@@ -4,7 +4,13 @@
   import Help from 'src/lib/Others/Help.svelte'
   import { selectSingleFile } from 'src/ts/filePicker'
   import { selectedCharID } from 'src/ts/stores.svelte'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import {
+    charactersResourceState,
+    collectionsResourceState,
+    getCharacterResourceOwner,
+    settingsResourceState,
+  } from 'src/ts/server/resourceState.svelte'
+  import type { Database, character } from 'src/ts/storage/database.svelte'
   import { saveAsset, downloadFile } from 'src/ts/globalApi.svelte'
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
@@ -19,15 +25,21 @@
   import { untrack } from 'svelte'
   import { tokenizePreset } from 'src/ts/process/prompt'
   import { getCharToken } from 'src/ts/tokenizer'
+  import { resolveEffectivePromptTemplate } from '@risuai/shared-core/effective-prompt-template'
   import { PlusIcon, PencilIcon, TrashIcon, DownloadIcon, HardDriveUploadIcon } from '@lucide/svelte'
+  import { hypaV3PresetIndexFromStableId } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
   import { alertError, alertInput, alertConfirm, alertNormal } from 'src/ts/alert'
   import { createHypaV3Preset, type HypaV3Preset } from 'src/ts/process/memory/hypav3'
   import { onDestroy } from 'svelte'
+  // Retained WS3 seams: per-key drafts keep the existing rebase/rollback and
+  // reload contract, while the exact-patch helper owns atomic Hypa imports.
+  // Both are narrow settings-owner command/draft helpers; neither is used for
+  // aggregate reads in this page.
   import {
+    applyServerBackedSettingsPatch,
     createServerBackedSettingDraft,
     persistServerBackedSettingsPatch,
-    watchServerBackedSettings,
-  } from 'src/ts/server/settingsBridge.svelte'
+  } from 'src/ts/server/settingsOwner.svelte'
   import { ensurePromptTemplateHydrated } from 'src/ts/server/promptTemplateHydration'
   import { providerOperationCredential, requestProviderOperation } from 'src/ts/server/providerOperations'
   import { createLatestOperationGuard, type LatestOperationToken } from 'src/ts/server/staleStateGuards'
@@ -53,9 +65,9 @@
     type NaiVibeImportOperation,
   } from 'src/ts/server/naiVibeImport'
   import { reconcileLegacyGuiSubmenu } from 'src/ts/setting/legacyGuiLayout'
+  import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
+  import { resolveModelProfile } from 'src/ts/model/modelProfileResolver'
 
-  const stopServerSettingsWatch = watchServerBackedSettings(['useLegacyGUI'])
-  onDestroy(stopServerSettingsWatch)
   let componentAlive = true
   onDestroy(() => {
     componentAlive = false
@@ -97,7 +109,7 @@
   const emotionProcesserDraft = createServerBackedSettingDraft<string>('emotionProcesser', 'submodel')
   const hypaV3Draft = createServerBackedSettingDraft<boolean>('hypaV3', false)
   const hypaV3PresetsDraft = createServerBackedSettingDraft<HypaV3Preset[]>('hypaV3Presets', [])
-  const hypaV3PresetIdDraft = createServerBackedSettingDraft<number>('hypaV3PresetId', 0)
+  const selectedHypaV3PresetIdDraft = createServerBackedSettingDraft<string | null>('selectedHypaV3PresetId', null)
   const hypaModelDraft = createServerBackedSettingDraft<string>('hypaModel', 'MiniLM')
   const hypaV3KeyDraft = createServerBackedSettingDraft<string>('hypaV3Key', '')
   const hypaCustomSettingsDraft = createServerBackedSettingDraft<Record<string, any>>('hypaCustomSettings', {
@@ -111,17 +123,37 @@
   interface HypaV3PresetTarget {
     collection: HypaV3Preset[]
     preset: HypaV3Preset
+    presetId: string
     selection: number
+  }
+
+  function selectedHypaV3PresetIndex(): number {
+    return hypaV3PresetIndexFromStableId({
+      hypaV3Presets: hypaV3PresetsDraft.value,
+      selectedHypaV3PresetId: selectedHypaV3PresetIdDraft.value,
+    })
+  }
+
+  function applyHypaV3PresetOwnerPatch(hypaV3Presets: HypaV3Preset[], selectedHypaV3PresetId: string | null): boolean {
+    const hypaV3PresetId = hypaV3PresetIndexFromStableId({ hypaV3Presets, selectedHypaV3PresetId })
+    if (hypaV3Presets.length === 0 ? selectedHypaV3PresetId !== null : hypaV3PresetId === -1) return false
+    applyServerBackedSettingsPatch({
+      hypaV3Presets,
+      selectedHypaV3PresetId,
+      hypaV3PresetId,
+    })
+    return true
   }
 
   function captureHypaV3PresetTarget(): HypaV3PresetTarget | null {
     const collection = hypaV3PresetsDraft.value
-    const selection = hypaV3PresetIdDraft.value
+    const presetId = selectedHypaV3PresetIdDraft.value
+    const selection = selectedHypaV3PresetIndex()
     const preset = collection?.[selection]
 
-    if (!preset) return null
+    if (!preset || !presetId) return null
 
-    return { collection, preset, selection }
+    return { collection, preset, presetId, selection }
   }
 
   function stillOwnsHypaV3PresetTarget(target: HypaV3PresetTarget): boolean {
@@ -129,7 +161,8 @@
 
     return (
       currentCollection === target.collection &&
-      hypaV3PresetIdDraft.value === target.selection &&
+      selectedHypaV3PresetIdDraft.value === target.presetId &&
+      selectedHypaV3PresetIndex() === target.selection &&
       currentCollection[target.selection] === target.preset
     )
   }
@@ -148,6 +181,7 @@
       const presets = [...hypaV3PresetsDraft.value, newPreset]
       const persistence = await persistServerBackedSettingsPatch({
         hypaV3Presets: presets,
+        selectedHypaV3PresetId: newPreset.id,
         hypaV3PresetId: presets.length - 1,
       })
       if (!componentAlive) return
@@ -173,15 +207,19 @@
     base64image: 'reference_base64image',
   } satisfies SettingsMediaAssetUploadFieldKeys
 
-  let submenu = $state(getDatabase().useLegacyGUI ? -1 : 0)
+  let submenu = $state(0)
 
   $effect(() => {
-    submenu = reconcileLegacyGuiSubmenu(Boolean(getDatabase().useLegacyGUI), submenu)
+    if (settingsResourceState.groupStatuses.display !== 'ready') {
+      submenu = -1
+      return
+    }
+    submenu = reconcileLegacyGuiSubmenu(Boolean(settingsResourceState.value.useLegacyGUI), submenu)
   })
 
   // HypaV3
   $effect(() => {
-    const settings = hypaV3PresetsDraft.value?.[hypaV3PresetIdDraft.value]?.settings
+    const settings = hypaV3PresetsDraft.value?.[selectedHypaV3PresetIndex()]?.settings
     const currentValue = settings?.similarMemoryRatio
 
     if (!currentValue) return
@@ -198,7 +236,7 @@
   })
 
   $effect(() => {
-    const settings = hypaV3PresetsDraft.value?.[hypaV3PresetIdDraft.value]?.settings
+    const settings = hypaV3PresetsDraft.value?.[selectedHypaV3PresetIndex()]?.settings
     const currentValue = settings?.recentMemoryRatio
 
     if (!currentValue) return
@@ -214,33 +252,103 @@
     })
   })
 
+  interface MemoryBudgetOwnerSnapshot {
+    database: Database
+    char: character
+  }
+
+  function memoryBudgetOwnerSnapshot(): MemoryBudgetOwnerSnapshot | null {
+    const requiredSettingsStatuses = [
+      settingsResourceState.groupStatuses.providers,
+      settingsResourceState.groupStatuses.models,
+      settingsResourceState.groupStatuses.runtime,
+      settingsResourceState.groupStatuses.advanced,
+      settingsResourceState.standaloneStatuses.promptPresetsId,
+    ]
+    const requiredCollectionStatuses = [
+      collectionsResourceState.statuses.promptPresets,
+      collectionsResourceState.statuses.promptTemplate,
+    ]
+    const selectedCharacter = charactersResourceState.characters[$selectedCharID]
+    const characterOwner = selectedCharacter?.chaId ? getCharacterResourceOwner(selectedCharacter.chaId) : undefined
+
+    if (
+      requiredSettingsStatuses.some((status) => status !== 'ready') ||
+      requiredCollectionStatuses.some((status) => status !== 'ready') ||
+      charactersResourceState.status !== 'ready' ||
+      !characterOwner?.chaId ||
+      charactersResourceState.rowStatuses[characterOwner.chaId] !== 'ready'
+    ) {
+      return null
+    }
+
+    const settings = settingsResourceState.value
+    const database = {
+      modelProfiles: settings.modelProfiles,
+      modelRoleProfiles: settings.modelRoleProfiles,
+      modelRuntimeDefaults: settings.modelRuntimeDefaults,
+      providerCredentials: settings.providerCredentials,
+      maxResponse: settings.maxResponse,
+      maxContext: settings.maxContext,
+      loreBookToken: settings.loreBookToken,
+      promptPresetsId: settings.promptPresetsId,
+      promptPresets: collectionsResourceState.values.promptPresets,
+      promptTemplate: collectionsResourceState.values.promptTemplate,
+    } as Database
+
+    return { database, char: characterOwner }
+  }
+
   function maxMemoryRatioDependencyKey(): string {
-    const database = getDatabase()
-    const char = database.characters[$selectedCharID]
+    const owner = memoryBudgetOwnerSnapshot()
+    if (!owner) {
+      return JSON.stringify([
+        'owner-unavailable',
+        $selectedCharID,
+        settingsResourceState.groupStatuses.providers,
+        settingsResourceState.groupStatuses.models,
+        settingsResourceState.groupStatuses.runtime,
+        settingsResourceState.groupStatuses.advanced,
+        settingsResourceState.standaloneStatuses.promptPresetsId,
+        collectionsResourceState.statuses.promptPresets,
+        collectionsResourceState.statuses.promptTemplate,
+        charactersResourceState.status,
+      ])
+    }
+
+    const { database, char } = owner
+    const mainProfile = resolveModelProfile({ database, role: 'chatMain' })
+    const promptTemplate = resolveEffectivePromptTemplate(database)
 
     // The await block can only subscribe to values read before the async
     // boundary. Capture every input used by token counting here so a later
     // character, prompt, or context change starts a fresh calculation.
     return JSON.stringify([
       $selectedCharID,
-      database.promptTemplate,
+      promptTemplate.source,
+      promptTemplate.promptPresetId ?? '',
+      promptTemplate.promptTemplate,
       char,
       database.loreBookToken,
-      database.maxResponse,
-      database.maxContext,
+      mainProfile.runtimeOptions.maxResponse,
+      mainProfile.runtimeOptions.maxContext,
     ])
   }
 
   async function getMaxMemoryRatio(_dependencyKey: string): Promise<number> {
     await ensurePromptTemplateHydrated()
-    const promptTemplateToken = await tokenizePreset(getDatabase().promptTemplate)
-    const char = getDatabase().characters[$selectedCharID]
+    const owner = memoryBudgetOwnerSnapshot()
+    if (!owner) throw new Error('Memory budget owner unavailable')
+
+    const { database, char } = owner
+    const mainProfile = resolveModelProfile({ database, role: 'chatMain' })
+    const promptTemplateToken = await tokenizePreset(resolveEffectivePromptTemplate(database).promptTemplate)
     const charToken = await getCharToken(char)
-    const maxLoreToken = char.loreSettings?.tokenBudget ?? getDatabase().loreBookToken
-    const maxResponse = getDatabase().maxResponse
+    const maxLoreToken = char.loreSettings?.tokenBudget ?? database.loreBookToken
+    const maxResponse = mainProfile.runtimeOptions.maxResponse ?? database.maxResponse
     const requiredToken =
       promptTemplateToken + charToken.persistant + Math.min(charToken.dynamic, maxLoreToken) + maxResponse * 3
-    const maxContext = getDatabase().maxContext
+    const maxContext = mainProfile.runtimeOptions.maxContext ?? database.maxContext
 
     if (maxContext === 0) {
       return 0
@@ -629,7 +737,7 @@
   // End wavespeed
 </script>
 
-<h2 class="mb-2 text-2xl font-bold mt-2">{language.settingsNavMediaMemory}</h2>
+<h2 class="mb-2 text-2xl font-bold mt-2">{language.settingsNavMemory}</h2>
 
 {#if submenu !== -1}
   <div
@@ -822,6 +930,7 @@
           {#if NAIImgConfigDraft.value.vibe_data}
             <button
               onclick={() => {
+                if (!confirmSettingsItemRemoval()) return
                 NAIImgConfigDraft.value.vibe_data = undefined
                 NAIImgConfigDraft.value.vibe_model_selection = undefined
               }}
@@ -913,6 +1022,7 @@
           {#if NAIImgConfigDraft.value.character_image && NAIImgConfigDraft.value.character_image !== ''}
             <button
               onclick={() => {
+                if (!confirmSettingsItemRemoval()) return
                 NAIImgConfigDraft.value.character_image = undefined
                 NAIImgConfigDraft.value.character_base64image = undefined
               }}
@@ -975,6 +1085,7 @@
           {#if NAIImgConfigDraft.value.image && NAIImgConfigDraft.value.image !== ''}
             <button
               onclick={() => {
+                if (!confirmSettingsItemRemoval()) return
                 NAIImgConfigDraft.value.image = undefined
                 NAIImgConfigDraft.value.base64image = undefined
               }}
@@ -1298,6 +1409,7 @@
             {#if wavespeedImageDraft.value.reference_image && wavespeedImageDraft.value.reference_image !== ''}
               <button
                 onclick={() => {
+                  if (!confirmSettingsItemRemoval()) return
                   wavespeedImageDraft.value.reference_image = undefined
                   wavespeedImageDraft.value.reference_base64image = undefined
                 }}
@@ -1373,9 +1485,9 @@
       <select
         aria-label={`${language.HypaMemory} V3 ${language.presets}`}
         class={'border border-darkborderc focus:border-borderc rounded-md shadow-xs text-textcolor bg-transparent focus:ring-borderc focus:ring-2 focus:outline-hidden transition-colors duration-200 text-md px-4 py-2 mb-1'}
-        bind:value={hypaV3PresetIdDraft.value}>
-        {#each hypaV3PresetsDraft.value as preset, i}
-          <option class="bg-darkbg appearance-none" value={i}>{preset.name}</option>
+        bind:value={selectedHypaV3PresetIdDraft.value}>
+        {#each hypaV3PresetsDraft.value as preset}
+          <option class="bg-darkbg appearance-none" value={preset.id}>{preset.name}</option>
         {/each}
       </select>
 
@@ -1389,15 +1501,16 @@
             const presets = [...hypaV3PresetsDraft.value]
 
             presets.push(newPreset)
-            hypaV3PresetsDraft.value = presets
-            hypaV3PresetIdDraft.value = presets.length - 1
+            if (!applyHypaV3PresetOwnerPatch(presets, newPreset.id)) {
+              alertError('Unable to update the Hypa V3 preset owner.')
+            }
           }}>
           <PlusIcon size={24} />
         </button>
 
         <button
           type="button"
-          aria-label={`${language.edit}: ${hypaV3PresetsDraft.value[hypaV3PresetIdDraft.value]?.name ?? language.presets}`}
+          aria-label={`${language.edit}: ${hypaV3PresetsDraft.value[selectedHypaV3PresetIndex()]?.name ?? language.presets}`}
           class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
           onclick={async () => {
             const target = captureHypaV3PresetTarget()
@@ -1414,14 +1527,16 @@
 
             const presets = [...hypaV3PresetsDraft.value]
             presets[target.selection] = { ...target.preset, name: newName }
-            hypaV3PresetsDraft.value = presets
+            if (!applyHypaV3PresetOwnerPatch(presets, target.presetId)) {
+              alertError('Unable to update the Hypa V3 preset owner.')
+            }
           }}>
           <PencilIcon size={24} />
         </button>
 
         <button
           type="button"
-          aria-label={`${language.remove}: ${hypaV3PresetsDraft.value[hypaV3PresetIdDraft.value]?.name ?? language.presets}`}
+          aria-label={`${language.remove}: ${hypaV3PresetsDraft.value[selectedHypaV3PresetIndex()]?.name ?? language.presets}`}
           class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
           onclick={async () => {
             const target = captureHypaV3PresetTarget()
@@ -1438,8 +1553,9 @@
 
             const presets = [...hypaV3PresetsDraft.value]
             presets.splice(target.selection, 1)
-            hypaV3PresetIdDraft.value = 0
-            hypaV3PresetsDraft.value = presets
+            if (!applyHypaV3PresetOwnerPatch(presets, presets[0]?.id ?? null)) {
+              alertError('Unable to update the Hypa V3 preset owner.')
+            }
           }}>
           <TrashIcon size={24} />
         </button>
@@ -1448,7 +1564,7 @@
 
         <button
           type="button"
-          aria-label={`${language.export}: ${hypaV3PresetsDraft.value[hypaV3PresetIdDraft.value]?.name ?? language.presets}`}
+          aria-label={`${language.export}: ${hypaV3PresetsDraft.value[selectedHypaV3PresetIndex()]?.name ?? language.presets}`}
           class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
           onclick={async () => {
             try {
@@ -1459,8 +1575,11 @@
                 return
               }
 
-              const id = hypaV3PresetIdDraft.value
-              const preset = presets[id]
+              const preset = presets[selectedHypaV3PresetIndex()]
+              if (!preset) {
+                alertError('There must be least one preset.')
+                return
+              }
               const bytesExport = Buffer.from(
                 JSON.stringify({
                   type: 'risu',
@@ -1489,8 +1608,8 @@
         </button>
       </div>
 
-      {#if hypaV3PresetsDraft.value?.[hypaV3PresetIdDraft.value]?.settings}
-        {@const settings = hypaV3PresetsDraft.value[hypaV3PresetIdDraft.value].settings}
+      {#if hypaV3PresetsDraft.value?.[selectedHypaV3PresetIndex()]?.settings}
+        {@const settings = hypaV3PresetsDraft.value[selectedHypaV3PresetIndex()].settings}
 
         <span class="text-textcolor">{language.SuperMemory} {language.model}</span>
         <SelectInput
@@ -1660,6 +1779,7 @@
       <OptionInput value="openai3small">OpenAI text-embedding-3-small</OptionInput>
       <OptionInput value="openai3large">OpenAI text-embedding-3-large</OptionInput>
       <OptionInput value="ada">OpenAI Ada</OptionInput>
+      <OptionInput value="voyageContext4">{language.voyageContext4}</OptionInput>
       <OptionInput value="voyageContext3">Voyage Context 3</OptionInput>
       <OptionInput value="custom">Custom (OpenAI-compatible)</OptionInput>
     </SelectInput>
@@ -1682,7 +1802,7 @@
       <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.model} />
     {/if}
 
-    {#if hypaModelDraft.value === 'voyageContext3'}
+    {#if hypaModelDraft.value === 'voyageContext3' || hypaModelDraft.value === 'voyageContext4'}
       <span class="text-textcolor">Voyage API Key</span>
       <SecretInput ownerKey="voyageApiKey" size="sm" marginBottom bind:value={voyageApiKeyDraft.value} />
     {/if}

@@ -1,48 +1,48 @@
 import { language } from 'src/lang'
 import { alertClear, alertConfirm, alertError, alertModuleSelect, alertNormal, alertStore, alertWait } from '../alert'
 import {
-  getCurrentCharacter,
-  getCurrentChat,
-  getDatabase,
-  setDatabase,
+  type Chat,
+  type Database,
+  type character,
   type customscript,
   type loreBook,
   type triggerscript,
 } from '../storage/database.svelte'
 import { AppendableBuffer, downloadFile, forageStorage, readImage, saveAssets } from '../globalApi.svelte'
 import { sleep } from '../util'
-import { selectSingleFile } from '../filePicker'
+import { selectFileByDom } from '../filePicker'
 import { v4 } from 'uuid'
-import { convertExternalLorebook } from './lorebook.svelte'
 import { compressImage } from '../media'
 import { decodeRPack, encodeRPack } from '../rpack/rpack_js'
 import { HideIconStore, moduleBackgroundEmbedding, reloadGuiAfterDefinitionChange } from '../stores.svelte'
 import { createGlobalModule } from '../moduleCommands'
+import {
+  moduleActivationIdentifiersKey,
+  resolveActiveModuleIdentifiers,
+  resolveModuleActivationStates,
+} from '../moduleActivation'
 import { SERVER_ASSET_CONTENT_TYPES } from '../server/assets'
 import {
   currentLorebookCollectionScopedSnapshot,
-  dispatchReplaceCharacterLorebooks,
   ensureClientLorebookEntryIds,
   isCharacterLorebookHydrated,
   rollbackCharacterLorebookReplacement,
-} from '../server/lorebookBridge.svelte'
+} from '../server/lorebookOwner.svelte'
 import {
   acknowledgeCharacterScriptDefinitionStructuralWrite,
   beginCharacterScriptDefinitionStructuralWrite,
-  dispatchReplaceCharacterScripts,
-  dispatchReplaceCharacterTriggers,
   ensureClientScriptDefinitionIds,
   ensureClientTriggerDefinitionIds,
   rejectCharacterScriptDefinitionStructuralWrite,
   rollbackScopedScriptDefinitionReplacement,
-} from '../server/scriptDefinitionBridge.svelte'
-import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
+} from '../server/scriptDefinitionOwner.svelte'
 import {
   captureCharacterLorebookProjectionEpoch,
   captureCharacterRowProjectionEpoch,
   captureCollectionProjectionEpoch,
   hasCharacterLorebookProjectionEpochChanged,
   hasCharacterRowProjectionEpochChanged,
+  getCharacterResourceOwner,
 } from '../server/resourceState.svelte'
 import { dispatchCharacterOwnedDurableBatch, type CharacterOwnedDurableBatchStep } from '../chatCommands'
 import {
@@ -56,9 +56,13 @@ import {
   pendingMutationCharacterScriptsProjectionTarget,
   pendingMutationCharacterTriggersProjectionTarget,
 } from '../server/pendingMutationOutbox'
-import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from '../server/staleStateGuards'
 import { isImportableMCPIdentifier } from './mcp/mcpIdentifier'
 import { ensureCharacterLorebookHydrated } from '../server/chatMessageHydration.svelte'
+import { normalizeScriptModelOverrides, type ScriptModelOverrides } from '@risuai/shared-core/script-model-overrides'
+import { resolveActiveChatGenerationSettings } from '../activeChatGenerationSettings'
+import { getActiveModuleReadModules, getModuleReadDatabase } from './moduleReadDatabase.svelte'
+import { importLocalModuleFileFromServer } from '../server/localFileImport'
+import type { ModuleFolder } from '@risuai/protocol/module-organization'
 
 export interface MCPModule {
   url: string
@@ -73,12 +77,45 @@ export interface RisuModule {
   trigger?: triggerscript[]
   id: string
   lowLevelAccess?: boolean
+  /** Local-only model-profile selections for module-owned script LLM calls. */
+  scriptModelOverrides?: ScriptModelOverrides
   hideIcon?: boolean
   backgroundEmbedding?: string
   assets?: [string, string, string][]
   namespace?: string
   customModuleToggle?: string
   mcp?: MCPModule
+  folderId?: string
+}
+
+export type { ModuleFolder }
+
+const MODULE_TRIGGER_OWNER = Symbol('risu.moduleTriggerOwner')
+
+interface ModuleTriggerOwner {
+  moduleId: string
+  scriptModelOverrides: ScriptModelOverrides
+}
+
+type ModuleOwnedTrigger = triggerscript & {
+  [MODULE_TRIGGER_OWNER]?: ModuleTriggerOwner
+}
+
+export function getModuleTriggerOwner(trigger: triggerscript | undefined): ModuleTriggerOwner | undefined {
+  return (trigger as ModuleOwnedTrigger | undefined)?.[MODULE_TRIGGER_OWNER]
+}
+
+function attachModuleTriggerOwner(trigger: triggerscript, module: RisuModule): triggerscript {
+  Object.defineProperty(trigger, MODULE_TRIGGER_OWNER, {
+    configurable: true,
+    enumerable: false,
+    writable: true,
+    value: {
+      moduleId: module.id,
+      scriptModelOverrides: normalizeScriptModelOverrides(module.scriptModelOverrides),
+    },
+  })
+  return trigger
 }
 
 export interface ReadModuleOptions {
@@ -149,6 +186,11 @@ function normalizeRisuModuleMetadata(module: unknown): RisuModule | null {
     return null
   }
   const normalized = module as unknown as RisuModule
+  // Script model-profile bindings are deliberately installation-local. Crafted
+  // or older single-module imports must not bind themselves to a coincidentally
+  // matching local profile id.
+  delete normalized.scriptModelOverrides
+  delete normalized.folderId
   if (assets) {
     normalized.assets = assets
   } else {
@@ -238,6 +280,13 @@ async function guardImportableRisuModule(module: RisuModule): Promise<boolean> {
   return true
 }
 
+export function moduleForSingleItemExport(module: RisuModule): RisuModule {
+  const exported = safeStructuredClone(module)
+  delete exported.scriptModelOverrides
+  delete exported.folderId
+  return exported
+}
+
 export async function exportModule(
   module: RisuModule,
   arg: {
@@ -261,7 +310,7 @@ export async function exportModule(
   }
 
   const assets = module.assets ?? []
-  module = safeStructuredClone(module)
+  module = moduleForSingleItemExport(module)
   module.assets ??= []
   module.assets = module.assets.map((asset) => {
     return [asset[0], '', asset[2]] as [string, string, string]
@@ -378,6 +427,14 @@ export async function readModule(
     const maxRetries = 3
     const totalAssets = module.assets?.length ?? 0
     let completed = 0
+    let reportedCompleted = -1
+
+    const reportCompleted = (nextCompleted: number) => {
+      const boundedCompleted = Math.max(0, Math.min(totalAssets, nextCompleted))
+      if (boundedCompleted <= reportedCompleted) return
+      reportedCompleted = boundedCompleted
+      alertWait(`Loading... (Adding Assets ${reportedCompleted} / ${totalAssets})`)
+    }
 
     type AssetTask = {
       index: number
@@ -404,15 +461,19 @@ export async function readModule(
         } catch (error) {
           throw new Error(`Failed to decode module asset ${task.index + 1}`, { cause: error })
         }
-        alertWait(`Loading... (Adding Assets ${completed} / ${totalAssets})`)
       }
 
+      reportCompleted(completed)
       try {
+        const completedBeforeBatch = completed
         const savedAssetIds = await saveAssets(
           decodedTasks.map((task) => ({
             data: task.decoded,
             fileName: task.fileName,
           })),
+          {
+            onProgress: (batchCompleted) => reportCompleted(completedBeforeBatch + batchCompleted),
+          },
         )
         for (let i = 0; i < decodedTasks.length; i++) {
           // Preserve the module asset's declared filename (the [2] slot of
@@ -424,7 +485,7 @@ export async function readModule(
       } catch (error) {
         failed.push(...decodedTasks.map((task) => task.task))
       }
-      alertWait(`Loading... (Adding Assets ${completed} / ${totalAssets})`)
+      reportCompleted(completed)
       return failed
     }
 
@@ -519,71 +580,51 @@ export async function importRisuModuleObject(
 }
 
 export async function importModule() {
-  const f = await selectSingleFile(['json', 'lorebook', 'risum'])
-  if (!f) {
+  const file = (await selectFileByDom(['json', 'lorebook', 'risum'], 'single'))?.[0]
+  if (!file) {
     return
   }
-  let fileData = f.data
-  if (f.name.endsWith('.risum')) {
-    await importRisuModuleData(fileData)
-    return
-  }
-  try {
-    const importData = JSON.parse(Buffer.from(fileData).toString())
-    if (importData.type === 'risuModule') {
-      await importRisuModuleObject(importData)
-      return
-    }
-    // importData.type === 'risu' in conflict with HypaV3 preset exports
-    // difference: record vs. array
-    if (importData.type === 'risu' && importData.data && Array.isArray(importData.data)) {
-      const lores: loreBook[] = importData.data
-      const importModule = {
-        name: importData.name || 'Imported Lorebook',
-        description: importData.description || 'Converted from risu lorebook',
-        lorebook: lores,
-        id: v4(),
-      }
-      await createImportedGlobalModule(importModule)
-      return
-    }
-    if (importData.entries) {
-      const lores: loreBook[] = convertExternalLorebook(importData.entries)
-      const importModule = {
-        name: importData.name || 'Imported Lorebook',
-        description: importData.description || 'Converted from external lorebook',
-        lorebook: lores,
-        id: v4(),
-      }
-      await createImportedGlobalModule(importModule)
-      return
-    }
-    if (importData.type === 'regex' && importData.data) {
-      const regexs: customscript[] = importData.data
-      const importModule = {
-        name: importData.name || 'Imported Regex',
-        description: importData.description || 'Converted from risu regex',
-        regex: regexs,
-        id: v4(),
-      }
-      await createImportedGlobalModule(importModule)
-      return
-    }
-  } catch (error) {
-    console.error(error)
-  }
+  await importModuleFile(file, file.name)
+}
 
-  alertNormal(language.errors.noData)
+export async function importModuleFile(file: Blob, fileName = file instanceof File ? file.name : 'module.risum') {
+  alertWait('Loading... (Uploading)')
+  let result = await importLocalModuleFileFromServer({ file, fileName })
+  if (result.status === 'low-level-access') {
+    const confirmed = await alertConfirm(language.lowLevelAccessConfirm)
+    if (!confirmed) {
+      alertClear()
+      return
+    }
+    alertWait('Loading... (Processing)')
+    result = await importLocalModuleFileFromServer({
+      pendingImportToken: result.pendingImportToken,
+      allowLowLevelAccess: true,
+    })
+  }
+  if (result.status === 'ok') {
+    alertNormal(language.successImport)
+    return
+  }
+  if (result.status === 'conflict') {
+    alertError(language.moduleImport.commandConflict)
+  } else if (result.status === 'unavailable') {
+    alertError(language.moduleImport.commandUnavailable)
+  } else if (result.status === 'error' || result.status === 'password-invalid') {
+    alertError(language.moduleImport.commandError(result.error))
+  } else {
+    alertError(language.errors.noData)
+  }
 }
 
 const emptyModuleList: RisuModule[] = []
 
-function getDatabaseModules(db: ReturnType<typeof getDatabase> = getDatabase()) {
+function getDatabaseModules(db: Database) {
   return Array.isArray(db.modules) ? db.modules : emptyModuleList
 }
 
-function getModuleById(id: string) {
-  const modules = getDatabaseModules()
+function getModuleById(id: string, db: Database) {
+  const modules = getDatabaseModules(db)
   for (let i = 0; i < modules.length; i++) {
     if (modules[i].id === id) {
       return modules[i]
@@ -592,95 +633,59 @@ function getModuleById(id: string) {
   return null
 }
 
-function getModuleByIds(ids: string[]) {
-  const idSet = new Set(ids)
-  const modules = getDatabaseModules().filter((m) => idSet.has(m.id) || (m.namespace && idSet.has(m.namespace)))
-  return deduplicateModuleById(modules)
-}
-
-function deduplicateModuleById(modules: RisuModule[]) {
-  let ids: string[] = []
-  let newModules: RisuModule[] = []
-  for (let i = 0; i < modules.length; i++) {
-    if (ids.includes(modules[i].id)) {
-      continue
-    }
-    ids.push(modules[i].id)
-    newModules.push(modules[i])
-  }
-  return newModules
-}
-
-type PromptPresetModuleIntegration = {
-  id?: unknown
-  moduleIntergration?: unknown
-}
-
-function promptPresetModuleIntegration(
-  db: ReturnType<typeof getDatabase>,
-  currentChat: ReturnType<typeof getCurrentChat>,
-) {
-  const promptPresetId = currentChat?.generationSettings?.promptPresetId
-  if (typeof promptPresetId === 'string' && promptPresetId.trim().length > 0) {
-    const promptPresets = Array.isArray(db.promptPresets) ? (db.promptPresets as PromptPresetModuleIntegration[]) : []
-    const preset = promptPresets.find((candidate) => candidate?.id === promptPresetId)
-    return typeof preset?.moduleIntergration === 'string' ? preset.moduleIntergration : ''
-  }
-  return typeof db.moduleIntergration === 'string' ? db.moduleIntergration : ''
-}
-
-function parseModuleIntegration(value: string) {
-  return value
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0)
-}
-
 let lastModules = ''
 let lastModuleData: RisuModule[] = []
 let lastModuleSource: RisuModule[] | undefined
+let lastModuleSourceRows: Array<{
+  module: RisuModule
+  id: string
+  namespace: string | undefined
+}> = []
 
-function activeModuleCacheRowsStillPresent(moduleSource: RisuModule[]): boolean {
-  if (lastModuleData.length === 0) return true
-
-  const sourceRows = new Set(moduleSource)
-  return lastModuleData.every((module) => sourceRows.has(module))
+export interface ActiveModuleContext {
+  database?: Database
+  character: character | undefined
+  chat: Chat | undefined
 }
 
-export function getModules() {
-  const currentChat = getCurrentChat()
-  const character = getCurrentCharacter()
-  const db = getDatabase()
+function activeModuleCacheRowsUnchanged(moduleSource: RisuModule[]): boolean {
+  if (lastModuleSourceRows.length !== moduleSource.length) return false
+
+  return lastModuleSourceRows.every((cached, index) => {
+    const current = moduleSource[index]
+    return cached.module === current && cached.id === current.id && cached.namespace === current.namespace
+  })
+}
+
+export function getModules(context?: ActiveModuleContext) {
+  if (!context) return getActiveModuleReadModules()
+  const db = context.database ?? getModuleReadDatabase()
+  const currentChat = context.chat
+  const character = context.character
   const moduleSource = getDatabaseModules(db)
-  let ids = db.enabledModules ?? []
-  if (currentChat) {
-    ids = ids.concat(currentChat.modules ?? [])
-  }
-  if (character && character.modules) {
-    ids = ids.concat(character.modules)
-  }
-  const moduleIntergration = promptPresetModuleIntegration(db, currentChat)
-  if (moduleIntergration) {
-    ids = ids.concat(parseModuleIntegration(moduleIntergration))
-  }
-  const idsJoined = JSON.stringify(ids)
-  if (
-    lastModules === idsJoined &&
-    lastModuleSource === moduleSource &&
-    activeModuleCacheRowsStillPresent(moduleSource)
-  ) {
+  const activationIdentifiers = resolveActiveModuleIdentifiers(db, character, currentChat)
+  const idsJoined = moduleActivationIdentifiersKey(activationIdentifiers)
+  if (lastModules === idsJoined && lastModuleSource === moduleSource && activeModuleCacheRowsUnchanged(moduleSource)) {
     return lastModuleData
   }
 
-  let modules: RisuModule[] = getModuleByIds(ids)
+  const resolvedModules = resolveModuleActivationStates({
+    modules: moduleSource,
+    identifiers: activationIdentifiers,
+  }).map((state) => state.module)
   lastModules = idsJoined
   lastModuleSource = moduleSource
-  lastModuleData = modules
-  return modules
+  lastModuleSourceRows = moduleSource.map((module) => ({
+    module,
+    id: module.id,
+    namespace: module.namespace,
+  }))
+  lastModuleData = resolvedModules
+  return resolvedModules
 }
 
-export function getModuleLorebooks() {
-  const modules = getModules()
+export function getModuleLorebooks(context?: ActiveModuleContext) {
+  const modules = getModules(context)
   let lorebooks: loreBook[] = []
   for (const module of modules) {
     if (!module) {
@@ -693,8 +698,8 @@ export function getModuleLorebooks() {
   return lorebooks
 }
 
-export function getModuleAssets() {
-  const modules = getModules()
+export function getModuleAssets(context?: ActiveModuleContext) {
+  const modules = getModules(context)
   let assets: [string, string, string][] = []
   for (const module of modules) {
     if (!module) {
@@ -707,8 +712,8 @@ export function getModuleAssets() {
   return assets
 }
 
-export function getModuleTriggers() {
-  const modules = getModules()
+export function getModuleTriggers(context?: ActiveModuleContext) {
+  const modules = getModules(context)
   let triggers: triggerscript[] = []
   for (const module of modules) {
     if (!module) {
@@ -717,10 +722,13 @@ export function getModuleTriggers() {
     if (module.trigger) {
       triggers = triggers.concat(
         module.trigger.map((t) => {
-          return {
-            ...t,
-            lowLevelAccess: module.lowLevelAccess,
-          }
+          return attachModuleTriggerOwner(
+            {
+              ...t,
+              lowLevelAccess: module.lowLevelAccess,
+            },
+            module,
+          )
         }),
       )
     }
@@ -728,8 +736,8 @@ export function getModuleTriggers() {
   return triggers
 }
 
-export function getModuleRegexScripts() {
-  const modules = getModules()
+export function getModuleRegexScripts(context?: ActiveModuleContext) {
+  const modules = getModules(context)
   let customscripts: customscript[] = []
   for (const module of modules) {
     if (!module) {
@@ -742,8 +750,8 @@ export function getModuleRegexScripts() {
   return customscripts
 }
 
-export function getModuleToggles() {
-  const modules = getModules()
+export function getModuleToggles(context?: ActiveModuleContext) {
+  const modules = getModules(context)
   let costomModuleToggles: string = ''
   for (const module of modules) {
     if (!module) {
@@ -756,8 +764,8 @@ export function getModuleToggles() {
   return costomModuleToggles
 }
 
-export function getModuleMcps() {
-  const modules = getModules()
+export function getModuleMcps(context?: ActiveModuleContext) {
+  const modules = getModules(context)
 
   return modules.map((v) => v.mcp?.url).filter((v) => v)
 }
@@ -795,12 +803,13 @@ async function applyModuleOnce() {
     return
   }
 
-  const module = safeStructuredClone(getModuleById(sel))
+  const generation = resolveActiveChatGenerationSettings()
+  const module = safeStructuredClone(getModuleById(sel, generation.db))
   if (!module) {
     return
   }
 
-  let currentChar = getCurrentCharacter()
+  let currentChar = generation.character
   if (!currentChar) {
     return
   }
@@ -813,13 +822,13 @@ async function applyModuleOnce() {
   const hasModuleLorebooks = (module.lorebook?.length ?? 0) > 0
   const hasModuleScripts = (module.regex?.length ?? 0) > 0
   const hasModuleTriggers = (module.trigger?.length ?? 0) > 0
-  if (hasModuleLorebooks && getDatabase()?.enableLorebookStubs && !isCharacterLorebookHydrated(characterId)) {
+  if (hasModuleLorebooks && generation.db.enableLorebookStubs && !isCharacterLorebookHydrated(characterId)) {
     const hydrated = await ensureCharacterLorebookHydrated(characterId)
     if (!hydrated) {
       alertError(language.lorebookDataLoadFailed)
       return
     }
-    const hydratedCharacter = getDatabase().characters.find((character) => character.chaId === characterId)
+    const hydratedCharacter = getCharacterResourceOwner(characterId)
     if (!hydratedCharacter) return
     currentChar = hydratedCharacter
   }
@@ -839,15 +848,24 @@ async function applyModuleOnce() {
 
   const nextLorebooks =
     hasModuleLorebooks && module.lorebook && lorePrevious
-      ? ensureClientLorebookEntryIds([...(currentChar.globalLore ?? []), ...safeStructuredClone(module.lorebook)])
+      ? ensureClientLorebookEntryIds([
+          ...safeStructuredClone(currentChar.globalLore ?? []),
+          ...safeStructuredClone(module.lorebook),
+        ])
       : undefined
   const nextScripts =
     hasModuleScripts && module.regex
-      ? ensureClientScriptDefinitionIds([...(currentChar.customscript ?? []), ...safeStructuredClone(module.regex)])
+      ? ensureClientScriptDefinitionIds([
+          ...safeStructuredClone(currentChar.customscript ?? []),
+          ...safeStructuredClone(module.regex),
+        ])
       : undefined
   const nextTriggers =
     hasModuleTriggers && module.trigger
-      ? ensureClientTriggerDefinitionIds([...(currentChar.triggerscript ?? []), ...safeStructuredClone(module.trigger)])
+      ? ensureClientTriggerDefinitionIds([
+          ...safeStructuredClone(currentChar.triggerscript ?? []),
+          ...safeStructuredClone(module.trigger),
+        ])
       : undefined
 
   const scriptsRollback =
@@ -889,7 +907,6 @@ async function applyModuleOnce() {
         )
       : null
 
-  const rollbackEpoch = captureDestructiveRefreshEpoch()
   const steps: ModuleApplyBatchStep[] = []
   if (nextLorebooks && lorePrevious) {
     const lorebookSnapshot = safeStructuredClone(nextLorebooks) as Parameters<
@@ -925,14 +942,18 @@ async function applyModuleOnce() {
         rollbackCharacterLorebookReplacement(characterId, lorePrevious, attemptedLorebooks)
       },
       reapply: (isTargetCurrent) => {
-        if (hasDestructiveRefreshEpochChanged(rollbackEpoch) || !isTargetCurrent(projectionTarget)) return
-        withTrustedResourceWrite(() => {
-          const target = getDatabase().characters.find((character) => character.chaId === characterId)
-          if (!target) return
-          if (moduleApplySnapshot(target.globalLore ?? []) === moduleApplySnapshot(attemptedLorebooks)) return
-          if (moduleApplySnapshot(target.globalLore ?? []) !== moduleApplySnapshot(previousLorebooks)) return
-          target.globalLore = safeStructuredClone(attemptedLorebooks)
-        })
+        if (
+          hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch) ||
+          hasCharacterLorebookProjectionEpochChanged(characterId, optimisticLorebookEpoch) ||
+          !isTargetCurrent(projectionTarget)
+        ) {
+          return
+        }
+        const target = getCharacterResourceOwner(characterId)
+        if (!target) return
+        if (moduleApplySnapshot(target.globalLore ?? []) === moduleApplySnapshot(attemptedLorebooks)) return
+        if (moduleApplySnapshot(target.globalLore ?? []) !== moduleApplySnapshot(previousLorebooks)) return
+        target.globalLore = safeStructuredClone(attemptedLorebooks)
       },
     })
   }
@@ -975,20 +996,23 @@ async function applyModuleOnce() {
         })
       },
       reapply: (isTargetCurrent) => {
-        if (hasDestructiveRefreshEpochChanged(rollbackEpoch) || !isTargetCurrent(projectionTarget)) return
-        withTrustedResourceWrite(() => {
-          const target = getDatabase().characters.find((character) => character.chaId === characterId)
-          if (!target) return
-          const hasCurrent = Object.prototype.hasOwnProperty.call(target, 'customscript')
-          const matchesAttempted =
-            hasCurrent && moduleApplySnapshot(target.customscript) === moduleApplySnapshot(attemptedScripts)
-          if (matchesAttempted) return
-          const matchesPrevious = hadScriptsField
-            ? hasCurrent && moduleApplySnapshot(target.customscript) === moduleApplySnapshot(previousScripts)
-            : !hasCurrent
-          if (!matchesPrevious) return
-          target.customscript = safeStructuredClone(attemptedScripts)
-        })
+        if (
+          hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch) ||
+          !isTargetCurrent(projectionTarget)
+        ) {
+          return
+        }
+        const target = getCharacterResourceOwner(characterId)
+        if (!target) return
+        const hasCurrent = Object.prototype.hasOwnProperty.call(target, 'customscript')
+        const matchesAttempted =
+          hasCurrent && moduleApplySnapshot(target.customscript) === moduleApplySnapshot(attemptedScripts)
+        if (matchesAttempted) return
+        const matchesPrevious = hadScriptsField
+          ? hasCurrent && moduleApplySnapshot(target.customscript) === moduleApplySnapshot(previousScripts)
+          : !hasCurrent
+        if (!matchesPrevious) return
+        target.customscript = safeStructuredClone(attemptedScripts)
       },
       rejectStructuralAttempt: () => rejectCharacterScriptDefinitionStructuralWrite(scriptStructuralAttempt),
     })
@@ -1032,20 +1056,23 @@ async function applyModuleOnce() {
         })
       },
       reapply: (isTargetCurrent) => {
-        if (hasDestructiveRefreshEpochChanged(rollbackEpoch) || !isTargetCurrent(projectionTarget)) return
-        withTrustedResourceWrite(() => {
-          const target = getDatabase().characters.find((character) => character.chaId === characterId)
-          if (!target) return
-          const hasCurrent = Object.prototype.hasOwnProperty.call(target, 'triggerscript')
-          const matchesAttempted =
-            hasCurrent && moduleApplySnapshot(target.triggerscript) === moduleApplySnapshot(attemptedTriggers)
-          if (matchesAttempted) return
-          const matchesPrevious = hadTriggersField
-            ? hasCurrent && moduleApplySnapshot(target.triggerscript) === moduleApplySnapshot(previousTriggers)
-            : !hasCurrent
-          if (!matchesPrevious) return
-          target.triggerscript = safeStructuredClone(attemptedTriggers)
-        })
+        if (
+          hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch) ||
+          !isTargetCurrent(projectionTarget)
+        ) {
+          return
+        }
+        const target = getCharacterResourceOwner(characterId)
+        if (!target) return
+        const hasCurrent = Object.prototype.hasOwnProperty.call(target, 'triggerscript')
+        const matchesAttempted =
+          hasCurrent && moduleApplySnapshot(target.triggerscript) === moduleApplySnapshot(attemptedTriggers)
+        if (matchesAttempted) return
+        const matchesPrevious = hadTriggersField
+          ? hasCurrent && moduleApplySnapshot(target.triggerscript) === moduleApplySnapshot(previousTriggers)
+          : !hasCurrent
+        if (!matchesPrevious) return
+        target.triggerscript = safeStructuredClone(attemptedTriggers)
       },
       rejectStructuralAttempt: () => rejectCharacterScriptDefinitionStructuralWrite(triggerStructuralAttempt),
     })
@@ -1059,19 +1086,12 @@ async function applyModuleOnce() {
     steps.length > 0
       ? dispatchCharacterOwnedDurableBatch(characterId, steps)
       : Promise.resolve({ status: 'ok' as const, acceptedCount: 0 })
-  withTrustedResourceWrite(() => {
-    const target = getDatabase().characters.find((character) => character.chaId === characterId)
-    if (!target) return
+  const target = getCharacterResourceOwner(characterId)
+  if (target) {
     if (nextLorebooks) target.globalLore = safeStructuredClone(nextLorebooks)
     if (nextScripts) target.customscript = safeStructuredClone(nextScripts)
     if (nextTriggers) target.triggerscript = safeStructuredClone(nextTriggers)
-  })
-  // Keep the bridge dispatchers imported so delay-based coalescing can use
-  // them without re-importing. Reference
-  // them via void to satisfy the linter without dispatching.
-  void dispatchReplaceCharacterLorebooks
-  void dispatchReplaceCharacterScripts
-  void dispatchReplaceCharacterTriggers
+  }
 
   const outcome = await applyResult
   for (const step of steps.slice(outcome.acceptedCount)) {
@@ -1090,7 +1110,8 @@ let lastModuleIds: string = ''
 let lastModuleProjectionEpoch = -1
 
 export function moduleUpdate() {
-  const m = getModules()
+  const generation = resolveActiveChatGenerationSettings()
+  const m = getModules({ database: generation.db, character: generation.character, chat: generation.chat })
 
   const ids = JSON.stringify(m.map((module) => module.id))
   const projectionEpoch = captureCollectionProjectionEpoch('modules')
@@ -1111,7 +1132,7 @@ export function moduleUpdate() {
   })
 
   moduleBackgroundEmbedding.set(backgroundEmbedding)
-  HideIconStore.set(getCurrentCharacter()?.hideChatIcon || moduleHideIcon)
+  HideIconStore.set(generation.character?.hideChatIcon || moduleHideIcon)
 
   if (lastModuleIds !== ids || lastModuleProjectionEpoch !== projectionEpoch) {
     reloadGuiAfterDefinitionChange()

@@ -1,8 +1,11 @@
 import { hubURL } from '../characterCards'
-import { getDatabase } from '../storage/database.svelte'
+import { settingsResourceState } from '../server/resourceState.svelte'
 
 export function keiServerURL() {
-  const db = getDatabase()
-  if (db.keiServerURL) return db.keiServerURL
+  const status = settingsResourceState.groupStatuses.advanced ?? settingsResourceState.status
+  if (status === 'ready' && settingsResourceState.status !== 'error') {
+    const ownerValue = settingsResourceState.value.keiServerURL
+    if (typeof ownerValue === 'string' && ownerValue) return ownerValue
+  }
   return hubURL + '/kei'
 }

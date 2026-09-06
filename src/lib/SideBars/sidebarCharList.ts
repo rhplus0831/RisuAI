@@ -16,12 +16,16 @@ export type SidebarCharacterListItem =
       id: string
       name: string
       color: string
+      askBeforeOpening: boolean
       img?: string
     }
 
 export type SidebarCharacterListCharacter = Pick<character, 'chaId' | 'name' | 'displayName' | 'image'>
 
-export type SidebarCharacterOrderFolder = Omit<Pick<folder, 'name' | 'color' | 'id' | 'imgFile'>, 'imgFile'> & {
+export type SidebarCharacterOrderFolder = Omit<
+  Pick<folder, 'name' | 'color' | 'id' | 'askBeforeOpening' | 'imgFile'>,
+  'imgFile'
+> & {
   data: readonly string[]
   imgFile?: string | null
 }
@@ -102,6 +106,7 @@ function buildSidebarCharacterListSignatureWithIndex(
     appendString(parts, item.id)
     appendString(parts, item.name)
     appendString(parts, item.color)
+    parts.push(item.askBeforeOpening === true ? '1' : '0')
     appendString(parts, item.imgFile)
     parts.push(String(item.data.length))
     for (const id of item.data) {
@@ -156,6 +161,7 @@ function buildSidebarCharacterListItemsWithIndex(
       id: item.id,
       name: item.name,
       color: item.color,
+      askBeforeOpening: item.askBeforeOpening === true,
       img: item.imgFile ?? undefined,
     })
   }

@@ -49,7 +49,7 @@ describe('Playground subtitle media cleanup', () => {
     expect(getChannelData).toHaveBeenCalledOnce()
   })
 
-  it('L55: probeVideoDuration revokes the probe object URL after metadata probing', async () => {
+  it('probeVideoDuration revokes the probe object URL after metadata probing', async () => {
     const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:subtitle-probe')
     const revokeUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
     const video = {
@@ -76,7 +76,7 @@ describe('Playground subtitle media cleanup', () => {
     expect(revokeUrl).toHaveBeenCalledWith('blob:subtitle-probe')
   })
 
-  it('L55: temporary whisper AudioContexts close after decode success and failure', async () => {
+  it('temporary whisper AudioContexts close after decode success and failure', async () => {
     await expect(decodeAudioFileWithTemporaryContext(new Blob(['audio']))).resolves.toEqual({
       kind: 'decoded',
     })

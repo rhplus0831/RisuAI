@@ -1,9 +1,9 @@
-import { get } from 'svelte/store'
 import { resolveEffectiveAgentPresetId } from './agentPresetResolver'
 import {
   CHAT_GENERATION_SETTINGS_INCOMPLETE_MESSAGE,
   resolveDisplayedSidebarToggles,
   resolveChatGenerationSettingsReadiness,
+  type ChatGenerationAgentReference,
   type ChatGenerationAgentPresetReference,
   type ChatGenerationDisplayedSidebarToggle,
   type ChatGenerationModelPresetReference,
@@ -24,9 +24,17 @@ import {
 } from './chatCommands'
 import { language } from '../lang'
 import type { ServerCommandTransportOptions } from './server/commands'
-import { getResourceDatabase } from './server/resourceState.svelte'
-import { selectedCharID } from './stores.svelte'
+import {
+  charactersResourceState,
+  collectionsResourceState,
+  getCharacterResourceOwner,
+  settingsResourceState,
+  type ServerCollectionName,
+} from './server/resourceState.svelte'
+import { SERVER_SETTINGS_GROUP_BY_KEY } from './server/settingsGroups'
 import type { Chat, Database, character } from './storage/database.svelte'
+import { resolvePersonaModuleIdsById } from './personaModuleLinks'
+import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
 
 type ActiveChatGenerationPromptPresetReference = ChatGenerationPromptPresetReference & {
   moduleIntergration?: unknown
@@ -43,6 +51,8 @@ export interface ActiveChatGenerationSettingsIdentity {
 export interface ActiveChatGenerationSettingsState {
   db: Database
   identity: ActiveChatGenerationSettingsIdentity
+  /** False while an empty owner projection can still mean "not hydrated" instead of "no definitions". */
+  sidebarToggleDefinitionsReady: boolean
   character?: character
   chat?: Chat
   settings?: ChatGenerationSettings
@@ -61,6 +71,189 @@ export interface ActiveChatGenerationSettingsState {
 export interface ResolveActiveChatGenerationSettingsOptions {
   db?: Database
   selectedCharIndex?: number
+  chatIndex?: number
+  target?: ActiveChatTarget | null
+}
+
+interface ActiveChatOwnerProjection {
+  db: Database
+  selectedCharIndex: number
+  sidebarToggleDefinitionOwnersReady: boolean
+  usesCharacterOwner: boolean
+}
+
+type OwnerRead<T> = { status: 'available'; value: T } | { status: 'unavailable'; value: T }
+
+function explicitDatabaseProjection(db: Database): ActiveChatOwnerProjection {
+  return {
+    db,
+    selectedCharIndex: -1,
+    sidebarToggleDefinitionOwnersReady: true,
+    usesCharacterOwner: false,
+  }
+}
+
+function activeChatOwnerProjection(): ActiveChatOwnerProjection {
+  const databaseBase = activeChatDatabaseBase()
+  const characters = readCharacterOwners()
+  const personas = readCollectionOwner<ChatGenerationPersonaReference>('personas')
+  const modelPresets = readCollectionOwner<ChatGenerationModelPresetReference>('modelPresets')
+  const promptPresets = readCollectionOwner<ActiveChatGenerationPromptPresetReference>('promptPresets')
+  const modules = readCollectionOwner<ChatGenerationModuleReference>('modules')
+  const agentConfiguration = readAgentConfigurationOwner()
+  const moduleSettings = readModuleSettingsOwner()
+
+  const db = {
+    ...databaseBase,
+    characters: characters.value,
+    currentChar: characters.selectedCharIndex,
+    personas: personas.value,
+    modelPresets: modelPresets.value,
+    promptPresets: promptPresets.value,
+    modules: modules.value,
+    agents: agentConfiguration.value.agents,
+    agentPresets: agentConfiguration.value.agentPresets,
+    agentPresetDefaultId: agentConfiguration.value.agentPresetDefaultId,
+    enabledModules: moduleSettings.value,
+  } as unknown as Database
+
+  return {
+    db,
+    selectedCharIndex: characters.selectedCharIndex,
+    // Owner readers intentionally fail closed to empty projections. Keep that
+    // ambiguity from authorizing default persistence or stale-key deletion.
+    sidebarToggleDefinitionOwnersReady:
+      characters.status === 'available' &&
+      personas.status === 'available' &&
+      promptPresets.status === 'available' &&
+      modules.status === 'available' &&
+      agentConfiguration.status === 'available' &&
+      moduleSettings.status === 'available',
+    usesCharacterOwner: characters.usesOwner,
+  }
+}
+
+function activeChatDatabaseBase(): Partial<Database> {
+  const database: Partial<Database> = {}
+
+  if (settingsResourceState.status !== 'error') {
+    for (const [key, value] of Object.entries(settingsResourceState.value)) {
+      const group = SERVER_SETTINGS_GROUP_BY_KEY[key]
+      if (group ? settingsResourceState.groupStatuses[group] !== 'ready' : settingsResourceState.status !== 'ready') {
+        continue
+      }
+      ;(database as Record<string, unknown>)[key] = value
+    }
+  }
+
+  return database
+}
+
+/** Module display reads need activation inputs, not generation readiness or a full settings copy. */
+export function readActiveModuleDatabase(): Database {
+  const agentConfiguration = readAgentConfigurationOwner()
+  const readSetting = (key: 'moduleIntergration' | 'selectedPersonaId') => {
+    const group = SERVER_SETTINGS_GROUP_BY_KEY[key]
+    if (settingsResourceState.status === 'error') return undefined
+    if (group ? settingsResourceState.groupStatuses[group] !== 'ready' : settingsResourceState.status !== 'ready') {
+      return undefined
+    }
+    return settingsResourceState.value[key]
+  }
+  return {
+    enabledModules: readModuleSettingsOwner().value,
+    modules: readCollectionOwner<ChatGenerationModuleReference>('modules').value,
+    personas: readCollectionOwner<ChatGenerationPersonaReference>('personas').value,
+    promptPresets: readCollectionOwner<ActiveChatGenerationPromptPresetReference>('promptPresets').value,
+    agentPresets: agentConfiguration.value.agentPresets,
+    agentPresetDefaultId: agentConfiguration.value.agentPresetDefaultId,
+    moduleIntergration: readSetting('moduleIntergration'),
+    selectedPersonaId: readSetting('selectedPersonaId'),
+  } as Database
+}
+
+export function readActiveModuleSelection(): { character: character | undefined; chat: Chat | undefined } {
+  const owner = readCharacterOwners()
+  const candidate = resolveUniqueCharacterAtIndex(owner.value, owner.selectedCharIndex)
+  const character = candidate && isReadyCharacterOwner(candidate) ? candidate : undefined
+  const chat =
+    character && Number.isInteger(character.chatPage)
+      ? resolveUniqueChatAtIndex(owner.value, character, character.chatPage)
+      : undefined
+  return { character, chat }
+}
+
+function readCharacterOwners(): {
+  status: OwnerRead<character[]>['status']
+  value: character[]
+  selectedCharIndex: number
+  usesOwner: boolean
+} {
+  if (charactersResourceState.status !== 'ready') {
+    return { status: 'unavailable', value: [], selectedCharIndex: -1, usesOwner: false }
+  }
+  return {
+    status: 'available',
+    value: charactersResourceState.characters,
+    selectedCharIndex: charactersResourceState.currentChar,
+    usesOwner: true,
+  }
+}
+
+function readCollectionOwner<T extends { id?: string | null }>(name: ServerCollectionName): OwnerRead<T[]> {
+  if (!isCollectionOwnerReady(name)) return { status: 'unavailable', value: [] }
+  const value = collectionsResourceState.values[name]
+  const collection = stableReferenceCollection<T>(value)
+  return collection ? { status: 'available', value: collection } : { status: 'unavailable', value: [] }
+}
+
+function isCollectionOwnerReady(name: ServerCollectionName): boolean {
+  const status = collectionsResourceState.statuses[name]
+  return collectionsResourceState.status !== 'error' && status === 'ready'
+}
+
+function readAgentConfigurationOwner(): OwnerRead<{
+  agents: ChatGenerationAgentReference[]
+  agentPresets: ChatGenerationAgentPresetReference[]
+  agentPresetDefaultId?: string
+}> {
+  if (!isSettingsGroupOwnerReady('agents')) return unavailableAgentConfiguration()
+  const source = settingsResourceState.value as Partial<Database>
+  const agents = stableReferenceCollection<ChatGenerationAgentReference>(source.agents, true)
+  const agentPresets = stableReferenceCollection<ChatGenerationAgentPresetReference>(source.agentPresets, true)
+  if (!agents || !agentPresets) return unavailableAgentConfiguration()
+  const defaultId = source.agentPresetDefaultId
+  if (defaultId !== undefined && defaultId !== null && !nonEmptyString(defaultId)) {
+    return unavailableAgentConfiguration()
+  }
+  return {
+    status: 'available',
+    value: {
+      agents,
+      agentPresets,
+      agentPresetDefaultId: nonEmptyString(defaultId) ? defaultId : undefined,
+    },
+  }
+}
+
+function unavailableAgentConfiguration(): OwnerRead<{
+  agents: ChatGenerationAgentReference[]
+  agentPresets: ChatGenerationAgentPresetReference[]
+  agentPresetDefaultId?: string
+}> {
+  return { status: 'unavailable', value: { agents: [], agentPresets: [] } }
+}
+
+function readModuleSettingsOwner(): OwnerRead<string[]> {
+  if (!isSettingsGroupOwnerReady('modules')) return { status: 'unavailable', value: [] }
+  const source = settingsResourceState.value as Partial<Database>
+  const enabledModules = stableStringIdList(source.enabledModules, true)
+  return enabledModules ? { status: 'available', value: enabledModules } : { status: 'unavailable', value: [] }
+}
+
+function isSettingsGroupOwnerReady(group: 'agents' | 'modules'): boolean {
+  const status = settingsResourceState.groupStatuses[group]
+  return settingsResourceState.status !== 'error' && status === 'ready'
 }
 
 export type ActiveChatGenerationSettingsGuardResult =
@@ -80,12 +273,24 @@ export type ActiveChatGenerationSettingsSaveOptions = ServerCommandTransportOpti
 export function resolveActiveChatGenerationSettings(
   options: ResolveActiveChatGenerationSettingsOptions = {},
 ): ActiveChatGenerationSettingsState {
-  const db = options.db ?? getResourceDatabase()
-  const selectedCharIndex = options.selectedCharIndex ?? get(selectedCharID)
+  const ownerProjection = options.db ? explicitDatabaseProjection(options.db) : activeChatOwnerProjection()
+  const db = ownerProjection.db
   const characters = safeArray<character>(db.characters)
-  const character = characters[selectedCharIndex]
-  const chatIndex = Number.isInteger(character?.chatPage) ? character.chatPage : -1
-  const chat = chatIndex >= 0 ? character?.chats?.[chatIndex] : undefined
+  const selectedCharIndex =
+    options.selectedCharIndex ??
+    (options.target ? resolveTargetCharacterIndex(characters, options.target) : ownerProjection.selectedCharIndex)
+  const character = resolveUniqueCharacterAtIndex(characters, selectedCharIndex)
+  const readyCharacter =
+    character && ownerProjection.usesCharacterOwner && !isReadyCharacterOwner(character) ? undefined : character
+  const chatIndex =
+    options.chatIndex ??
+    (options.target && readyCharacter
+      ? resolveTargetChatIndex(characters, readyCharacter, options.target)
+      : Number.isInteger(readyCharacter?.chatPage)
+        ? readyCharacter.chatPage
+        : -1)
+  const chat =
+    chatIndex >= 0 && readyCharacter ? resolveUniqueChatAtIndex(characters, readyCharacter, chatIndex) : undefined
   const settings = chat?.generationSettings
   const personas = safeArray<ChatGenerationPersonaReference>(
     db.personas as unknown as ChatGenerationPersonaReference[] | undefined,
@@ -101,29 +306,32 @@ export function resolveActiveChatGenerationSettings(
   )
   const effectiveAgentPresetId = resolveEffectiveAgentPresetId(db, settings)
 
-  const readiness = resolveReadiness(db, character, chat, settings)
+  const readiness = resolveReadiness(db, readyCharacter, chat, settings)
+  const sidebarToggleDefinitionsReady =
+    ownerProjection.sidebarToggleDefinitionOwnersReady && readyCharacter !== undefined && chat !== undefined
   const identity: ActiveChatGenerationSettingsIdentity = {
     selectedCharIndex,
-    characterIndex: character ? selectedCharIndex : -1,
+    characterIndex: readyCharacter ? selectedCharIndex : -1,
     chatIndex: chat ? chatIndex : -1,
-    characterId: character?.chaId,
+    characterId: readyCharacter?.chaId,
     chatId: nonEmptyString(chat?.id) ? chat.id : undefined,
   }
 
   return {
     db,
     identity,
-    character,
+    sidebarToggleDefinitionsReady,
+    character: readyCharacter,
     chat,
     settings,
     persona: findById(personas, settings?.personaId),
     modelPreset: findById(modelPresets, settings?.modelPresetId),
-    promptPreset: findById(promptPresets, settings?.promptPresetId),
+    promptPreset: resolveUniquePromptPreset(promptPresets, settings?.promptPresetId),
     effectiveAgentPresetId,
     agentPreset: findById(agentPresets, effectiveAgentPresetId),
     readiness,
     requiredSidebarToggles: readiness.requirements.sidebarToggles,
-    displayedSidebarToggles: resolveDisplayedToggles(db, character, chat, settings),
+    displayedSidebarToggles: resolveDisplayedToggles(db, readyCharacter, chat, settings),
     staleSidebarToggleKeys: readiness.staleSidebarToggleKeys,
     missingLabels: createChatGenerationSettingsMissingLabels(readiness.missing, readiness.requirements.sidebarToggles),
   }
@@ -153,7 +361,11 @@ export function guardActiveChatGenerationSettingsForSend(
   state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
 ): ActiveChatGenerationSettingsGuardResult {
   if (ensureActiveChatSidebarToggleDefaults(state)) {
-    state = resolveActiveChatGenerationSettings()
+    state = resolveActiveChatGenerationSettings({
+      db: state.db,
+      selectedCharIndex: state.identity.characterIndex,
+      chatIndex: state.identity.chatIndex,
+    })
   }
 
   if (state.readiness.ready) {
@@ -226,24 +438,78 @@ export function createActiveChatGenerationSettingsPatch(
         }
       }
     }
-    next.sidebarToggles = pruneStaleSidebarToggleKeys(state, {
+    next.sidebarToggles = pruneStaleSidebarToggleKeysWhenReady(state, {
       ...next,
       sidebarToggles: mergedSidebarToggles,
     }).sidebarToggles
   }
 
-  const pruned = pruneStaleSidebarToggleKeys(state, next)
+  const pruned = pruneStaleSidebarToggleKeysWhenReady(state, next)
   return fillMissingDefaultSidebarToggles(state, pruned)
 }
 
 export function createActiveChatGenerationSettingsSelectionPatch(
   selection: Pick<
     ActiveChatGenerationSettingsPatch,
-    'personaId' | 'modelPresetId' | 'promptPresetId' | 'agentPresetId' | 'togglePresetId'
+    'personaId' | 'modelPresetId' | 'modelPresetSelectionSource' | 'promptPresetId' | 'agentPresetId' | 'togglePresetId'
   >,
   state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
 ): ChatGenerationSettings {
   return createActiveChatGenerationSettingsPatch(selection, state)
+}
+
+export function createActiveChatPersonaSelectionPatch(
+  personaId: string | null,
+  state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
+): ChatGenerationSettings {
+  const next = createActiveChatGenerationSettingsPatch(personaId ? { personaId } : {}, state)
+  if (!personaId) delete next.personaId
+  return next
+}
+
+export function createManualModelPresetSelection(modelPresetId: string): ActiveChatGenerationSettingsPatch {
+  return {
+    modelPresetId,
+    modelPresetSelectionSource: 'manual',
+  }
+}
+
+export function createPromptPresetSelection(
+  promptPresetId: string,
+  promptPreset: ChatGenerationPromptPresetReference,
+  state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
+): ActiveChatGenerationSettingsPatch {
+  const selection: ActiveChatGenerationSettingsPatch = { promptPresetId }
+  if (state.settings?.modelPresetSelectionSource === 'manual') return selection
+
+  const recommendedModelPresetId = nonEmptyString(promptPreset.recommendedModelPresetId)
+    ? promptPreset.recommendedModelPresetId
+    : null
+  if (
+    recommendedModelPresetId &&
+    safeArray<ChatGenerationModelPresetReference>(
+      state.db.modelPresets as unknown as ChatGenerationModelPresetReference[] | undefined,
+    ).some((preset) => preset.id === recommendedModelPresetId)
+  ) {
+    selection.modelPresetId = recommendedModelPresetId
+    selection.modelPresetSelectionSource = 'prompt-recommendation'
+  }
+  return selection
+}
+
+export type ActiveChatModelPresetRecommendationState = 'none' | 'matched' | 'mismatch'
+
+export function activeChatModelPresetRecommendationState(
+  state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
+): ActiveChatModelPresetRecommendationState {
+  const recommendedModelPresetId = state.promptPreset?.recommendedModelPresetId
+  const selectedModelPresetId = state.settings?.modelPresetId
+  if (!nonEmptyString(recommendedModelPresetId) || !nonEmptyString(selectedModelPresetId)) return 'none'
+  const recommendationExists = safeArray<ChatGenerationModelPresetReference>(
+    state.db.modelPresets as unknown as ChatGenerationModelPresetReference[] | undefined,
+  ).some((preset) => preset.id === recommendedModelPresetId)
+  if (!recommendationExists) return 'none'
+  return selectedModelPresetId === recommendedModelPresetId ? 'matched' : 'mismatch'
 }
 
 export function createActiveChatGenerationSettingsDefaultValuesPatch(
@@ -262,10 +528,9 @@ export function fillMissingActiveChatSidebarToggleDefaults(
   state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
 ): ChatGenerationSettings | undefined {
   if (!state.settings) return undefined
-  return fillMissingDefaultSidebarToggles(
-    state,
-    pruneStaleSidebarToggleKeys(state, cloneGenerationSettings(state.settings)),
-  )
+  // Automatic reconciliation is additive. Destructive normalization is only
+  // safe through explicit save paths after every definition owner is ready.
+  return fillMissingDefaultSidebarToggles(state, cloneGenerationSettings(state.settings))
 }
 
 export function ensureActiveChatSidebarToggleDefaults(
@@ -273,6 +538,7 @@ export function ensureActiveChatSidebarToggleDefaults(
   options: ActiveChatGenerationSettingsSaveOptions = {},
 ): boolean {
   if (hasStaleExpectedTarget(options)) return false
+  if (!state.sidebarToggleDefinitionsReady) return false
   if (hasBlockingSidebarToggleDefaultSaveReason(state)) return false
 
   const chatId = state.identity.chatId
@@ -344,7 +610,7 @@ export function saveActiveChatGenerationSettingsWithOutcome(
 export function saveActiveChatGenerationSettingsSelection(
   selection: Pick<
     ActiveChatGenerationSettingsPatch,
-    'personaId' | 'modelPresetId' | 'promptPresetId' | 'agentPresetId' | 'togglePresetId'
+    'personaId' | 'modelPresetId' | 'modelPresetSelectionSource' | 'promptPresetId' | 'agentPresetId' | 'togglePresetId'
   >,
   options: ActiveChatGenerationSettingsSaveOptions = {},
 ): boolean {
@@ -354,7 +620,7 @@ export function saveActiveChatGenerationSettingsSelection(
 export function saveActiveChatGenerationSettingsSelectionWithOutcome(
   selection: Pick<
     ActiveChatGenerationSettingsPatch,
-    'personaId' | 'modelPresetId' | 'promptPresetId' | 'agentPresetId' | 'togglePresetId'
+    'personaId' | 'modelPresetId' | 'modelPresetSelectionSource' | 'promptPresetId' | 'agentPresetId' | 'togglePresetId'
   >,
   options: ActiveChatGenerationSettingsSaveOptions = {},
 ): ChatGenerationSettingsSaveOperation | null {
@@ -445,10 +711,11 @@ function resolveReadiness(
   const promptPresets = safeArray<ActiveChatGenerationPromptPresetReference>(
     db.promptPresets as unknown as ActiveChatGenerationPromptPresetReference[] | undefined,
   )
-  const selectedPromptPreset = findById(promptPresets, settings?.promptPresetId)
+  const selectedPromptPreset = resolveUniquePromptPreset(promptPresets, settings?.promptPresetId)
 
   return resolveChatGenerationSettingsReadiness({
     settings,
+    effectiveAgentPresetId: resolveEffectiveAgentPresetId(db, settings),
     personas: safeArray<ChatGenerationPersonaReference>(
       db.personas as unknown as ChatGenerationPersonaReference[] | undefined,
     ),
@@ -457,12 +724,14 @@ function resolveReadiness(
     agentPresets: safeArray<ChatGenerationAgentPresetReference>(
       db.agentPresets as unknown as ChatGenerationAgentPresetReference[] | undefined,
     ),
+    agents: safeArray<ChatGenerationAgentReference>(db.agents as unknown as ChatGenerationAgentReference[] | undefined),
     modules: safeArray<ChatGenerationModuleReference>(
       db.modules as unknown as ChatGenerationModuleReference[] | undefined,
     ),
     enabledModuleIds: stringArray(db.enabledModules),
     chatModuleIds: stringArray(chat?.modules),
     characterModuleIds: stringArray(character?.modules),
+    personaModuleIds: resolvePersonaModuleIdsById(db, settings?.personaId),
     moduleIntegration:
       typeof selectedPromptPreset?.moduleIntergration === 'string' ? selectedPromptPreset.moduleIntergration : null,
   })
@@ -480,19 +749,25 @@ function resolveDisplayedToggles(
   const promptPresets = safeArray<ActiveChatGenerationPromptPresetReference>(
     db.promptPresets as unknown as ActiveChatGenerationPromptPresetReference[] | undefined,
   )
-  const selectedPromptPreset = findById(promptPresets, settings?.promptPresetId)
+  const selectedPromptPreset = resolveUniquePromptPreset(promptPresets, settings?.promptPresetId)
 
   return resolveDisplayedSidebarToggles({
     modelPresetId: settings?.modelPresetId,
     promptPresetId: settings?.promptPresetId,
+    agentPresetId: resolveEffectiveAgentPresetId(db, settings),
     modelPresets,
     promptPresets,
+    agentPresets: safeArray<ChatGenerationAgentPresetReference>(
+      db.agentPresets as unknown as ChatGenerationAgentPresetReference[] | undefined,
+    ),
+    agents: safeArray<ChatGenerationAgentReference>(db.agents as unknown as ChatGenerationAgentReference[] | undefined),
     modules: safeArray<ChatGenerationModuleReference>(
       db.modules as unknown as ChatGenerationModuleReference[] | undefined,
     ),
     enabledModuleIds: stringArray(db.enabledModules),
     chatModuleIds: stringArray(chat?.modules),
     characterModuleIds: stringArray(character?.modules),
+    personaModuleIds: resolvePersonaModuleIdsById(db, settings?.personaId),
     moduleIntegration:
       typeof selectedPromptPreset?.moduleIntergration === 'string' ? selectedPromptPreset.moduleIntergration : null,
   })
@@ -515,6 +790,13 @@ function pruneStaleSidebarToggleKeys(
     ...settings,
     sidebarToggles,
   }
+}
+
+function pruneStaleSidebarToggleKeysWhenReady(
+  state: ActiveChatGenerationSettingsState,
+  settings: ChatGenerationSettings,
+): ChatGenerationSettings {
+  return state.sidebarToggleDefinitionsReady ? pruneStaleSidebarToggleKeys(state, settings) : settings
 }
 
 function fillMissingDefaultSidebarToggles(
@@ -563,7 +845,7 @@ function normalizeActiveChatGenerationSettingsForSave(
   if (!hasOwn(next, 'jailbreakToggle')) {
     next.jailbreakToggle = false
   }
-  return fillMissingDefaultSidebarToggles(state, pruneStaleSidebarToggleKeys(state, next))
+  return fillMissingDefaultSidebarToggles(state, pruneStaleSidebarToggleKeysWhenReady(state, next))
 }
 
 function cloneGenerationSettings(settings: ChatGenerationSettings | undefined): ChatGenerationSettings {
@@ -572,6 +854,9 @@ function cloneGenerationSettings(settings: ChatGenerationSettings | undefined): 
   if (hasOwn(settings, 'configured')) clone.configured = settings.configured
   if (hasOwn(settings, 'personaId')) clone.personaId = settings.personaId
   if (hasOwn(settings, 'modelPresetId')) clone.modelPresetId = settings.modelPresetId
+  if (hasOwn(settings, 'modelPresetSelectionSource')) {
+    clone.modelPresetSelectionSource = settings.modelPresetSelectionSource
+  }
   if (hasOwn(settings, 'promptPresetId')) clone.promptPresetId = settings.promptPresetId
   if (hasOwn(settings, 'agentPresetId')) clone.agentPresetId = settings.agentPresetId
   if (hasOwn(settings, 'togglePresetId')) clone.togglePresetId = settings.togglePresetId
@@ -612,9 +897,108 @@ function missingReasonLabel(
   }
 }
 
+function resolveTargetCharacterIndex(characters: readonly character[], target: ActiveChatTarget): number {
+  if (target.characterId !== undefined) {
+    const matches = characters
+      .map((characterOwner, index) => ({ characterOwner, index }))
+      .filter(({ characterOwner }) => characterOwner?.chaId === target.characterId)
+    return matches.length === 1 ? matches[0].index : -1
+  }
+  return resolveUniqueCharacterAtIndex(characters, target.selectedCharID) ? target.selectedCharID : -1
+}
+
+function resolveTargetChatIndex(
+  characters: readonly character[],
+  characterOwner: character,
+  target: ActiveChatTarget,
+): number {
+  if (target.chatId !== undefined) {
+    const matches = (characterOwner.chats ?? [])
+      .map((chatOwner, index) => ({ chatOwner, index }))
+      .filter(({ chatOwner }) => chatOwner?.id === target.chatId)
+    if (matches.length !== 1) return -1
+    return resolveUniqueChatOwner(characters, characterOwner, target.chatId) === matches[0].chatOwner
+      ? matches[0].index
+      : -1
+  }
+  return resolveUniqueChatAtIndex(characters, characterOwner, target.chatPage) ? target.chatPage : -1
+}
+
 function findById<T extends { id?: string | null }>(values: readonly T[], id: string | undefined): T | undefined {
   if (!nonEmptyString(id)) return undefined
-  return values.find((value) => value.id === id)
+  const matches = values.filter((value) => value.id === id)
+  return matches.length === 1 ? matches[0] : undefined
+}
+
+function resolveUniqueCharacterAtIndex(characters: readonly character[], index: number): character | undefined {
+  if (!Number.isInteger(index) || index < 0) return undefined
+  const candidate = characters[index]
+  if (!nonEmptyString(candidate?.chaId)) return undefined
+  return characters.filter((characterOwner) => characterOwner?.chaId === candidate.chaId).length === 1
+    ? candidate
+    : undefined
+}
+
+function resolveUniqueChatAtIndex(
+  characters: readonly character[],
+  characterOwner: character,
+  index: number,
+): Chat | undefined {
+  if (!Number.isInteger(index) || index < 0) return undefined
+  const candidate = characterOwner.chats?.[index]
+  if (!nonEmptyString(candidate?.id)) return undefined
+  return resolveUniqueChatOwner(characters, characterOwner, candidate.id) === candidate ? candidate : undefined
+}
+
+function resolveUniqueChatOwner(
+  characters: readonly character[],
+  characterOwner: character,
+  chatId: string,
+): Chat | undefined {
+  let owner: { characterOwner: character; chatOwner: Chat } | undefined
+  for (const candidateCharacter of characters) {
+    for (const candidateChat of candidateCharacter.chats ?? []) {
+      if (candidateChat?.id !== chatId) continue
+      if (owner) return undefined
+      owner = { characterOwner: candidateCharacter, chatOwner: candidateChat }
+    }
+  }
+  return owner?.characterOwner === characterOwner ? owner.chatOwner : undefined
+}
+
+function isReadyCharacterOwner(characterOwner: character): boolean {
+  return (
+    nonEmptyString(characterOwner.chaId) &&
+    charactersResourceState.rowStatuses[characterOwner.chaId] === 'ready' &&
+    getCharacterResourceOwner(characterOwner.chaId) === characterOwner
+  )
+}
+
+function stableReferenceCollection<T extends { id?: string | null }>(
+  value: unknown,
+  allowMissing = false,
+): T[] | undefined {
+  if (value === undefined && allowMissing) return []
+  if (!Array.isArray(value)) return undefined
+  const ids = new Set<string>()
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return undefined
+    const id = (candidate as { id?: unknown }).id
+    if (!nonEmptyString(id) || ids.has(id)) return undefined
+    ids.add(id)
+  }
+  return value as T[]
+}
+
+function stableStringIdList(value: unknown, allowMissing = false): string[] | undefined {
+  if (value === undefined && allowMissing) return []
+  if (!Array.isArray(value)) return undefined
+  const ids = new Set<string>()
+  for (const candidate of value) {
+    if (!nonEmptyString(candidate) || ids.has(candidate)) return undefined
+    ids.add(candidate)
+  }
+  return value
 }
 
 function safeArray<T>(value: readonly T[] | undefined): T[] {

@@ -8,6 +8,7 @@ import {
   buildRisuSaveAssetReport,
   summarizeRisuSaveAssetReport,
 } from './assetReferences.js'
+import { createExportAssetIntegrityVerifier, verifyExportAssetFile } from './exportAssetIntegrity.js'
 
 export interface RisuSaveBundleAssetEntry extends PersistedAsset {
   path: string
@@ -56,7 +57,9 @@ const ASSET_PREFIX = 'assets'
 const ZIP_MTIME = new Date('1980-01-01T00:00:00.000Z')
 const EMPTY_CHUNK = new Uint8Array()
 
-export function buildRepositoryRisuSaveBundleExport(input: RisuSaveBundleExportInput): RisuSaveBundleExport {
+export async function buildRepositoryRisuSaveBundleExport(
+  input: RisuSaveBundleExportInput,
+): Promise<RisuSaveBundleExport> {
   const report = buildRisuSaveAssetReport(input.persisted.database, input.persisted.assets)
   const assetsById = new Map(input.persisted.assets.map((asset) => [asset.id, asset]))
   const includedAssets: RisuSaveBundleAssetEntry[] = []
@@ -85,8 +88,18 @@ export function buildRepositoryRisuSaveBundleExport(input: RisuSaveBundleExportI
     orphanedAssets: report.orphaned,
   }
 
+  const verifiedAssetCandidates: RisuSaveBundleAssetCandidate[] = []
+  for (const candidate of assetCandidates) {
+    if (await verifyExportAssetFile(candidate.asset, candidate.diskPath)) {
+      verifiedAssetCandidates.push(candidate)
+      manifest.includedAssets.push({ ...candidate.asset, path: candidate.bundlePath })
+    } else {
+      manifest.missingFiles.push({ ...candidate.asset, path: candidate.bundlePath })
+    }
+  }
+
   const stream = new PassThrough()
-  void writeBundleZipStream(stream, input.risuBytes, manifest, assetCandidates)
+  void writeBundleZipStream(stream, input.risuBytes, manifest, verifiedAssetCandidates)
 
   return {
     stream,
@@ -148,10 +161,15 @@ async function writeBundleZipStream(
   try {
     await addBufferEntry(zip, readOutputReady, RISU_PATH, risuBytes)
     for (const candidate of assetCandidates) {
-      const included = await addFileEntry(zip, readOutputReady, candidate.bundlePath, candidate.diskPath)
-      if (included) {
-        manifest.includedAssets.push({ ...candidate.asset, path: candidate.bundlePath })
-      } else {
+      const included = await addFileEntry(
+        zip,
+        readOutputReady,
+        candidate.bundlePath,
+        candidate.diskPath,
+        candidate.asset,
+      )
+      if (!included) {
+        removeIncludedAsset(manifest.includedAssets, candidate.asset.id)
         manifest.missingFiles.push({ ...candidate.asset, path: candidate.bundlePath })
       }
     }
@@ -183,6 +201,7 @@ async function addFileEntry(
   readOutputReady: () => Promise<void>,
   filename: string,
   diskPath: string,
+  asset: PersistedAsset,
 ): Promise<boolean> {
   let file: fs.promises.FileHandle
   try {
@@ -194,14 +213,17 @@ async function addFileEntry(
 
   const entry = new fflate.ZipPassThrough(filename)
   entry.mtime = ZIP_MTIME
+  const verifier = createExportAssetIntegrityVerifier(asset)
   let readStream: fs.ReadStream | null = null
   try {
     zip.add(entry)
     readStream = file.createReadStream()
     for await (const chunk of readStream) {
+      verifier.update(chunk)
       entry.push(chunk, false)
       await readOutputReady()
     }
+    verifier.finish()
     entry.push(EMPTY_CHUNK, true)
     await readOutputReady()
     return true
@@ -210,6 +232,11 @@ async function addFileEntry(
     else await file.close().catch(() => {})
     throw err
   }
+}
+
+function removeIncludedAsset(includedAssets: RisuSaveBundleAssetEntry[], id: string): void {
+  const index = includedAssets.findIndex((asset) => asset.id === id)
+  if (index >= 0) includedAssets.splice(index, 1)
 }
 
 function isMissingAssetOpenError(err: unknown): boolean {

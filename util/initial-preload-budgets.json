@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "regressionCeilings": {
+    "totalGzipBytes": 1650000,
+    "largestChunkGzipBytes": 675000
+  },
+  "milestoneTargets": {
+    "totalGzipBytes": 921600,
+    "largestChunkGzipBytes": 512000
+  }
+}

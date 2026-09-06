@@ -6,12 +6,13 @@ import { hasher } from '../parser/parser.svelte'
 import { hubURL } from '../characterCards'
 
 // File size and chunk size constants
-const MAX_ASSET_SIZE_BYTES = 50 * 1024 * 1024 // 50MB
+export const DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES = 50 * 1024 * 1024 // 50 MiB
 const CHUNK_SIZE_BYTES = 1024 * 1024 // 1MB
 
 // Queue management constants
-const MAX_BULK_ASSET_SAVE_ITEMS = 32
-const MAX_BULK_ASSET_SAVE_BYTES = 32 * 1024 * 1024
+const CHARX_ASSET_SAVE_BATCH_MAX_ITEMS = 32
+const CHARX_ASSET_SAVE_BATCH_MAX_BYTES = 8 * 1024 * 1024
+const CHARX_ASSET_QUEUE_MAX_BYTES = 32 * 1024 * 1024
 
 // HTTP status code ranges
 const HTTP_STATUS_OK_MIN = 200
@@ -20,6 +21,15 @@ const HTTP_STATUS_OK_MAX = 300
 interface ActiveZipAsset {
   file: fflate.UnzipFile
   bytesRead: number
+}
+
+export interface CharXImporterOptions {
+  maxEntrySizeBytes?: number
+}
+
+export function formatCharXEntrySizeLimit(maxEntrySizeBytes: number): string {
+  const mib = 1024 * 1024
+  return maxEntrySizeBytes % mib === 0 ? `${maxEntrySizeBytes / mib} MiB` : `${maxEntrySizeBytes} bytes`
 }
 
 export async function processZip(dataArray: Uint8Array): Promise<string> {
@@ -182,6 +192,8 @@ export class CharXImporter {
   private pendingAssetBatch: { id: string; data: Uint8Array }[] = []
   private pendingAssetBatchBytes: number = 0
   private assetBatchFlushChain: Promise<void> = Promise.resolve()
+  private retainedAssetBytes: number = 0
+  private assetCapacityWaiters: Array<() => void> = []
 
   // Results: filename -> saved asset ID mapping
   assets: { [key: string]: string } = {}
@@ -191,7 +203,7 @@ export class CharXImporter {
   private activeAssets: { [key: string]: ActiveZipAsset } = {}
   private excludedFileNames: Set<string> = new Set()
 
-  // Files excluded due to size limits (> MAX_ASSET_SIZE_BYTES)
+  // Files excluded after exceeding the configured per-entry size limit.
   excludedFiles: string[] = []
 
   // Extracted character card JSON content
@@ -204,8 +216,14 @@ export class CharXImporter {
   alertInfo: boolean = false // Show progress alerts to user
   skipSaving: boolean = false // If true, only compute hashes without saving
   hashSignal: string | undefined // Hash to signal server for sync (when skipSaving is false)
+  readonly maxEntrySizeBytes: number
 
-  constructor() {
+  constructor(options: CharXImporterOptions = {}) {
+    const maxEntrySizeBytes = options.maxEntrySizeBytes ?? DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES
+    if (!Number.isSafeInteger(maxEntrySizeBytes) || maxEntrySizeBytes < 1) {
+      throw new Error('CharX entry size limit must be a positive safe integer')
+    }
+    this.maxEntrySizeBytes = maxEntrySizeBytes
     this.unzip = new fflate.Unzip()
     this.unzip.register(fflate.UnzipInflate)
     this.unzip.onfile = (file) => this.#handleFile(file)
@@ -269,6 +287,8 @@ export class CharXImporter {
 
     if (final) {
       await this.#finalize()
+    } else {
+      await this.#waitForAssetCapacity()
     }
   }
 
@@ -344,7 +364,7 @@ export class CharXImporter {
   #handleFile(file: fflate.UnzipFile) {
     const assetIndex = file.name
     const originalSize = file.originalSize ?? 0
-    if (originalSize > MAX_ASSET_SIZE_BYTES) {
+    if (originalSize > this.maxEntrySizeBytes) {
       this.#markFileExcluded(assetIndex)
       return
     }
@@ -355,11 +375,16 @@ export class CharXImporter {
       bytesRead: 0,
     }
 
-    file.ondata = (_err, dat, final) => this.#handleFileData(assetIndex, dat, final)
+    file.ondata = (error, data, final) => {
+      if (error) {
+        this.#handleFileError(assetIndex, error)
+        return
+      }
+      this.#handleFileData(assetIndex, data, final)
+    }
 
-    // Only process files within MAX_ASSET_SIZE_BYTES (50MB); unknown sizes
-    // are guarded cumulatively while streaming.
-    if ((file.originalSize ?? 0) <= MAX_ASSET_SIZE_BYTES) {
+    // Known sizes are checked here; unknown sizes are guarded cumulatively.
+    if ((file.originalSize ?? 0) <= this.maxEntrySizeBytes) {
       file.start()
     }
   }
@@ -375,7 +400,7 @@ export class CharXImporter {
     }
 
     activeAsset.bytesRead += data.byteLength
-    if (activeAsset.bytesRead > MAX_ASSET_SIZE_BYTES) {
+    if (activeAsset.bytesRead > this.maxEntrySizeBytes) {
       this.#terminateOversizedFile(fileName, activeAsset)
       return
     }
@@ -384,6 +409,19 @@ export class CharXImporter {
     if (final) {
       this.#handleFileComplete(fileName)
     }
+  }
+
+  #handleFileError(fileName: string, error: Error) {
+    const activeAsset = this.activeAssets[fileName]
+    if (!activeAsset) {
+      return
+    }
+
+    delete this.activeAssets[fileName]
+    delete this.assetBuffers[fileName]
+    this.errors.push(error)
+    activeAsset.file.terminate()
+    this.#checkCompletion()
   }
 
   /**
@@ -398,7 +436,7 @@ export class CharXImporter {
 
     const assetData = this.assetBuffers[fileName].buffer
 
-    if (assetData.byteLength > MAX_ASSET_SIZE_BYTES) {
+    if (assetData.byteLength > this.maxEntrySizeBytes) {
       this.#markFileExcluded(fileName)
     } else if (fileName === 'card.json') {
       this.cardData = new TextDecoder().decode(assetData)
@@ -441,12 +479,28 @@ export class CharXImporter {
     this.totalEnqueued += 1
     this.pendingAssetBatch.push(asset)
     this.pendingAssetBatchBytes += asset.data.byteLength
+    this.retainedAssetBytes += asset.data.byteLength
     if (
-      this.pendingAssetBatch.length >= MAX_BULK_ASSET_SAVE_ITEMS ||
-      this.pendingAssetBatchBytes >= MAX_BULK_ASSET_SAVE_BYTES
+      this.pendingAssetBatch.length >= CHARX_ASSET_SAVE_BATCH_MAX_ITEMS ||
+      this.pendingAssetBatchBytes >= CHARX_ASSET_SAVE_BATCH_MAX_BYTES
     ) {
       void this.#flushAssetBatch()
     }
+  }
+
+  #waitForAssetCapacity(): Promise<void> {
+    if (this.retainedAssetBytes <= CHARX_ASSET_QUEUE_MAX_BYTES) {
+      return Promise.resolve()
+    }
+    return new Promise<void>((resolve) => this.assetCapacityWaiters.push(resolve))
+  }
+
+  #releaseAssetCapacity(bytes: number): void {
+    this.retainedAssetBytes = Math.max(0, this.retainedAssetBytes - bytes)
+    if (this.retainedAssetBytes > CHARX_ASSET_QUEUE_MAX_BYTES) return
+    const waiters = this.assetCapacityWaiters
+    this.assetCapacityWaiters = []
+    for (const resolve of waiters) resolve()
   }
 
   #flushAssetBatch(): Promise<void> {
@@ -455,6 +509,7 @@ export class CharXImporter {
     }
 
     const batch = this.pendingAssetBatch
+    const batchBytes = this.pendingAssetBatchBytes
     this.pendingAssetBatch = []
     this.pendingAssetBatchBytes = 0
 
@@ -475,6 +530,7 @@ export class CharXImporter {
       } catch (error) {
         this.errors.push(error instanceof Error ? error : new Error(String(error)))
       } finally {
+        this.#releaseAssetCapacity(batchBytes)
         this.totalCompleted += batch.length
         this.onProgress?.(this.totalCompleted, this.totalEnqueued)
         this.#checkCompletion()

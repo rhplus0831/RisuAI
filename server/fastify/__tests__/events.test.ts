@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -18,7 +18,27 @@ import {
   type CommandEventSink,
 } from '../src/commands/events.js'
 import { bumpRevision, openDatabase } from '../src/db.js'
+import { ACTIVE_WRITER_SESSION_HEADER, DISCONNECT_EXISTING_WRITER_HEADER } from '../src/activeWriter.js'
 import { createMemoryEventBus, type MemoryEvent, type MemoryEventSink } from '../src/memoryEvents.js'
+import { createEventStreamMetricTracker } from '../src/routes/events.js'
+import { enqueueBardWikiJob } from '../src/bardWikiJobs.js'
+
+interface CapturedProtocolMetric extends Record<string, unknown> {
+  metric: string
+}
+
+const capturedMetrics = vi.hoisted((): CapturedProtocolMetric[] => [])
+
+vi.mock('../src/protocolMetrics.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/protocolMetrics.js')>()
+  return {
+    ...actual,
+    emitProtocolMetric: (name: string, fields: Record<string, unknown> | (() => Record<string, unknown>)) => {
+      if (!actual.protocolMetricsEnabled()) return
+      capturedMetrics.push({ metric: name, ...(typeof fields === 'function' ? fields() : fields) })
+    },
+  }
+})
 
 const subtle = webcrypto.subtle
 
@@ -74,6 +94,7 @@ async function startHarness(opts: { dataDir?: string; memoryEvents?: MemoryEvent
     commandEvents,
     memoryEvents: opts.memoryEvents,
     memoryWorker: false,
+    bardWikiWorker: false,
   })
   return { app, dataDir, commandEvents, closed: false }
 }
@@ -203,16 +224,24 @@ function commandDataLine(text: string): string | undefined {
 }
 
 let harness: Harness
+const PREVIOUS_PROTOCOL_METRICS = process.env.RISU_PROTOCOL_METRICS
 
 beforeEach(async () => {
+  delete process.env.RISU_PROTOCOL_METRICS
+  capturedMetrics.length = 0
   harness = await startHarness()
 })
 
 afterEach(async () => {
   await stopHarness(harness)
+  if (PREVIOUS_PROTOCOL_METRICS === undefined) {
+    delete process.env.RISU_PROTOCOL_METRICS
+  } else {
+    process.env.RISU_PROTOCOL_METRICS = PREVIOUS_PROTOCOL_METRICS
+  }
 })
 
-describe('Phase 9-5a command events stream', () => {
+describe('command events stream', () => {
   it('bounds retained command event history while preserving live fanout', () => {
     const sink = new InMemoryCommandEventSink(2)
     const seen: CommandEvent[] = []
@@ -265,7 +294,30 @@ describe('Phase 9-5a command events stream', () => {
     }
   })
 
-  it('L8: prunes by revision keep-window with a bounded range delete, not an OFFSET walk', () => {
+  it('round-trips optional generation-operation lineage through persisted replay', () => {
+    const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-event-lineage-'))
+    const db = openDatabase(dataDir)
+    try {
+      const event: CommandEvent = {
+        type: 'generation.persisted',
+        revision: 1,
+        resource: 'chatMessages',
+        id: 'assistant-a',
+        parentId: 'chat-a',
+        databaseLineage: 'database-a',
+        operationId: 'operation-a',
+        sourceMessageId: 'user-a',
+        jobId: 'job-a',
+      }
+      persistCommandEvent(db, event)
+      expect(listPersistedCommandEventHistory(db)).toEqual([event])
+    } finally {
+      db.close()
+      rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+
+  it('prunes by revision keep-window with a bounded range delete, not an OFFSET walk', () => {
     const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-event-prune-'))
     const db = openDatabase(dataDir)
     try {
@@ -298,10 +350,12 @@ describe('Phase 9-5a command events stream', () => {
       chatId: 'chat-1',
       job: {
         id: 'job-1',
+        instanceId: 'job-instance-1',
         kind: 'summarize',
         status: 'pending',
         attemptCount: 0,
         maxAttempts: 3,
+        updatedAt: '2026-08-11T00:00:00.000Z',
       },
     }
     const seen: MemoryEvent[] = []
@@ -314,7 +368,84 @@ describe('Phase 9-5a command events stream', () => {
     })
 
     expect(() => bus.emit(event)).not.toThrow()
-    expect(seen).toEqual([event])
+    expect(seen).toEqual([
+      {
+        ...event,
+        streamId: expect.any(String),
+        version: 1,
+      },
+    ])
+  })
+
+  it('emits one opt-in memory fanout metric per event and no metric when disabled', () => {
+    const event: MemoryEvent = {
+      type: 'memory.job',
+      chatId: 'chat-metric',
+      job: {
+        id: 'job-metric',
+        instanceId: 'job-metric-instance',
+        kind: 'summarize',
+        status: 'running',
+        attemptCount: 1,
+        maxAttempts: 3,
+        updatedAt: '2026-08-11T00:00:00.000Z',
+      },
+    }
+    const bus = createMemoryEventBus()
+    const published: MemoryEvent[] = []
+    bus.subscribe((value) => published.push(value))
+    bus.subscribe(() => {})
+
+    bus.emit(event)
+    expect(capturedMetrics).toEqual([])
+
+    process.env.RISU_PROTOCOL_METRICS = '1'
+    bus.emit(event)
+
+    const metrics = capturedMetrics.filter((metric) => metric.metric === 'memory_event_fanout')
+    expect(metrics).toHaveLength(1)
+    const publishedEvent = published.at(-1)!
+    const payloadBytes = Buffer.byteLength(JSON.stringify(publishedEvent), 'utf8')
+    const frameBytes = Buffer.byteLength(`event: memory\ndata: ${JSON.stringify(publishedEvent)}\n\n`, 'utf8')
+    expect(metrics[0]).toMatchObject({
+      payloadBytes,
+      frameBytes,
+      listenerCount: 2,
+      deliveredBytes: frameBytes * 2,
+      jobKind: 'summarize',
+      jobStatus: 'running',
+      hasSideEffect: false,
+    })
+  })
+
+  it('emits one body-free event-stream metric for normal cleanup and slow-consumer overflow', () => {
+    expect(createEventStreamMetricTracker()).toBeNull()
+    process.env.RISU_PROTOCOL_METRICS = '1'
+    const normal = createEventStreamMetricTracker()
+    normal?.recordFrame('writer', 'event: writer\ndata: {"epoch":0}\n\n')
+    normal?.recordFrame('connected', ': connected\n\n')
+    normal?.finish('normal_close')
+    normal?.finish('client_abort')
+
+    const overflow = createEventStreamMetricTracker()
+    overflow?.recordFrame('memory', 'event: memory\ndata: {}\n\n')
+    overflow?.finish('slow_consumer_overflow')
+
+    const metrics = capturedMetrics.filter((metric) => metric.metric === 'event_stream_connection')
+    expect(metrics).toHaveLength(2)
+    expect(metrics[0]).toMatchObject({
+      frameCount: 2,
+      frameCounts: { writer: 1, connected: 1, command: 0, memory: 0, heartbeat: 0 },
+      closeReason: 'normal_close',
+      writeOverflow: false,
+      connectionLifetimeMs: expect.any(Number),
+    })
+    expect(metrics[1]).toMatchObject({
+      frameCount: 1,
+      closeReason: 'slow_consumer_overflow',
+      writeOverflow: true,
+    })
+    expect(metrics.every((metric) => !('body' in metric) && !('frames' in metric))).toBe(true)
   })
 
   it('rejects unauthenticated event streams once a password is set', async () => {
@@ -355,28 +486,46 @@ describe('Phase 9-5a command events stream', () => {
     }
   })
 
-  it('broadcasts a new writer takeover to an open event stream', async () => {
+  it('requires confirmation before replacing a writer with an open event stream', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
+    const firstWriter = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion, [ACTIVE_WRITER_SESSION_HEADER]: 'writer-old' },
+    })
+    expect(firstWriter.statusCode).toBe(200)
     const baseUrl = await listen(harness.app)
     const abort = new AbortController()
     const res = await fetch(`${baseUrl}/api/v1/events`, {
-      headers: { 'risu-auth': assertion },
+      headers: { 'risu-auth': assertion, [ACTIVE_WRITER_SESSION_HEADER]: 'writer-old' },
       signal: abort.signal,
     })
     const reader = res.body?.getReader()
     expect(reader).toBeDefined()
     await readUntil(reader!, (chunk) => chunk.includes(': connected\n\n'))
 
+    const unconfirmedTakeover = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion, [ACTIVE_WRITER_SESSION_HEADER]: 'writer-new' },
+    })
+    expect(unconfirmedTakeover.statusCode).toBe(409)
+    expect(unconfirmedTakeover.json()).toMatchObject({ error: 'active_writer_connected' })
+
     const takeover = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/bootstrap',
-      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-new' },
+      headers: {
+        'risu-auth': assertion,
+        [ACTIVE_WRITER_SESSION_HEADER]: 'writer-new',
+        [DISCONNECT_EXISTING_WRITER_HEADER]: 'true',
+      },
     })
     expect(takeover.statusCode).toBe(200)
 
     try {
       const text = await readUntil(reader!, (chunk) => chunk.includes('writer-new'))
-      expect(parseSseJsonEvents(text, 'writer')).toEqual([{ sessionId: 'writer-new', epoch: 1 }])
+      expect(parseSseJsonEvents(text, 'writer')).toEqual([{ sessionId: 'writer-new', epoch: 2 }])
     } finally {
       abort.abort()
       reader?.releaseLock()
@@ -509,7 +658,7 @@ describe('Phase 9-5a command events stream', () => {
     }
   })
 
-  it('replays the writer-session origin so reconnect keeps own-echo suppression (L29)', async () => {
+  it('replays the writer-session origin so reconnect keeps own-echo suppression', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       streamGeminiThoughts: false,
@@ -700,6 +849,8 @@ describe('Phase 9-5a command events stream', () => {
       streamGeminiThoughts: false,
     })
     clearPersistedCommandEvents(harness.dataDir)
+    process.env.RISU_PROTOCOL_METRICS = '1'
+    capturedMetrics.length = 0
 
     const res = await harness.app.inject({
       method: 'GET',
@@ -713,6 +864,7 @@ describe('Phase 9-5a command events stream', () => {
       requestedRevision: 0,
       currentRevision: revision,
     })
+    expect(capturedMetrics.filter((metric) => metric.metric === 'event_stream_connection')).toEqual([])
   })
 
   it('reports replay unavailable when the cursor is ahead of the server revision', async () => {
@@ -753,6 +905,127 @@ describe('Phase 9-5a command events stream', () => {
     })
   })
 
+  it('hydrates active jobs on startup and clears memory jobs authoritatively on reconnect', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const pending = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/memory/jobs',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        chatId: 'chat-snapshot',
+        kind: 'embed',
+        payload: { chunkId: 'chunk-1', model: 'model-a' },
+      },
+    })
+    expect(pending.statusCode).toBe(201)
+    const pendingJob = pending.json().job as { id: string; instanceId: string }
+    const db = openDatabase(harness.dataDir)
+    try {
+      db.prepare('INSERT INTO characters (id, position, data_json) VALUES (?, 0, ?)').run('character-snapshot', '{}')
+      db.prepare('INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, 0, ?)').run(
+        'chat-bard-snapshot',
+        'character-snapshot',
+        '{}',
+      )
+      enqueueBardWikiJob(db, {
+        id: 'bard-job-active',
+        instanceId: 'bard-instance-active',
+        chatId: 'chat-bard-snapshot',
+        kind: 'rebuild_chat',
+        payload: {
+          chatId: 'chat-bard-snapshot',
+          generation: 1,
+          sourceCursor: 0,
+          sourceTotal: 2,
+          policy: 'full',
+          stagingManifestId: 'manifest-active',
+        },
+      })
+      enqueueBardWikiJob(db, {
+        id: 'bard-job-failed',
+        instanceId: 'bard-instance-failed',
+        chatId: 'chat-bard-snapshot',
+        kind: 'rebuild_chat',
+        payload: {
+          chatId: 'chat-bard-snapshot',
+          generation: 2,
+          sourceCursor: 0,
+          sourceTotal: 2,
+          policy: 'full',
+          stagingManifestId: 'manifest-failed',
+        },
+      })
+      db.prepare(
+        `UPDATE bardwiki_jobs
+         SET status = 'failed', error_code = 'provider_error',
+             error_summary = 'authorization: secret-token'
+         WHERE id = 'bard-job-failed'`,
+      ).run()
+    } finally {
+      db.close()
+    }
+    const baseUrl = await listen(harness.app)
+
+    const firstAbort = new AbortController()
+    const first = await fetch(`${baseUrl}/api/v1/events`, {
+      headers: { 'risu-auth': assertion },
+      signal: firstAbort.signal,
+    })
+    const firstReader = first.body!.getReader()
+    const firstText = await readUntil(firstReader, (chunk) => chunk.includes('event: memory_snapshot\n'))
+    const firstSnapshots = parseSseJsonEvents(firstText, 'memory_snapshot') as Array<{
+      streamId: string
+      version: number
+      jobs: Array<{ id: string; instanceId: string; status: string }>
+      bardWikiJobs: Array<Record<string, unknown>>
+    }>
+    expect(firstSnapshots).toHaveLength(1)
+    expect(firstSnapshots[0]).toMatchObject({
+      streamId: expect.any(String),
+      version: expect.any(Number),
+      jobs: [{ id: pendingJob.id, instanceId: pendingJob.instanceId, status: 'pending' }],
+      bardWikiJobs: [
+        { id: 'bard-job-active', instanceId: 'bard-instance-active', status: 'pending' },
+        { id: 'bard-job-failed', instanceId: 'bard-instance-failed', status: 'failed' },
+      ],
+    })
+    expect(firstSnapshots[0].bardWikiJobs[0]).not.toHaveProperty('payload')
+    expect(firstSnapshots[0].bardWikiJobs[1].errorSummary).toBe('authorization: [redacted]')
+    firstAbort.abort()
+    firstReader.releaseLock()
+
+    const cancelled = await harness.app.inject({
+      method: 'DELETE',
+      url: `/api/v1/memory/jobs/${pendingJob.id}`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(cancelled.statusCode).toBe(200)
+
+    const reconnectAbort = new AbortController()
+    const reconnect = await fetch(`${baseUrl}/api/v1/events`, {
+      headers: { 'risu-auth': assertion },
+      signal: reconnectAbort.signal,
+    })
+    const reconnectReader = reconnect.body!.getReader()
+    try {
+      const reconnectText = await readUntil(reconnectReader, (chunk) => chunk.includes('event: memory_snapshot\n'))
+      const reconnectSnapshots = parseSseJsonEvents(reconnectText, 'memory_snapshot') as Array<{
+        streamId: string
+        version: number
+        jobs: unknown[]
+        bardWikiJobs: unknown[]
+      }>
+      expect(reconnectSnapshots).toHaveLength(1)
+      expect(reconnectSnapshots[0].streamId).toBe(firstSnapshots[0].streamId)
+      expect(reconnectSnapshots[0].version).toBeGreaterThan(firstSnapshots[0].version)
+      expect(reconnectSnapshots[0].jobs).toEqual([])
+      expect(reconnectSnapshots[0].bardWikiJobs).toHaveLength(2)
+    } finally {
+      reconnectAbort.abort()
+      reconnectReader.releaseLock()
+    }
+  })
+
   it('delivers memory progress events from memory job mutations', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const baseUrl = await listen(harness.app)
@@ -780,30 +1053,23 @@ describe('Phase 9-5a command events stream', () => {
     const jobId = memoryJob.json().job.id as string
 
     try {
-      const text = await readUntil(reader!, (chunk) => chunk.includes('event: memory'))
-      expect(text).toContain('event: memory')
+      const text = await readUntil(reader!, (chunk) => chunk.includes('event: memory\n'))
+      expect(text).toContain('event: memory\n')
       const dataLine = text.split('\n').find((line) => line.startsWith('data: '))
       expect(dataLine).toBeDefined()
       expect(JSON.parse(dataLine!.slice('data: '.length))).toMatchObject({
         type: 'memory.job',
+        streamId: expect.any(String),
+        version: expect.any(Number),
         chatId: 'chat-1',
         job: {
           id: jobId,
+          instanceId: expect.any(String),
           kind: 'summarize',
           status: 'pending',
           attemptCount: 0,
           maxAttempts: 3,
-        },
-        sideEffect: {
-          kind: 'hypav3_progress',
-          payload: {
-            open: true,
-            miniMsg: '1',
-            msg: '[Hypa V3] Waiting to summarize...',
-            subMsg: '1 queued',
-            status: 'pending',
-            queuedCount: 1,
-          },
+          updatedAt: expect.any(String),
         },
       })
     } finally {
@@ -846,8 +1112,8 @@ describe('Phase 9-5a command events stream', () => {
     const jobId = memoryJob.json().job.id as string
 
     try {
-      const text = await readUntil(reader!, (chunk) => chunk.includes('event: memory'))
-      expect(text).toContain('event: memory')
+      const text = await readUntil(reader!, (chunk) => chunk.includes('event: memory\n'))
+      expect(text).toContain('event: memory\n')
       const dataLine = text.split('\n').find((line) => line.startsWith('data: '))
       expect(dataLine).toBeDefined()
       expect(JSON.parse(dataLine!.slice('data: '.length))).toMatchObject({
@@ -866,6 +1132,8 @@ describe('Phase 9-5a command events stream', () => {
 
   it('unsubscribes listeners when the stream closes', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
+    process.env.RISU_PROTOCOL_METRICS = '1'
+    capturedMetrics.length = 0
     const baseUrl = await listen(harness.app)
     const abort = new AbortController()
 
@@ -880,10 +1148,17 @@ describe('Phase 9-5a command events stream', () => {
 
     abort.abort()
     await waitFor(() => harness.commandEvents.activeListeners === 0)
+    await waitFor(() => capturedMetrics.some((metric) => metric.metric === 'event_stream_connection'))
+    expect(capturedMetrics.find((metric) => metric.metric === 'event_stream_connection')).toMatchObject({
+      frameCount: 3,
+      frameCounts: { writer: 1, connected: 1, memory_snapshot: 1 },
+      closeReason: 'client_abort',
+      writeOverflow: false,
+    })
     reader?.releaseLock()
   })
 
-  it('never arms the heartbeat or memory subscription after a mid-handler teardown (L11)', async () => {
+  it('never arms the heartbeat or memory subscription after a mid-handler teardown', async () => {
     // A slow-consumer overflow during the replay flush runs `cleanup` before
     // the live-delivery legs are armed; the `cleanedUp` latch then keeps
     // cleanup from ever running again, so arming anyway would leak both

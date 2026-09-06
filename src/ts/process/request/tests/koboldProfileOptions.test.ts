@@ -27,6 +27,7 @@ vi.mock('../../modules', async (importActual) => {
 import { setDatabase, type Database } from '../../../storage/database.svelte'
 import { selectedCharID } from '../../../stores.svelte'
 import { requestChatDataMain } from '../request'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface PreviewPayload {
   url: string
@@ -72,6 +73,8 @@ function db(overrides: Partial<Database> = {}): Database {
 
 function makeRequest() {
   return {
+    // Kobold remains a named static compatibility format in this wire-level suite.
+    staticModel: getDatabase().aiModel,
     formated: [{ role: 'user' as const, content: 'hello kobold' }],
     bias: {},
     maxTokens: 96,

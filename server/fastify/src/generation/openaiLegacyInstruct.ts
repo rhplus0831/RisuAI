@@ -1,6 +1,8 @@
-import { applyAdditionalParameters } from './additionalParams.js'
+import { applyAdditionalParameters, setCanonicalHeader } from './additionalParams.js'
 import type { CompletionResult } from './frames.js'
+import { extractApiResponseMetadata } from './apiMetadata.js'
 import { readBoundedBodyJson } from './body.js'
+import { normalizeLegacyOpenAIModelId } from '@risuai/shared-core/legacy-openai-model-aliases'
 
 export interface OpenAILegacyInstructRequest {
   model: string
@@ -93,7 +95,7 @@ export function resolveOpenAILegacyInstructRequest(input: ResolveInput): OpenAIL
     Array.isArray(input.stop) && input.stop.every((s) => typeof s === 'string') ? (input.stop as string[]) : undefined
 
   return {
-    model: input.model,
+    model: normalizeLegacyOpenAIModelId(input.model),
     prompt: flattenForLegacyInstruct(input.messages as RawChatMessage[]),
     apiKey: input.apiKey,
     baseUrl,
@@ -128,6 +130,7 @@ function buildRequestInit(req: OpenAILegacyInstructRequest): { body: string; hea
   if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
     applyAdditionalParameters(body, headers, req.additionalParams)
   }
+  setCanonicalHeader(headers, 'authorization', `Bearer ${req.apiKey}`)
   return { body: JSON.stringify(body), headers }
 }
 
@@ -194,5 +197,7 @@ export async function runOpenAILegacyInstruct(req: OpenAILegacyInstructRequest):
   // formatting can leak them back in the model's output.
   const result: CompletionResult = { type: 'success', result: text.replace(/##\n/g, '') }
   if (typeof body.model === 'string') result.model = body.model
+  const apiMetadata = extractApiResponseMetadata(body, ['choices', 'error', 'model'])
+  if (apiMetadata) result.apiMetadata = apiMetadata
   return result
 }

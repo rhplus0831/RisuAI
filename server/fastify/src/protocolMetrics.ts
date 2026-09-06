@@ -2,6 +2,20 @@ import type { FastifyBaseLogger } from 'fastify'
 import { performance } from 'node:perf_hooks'
 
 const ENABLED_VALUES = new Set(['1', 'true', 'yes', 'on'])
+const protocolMetricListeners = new Set<(metric: Readonly<Record<string, unknown>>) => void>()
+const diagnosticMetricListeners = new Map<(metric: Readonly<Record<string, unknown>>) => void, ReadonlySet<string>>()
+
+export function subscribeProtocolMetrics(
+  listener: (metric: Readonly<Record<string, unknown>>) => void,
+  options?: { namesWhenDisabled: readonly string[] },
+): () => void {
+  protocolMetricListeners.add(listener)
+  if (options) diagnosticMetricListeners.set(listener, new Set(options.namesWhenDisabled))
+  return () => {
+    protocolMetricListeners.delete(listener)
+    diagnosticMetricListeners.delete(listener)
+  }
+}
 
 export function protocolMetricsEnabled(): boolean {
   return ENABLED_VALUES.has((process.env.RISU_PROTOCOL_METRICS ?? '').toLowerCase())
@@ -12,7 +26,11 @@ export function protocolNowMs(): number {
 }
 
 export function protocolDurationMs(startMs: number): number {
-  return Math.round((performance.now() - startMs) * 100) / 100
+  return protocolElapsedMs(performance.now() - startMs)
+}
+
+export function protocolElapsedMs(elapsedMs: number): number {
+  return Math.round(Math.max(0, elapsedMs) * 100) / 100
 }
 
 export function jsonPayloadBytes(value: unknown): number | null {
@@ -25,23 +43,32 @@ export function jsonPayloadBytes(value: unknown): number | null {
 
 /**
  * Emit an opt-in protocol metric. `fields` may be a thunk for call sites whose
- * fields are expensive to build` is a
- * full second serialization of the heaviest read payloads) — the thunk runs
- * only after the `protocolMetricsEnabled()` guard, so the default
- * metrics-off path never pays it.
+ * fields are expensive to build. The default metrics-off path never evaluates
+ * the thunk. Client diagnostics may opt into selected names without enabling
+ * raw metric logging, full-prompt tracing, or other protocol instrumentation.
  */
 export function emitProtocolMetric(
   name: string,
   fields: Record<string, unknown> | (() => Record<string, unknown>),
   logger?: FastifyBaseLogger,
 ): void {
-  if (!protocolMetricsEnabled()) return
+  const enabled = protocolMetricsEnabled()
+  if (!enabled && diagnosticMetricListeners.size === 0) return
+  if (!enabled && !Array.from(diagnosticMetricListeners.values()).some((names) => names.has(name))) return
   const payload = { metric: name, ...(typeof fields === 'function' ? fields() : fields) }
-  if (logger) {
+  if (enabled && logger) {
     logger.info(payload, 'protocol metric')
-    return
+  } else if (enabled) {
+    console.info(`[protocol-metric] ${JSON.stringify(payload)}`)
   }
-  console.info(`[protocol-metric] ${JSON.stringify(payload)}`)
+  for (const listener of protocolMetricListeners) {
+    if (!enabled && !diagnosticMetricListeners.get(listener)?.has(name)) continue
+    try {
+      listener(payload)
+    } catch {
+      // Measurement consumers must never change request behavior.
+    }
+  }
 }
 
 // --- mutation-range write capture -------------------------------------------

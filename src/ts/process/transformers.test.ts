@@ -120,7 +120,7 @@ afterEach(() => {
 })
 
 describe('runVITS lifecycle', () => {
-  it('L52: repeated VITS calls reuse one AudioContext and release ended sources', async () => {
+  it('repeated VITS calls reuse one AudioContext and release ended sources', async () => {
     const synth = makeSynthesizer()
     testState.pipeline.mockResolvedValue(synth)
     const { runVITS } = await importTransformers()
@@ -138,7 +138,7 @@ describe('runVITS lifecycle', () => {
     expect(context.sources[0].disconnect).toHaveBeenCalledTimes(1)
   })
 
-  it('L52: decodeAudioData errors reject through the callback path', async () => {
+  it('decodeAudioData errors reject through the callback path', async () => {
     const synth = makeSynthesizer()
     testState.pipeline.mockResolvedValue(synth)
     testState.decodeError = new DOMException('decode failed')
@@ -149,7 +149,7 @@ describe('runVITS lifecycle', () => {
     expect(StubAudioContext.instances[0].sources).toHaveLength(0)
   })
 
-  it('L53: switching VITS models disposes the old synthesizer before replacing it', async () => {
+  it('switching VITS models disposes the old synthesizer before replacing it', async () => {
     const synthA = makeSynthesizer()
     const synthB = makeSynthesizer()
     testState.pipeline.mockResolvedValueOnce(synthA).mockResolvedValueOnce(synthB)

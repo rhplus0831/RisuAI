@@ -8,6 +8,8 @@ import {
   validateEmotionImageRefs,
   validateOptionalServerAssetRef,
 } from './assets.js'
+import { repairCreatedLorebookEntries } from './lorebooks.js'
+import { normalizeScriptModelOverrides, readScriptModelOverrides } from '@risuai/shared-core/script-model-overrides'
 
 type JsonRecord = Record<string, unknown>
 
@@ -25,6 +27,7 @@ export interface CharacterFolderRecord extends JsonRecord {
   name: string
   color: string
   data: string[]
+  askBeforeOpening?: boolean
   imgFile?: string | null
   img?: string
 }
@@ -51,6 +54,7 @@ const EXCLUDED_CHARACTER_PATCH_KEYS = new Set([
   'modules',
   'coldstorage',
   'coldStoragedChats',
+  'greetingTranslations',
 ])
 
 const CHARACTER_PATCH_DELETABLE_KEYS = new Set(['loreSettings'])
@@ -93,6 +97,10 @@ export function normalizeCharacterCollection(database: unknown): void {
 export function createCharacterRecord(input: unknown, options: { assetDb?: DatabaseSync } = {}): CharacterRecord {
   const character = readJsonObject(input, 'character') as CharacterRecord
   character.chaId = readCharacterId(character.chaId, 'character.chaId')
+  character.globalLore = repairCreatedLorebookEntries(
+    Array.isArray(character.globalLore) ? character.globalLore : [],
+    `character ${character.chaId}.globalLore`,
+  )
   validateCharacterRecord(character, 'character', options)
   validateCharacterCreateRecord(character, 'character')
   return character
@@ -107,18 +115,20 @@ export function repairCharacterCollectionRow(
   return repairCharacterRecord({ ...characterCollectionRowDefaults(index), ...character }, options)
 }
 
-export function buildPatchedCharacterCollectionRow(
+/**
+ * Apply an ordinary character-row patch without filling legacy defaults or
+ * normalizing any field outside the declared patch. Damaged stored identity is
+ * rejected; import/recovery callers retain the repair helpers above.
+ */
+export function buildStrictPatchedCharacterRow(
   input: unknown,
   patch: JsonRecord,
   characterId: string,
-  index = 0,
   options: { assetDb?: DatabaseSync } = {},
 ): CharacterRecord {
-  const character = input && typeof input === 'object' && !Array.isArray(input) ? (input as JsonRecord) : {}
+  const character = readStrictCharacterRecord(input, characterId, options)
   const patched: JsonRecord = {
-    ...characterCollectionRowDefaults(index),
     ...character,
-    chats: [],
     ...patch,
     chaId: characterId,
   }
@@ -129,9 +139,28 @@ export function buildPatchedCharacterCollectionRow(
   return patched as CharacterRecord
 }
 
+export function readStrictCharacterRecord(
+  input: unknown,
+  characterId: string,
+  options: { assetDb?: DatabaseSync } = {},
+): CharacterRecord {
+  const character = readJsonObject(input, 'character')
+  const storedCharacterId = readCharacterId(character.chaId, 'character.chaId')
+  if (storedCharacterId !== characterId) {
+    throw new ValidationError(`character.chaId must match characterId: ${characterId}`)
+  }
+  // Character validation can canonicalize scriptModelOverrides. Validate a
+  // shallow copy so an ordinary read never repairs the persisted target.
+  validateCharacterRecord({ ...character }, 'character', options)
+  return character as CharacterRecord
+}
+
 export function repairCharacterRecord(input: unknown, options: { assetDb?: DatabaseSync } = {}): CharacterRecord {
   const character = readJsonObject(input, 'character') as CharacterRecord
   character.chaId = typeof character.chaId === 'string' && character.chaId.trim() ? character.chaId : randomUUID()
+  const scriptModelOverrides = normalizeScriptModelOverrides(character.scriptModelOverrides)
+  if (Object.keys(scriptModelOverrides).length > 0) character.scriptModelOverrides = scriptModelOverrides
+  else delete character.scriptModelOverrides
   validateCharacterRecord(character, 'character', options)
   return character
 }
@@ -401,6 +430,9 @@ function readCharacterOrderEntry(entry: unknown, index: number): CharacterOrderE
   if (!Array.isArray(folder.data) || folder.data.some((id) => typeof id !== 'string' || !id)) {
     throw new ValidationError(`characterOrder[${index}].data must be an array of character ids`)
   }
+  if (folder.askBeforeOpening !== undefined && typeof folder.askBeforeOpening !== 'boolean') {
+    throw new ValidationError(`characterOrder[${index}].askBeforeOpening must be a boolean`)
+  }
   if (folder.imgFile !== undefined && folder.imgFile !== null && typeof folder.imgFile !== 'string') {
     throw new ValidationError(`characterOrder[${index}].imgFile must be a string or null`)
   }
@@ -414,6 +446,7 @@ function readCharacterOrderEntry(entry: unknown, index: number): CharacterOrderE
     name: typeof folder.name === 'string' ? folder.name : 'New Folder',
     color: typeof folder.color === 'string' ? folder.color : '',
     data: [...(folder.data as string[])],
+    askBeforeOpening: folder.askBeforeOpening === true,
   } as CharacterFolderRecord
 }
 
@@ -428,6 +461,16 @@ function validateOrderedCharacterId(characterId: string, activeIds: Set<string>,
 }
 
 function validateCharacterRecord(record: JsonRecord, label: string, options: { assetDb?: DatabaseSync } = {}): void {
+  if ('scriptModelOverrides' in record) {
+    try {
+      record.scriptModelOverrides = readScriptModelOverrides(
+        record.scriptModelOverrides,
+        `${label}.scriptModelOverrides`,
+      )
+    } catch (error) {
+      throw new ValidationError(error instanceof Error ? error.message : String(error))
+    }
+  }
   if ('chaId' in record && (typeof record.chaId !== 'string' || record.chaId.trim() === '')) {
     throw new ValidationError(`${label}.chaId must be a non-empty string`)
   }
@@ -457,6 +500,9 @@ function validateCharacterRecord(record: JsonRecord, label: string, options: { a
 }
 
 function validateCharacterCreateRecord(record: JsonRecord, label: string): void {
+  if (Object.prototype.hasOwnProperty.call(record, 'greetingTranslations')) {
+    throw new ValidationError(`${label}.greetingTranslations is server-owned portable data`)
+  }
   if (!Object.prototype.hasOwnProperty.call(record, 'chats')) return
   if (!Array.isArray(record.chats)) {
     throw new ValidationError(`${label}.chats must be an array when provided`)

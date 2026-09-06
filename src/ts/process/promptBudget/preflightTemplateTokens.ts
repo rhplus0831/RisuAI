@@ -1,4 +1,4 @@
-import { getDatabase, type character } from '../../storage/database.svelte'
+import { type Database, type character } from '../../storage/database.svelte'
 import type { OpenAIChat } from '../index.svelte'
 import { parseChatML } from '../../parser/chatML'
 import type { PromptItem } from '../prompt'
@@ -6,6 +6,7 @@ import { risuChatParser } from '../scripts'
 import type { ChatTokenizer } from '../../tokenizer'
 import { prebuiltAssetCommand } from '../../util'
 import { systemizeChat } from '../promptAssembly/systemizeChat'
+import { applyDescriptionPromptRole, applyPromptBlockRole } from '../promptBlockRole'
 
 export interface PromptUnformatedSlots {
   main: OpenAIChat[]
@@ -33,6 +34,8 @@ export async function preflightTemplateTokens(
   tokenizer: ChatTokenizer,
   currentChar: character,
   positionParser: (text: string, loc: string) => string,
+  database: Database,
+  descriptionBaseIndex?: number,
 ): Promise<PreflightResult> {
   let addedTokens = 0
   let memoryCardUsed = false
@@ -44,6 +47,17 @@ export async function preflightTemplateTokens(
     }
   }
 
+  const tokenizeCharacterDepthPrompt = async () => {
+    const depthPrompt = currentChar.depth_prompt
+    if (!depthPrompt?.prompt) return
+    await tokenizeChatArray([
+      {
+        role: 'system',
+        content: risuChatParser(depthPrompt.prompt, { chara: currentChar }),
+      },
+    ])
+  }
+
   if (!promptTemplate) {
     for (const key in unformated) {
       const chats = unformated[key as keyof PromptUnformatedSlots]
@@ -51,13 +65,14 @@ export async function preflightTemplateTokens(
         addedTokens += await tokenizer.tokenizeChat(chat)
       }
     }
+    await tokenizeCharacterDepthPrompt()
     return { addedTokens, memoryCardUsed, hasCachePoint }
   }
 
   for (const card of promptTemplate) {
     switch (card.type) {
       case 'persona': {
-        const pmt = safeStructuredClone(unformated.personaPrompt)
+        const pmt = applyPromptBlockRole(safeStructuredClone(unformated.personaPrompt), card.role2)
         if (card.innerFormat && pmt.length > 0) {
           for (let i = 0; i < pmt.length; i++) {
             pmt[i].content = risuChatParser(positionParser(card.innerFormat, card.type), {
@@ -69,7 +84,11 @@ export async function preflightTemplateTokens(
         break
       }
       case 'description': {
-        const pmt = safeStructuredClone(unformated.description)
+        const pmt = applyDescriptionPromptRole(
+          safeStructuredClone(unformated.description),
+          card.role2,
+          descriptionBaseIndex,
+        )
         if (card.innerFormat && pmt.length > 0) {
           for (let i = 0; i < pmt.length; i++) {
             pmt[i].content = risuChatParser(positionParser(card.innerFormat, card.type), {
@@ -81,7 +100,7 @@ export async function preflightTemplateTokens(
         break
       }
       case 'authornote': {
-        const pmt = safeStructuredClone(unformated.authorNote)
+        const pmt = applyPromptBlockRole(safeStructuredClone(unformated.authorNote), card.role2)
         if (card.innerFormat && pmt.length > 0) {
           for (let i = 0; i < pmt.length; i++) {
             pmt[i].content = risuChatParser(positionParser(card.innerFormat, card.type), {
@@ -98,11 +117,11 @@ export async function preflightTemplateTokens(
       }
       case 'postEverything': {
         await tokenizeChatArray(unformated.postEverything)
-        if (usingPromptTemplate && getDatabase().promptSettings.postEndInnerFormat) {
+        if (usingPromptTemplate && database.promptSettings.postEndInnerFormat) {
           await tokenizeChatArray([
             {
               role: 'system',
-              content: getDatabase().promptSettings.postEndInnerFormat,
+              content: database.promptSettings.postEndInnerFormat,
             },
           ])
         }
@@ -111,10 +130,10 @@ export async function preflightTemplateTokens(
       case 'plain':
       case 'jailbreak':
       case 'cot': {
-        if (!getDatabase().jailbreakToggle && card.type === 'jailbreak') {
+        if (!database.jailbreakToggle && card.type === 'jailbreak') {
           continue
         }
-        if (!getDatabase().chainOfThought && card.type === 'cot') {
+        if (!database.chainOfThought && card.type === 'cot') {
           continue
         }
 
@@ -180,7 +199,7 @@ export async function preflightTemplateTokens(
         }
 
         let chats = unformated.chats.slice(start, end)
-        if (usingPromptTemplate && getDatabase().promptSettings.sendChatAsSystem && !card.chatAsOriginalOnSystem) {
+        if (usingPromptTemplate && database.promptSettings.sendChatAsSystem && !card.chatAsOriginalOnSystem) {
           chats = systemizeChat(chats)
         }
         await tokenizeChatArray(chats)
@@ -196,6 +215,8 @@ export async function preflightTemplateTokens(
       }
     }
   }
+
+  await tokenizeCharacterDepthPrompt()
 
   return { addedTokens, memoryCardUsed, hasCachePoint }
 }

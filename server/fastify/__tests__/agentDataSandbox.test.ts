@@ -1,4 +1,15 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -163,6 +174,65 @@ describe('prepareAgentDataSandbox', () => {
     await expect(
       prepareAgentDataSandbox({ sourceDataDir: path.join(sandbox, 'data'), sandboxDataDir: sandbox, mode: 'clone' }),
     ).rejects.toThrow(/disjoint/)
+  })
+
+  it('refuses canonical overlap through a symlinked parent without touching the source', async () => {
+    const realRoot = path.join(root, 'real')
+    const realSource = path.join(realRoot, 'data')
+    const aliasRoot = path.join(root, 'alias')
+    mkdirSync(realSource, { recursive: true })
+    writeFileSync(path.join(realSource, 'human-marker.txt'), 'preserve me')
+    symlinkSync(realRoot, aliasRoot, 'dir')
+
+    await expect(
+      prepareAgentDataSandbox({
+        sourceDataDir: realSource,
+        sandboxDataDir: path.join(aliasRoot, 'data'),
+        mode: 'clone',
+      }),
+    ).rejects.toThrow(/disjoint/)
+    expect(readFileSync(path.join(realSource, 'human-marker.txt'), 'utf-8')).toBe('preserve me')
+  })
+
+  it('refuses symbolic-link destinations in every mode without touching their targets', async () => {
+    for (const mode of ['clone', 'keep', 'fresh'] as const) {
+      const destination = path.join(root, `sandbox-${mode}`)
+      const target = path.join(root, `target-${mode}`)
+      mkdirSync(target, { recursive: true })
+      writeFileSync(path.join(target, 'marker.txt'), mode)
+      symlinkSync(target, destination, 'dir')
+
+      await expect(
+        prepareAgentDataSandbox({ sourceDataDir: source, sandboxDataDir: destination, mode }),
+      ).rejects.toThrow(/symbolic link/)
+      expect(lstatSync(destination).isSymbolicLink()).toBe(true)
+      expect(readFileSync(path.join(target, 'marker.txt'), 'utf-8')).toBe(mode)
+    }
+  })
+
+  it('refuses file destinations in every mode without replacing them', async () => {
+    for (const mode of ['clone', 'keep', 'fresh'] as const) {
+      const destination = path.join(root, `sandbox-file-${mode}`)
+      writeFileSync(destination, mode)
+
+      await expect(
+        prepareAgentDataSandbox({ sourceDataDir: source, sandboxDataDir: destination, mode }),
+      ).rejects.toThrow(/must be a directory/)
+      expect(readFileSync(destination, 'utf-8')).toBe(mode)
+    }
+  })
+
+  it('preserves the prior sandbox when cloning fails', async () => {
+    mkdirSync(source, { recursive: true })
+    writeFileSync(path.join(source, 'risu.db'), 'not a sqlite database')
+    mkdirSync(sandbox, { recursive: true })
+    writeFileSync(path.join(sandbox, 'agent-marker.txt'), 'keep me')
+
+    await expect(
+      prepareAgentDataSandbox({ sourceDataDir: source, sandboxDataDir: sandbox, mode: 'clone' }),
+    ).rejects.toThrow()
+    expect(readFileSync(path.join(sandbox, 'agent-marker.txt'), 'utf-8')).toBe('keep me')
+    expect(readdirSync(root).filter((name) => name.startsWith('.data-agent.staging-'))).toEqual([])
   })
 })
 

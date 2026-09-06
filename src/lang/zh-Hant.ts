@@ -1,5 +1,45 @@
 export const languageChineseTraditional = {
+  generationRecovery: {
+    failed: '應用程式無法完成先前生成作業的復原。新訊息已暫停，但你的草稿仍會保留。',
+    retry: '重試復原',
+    retrying: '正在重試復原…',
+    discard: '放棄復原',
+    discarding: '正在放棄復原…',
+  },
+  acceptedSendRecovery: {
+    generationFailed: '訊息已儲存，但無法開始產生回覆。請只重試回覆，不要再次傳送訊息。',
+    generationInProgress: '訊息已儲存，但另一個裝置或工作階段正在此聊天中產生回覆。請在完成後重試。',
+    abandoned: '訊息已儲存，但伺服器重新啟動中斷了回覆。你可以重試回覆。',
+    providerMayHaveRun: '先前的供應商請求可能已執行並產生費用。',
+    providerMayHaveRunConfirm: '先前的供應商請求可能已產生費用。重試可能再次產生費用。仍要重試嗎？',
+    retry: '重試回覆',
+    retrying: '正在重試…',
+  },
+  generationStop: {
+    stopping: '正在停止…',
+    failed: '無法確認停止操作。產生作業可能仍在執行。',
+    retry: '重試停止',
+    savingStoppedPartial: '已停止。正在儲存部分回覆…',
+  },
+  generationPersistenceQueued: '此回覆正在等待儲存，仍處於暫存狀態。',
+  generationPersistenceStalled: '此暫存回覆持續儲存失敗。它仍保留在佇列中，並會自動重試。',
+  generationPersistenceTerminal: '無法安全儲存此暫存回覆，系統不會再自動重試。其日誌記錄已保留。',
+  generationPersistenceStalledLegacy: '此復原的暫存回覆無法安全重試，因為舊版復原記錄缺少對話快照。',
   unknownInteractionTime: '未知',
+  generationReattachFailure: {
+    message: '此回覆可能仍在產生，但此裝置無法重新連線。',
+    lastError: (error: string) => `上次連線錯誤：${error}`,
+    retry: '重試',
+    refresh: '重新整理',
+    stop: '停止',
+    sidebarWarning: (name: string) => `連線已中斷：${name}`,
+  },
+  backupUnsupportedStandaloneChatBlocks:
+    '此備份使用獨立的 CHAT 區塊格式儲存聊天，此版本的 RisuAI 無法匯入。未匯入任何內容，現有資料未被變更。',
+  characterCreationQueued: '新角色已儲存在此裝置並排入佇列。伺服器尚未接受，系統將自動重試。',
+  characterCreationFailed: '無法建立角色。暫存角色已移除。',
+  characterImportQueued: '匯入的角色已儲存在此裝置並排入佇列。伺服器尚未接受，系統將自動重試。',
+  characterImportFailed: '無法儲存匯入的角色。暫存角色已移除。',
   secretInput: {
     savedPlaceholder: '已儲存的憑證',
     savedStatus: '已儲存憑證。',
@@ -41,6 +81,7 @@ export const languageChineseTraditional = {
   },
   showHelp: '顯示幫助',
   help: {
+    hypaV3ProgressOpenChatOnly: '只為目前開啟的聊天顯示完整記憶工作指示器，其他聊天的工作仍會以精簡計數顯示。',
     model: '此模型是指聊天時使用的主要模型。',
     submodel: '輔助模型是一個用於分析情緒立繪、生成自動建議等的模型。',
     oaiapikey: 'OpenAI 的 API 金鑰，可在 https://platform.openai.com/account/api-keys 取得。',
@@ -177,6 +218,8 @@ export const languageChineseTraditional = {
       '啟用後，將在正規表達式和 HTML 格式化之前翻譯文字。可能減少Token，但也可能破壞格式。',
     translatorSendTextAsIs:
       '啟用後，Ax. Model 翻譯會將訊息文字完全依原樣傳送給模型——僅傳送一次請求，不保護行、不拆分，也不使用樣式預留位置——並將模型的回應原封不動地用作翻譯結果。',
+    translatorExcludeThoughts:
+      '啟用「依原樣傳送文字」時，會在傳送給模型前從來源文字和翻譯歷史中移除 `<Thoughts>` 和 `<think>` 區塊。',
     translatorHistoryMaxTokens:
       '原文與譯文歷史提示詞插槽共用的近似最大權杖預算。超過限制時會從最舊的完整訊息開始移除。',
     autoTranslateCachedOnly: '啟用自動翻譯選項時，將只自動翻譯使用者先前已翻譯過的訊息。',
@@ -232,7 +275,7 @@ export const languageChineseTraditional = {
     hypaV3EmbeddingRequestsPerMinute: '用於相似性搜尋的每分鐘最大嵌入模型請求數。',
     hypaV3EmbeddingMaxConcurrent: '用於相似性搜尋的最大同時嵌入模型請求數。',
     keepSessionAlive:
-      '使分頁保持活躍狀態，防止因閒置而在瀏覽器中過期。可能需要重新整理後才能生效。\n\n- **透過音效**：定期播放靜音音訊以保持工作階段活躍。此方法在大多數瀏覽器中相容性最佳且最有效。',
+      '使分頁保持活躍狀態，防止因閒置而在瀏覽器中過期。可能需要重新整理後才能生效。\n\n- **透過音效**：持續播放幾乎無聲的音訊以保持工作階段活躍。此功能會持續使用瀏覽器的音訊工作階段，因此可能降低其他應用程式的音量、暫停或干擾其音訊。僅在需要時使用。',
     localNetworkModeDesc:
       '透過 Fastify 伺服器路由私有/區域網路模型 URL，而非透過瀏覽器直接抓取。\n\n**用途**\n- 避免瀏覽器的私有網路/CORS 限制\n- 降低本機推斷首個 Token 生成緩慢時的逾時風險\n\n**運作方式**\n- 僅在啟用「本機網路模式」且目標 URL 被偵測為本機或私有位址時套用\n- 串流回應優先使用 `/api/v1/proxy/stream-jobs` 中繼\n- 非串流回應使用 `/api/v1/proxy/fetch` 中繼\n\n**限制**\n- 僅適用於 OpenAI 相容的請求路徑\n- 請使用由 Fastify 提供服務的 Risuai URL，才能讓此功能生效',
   },
@@ -741,6 +784,13 @@ export const languageChineseTraditional = {
   backupConfirm: '您確定要儲存備份嗎？',
   backupLoadConfirm: '確定要載入備份嗎？目前的資料將會被覆蓋！',
   backupLoadConfirm2: '**最後警告**：確定要載入備份嗎？這將會清除當前所有的資料！',
+  backupImportSuccess: '本機備份已載入。',
+  backupImportSuccessWithAssetCaveats: (missingCount: number, orphanedCount: number) => {
+    const caveats: string[] = []
+    if (missingCount > 0) caveats.push(`${missingCount} 個被引用的資源遺失`)
+    if (orphanedCount > 0) caveats.push(`${orphanedCount} 個已儲存資源未被還原的資料引用`)
+    return `本機備份已載入，但${caveats.join('，且')}。`
+  },
   others: '其他',
   presets: '預設',
   imageGeneration: '圖片生成',
@@ -794,6 +844,7 @@ export const languageChineseTraditional = {
   showFirstMessagePages: '顯示初始訊息分頁',
   roundIcons: '圓形頭像',
   streaming: '串流回應',
+  oobaLegacyBufferedOnlyNotice: 'Ooba Legacy 僅使用緩衝式 HTTP 相容模式。串流與半串流無法使用。',
   chatBot: '對話角色',
   otherBots: '其他機器人',
   user: '使用者',
@@ -813,6 +864,7 @@ export const languageChineseTraditional = {
   globalRegexScript: '全域正規表達式',
   accessibility: '輔助功能',
   reducedMotion: '減少動態效果',
+  hypaV3ProgressOpenChatOnly: '只顯示目前聊天的完整記憶進度',
   sendWithEnter: '使用 Enter 鍵發送（未勾選時，發送方式將改為 Shift + Enter。）',
   fixedChatTextarea: '固定對話視窗底部',
   clickToEdit: '點擊文字進行編輯',
@@ -930,6 +982,7 @@ export const languageChineseTraditional = {
   ifRandom: '如果隨機',
   ifValue: '如果值',
   hideRealm: '隱藏 RisuRealm',
+  openRisuRealm: '開啟 Risu Realm',
   sendExternalServerWarning: '繼續操作將向外部伺服器傳送請求，您的 IP 位址可能會被傳輸。是否繼續？',
   hideAllImages: '隱藏所有圖片',
   popularityLevel: '人氣 {}',
@@ -1101,6 +1154,14 @@ export const languageChineseTraditional = {
   resultStoredVar: '儲存結果的變數',
   triggerEffRunLLM: '執行主要模型',
   triggerEffectSendAI: '重新發送至 AI',
+  triggerConfigurationUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
+    `此設定包含伺服器不支援的定義。定義會被保留，但在生成時會被阻擋。${effectTypes.length > 0 ? ` 效果：${effectTypes.join('、')}。` : ''}${cbsCallbacks.length > 0 ? ` CBS 回呼：${cbsCallbacks.join('、')}。` : ''}`,
+  triggerImportUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
+    `匯入的定義已原樣保留，但不支援的行為會在生成時被阻擋。${effectTypes.length > 0 ? ` 效果：${effectTypes.join('、')}。` : ''}${cbsCallbacks.length > 0 ? ` CBS 回呼：${cbsCallbacks.join('、')}。` : ''}`,
+  triggerEffectRuntimeUnsupported: (effectType: string) => `此伺服器不支援觸發器效果「${effectType}」，已略過。`,
+  cbsCallbackRuntimeUnsupported: (callbackName: string) => `此伺服器不支援 CBS 回呼「${callbackName}」，已回傳空值。`,
+  cbsClientContextUnavailable: (callbackName: string) =>
+    `瀏覽器內容無法使用，因此無法解析 CBS 回呼「${callbackName}」。`,
   triggerEffCheckSim: '檢查相似度',
   triggerEffShowAlert: '顯示警示',
   normal: '正常',
@@ -1199,8 +1260,10 @@ export const languageChineseTraditional = {
   translatorPrompt: '翻譯提示詞',
   translateBeforeHTMLFormatting: '於 HTML 格式化前翻譯',
   translatorSendTextAsIs: '依原樣傳送文字',
+  translatorExcludeThoughts: '排除思維鏈',
   translatorHistoryMaxTokens: '翻譯歷史最大權杖數',
   retranslate: '重新翻譯',
+  retranslateConfirm: '要重新翻譯這則訊息嗎？目前的翻譯將被取代。',
   editTranslation: '編輯翻譯',
   editTranslationSave: '儲存翻譯',
   exportTranslationCache: '匯出翻譯快取',
@@ -1233,8 +1296,6 @@ export const languageChineseTraditional = {
   expandSidebar: '展開側邊欄',
   home: '首頁',
   showSavingIcon: '顯示儲存圖示',
-  pluginVersionWarn:
-    '這是 {{plugin_version}} 版本的外掛，與當前 Risuai 版本不相容。請更新外掛至 {{required_version}} 版本。',
   imageTranslation: '圖像翻譯',
   banCharacterset: '自動重新生成字元集',
   realmDirectOpen: '在 RisuRealm 中直接開啟角色',
@@ -1275,6 +1336,19 @@ export const languageChineseTraditional = {
     preserveOrphanedMemoryLabel: '保留孤立記憶',
     applyRegexScriptWhenRerollingLabel: '重新生成時套用正規表達式腳本',
     doNotSummarizeUserMessageLabel: '不對使用者訊息進行總結',
+  },
+  hypaV3Progress: {
+    activeJobs: (count: number) => `${count} 個進行中的記憶工作`,
+    activeInOtherChats: (count: number) => `其他聊天中有 ${count} 個進行中的記憶工作`,
+    otherChatsCompact: (count: number) => `其他聊天 +${count}`,
+    openDetailsAction: (count: number) => `顯示 ${count} 個進行中的記憶工作詳情`,
+    closeDetailsAction: '隱藏記憶工作詳情',
+    unnamedChat: '未命名聊天',
+    unknownChat: (id: string) => `聊天 ${id}`,
+    kind: { chunk: '準備記憶', embed: '搜尋記憶', summarize: '摘要記憶' },
+    pending: '等待中',
+    running: '執行中',
+    attempt: (attemptCount: number, maxAttempts: number) => `嘗試 ${attemptCount}/${maxAttempts}`,
   },
   hypaV3Modal: {
     titleLabel: 'HypaV3 資料',
@@ -1389,6 +1463,7 @@ export const languageChineseTraditional = {
     '透過每 4 分鐘請求一次來延長 Claude 快取的保留時間。這可以降低快取未命中率，但如果不當使用可能會增加成本。',
   automaticCachePoint: '自動快取點',
   experimentalChatCompression: '對話資料壓縮（實驗性功能）',
+  loadingChat: '正在載入對話…',
   loadingChatData: '正在載入對話資料',
   chatDataLoadFailed: '無法載入對話資料。',
   promptTemplateLoadFailed: '無法載入提示詞模板。',
@@ -1545,8 +1620,6 @@ export const languageChineseTraditional = {
     '外掛 {} 正在請求透過 RisuAI 的公共網際網路網路助手存取服務。此請求可能會將聊天或帳戶資料傳送給第三方。該助手會封鎖私人、本機、詮釋資料和 RisuAI 服務目標。是否允許？',
   pluginUpdateSourceConsent:
     'RisuAI 將只從外掛 {{plugin}} 宣告的以下 HTTPS 來源檢查並下載更新：\n{{url}}\n此權限僅用於檢查與下載更新，不會授予外掛使用執行階段網路助手的權限。是否繼續？',
-  legacyRuntimeConsent:
-    '舊版外掛 {} 正在請求以受信任程式碼的身分在 RisuAI 主頁面中執行。它可以讀取或修改聊天與帳戶資料，並存取公共、私人或本機網路服務。請只允許您完全信任的外掛。是否繼續？',
   v3RuntimeConsent:
     '外掛 {} 正在請求執行受信任的瀏覽器介面程式碼。它可以連線到公共、私人、本機、詮釋資料或 RisuAI 網路目標，並可透過繞過網路助手同意的瀏覽器 API，將聊天或帳戶資料傳送到 RisuAI 之外。請只執行您完全信任的外掛。是否繼續？',
   fetchLogConsent: '外掛 {} 正在請求存取記錄，此操作可能暴露敏感資訊。是否允許？',
@@ -1555,8 +1628,6 @@ export const languageChineseTraditional = {
   replacerPermissionConsent: '外掛 {} 正在請求替換對話內容的權限，此操作可能被用於操縱對話。是否允許？',
   providerPermissionConsent: '外掛 {} 正在請求存取提供商的權限，此操作可能允許未授權的 API 呼叫。是否允許？',
   sendChatConsent: '外掛 {} 正在請求以您的名義發送對話訊息的權限，這將觸發 AI 回應。是否允許？',
-  pluginV2Warning:
-    '外掛 V2 與 V2.1 版本被視為不安全，並將於未來版本中停用。**請勿使用此版本的外掛。**若您是外掛開發者，請盡快更新至 V3。',
   createFolderOnBranch: '在分支上建立資料夾',
   hamburgerButtonBottom: '將選單按鈕移至側邊欄底部',
   partialBackupFirstConfirm:
@@ -1659,6 +1730,9 @@ export const languageChineseTraditional = {
   inputHookAdd: '新增鉤子',
   inputHookName: '鉤子名稱',
   inputHookPrompt: '鉤子提示詞',
+  inputHookModel: '模型',
+  inputHookTranslation: '翻譯',
+  inputHookInheritOtherAxModel: '繼承其他輔助模型',
   inputHookDelete: '刪除鉤子',
   inputHookDraftLabel: '草稿',
   inputHookDraftPlaceholder: '鉤子輸出會顯示在這裡，傳送前可以編輯。',

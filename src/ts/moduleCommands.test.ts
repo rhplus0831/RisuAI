@@ -23,10 +23,12 @@ import {
   type DurableMutationIntent,
 } from './server/pendingMutationOutbox'
 import { replayPendingMutations } from './server/pendingMutationReplay'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
+
 import {
-  getResourceDatabase as getDatabase,
+  charactersResourceState,
+  collectionsResourceState,
   replaceResourceDatabase as setDatabaseLite,
+  settingsResourceState,
 } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 import { seedCloneCostDb, withCloneInstrumentation } from './__tests__/cloneCostHarness'
@@ -34,6 +36,9 @@ import {
   currentCharacterModuleStateSnapshot,
   currentGlobalModuleStateSnapshot,
   createGlobalModule,
+  createGlobalModuleWithOutcome,
+  createModuleFolder,
+  deleteModuleFolder,
   deleteGlobalModule,
   dispatchModuleInfoPatch,
   dispatchReorderModules,
@@ -41,12 +46,15 @@ import {
   rebaseModuleEditorDraftOntoLatest,
   restoreCharacterModuleState,
   saveGlobalModuleDraft,
+  saveGlobalModuleDraftWithOutcome,
   setGlobalModuleEnabled,
   toggledModuleIds,
   toggleSelectedCharacterModule,
   toggleSelectedChatModule,
   updateGlobalModule,
 } from './moduleCommands'
+import { getResourceDatabase as getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
+import { captureModuleRenderRevision } from './moduleRenderRevision'
 
 interface CapturedFetch {
   url: string
@@ -232,9 +240,9 @@ function moduleNames(): Record<string, string | undefined> {
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
   selectedCharID.set(0)
   setDatabaseLite({
+    currentChar: 0,
     characters: [
       {
         chaId: 'char-a',
@@ -246,6 +254,7 @@ beforeEach(() => {
     ],
     characterOrder: [],
     enabledModules: [],
+    moduleFolders: [],
     modules: [
       { id: 'mod-a', name: 'Module A' },
       { id: 'mod-b', name: 'Module B' },
@@ -254,11 +263,36 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
 describe('module command projection helpers', () => {
+  it('rolls back failed folder creation and failed populated-folder deletion', async () => {
+    setCachedServerCommandRevision(10)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        return jsonResponse({ error: 'invalid folder request' }, 400)
+      }) as unknown as typeof fetch,
+    )
+
+    await expect(createModuleFolder({ id: 'folder-new', name: 'New' })).resolves.toMatchObject({ status: 'failed' })
+    expect(settingsResourceState.value.moduleFolders).toEqual([])
+
+    settingsResourceState.value.moduleFolders = [{ id: 'folder-a', name: 'Folder A' }]
+    collectionsResourceState.values.modules = [
+      { id: 'mod-a', name: 'Module A', description: '', folderId: 'folder-a' },
+      { id: 'mod-b', name: 'Module B', description: '' },
+    ]
+    await expect(deleteModuleFolder('folder-a')).resolves.toMatchObject({ status: 'failed' })
+    expect(settingsResourceState.value.moduleFolders).toEqual([{ id: 'folder-a', name: 'Folder A' }])
+    expect(collectionsResourceState.values.modules).toEqual([
+      { id: 'mod-a', name: 'Module A', description: '', folderId: 'folder-a' },
+      { id: 'mod-b', name: 'Module B', description: '' },
+    ])
+  })
+
   it('toggles module ids without mutating the input array', () => {
     const current = ['mod-a']
 
@@ -267,20 +301,146 @@ describe('module command projection helpers', () => {
     expect(current).toEqual(['mod-a'])
   })
 
-  it('routes selected-chat module toggles through a chat command under the resource guard', async () => {
+  it('projects ready global module mutations through the leaf collection and settings owners', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
+    setDatabaseLite({
+      characters: [],
+      characterOrder: [],
+      enabledModules: [],
+      modules: [
+        { id: 'mod-a', name: 'Module A', description: '', namespace: 'module-a' },
+        { id: 'mod-b', name: 'Module B', description: '', namespace: 'module-b' },
+      ],
+    } as any)
+    const renderRevisionBefore = captureModuleRenderRevision()
 
-    expect(() => {
-      getDatabase().characters[0].chats[0].modules.push('direct')
-    }).toThrow()
+    await setGlobalModuleEnabled('mod-a', true)
+    await updateGlobalModule('mod-a', {
+      id: 'mod-a',
+      name: 'Module A updated',
+      description: '',
+      namespace: 'module-a',
+    })
+
+    expect(settingsResourceState.value.enabledModules).toEqual(['mod-a'])
+    expect(collectionsResourceState.values.modules).toEqual([
+      { id: 'mod-a', name: 'Module A updated', description: '', namespace: 'module-a' },
+      { id: 'mod-b', name: 'Module B', description: '', namespace: 'module-b' },
+    ])
+    expect(calls.some((call) => call.url === '/api/v1/commands/modules/enable')).toBe(true)
+    expect(calls.some((call) => call.url === '/api/v1/commands/modules/mod-a')).toBe(true)
+    expect(captureModuleRenderRevision()).toBeGreaterThan(renderRevisionBefore)
+  })
+
+  it('does not fall back to the compatibility facade while the module owner is loading', async () => {
+    setDatabaseLite({
+      characters: [],
+      characterOrder: [],
+      enabledModules: ['mod-a'],
+      modules: [
+        { id: 'mod-a', name: 'Module A', description: '', namespace: 'shared' },
+        { id: 'mod-b', name: 'Module B', description: '', namespace: 'shared' },
+      ],
+    } as any)
+    collectionsResourceState.statuses.modules = 'loading'
+
+    expect(currentGlobalModuleStateSnapshot()).toEqual({ modules: [], enabledModules: ['mod-a'] })
+    await expect(
+      updateGlobalModule('mod-a', { id: 'mod-a', name: 'Attempted', description: '', namespace: 'shared' }),
+    ).resolves.toMatchObject({ status: 'error' })
+    expect(collectionsResourceState.values.modules).toEqual([
+      { id: 'mod-a', name: 'Module A', description: '', namespace: 'shared' },
+      { id: 'mod-b', name: 'Module B', description: '', namespace: 'shared' },
+    ])
+  })
+
+  it('fails closed for a ready module owner with duplicate ids', async () => {
+    setDatabaseLite({
+      characters: [],
+      characterOrder: [],
+      enabledModules: [],
+      modules: [
+        { id: 'mod-a', name: 'Module A', description: '', namespace: 'module-a' },
+        { id: 'mod-a', name: 'Module A copy', description: '', namespace: 'module-a-copy' },
+      ],
+    } as any)
+
+    const before = JSON.parse(JSON.stringify(collectionsResourceState.values.modules))
+    expect(currentGlobalModuleStateSnapshot().modules).toEqual([])
+    await expect(
+      updateGlobalModule('mod-a', { id: 'mod-a', name: 'Attempted', description: '', namespace: 'module-a' }),
+    ).resolves.toMatchObject({ status: 'error' })
+    await expect(setGlobalModuleEnabled('mod-a', true)).resolves.toMatchObject({ status: 'failed' })
+    await expect(deleteGlobalModule('mod-a')).resolves.toMatchObject({ status: 'failed' })
+    expect(collectionsResourceState.values.modules).toEqual(before)
+    expect(settingsResourceState.value.enabledModules).toEqual([])
+  })
+
+  it('treats duplicate namespaces as valid shared activation groups', async () => {
+    const calls = stubCommandFetch()
+    setDatabaseLite({
+      characters: [],
+      characterOrder: [],
+      enabledModules: [],
+      modules: [
+        { id: 'mod-a', name: 'Module A', description: '', namespace: 'shared' },
+        { id: 'mod-b', name: 'Module B', description: '', namespace: 'shared' },
+      ],
+    } as any)
+
+    expect(currentGlobalModuleStateSnapshot().modules).toEqual([
+      { id: 'mod-a', name: 'Module A', description: '', namespace: 'shared' },
+      { id: 'mod-b', name: 'Module B', description: '', namespace: 'shared' },
+    ])
+    await expect(
+      updateGlobalModule('mod-a', { id: 'mod-a', name: 'Attempted', description: '', namespace: 'shared' }),
+    ).resolves.toMatchObject({ status: 'ok' })
+    expect(collectionsResourceState.values.modules).toEqual([
+      { id: 'mod-a', name: 'Attempted', description: '', namespace: 'shared' },
+      { id: 'mod-b', name: 'Module B', description: '', namespace: 'shared' },
+    ])
+    expect(calls.some((call) => call.url === '/api/v1/commands/modules/mod-a')).toBe(true)
+  })
+
+  it.each([
+    ['an empty namespace', ''],
+    ['an existing shared namespace', 'shared'],
+  ])('projects an imported module immediately with %s', async (_label, namespace) => {
+    const calls = stubCommandFetch()
+    collectionsResourceState.values.modules = [{ id: 'mod-a', name: 'Module A', description: '', namespace: 'shared' }]
+
+    const result = createGlobalModule({
+      id: 'mod-imported',
+      name: 'Imported Module',
+      description: '',
+      namespace,
+    })
+
+    expect(collectionsResourceState.values.modules?.map((module) => module.id)).toEqual(['mod-a', 'mod-imported'])
+    await expect(result).resolves.toMatchObject({ status: 'ok' })
+    expect(calls.some((call) => call.url === '/api/v1/commands/modules')).toBe(true)
+  })
+
+  it('fails closed for a ready settings owner with duplicate enabled module ids', async () => {
+    setDatabaseLite({
+      characters: [],
+      characterOrder: [],
+      enabledModules: ['mod-a', 'mod-a'],
+      modules: [{ id: 'mod-a', name: 'Module A', description: '', namespace: 'module-a' }],
+    } as any)
+
+    const before = JSON.parse(JSON.stringify(settingsResourceState.value.enabledModules))
+    expect(currentGlobalModuleStateSnapshot().enabledModules).toEqual([])
+    await expect(setGlobalModuleEnabled('mod-a', false)).resolves.toMatchObject({ status: 'failed' })
+    expect(settingsResourceState.value.enabledModules).toEqual(before)
+  })
+
+  it('routes selected-chat module toggles through the chat owner command', async () => {
+    const calls = stubCommandFetch()
 
     toggleSelectedChatModule('mod-b')
 
     expect(getDatabase().characters[0].chats[0].modules).toEqual(['mod-a', 'mod-b'])
-    expect(() => {
-      getDatabase().characters[0].chats[0].modules.push('direct')
-    }).toThrow()
 
     await waitForCallCount(calls, 2)
     expect(calls).toEqual([
@@ -303,12 +463,45 @@ describe('module command projection helpers', () => {
     ])
   })
 
+  it('leaves a lazy selected-character shell untouched until its exact owner is hydrated', async () => {
+    const shell = {
+      __serverCharacterShell: true,
+      chaId: 'char-shell',
+      type: 'character',
+      name: 'Shell',
+      displayName: 'Shell',
+      image: '',
+      creatorNotes: '',
+      trashTime: null,
+      creation_date: null,
+      modification_date: null,
+      lastInteraction: null,
+      chatCount: 1,
+      activeChatId: 'chat-shell',
+      chatIds: ['chat-shell'],
+      pinnedChats: [],
+    } as any
+    charactersResourceState.characters = [shell]
+    charactersResourceState.status = 'ready'
+    selectedCharID.set(0)
+
+    await expect(toggleSelectedChatModule('mod-b')).resolves.toMatchObject({ status: 'failed' })
+    await expect(toggleSelectedCharacterModule('mod-b')).resolves.toMatchObject({ status: 'failed' })
+    expect(charactersResourceState.characters[0]).toEqual(shell)
+    expect(shell).not.toHaveProperty('modules')
+    expect(shell).not.toHaveProperty('chats')
+  })
+
   it('prefills active sidebar toggle defaults when enabling a chat-scoped module', async () => {
     const calls = stubCommandFetch()
-    getDatabase().personas = [{ id: 'persona-a', name: 'Persona A', personaPrompt: '', icon: '', note: '' }] as any
-    getDatabase().modelPresets = [{ id: 'model-a', name: 'Model A' }] as any
-    getDatabase().promptPresets = [{ id: 'preset-a', name: 'Preset A', customPromptTemplateToggle: '' }] as any
-    getDatabase().modules = [
+    collectionsResourceState.values.personas = [
+      { id: 'persona-a', name: 'Persona A', personaPrompt: '', icon: '', note: '' },
+    ] as any
+    collectionsResourceState.values.modelPresets = [{ id: 'model-a', name: 'Model A' }] as any
+    collectionsResourceState.values.promptPresets = [
+      { id: 'preset-a', name: 'Preset A', customPromptTemplateToggle: '' },
+    ] as any
+    collectionsResourceState.values.modules = [
       { id: 'mod-a', name: 'Module A', customModuleToggle: 'existing=Existing' },
       {
         id: 'mod-b',
@@ -316,6 +509,9 @@ describe('module command projection helpers', () => {
         customModuleToggle: 'flag=Flag\nmode=Mode=select=alpha,beta\nnote=Note=text\nmemo=Memo=textarea',
       },
     ] as any
+    collectionsResourceState.statuses.personas = 'ready'
+    collectionsResourceState.statuses.modelPresets = 'ready'
+    collectionsResourceState.statuses.promptPresets = 'ready'
     getDatabase().characters[0].chats[0].generationSettings = {
       configured: true,
       personaId: 'persona-a',
@@ -327,8 +523,6 @@ describe('module command projection helpers', () => {
         mode: '1',
       },
     }
-    setResourceWriteGuardEnabled(true)
-
     toggleSelectedChatModule('mod-b')
 
     const expectedSettings = {
@@ -380,18 +574,10 @@ describe('module command projection helpers', () => {
 
   it('routes selected-character module toggles through the character-module command', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      getDatabase().characters[0].modules.push('direct')
-    }).toThrow()
 
     toggleSelectedCharacterModule('mod-b')
 
     expect(getDatabase().characters[0].modules).toEqual(['mod-a', 'mod-b'])
-    expect(() => {
-      getDatabase().characters[0].modules.push('direct')
-    }).toThrow()
 
     await waitForCallCount(calls, 2)
     expect(calls).toEqual([
@@ -438,8 +624,6 @@ describe('module command projection helpers', () => {
         mode: '1',
       },
     }
-    setResourceWriteGuardEnabled(true)
-
     toggleSelectedCharacterModule('mod-b')
 
     const expectedSettings = {
@@ -514,8 +698,6 @@ describe('module command projection helpers', () => {
       jailbreakToggle: false,
       sidebarToggles: {},
     }
-    setResourceWriteGuardEnabled(true)
-
     let recover = false
     let revision = 20
     const commands: string[] = []
@@ -598,8 +780,6 @@ describe('module command projection helpers', () => {
       requestedWriterWasActive: true,
     })
     setCachedServerCommandRevision(60)
-    setResourceWriteGuardEnabled(true)
-
     let replaying = false
     const commands: string[] = []
     vi.stubGlobal(
@@ -661,8 +841,6 @@ describe('module command projection helpers', () => {
       sidebarToggles: {},
     }
     getDatabase().characters[0].chats[0].generationSettings = initialSettings
-    setResourceWriteGuardEnabled(true)
-
     const commands: string[] = []
     vi.stubGlobal(
       'fetch',
@@ -717,8 +895,6 @@ describe('module command projection helpers', () => {
       sidebarToggles: {},
     }
     getDatabase().characters[0].chats[0].generationSettings = initialSettings
-    setResourceWriteGuardEnabled(true)
-
     let revision = 50
     const commands: string[] = []
     vi.stubGlobal(
@@ -769,10 +945,8 @@ describe('module command projection helpers', () => {
       requestedWriterWasActive: true,
     })
     setCachedServerCommandRevision(40)
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentGlobalModuleStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modules = [...getDatabase().modules].reverse()
     })
 
@@ -811,7 +985,10 @@ describe('module command projection helpers', () => {
           {
             key: 'module-collection',
             path: '/modules/reorder',
-            body: { moduleIds: ['mod-b', 'mod-a'] },
+            body: {
+              moduleIds: ['mod-b', 'mod-a'],
+              folderByModuleId: { 'mod-b': null, 'mod-a': null },
+            },
           },
         ])
       })
@@ -827,13 +1004,8 @@ describe('module command projection helpers', () => {
     }
   })
 
-  it('routes global module edits through commands under the resource guard', async () => {
+  it('routes global module edits through the collection owner commands', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      getDatabase().enabledModules.push('direct')
-    }).toThrow()
 
     setGlobalModuleEnabled('mod-a', true)
     expect(getDatabase().enabledModules).toEqual(['mod-a'])
@@ -901,6 +1073,28 @@ describe('module command projection helpers', () => {
     ])
   })
 
+  it('normalizes module lorebook, regex, and trigger identities before create dispatch', async () => {
+    const calls = stubCommandFetch()
+    const module = {
+      id: 'mod-import',
+      name: 'Imported module',
+      description: '',
+      lorebook: [{ id: 'duplicate', content: 'First' }, { id: 'duplicate', content: 'Second' }, { content: 'Third' }],
+      regex: [{ comment: 'Regex' }],
+      trigger: [{ comment: 'Trigger', type: 'manual', conditions: [], effect: [] }],
+    } as any
+
+    const result = createGlobalModule(module)
+    await waitForCallCount(calls, 2)
+    await expect(result).resolves.toMatchObject({ status: 'ok' })
+
+    const sent = (calls[1].body as { module: typeof module }).module
+    expect(sent.lorebook[0].id).toBe('duplicate')
+    expect(new Set(sent.lorebook.map((entry: { id: string }) => entry.id)).size).toBe(3)
+    expect(sent.regex[0].id).toEqual(expect.any(String))
+    expect(sent.trigger[0].id).toEqual(expect.any(String))
+  })
+
   it('keeps a new module edit behind its transient durable create', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
@@ -911,8 +1105,6 @@ describe('module command projection helpers', () => {
       requestedWriterWasActive: true,
     })
     setCachedServerCommandRevision(20)
-    setResourceWriteGuardEnabled(true)
-
     const firstCreate = createDeferred<Response>()
     let recover = false
     let revision = 20
@@ -996,8 +1188,6 @@ describe('module command projection helpers', () => {
       requestedWriterWasActive: true,
     })
     setCachedServerCommandRevision(30)
-    setResourceWriteGuardEnabled(true)
-
     const deleteIntent: DurableMutationIntent = {
       version: 1,
       requests: [{ method: 'DELETE', path: '/modules/mod-a', body: {} }],
@@ -1054,8 +1244,6 @@ describe('module command projection helpers', () => {
       requestedWriterWasActive: true,
     })
     setCachedServerCommandRevision(20)
-    setResourceWriteGuardEnabled(true)
-
     const deleteIntent: DurableMutationIntent = {
       version: 1,
       requests: [
@@ -1152,12 +1340,6 @@ describe('module command projection helpers', () => {
       assets,
       regex,
     } as any
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      getDatabase().modules[0].backgroundEmbedding = 'direct'
-    }).toThrow()
-
     const resultPromise = updateGlobalModule('mod-a', {
       id: 'mod-a',
       name: 'Module A',
@@ -1198,8 +1380,6 @@ describe('module command projection helpers', () => {
       cjs: 'old cjs',
       assets,
     } as any
-    setResourceWriteGuardEnabled(true)
-
     updateGlobalModule('mod-a', { id: 'mod-a', name: 'Module A', description: '' })
 
     expect(getDatabase().modules[0]).not.toHaveProperty('backgroundEmbedding')
@@ -1240,8 +1420,7 @@ describe('module command projection helpers', () => {
       assets,
     } as any
     const previous = currentGlobalModuleStateSnapshot()
-    setResourceWriteGuardEnabled(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modules[0].name = 'Renamed A'
     })
 
@@ -1393,8 +1572,6 @@ describe('module command projection helpers', () => {
       regex: [{ id: 'regex-old', comment: 'Old regex', in: 'old', out: '', type: 'editinput' }],
       trigger: [{ id: 'trigger-old', comment: 'Old trigger', type: 'start', conditions: [], effect: [] }],
     } as any
-    setResourceWriteGuardEnabled(true)
-
     const savedModule = {
       id: 'mod-a',
       name: 'Saved Module A',
@@ -1468,8 +1645,6 @@ describe('module command projection helpers', () => {
       description: 'Current description',
       ...latestSplitFields,
     } as any
-    setResourceWriteGuardEnabled(true)
-
     const resultPromise = updateGlobalModule('mod-a', {
       id: 'mod-a',
       name: 'Locally renamed',
@@ -1504,8 +1679,6 @@ describe('module command projection helpers', () => {
 
   it('optimistically applies global module create and rolls back on command failure', async () => {
     const calls = stubFailingCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const resultPromise = createGlobalModule({ id: 'mod-c', name: 'Module C', description: '' })
 
     expect(getDatabase().modules.map((module) => module.id)).toEqual(['mod-a', 'mod-b', 'mod-c'])
@@ -1519,6 +1692,9 @@ describe('module command projection helpers', () => {
   it('optimistically applies global module delete references and rolls back on command failure', async () => {
     const calls = stubFailingCommandFetch()
     getDatabase().enabledModules = ['mod-a']
+    getDatabase().personas = [
+      { id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', modules: ['mod-a', 'persona-module'] },
+    ]
     getDatabase().characters = [
       {
         chaId: 'char-a',
@@ -1528,9 +1704,7 @@ describe('module command projection helpers', () => {
         modules: ['mod-a', 'character-module'],
       },
     ] as any
-    setResourceWriteGuardEnabled(true)
-
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modules[0].name = 'Latest optimistic module child edit'
     })
 
@@ -1538,10 +1712,11 @@ describe('module command projection helpers', () => {
 
     expect(getDatabase().enabledModules).toEqual([])
     expect(getDatabase().modules.map((module) => module.id)).toEqual(['mod-b'])
+    expect(getDatabase().personas[0].modules).toEqual(['persona-module'])
     expect(getDatabase().characters[0].modules).toEqual(['character-module'])
     expect(getDatabase().characters[0].chats[0].modules).toEqual(['chat-module'])
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].name = 'Concurrent character edit'
     })
 
@@ -1551,6 +1726,7 @@ describe('module command projection helpers', () => {
     expect(getDatabase().enabledModules).toEqual(['mod-a'])
     expect(getDatabase().modules.map((module) => module.id)).toEqual(['mod-a', 'mod-b'])
     expect(getDatabase().modules[0].name).toBe('Latest optimistic module child edit')
+    expect(getDatabase().personas[0].modules).toEqual(['mod-a', 'persona-module'])
     expect(getDatabase().characters[0].modules).toEqual(['mod-a', 'character-module'])
     expect(getDatabase().characters[0].chats[0].modules).toEqual(['mod-a', 'chat-module'])
     expect(getDatabase().characters[0].name).toBe('Concurrent character edit')
@@ -1559,15 +1735,13 @@ describe('module command projection helpers', () => {
   it('failed module update preserves newer same-module field edit', async () => {
     const calls = stubFailingCommandFetch()
     getDatabase().modules[0] = { id: 'mod-a', name: 'Module A', description: 'old description' } as any
-    setResourceWriteGuardEnabled(true)
-
     updateGlobalModule('mod-a', { id: 'mod-a', name: 'Attempted A', description: 'attempted description' })
     expect(getDatabase().modules[0]).toMatchObject({
       name: 'Attempted A',
       description: 'attempted description',
     })
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modules[0] = {
         ...getDatabase().modules[0],
         name: 'Newer A',
@@ -1585,10 +1759,8 @@ describe('module command projection helpers', () => {
 
   it('failed module update preserves sibling module edit, create, and delete', async () => {
     const calls = stubFailingCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     updateGlobalModule('mod-a', { id: 'mod-a', name: 'Attempted A', description: 'attempted description' })
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modules[1] = {
         ...getDatabase().modules[1],
         name: 'Sibling B newer',
@@ -1608,10 +1780,8 @@ describe('module command projection helpers', () => {
 
   it('failed create removes only the attempted created module, not later-created modules', async () => {
     const calls = stubFailingCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     createGlobalModule({ id: 'mod-c', name: 'Module C', description: '' })
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modules.push({ id: 'mod-d', name: 'Module D newer' } as any)
     })
 
@@ -1624,12 +1794,10 @@ describe('module command projection helpers', () => {
   it('failed enable restores only that module id and preserves newer enabled sibling changes', async () => {
     const calls = stubFailingCommandFetch()
     getDatabase().enabledModules = ['mod-b']
-    setResourceWriteGuardEnabled(true)
-
     const outcome = setGlobalModuleEnabled('mod-a', true)
     expect(getDatabase().enabledModules).toEqual(['mod-b', 'mod-a'])
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().enabledModules = getDatabase().enabledModules.filter((id) => id !== 'mod-b')
       getDatabase().enabledModules.push('mod-c')
     })
@@ -1651,7 +1819,6 @@ describe('module command projection helpers', () => {
       requestedWriterWasActive: true,
     })
     setCachedServerCommandRevision(10)
-    setResourceWriteGuardEnabled(true)
     let recover = false
     vi.stubGlobal(
       'fetch',
@@ -1685,9 +1852,108 @@ describe('module command projection helpers', () => {
     }
   })
 
+  it('keeps an outcome-aware create queued until replay accepts the staged Save', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-module-create-outcome',
+      writerEpoch: 5,
+      databaseLineage: 'lineage-module-create-outcome',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    let recover = false
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/modules') {
+          if (!recover) return jsonResponse({ error: 'temporarily unavailable' }, 500)
+          return jsonResponse({
+            revision: 11,
+            event: { type: 'module.created', revision: 11, resource: 'module', id: 'mod-new' },
+            moduleId: 'mod-new',
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const outcome = await createGlobalModuleWithOutcome({
+        id: 'mod-new',
+        name: 'Queued module',
+        description: '',
+      })
+      expect(outcome).toMatchObject({ status: 'queued', mutationIds: [expect.any(String)] })
+      expect(getDatabase().modules.some((module) => module.id === 'mod-new')).toBe(true)
+      expect(await listPendingMutations()).toHaveLength(1)
+      if (outcome.status !== 'queued') throw new Error('Expected create Save to remain queued')
+
+      recover = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 1 })
+      await expect(outcome.settlement).resolves.toEqual({ status: 'accepted' })
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('reports a queued editor Save as failed when replay permanently rejects it', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-module-edit-outcome',
+      writerEpoch: 6,
+      databaseLineage: 'lineage-module-edit-outcome',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    let replaying = false
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/modules/mod-a') {
+          return replaying
+            ? jsonResponse({ error: 'module edit is invalid' }, 400)
+            : jsonResponse({ error: 'temporarily unavailable' }, 500)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const outcome = await saveGlobalModuleDraftWithOutcome('mod-a', {
+        ...getDatabase().modules[0],
+        name: 'Queued edit',
+      } as any)
+      expect(outcome).toMatchObject({ status: 'queued', mutationIds: [expect.any(String)] })
+      expect(getDatabase().modules[0].name).toBe('Queued edit')
+      if (outcome.status !== 'queued') throw new Error('Expected editor Save to remain queued')
+
+      replaying = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ discarded: 1, retained: 0 })
+      await expect(outcome.settlement).resolves.toMatchObject({
+        status: 'failed',
+        result: { status: 'error', error: 'module edit is invalid' },
+      })
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
   it('failed delete reinserts only deleted module and restores references only while they match attempted deletion', async () => {
     const calls = stubFailingCommandFetch()
     getDatabase().enabledModules = ['mod-a', 'mod-b']
+    getDatabase().personas = [
+      { id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', modules: ['mod-a', 'persona-module'] },
+      { id: 'persona-b', name: 'Persona B', icon: '', personaPrompt: '', modules: ['mod-a', 'changed-persona'] },
+    ]
     getDatabase().characters = [
       {
         chaId: 'char-a',
@@ -1711,18 +1977,18 @@ describe('module command projection helpers', () => {
       { id: 'loadout-a', name: 'Loadout A', modules: ['mod-a', 'loadout-module'] },
       { id: 'loadout-b', name: 'Loadout B', modules: ['mod-a', 'changed-loadout'] },
     ] as any
-    setResourceWriteGuardEnabled(true)
-
     deleteGlobalModule('mod-a')
     expect(getDatabase().modules.map((module) => module.id)).toEqual(['mod-b'])
     expect(getDatabase().enabledModules).toEqual(['mod-b'])
+    expect(getDatabase().personas[0].modules).toEqual(['persona-module'])
     expect(getDatabase().characters[0].modules).toEqual(['character-module'])
     expect(getDatabase().characters[0].chats[0].modules).toEqual(['chat-module'])
     expect(getDatabase().loadouts[0].modules).toEqual(['loadout-module'])
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modules.push({ id: 'mod-c', name: 'Newer Module C' } as any)
       getDatabase().enabledModules.push('mod-c')
+      getDatabase().personas[1].modules = ['newer-persona-ref']
       getDatabase().characters[1].modules = ['newer-character-ref']
       getDatabase().characters[1].chats[0].modules = ['newer-chat-ref']
       getDatabase().loadouts[1].modules = ['newer-loadout-ref']
@@ -1733,6 +1999,8 @@ describe('module command projection helpers', () => {
 
     expect(getDatabase().modules.map((module) => module.id)).toEqual(['mod-a', 'mod-b', 'mod-c'])
     expect(getDatabase().enabledModules).toEqual(['mod-a', 'mod-b', 'mod-c'])
+    expect(getDatabase().personas[0].modules).toEqual(['mod-a', 'persona-module'])
+    expect(getDatabase().personas[1].modules).toEqual(['newer-persona-ref'])
     expect(getDatabase().characters[0].modules).toEqual(['mod-a', 'character-module'])
     expect(getDatabase().characters[0].chats[0].modules).toEqual(['mod-a', 'chat-module'])
     expect(getDatabase().characters[1].modules).toEqual(['newer-character-ref'])
@@ -1767,8 +2035,6 @@ describe('module command projection helpers', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
-
     updateGlobalModule('mod-a', { id: 'mod-a', name: 'Attempted One', description: '' })
     updateGlobalModule('mod-a', { id: 'mod-a', name: 'Attempted Two', description: '' })
 
@@ -1788,8 +2054,8 @@ describe('module command projection helpers', () => {
   })
 })
 
-describe('Phase 3 chat-scoped module toggle (L34)', () => {
-  it('L34: toggling a chat module captures a chat-scoped baseline, never the whole characters array', async () => {
+describe('chat-scoped module toggle', () => {
+  it('toggling a chat module captures a chat-scoped baseline, never the whole characters array', async () => {
     setDatabaseLite(seedCloneCostDb() as any) // char-0 large (40 messages), siblings small
     getDatabase().enabledModules = []
     getDatabase().modules = [{ id: 'mod-a', name: 'Module A' }] as any
@@ -1811,7 +2077,7 @@ describe('Phase 3 chat-scoped module toggle (L34)', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
 
-  it('L34: a failed toggle restores only the active chat row, preserving sibling edits', async () => {
+  it('a failed toggle restores only the active chat row, preserving sibling edits', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
       'fetch',
@@ -1859,8 +2125,8 @@ describe('Phase 3 chat-scoped module toggle (L34)', () => {
   })
 })
 
-describe('Phase 4 module snapshot narrowing (M10)', () => {
-  it('M10: global module snapshots clone only modules and enabledModules', () => {
+describe('module snapshot narrowing', () => {
+  it('global module snapshots clone only modules and enabledModules', () => {
     setDatabaseLite(
       seedCloneCostDb({
         characterCount: 3,
@@ -1882,7 +2148,7 @@ describe('Phase 4 module snapshot narrowing (M10)', () => {
     expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
   })
 
-  it('M10: character-module snapshots clone and restore only the target modules field', () => {
+  it('character-module snapshots clone and restore only the target modules field', () => {
     setDatabaseLite(
       seedCloneCostDb({
         characterCount: 2,
@@ -1918,7 +2184,7 @@ describe('Phase 4 module snapshot narrowing (M10)', () => {
     expect(getDatabase().characters[0].modules).toEqual(['sibling-concurrent'])
   })
 
-  it('M10: forced-failure global rollback preserves concurrent character edits', async () => {
+  it('forced-failure global rollback preserves concurrent character edits', async () => {
     const calls = stubFailingCommandFetch()
     getDatabase().characters = [
       {
@@ -1949,7 +2215,7 @@ describe('Phase 4 module snapshot narrowing (M10)', () => {
     expect(getDatabase().characters[0].modules).toEqual(['char-module'])
   })
 
-  it('M10: forced-failure character-module rollback preserves sibling and same-row edits', async () => {
+  it('forced-failure character-module rollback preserves sibling and same-row edits', async () => {
     const calls = stubFailingCommandFetch()
     getDatabase().characters = [
       {
@@ -1985,7 +2251,7 @@ describe('Phase 4 module snapshot narrowing (M10)', () => {
     expect(getDatabase().characters[1].modules).toEqual(['mod-b'])
   })
 
-  it('M10: character-module rollback uses stable ids across index shifts', async () => {
+  it('character-module rollback uses stable ids across index shifts', async () => {
     const calls = stubFailingCommandFetch()
     getDatabase().characters = [
       {

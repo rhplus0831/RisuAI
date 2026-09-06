@@ -4,13 +4,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const moduleMenuDatabase = vi.hoisted(() => ({
   characters: [
     {
+      chaId: 'character-a',
       chatPage: 0,
-      chats: [{ modules: [] as string[] }],
+      chats: [{ id: 'chat-a', modules: [] as string[] }] as Array<{
+        id: string
+        modules: string[]
+        generationSettings?: { personaId?: string; promptPresetId?: string; agentPresetId?: string }
+        bindedPersona?: string
+      }>,
       modules: [] as string[],
     },
   ],
   enabledModules: [] as string[],
-  modules: [] as Array<{ id: string; name: string; mcp?: unknown }>,
+  moduleFolders: [] as Array<{ id: string; name: string }>,
+  moduleIntergration: '',
+  modules: [] as Array<{ id: string; name: string; namespace?: string; mcp?: unknown }>,
+  personas: [] as Array<{ id: string; modules?: string[] }>,
+  promptPresets: [] as Array<{ id: string; moduleIntergration?: string }>,
+  agentPresets: [] as Array<{ id: string; enabled?: boolean; moduleIntergration?: string }>,
+  agentPresetDefaultId: undefined as string | undefined,
+  selectedPersona: 0,
 }))
 
 const moduleMenuMocks = vi.hoisted(() => ({
@@ -21,6 +34,13 @@ const moduleMenuMocks = vi.hoisted(() => ({
 const moduleMenuAlertMocks = vi.hoisted(() => ({
   alertError: vi.fn(),
   alertNormal: vi.fn(),
+}))
+
+const moduleMenuResourceStatus = vi.hoisted(() => ({
+  modules: 'ready' as 'ready' | 'error',
+  personas: 'ready' as 'ready' | 'error',
+  promptPresets: 'ready' as 'ready' | 'error',
+  characters: 'ready' as 'ready' | 'error',
 }))
 
 const moduleMenuStores = vi.hoisted(() => {
@@ -50,7 +70,49 @@ const moduleMenuStores = vi.hoisted(() => {
 vi.mock('src/ts/moduleCommands', () => moduleMenuMocks)
 vi.mock('src/ts/alert', () => moduleMenuAlertMocks)
 vi.mock('src/ts/server/resourceState.svelte', () => ({
-  getResourceDatabase: () => moduleMenuDatabase,
+  collectionsResourceState: {
+    values: new Proxy(
+      {},
+      {
+        get: (_target, property) => moduleMenuDatabase[property as keyof typeof moduleMenuDatabase],
+      },
+    ),
+    statuses: new Proxy(
+      {},
+      {
+        get: (_target, property) => moduleMenuResourceStatus[property as keyof typeof moduleMenuResourceStatus],
+      },
+    ),
+  },
+  settingsResourceState: {
+    value: new Proxy(
+      {},
+      {
+        get: (_target, property) => moduleMenuDatabase[property as keyof typeof moduleMenuDatabase],
+      },
+    ),
+    groupStatuses: {
+      modules: 'ready',
+      advanced: 'ready',
+      agents: 'ready',
+    },
+    standaloneStatuses: {
+      selectedPersona: 'ready',
+      selectedPersonaId: 'ready',
+    },
+  },
+  charactersResourceState: {
+    get characters() {
+      return moduleMenuDatabase.characters
+    },
+    get status() {
+      return moduleMenuResourceStatus.characters
+    },
+  },
+  getCharacterResourceOwner: (characterId: string) => {
+    const matches = moduleMenuDatabase.characters.filter((character) => character.chaId === characterId)
+    return matches.length === 1 ? matches[0] : undefined
+  },
 }))
 vi.mock('src/ts/stores.svelte', () => moduleMenuStores)
 
@@ -81,10 +143,21 @@ async function settle(): Promise<void> {
 
 beforeEach(() => {
   moduleMenuDatabase.characters[0].chatPage = 0
-  moduleMenuDatabase.characters[0].chats = [{ modules: [] }]
+  moduleMenuDatabase.characters[0].chats = [{ id: 'chat-a', modules: [] }]
   moduleMenuDatabase.characters[0].modules = []
   moduleMenuDatabase.modules = []
   moduleMenuDatabase.enabledModules = []
+  moduleMenuDatabase.moduleFolders = []
+  moduleMenuDatabase.moduleIntergration = ''
+  moduleMenuDatabase.personas = []
+  moduleMenuDatabase.promptPresets = []
+  moduleMenuDatabase.agentPresets = []
+  moduleMenuDatabase.agentPresetDefaultId = undefined
+  moduleMenuDatabase.selectedPersona = 0
+  moduleMenuResourceStatus.modules = 'ready'
+  moduleMenuResourceStatus.personas = 'ready'
+  moduleMenuResourceStatus.promptPresets = 'ready'
+  moduleMenuResourceStatus.characters = 'ready'
   moduleMenuMocks.toggleSelectedCharacterModule.mockReset()
   moduleMenuMocks.toggleSelectedChatModule.mockReset()
   moduleMenuMocks.toggleSelectedCharacterModule.mockResolvedValue({ status: 'accepted', result: null })
@@ -106,6 +179,29 @@ afterEach(() => {
 })
 
 describe('ModuleChatMenu modal behavior', () => {
+  it('groups by authoritative folders, starts named folders collapsed, and search reveals description matches', async () => {
+    moduleMenuDatabase.moduleFolders = [{ id: 'folder-a', name: 'Writing' }]
+    moduleMenuDatabase.modules = [
+      { id: 'module-a', name: 'Alpha', description: 'hidden needle', folderId: 'folder-a' },
+      { id: 'module-b', name: 'Loose', description: 'plain' },
+    ] as any
+    component = mount(ModuleChatMenu, { target, props: { close: vi.fn() } })
+    await settle()
+
+    const folder = target.querySelector<HTMLElement>('[data-risu-module-picker-folder="folder-a"]')
+    expect(folder?.textContent).toContain('Writing')
+    expect(folder?.textContent).not.toContain('Alpha')
+    expect(target.textContent).toContain('Loose')
+
+    const search = target.querySelector<HTMLInputElement>('input')
+    if (!search) throw new Error('Module search input not found')
+    search.value = 'needle'
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    expect(folder?.textContent).toContain('Alpha')
+    expect(target.textContent).not.toContain('Loose')
+  })
+
   it('names the per-chat module toggle and removes the globally enabled placeholder button', async () => {
     moduleMenuDatabase.modules = [{ id: 'module-a', name: 'Module A' }]
     component = mount(ModuleChatMenu, { target, props: { close: vi.fn() } })
@@ -136,6 +232,72 @@ describe('ModuleChatMenu modal behavior', () => {
     expect(moduleMenuMocks.toggleSelectedCharacterModule).not.toHaveBeenCalled()
   })
 
+  it('fails closed for errored or duplicate module owners', async () => {
+    moduleMenuDatabase.modules = [{ id: 'module-a', name: 'Module A' }]
+    moduleMenuResourceStatus.modules = 'error'
+    component = mount(ModuleChatMenu, { target, props: { close: vi.fn() } })
+    await settle()
+
+    expect(target.textContent).not.toContain('Module A')
+
+    unmount(component)
+    component = undefined
+    moduleMenuResourceStatus.modules = 'ready'
+    moduleMenuDatabase.modules = [
+      { id: 'module-a', name: 'Module A' },
+      { id: 'module-a', name: 'Duplicate Module A' },
+    ]
+    component = mount(ModuleChatMenu, { target, props: { close: vi.fn() } })
+    await settle()
+
+    expect(target.textContent).not.toContain('Module A')
+    expect(moduleMenuMocks.toggleSelectedChatModule).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when the selected chat owner is duplicated', async () => {
+    moduleMenuDatabase.modules = [{ id: 'module-a', name: 'Module A' }]
+    moduleMenuDatabase.characters[0].chats = [
+      { id: 'chat-a', modules: [] },
+      { id: 'chat-a', modules: [] },
+    ]
+    component = mount(ModuleChatMenu, { target, props: { close: vi.fn() } })
+    await settle()
+
+    expect(target.textContent).toContain('Module A')
+    expect(target.querySelector('button[aria-label="Module: Module A"]')).toBeNull()
+    expect(moduleMenuMocks.toggleSelectedChatModule).not.toHaveBeenCalled()
+  })
+
+  it('shows Persona-linked modules as active without exposing a chat toggle', async () => {
+    moduleMenuDatabase.modules = [{ id: 'module-a', name: 'Module A' }]
+    moduleMenuDatabase.personas = [{ id: 'persona-a', modules: ['module-a'] }]
+    moduleMenuDatabase.characters[0].chats = [
+      { id: 'chat-a', modules: [], generationSettings: { personaId: 'persona-a' } },
+    ]
+    component = mount(ModuleChatMenu, { target, props: { close: vi.fn() } })
+    await settle()
+
+    expect(target.textContent).toContain(language.personaModuleLinkActive)
+    expect(target.querySelector('button[aria-label="Module: Module A"]')).toBeNull()
+    expect(moduleMenuMocks.toggleSelectedChatModule).not.toHaveBeenCalled()
+  })
+
+  it('shows modules activated by the selected Prompt Preset namespace integration as active', async () => {
+    moduleMenuDatabase.modules = [{ id: 'codex-module', name: 'Codex Module', namespace: 'Codex' }]
+    moduleMenuDatabase.promptPresets = [{ id: 'gpt-preset', moduleIntergration: 'Codex' }]
+    moduleMenuDatabase.characters[0].chats = [
+      { id: 'chat-a', modules: [], generationSettings: { promptPresetId: 'gpt-preset' } },
+    ]
+    component = mount(ModuleChatMenu, { target, props: { close: vi.fn() } })
+    await settle()
+
+    expect(target.querySelector('[data-module-activation-source="promptPresetIntegration"]')?.textContent).toContain(
+      language.promptPresetModuleIntegrationActive,
+    )
+    expect(target.querySelector('button[aria-label="Module: Codex Module"]')).toBeNull()
+    expect(moduleMenuMocks.toggleSelectedChatModule).not.toHaveBeenCalled()
+  })
+
   it('shows pending and failed state when a chat-scoped toggle is rejected', async () => {
     moduleMenuDatabase.modules = [{ id: 'module-a', name: 'Module A' }]
     const dispatch = createDeferred<{
@@ -152,9 +314,7 @@ describe('ModuleChatMenu modal behavior', () => {
     await settle()
 
     expect(toggle.disabled).toBe(true)
-    expect(target.querySelector('[data-module-mutation-status="module-a"]')?.textContent).toContain(
-      language.moduleSave.saving,
-    )
+    expect(target.querySelector('[data-module-mutation-status="module-a"]')).toBeNull()
 
     dispatch.resolve({ status: 'failed', result: { status: 'conflict', currentRevision: 12 } })
     await vi.waitFor(() =>
@@ -185,11 +345,8 @@ describe('ModuleChatMenu modal behavior', () => {
     if (!toggle) throw new Error('Character module toggle not found')
     toggle.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
 
-    await vi.waitFor(() =>
-      expect(target.querySelector('[data-module-mutation-status="module-a"]')?.textContent).toContain(
-        language.moduleSave.queued,
-      ),
-    )
+    await vi.waitFor(() => expect(moduleMenuAlertMocks.alertNormal).toHaveBeenCalledWith(language.moduleSave.queued))
+    expect(target.querySelector('[data-module-mutation-status="module-a"]')).toBeNull()
     expect(toggle.disabled).toBe(true)
     expect(moduleMenuAlertMocks.alertNormal).toHaveBeenCalledWith(language.moduleSave.queued)
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LLMFlags } from '../../../src/ts/model/types'
+import { LLMFlags } from '@risuai/shared-core/model-types'
 import {
   buildAnthropicWireMessages,
   buildOpenAIWireMessages,
@@ -74,6 +74,38 @@ describe('provider-native message conversion', () => {
         content: [
           { type: 'image', source: { type: 'base64', media_type: 'image/webp', data: 'BBBB' } },
           { type: 'text', text: 'look', cache_control: { type: 'ephemeral', ttl: '1h' } },
+        ],
+      },
+    ])
+  })
+
+  it('pins natural Anthropic attachment order and the final-part cache point', () => {
+    // Accepted divergence from baseline anthropic.ts:147: the old unshift()
+    // path reversed attachments and cached content[0]. Preserve A, B, text
+    // order and place the cache boundary on the final part instead.
+    expect(
+      buildAnthropicWireMessages([
+        {
+          role: 'user',
+          content: 'compare the first and second images',
+          cachePoint: true,
+          multimodals: [
+            { type: 'image', base64: 'data:image/png;base64,IMAGE_A' },
+            { type: 'image', base64: 'data:image/jpeg;base64,IMAGE_B' },
+          ],
+        },
+      ]),
+    ).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'IMAGE_A' } },
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'IMAGE_B' } },
+          {
+            type: 'text',
+            text: 'compare the first and second images',
+            cache_control: { type: 'ephemeral' },
+          },
         ],
       },
     ])

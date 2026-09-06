@@ -6,11 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { setupAuthedClient } from './helpers/auth.js'
-import {
-  BROAD_WRITE_TABLES,
-  assertCommandMetricGate,
-  type CommandMutationMetric,
-} from './helpers/commandMetricGates.js'
+import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 
 // Phase 6 (the message-free ceiling) regression. Each test PROVES a Tier-5
 // route's floor was correct and the documented blocker is load-bearing. Phase 8
@@ -23,16 +19,18 @@ import {
 //     `targeted-character-row` (Phase 8b + follow-up): the orphan cleanup now
 //     loops the targeted deleteChatMessages/deleteChatHypaV3 over the removed
 //     chat(s) instead of hydrating every message of every chat.
-//   * DELETE modules/:id stays `message-free`: `removeModuleReferences` strips
-//     the id across characters, chats, the loadouts collection, and settings, so
-//     no single-table lever applies and it writes the full broad set.
+//   * DELETE modules/:id uses `targeted-cross-owner`: matching references in
+//     characters, chats, loadouts and settings are stripped without broad
+//     collection replacement.
 //   * POST characters/:id/chats GRADUATED to `targeted-character-row` (H2): the
 //     duplicate-message-id validation is handled by the indexed
 //     `activeMessageIdExists` lookup, so the route keeps corpus-wide uniqueness
 //     without hydrating every chat message.
-//   * POST characters and POST characters/create-and-select stay `message-free`
-//     (their dropped id-repair side effects are the recorded unblock
-//     conditions, not done here). POST modules graduated to targeted-collection.
+//   * POST characters and POST characters/create-and-select GRADUATED to
+//     `targeted-character-row`: identity/order projection plus keyed inserts
+//     preserve unrelated rows and BardWiki dependents. The dedicated
+//     characterCreationSafety suite guards preservation, replay and rollback.
+//     POST modules graduated to targeted-collection.
 //   * PUT characters/:id/scripts and PUT characters/:id/triggers GRADUATED to
 //     `targeted-character-row` (Phase 8a): the normalization is validate-only via
 //     discard, so only the target character row is written.
@@ -262,8 +260,8 @@ afterEach(async () => {
   rmSync(harness.dataDir, { recursive: true, force: true })
 })
 
-describe('Phase 6 message-dependent delete floors', () => {
-  it("DELETE characters/:id narrows to targeted-character-row (Phase 8 follow-up) and cleans up its chats' message rows", async () => {
+describe('message-dependent delete floors', () => {
+  it("DELETE characters/:id narrows to targeted-character-row and cleans up its chats' message rows", async () => {
     const revision = await importDatabase(seedDatabase())
     // The deleted character owns a chat with a persisted message row.
     expect(messageRowCount('chat-a-1')).toBe(1)
@@ -284,7 +282,7 @@ describe('Phase 6 message-dependent delete floors', () => {
     expect(messageRowCount('chat-a-1')).toBe(0)
   })
 
-  it("DELETE chats/:id narrows to targeted-character-row (Phase 8b) and still cleans the deleted chat's message rows", async () => {
+  it("DELETE chats/:id narrows to targeted-character-row and still cleans the deleted chat's message rows", async () => {
     const revision = await importDatabase(seedDatabase())
     expect(messageRowCount('chat-a-1')).toBe(1)
 
@@ -306,7 +304,7 @@ describe('Phase 6 message-dependent delete floors', () => {
     expect(messageRowCount('chat-b-1')).toBe(1)
   })
 
-  it('DELETE modules/:id stays message-free and strips references across every table', async () => {
+  it('DELETE modules/:id uses targeted collection writes and strips references across every table', async () => {
     const revision = await importDatabase(seedDatabase())
 
     const { metric } = await runCommand({
@@ -315,10 +313,9 @@ describe('Phase 6 message-dependent delete floors', () => {
       payload: { baseRevision: revision },
     })
 
-    // `removeModuleReferences` spans settings + characters + chats + loadouts, so
-    // the floor is `message-free` writing the full broad set — no single-table
-    // lever applies. The gate enforces exactly the broad table set.
-    expect(metric.mutationPath).toBe('message-free')
+    // `removeModuleReferences` now discovers the broad reference set once but
+    // persists only the changed settings, collection, character, and chat rows.
+    expect(metric.mutationPath).toBe('targeted-cross-owner')
     assertCommandMetricGate(metric)
     expect(readSettings().enabledModules).toEqual([])
     expect(readCharacter('char-a').modules).toEqual([])
@@ -328,8 +325,8 @@ describe('Phase 6 message-dependent delete floors', () => {
   })
 })
 
-describe('Phase 6 message-validation create floor', () => {
-  it('POST characters/:id/chats uses targeted H2 chat-create and validates message ids corpus-wide', async () => {
+describe('message-validation create floor', () => {
+  it('POST characters/:id/chats uses targeted chat-create and validates message ids corpus-wide', async () => {
     const revision = await importDatabase(seedDatabase())
 
     // The new chat reuses a message id that lives in a DIFFERENT character's
@@ -374,8 +371,8 @@ describe('Phase 6 message-validation create floor', () => {
   })
 })
 
-describe('Phase 6 message-free create + normalization floors', () => {
-  it('POST characters appends one character at the message-free floor', async () => {
+describe('targeted creation and normalization floors', () => {
+  it('POST characters appends one character at the targeted append range', async () => {
     const revision = await importDatabase(seedDatabase())
 
     const { metric } = await runCommand({
@@ -384,13 +381,13 @@ describe('Phase 6 message-free create + normalization floors', () => {
       payload: { baseRevision: revision, character: { chaId: 'char-c', name: 'C' } },
     })
 
-    expect(metric.mutationPath).toBe('message-free')
-    expect(metric.writtenTables).toEqual([...BROAD_WRITE_TABLES])
+    expect(metric.mutationPath).toBe('targeted-character-row')
+    expect(metric.writtenTables).toEqual(['characters', 'settings'])
     assertCommandMetricGate(metric)
     expect(readCharacterIds()).toEqual(['char-a', 'char-b', 'char-c'])
   })
 
-  it('POST characters/create-and-select appends + selects at the message-free floor', async () => {
+  it('POST characters/create-and-select appends + selects at the targeted append range', async () => {
     const revision = await importDatabase(seedDatabase())
 
     const { metric } = await runCommand({
@@ -399,14 +396,14 @@ describe('Phase 6 message-free create + normalization floors', () => {
       payload: { baseRevision: revision, character: { chaId: 'char-d', name: 'D' } },
     })
 
-    expect(metric.mutationPath).toBe('message-free')
-    expect(metric.writtenTables).toEqual([...BROAD_WRITE_TABLES])
+    expect(metric.mutationPath).toBe('targeted-character-row')
+    expect(metric.writtenTables).toEqual(['characters', 'settings'])
     assertCommandMetricGate(metric)
     expect(readCharacterIds()).toEqual(['char-a', 'char-b', 'char-d'])
     expect(readSettings().currentChar).toBe(2)
   })
 
-  it('PUT characters/:id/scripts replaces customscript at the targeted-character-row range (Phase 8a)', async () => {
+  it('PUT characters/:id/scripts replaces customscript at the targeted-character-row range', async () => {
     const revision = await importDatabase(seedDatabase())
 
     const script = {
@@ -433,7 +430,7 @@ describe('Phase 6 message-free create + normalization floors', () => {
     expect(readCharacter('char-a').customscript).toEqual([script])
   })
 
-  it('PUT characters/:id/triggers replaces triggerscript at the targeted-character-row range (Phase 8a)', async () => {
+  it('PUT characters/:id/triggers replaces triggerscript at the targeted-character-row range', async () => {
     const revision = await importDatabase(seedDatabase())
 
     const trigger = { id: 'trigger-a', comment: 'Start', type: 'start', conditions: [], effect: [] }

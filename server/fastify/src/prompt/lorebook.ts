@@ -1,7 +1,14 @@
 import { CCardLib } from '@risuai/ccardlib'
-import type { Chat, Database, Message, character, loreBook } from '../../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
-import { pickHashRand } from '../../../../src/ts/util/loreHash'
+import { isAgentOnlyLorebookEntry } from '@risuai/shared-core/agent-only-lorebook'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+  FastifyLoreBook as loreBook,
+  FastifyMessage as Message,
+} from './serverTypes.js'
+import type { PromptMessage } from './promptMessage.js'
+import { pickHashRand } from '@risuai/shared-core/lore-hash'
 import { getActiveModules } from './modules.js'
 import {
   type BoundedRegexCompatibilityOptions,
@@ -13,8 +20,11 @@ import {
   testBoundedRegex,
   testBoundedRegexWithCompatibility,
 } from './boundedRegex.js'
-import { encodingForModel, tokenize, type TokenEncoding } from './tokens.js'
+import { tokenize, type TokenEncoding } from './tokens.js'
+import { ensureTokenizerLoadedForDb, tokenizerEncodingFromDb } from './tokenizerConfig.js'
 import { expandVariables, type ExpandContext } from './variables.js'
+import { getChatDefaultVariables, readChatVariable } from './chatVarDefaults.js'
+import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
 
 /**
  * Lorebook activation: constant + keyword + recursive.
@@ -81,7 +91,11 @@ export type LorePosition =
   | 'scenario'
   | `pt_${string}`
 
+export type LoreSourceKind = 'character' | 'module' | 'chat'
+
 export interface LoreEntryActive {
+  /** Included only for diagnostics; source remains the user-facing lore name. */
+  sourceKind?: LoreSourceKind
   depth: number
   pos: LorePosition
   prompt: string
@@ -89,12 +103,11 @@ export interface LoreEntryActive {
   order: number
   priority: number
   /**
-   * Token count of the decorator-stripped `prompt` under the
-   * encoding resolved by `encodingForModel(input.model)`. Populated
-   * so the priority-desc budget filter has something to
-   * drop. Like the SPA (`lorebook.svelte.ts`), this is computed
-   * once at activation time and not refreshed after `inject_lore`
-   * mutates `prompt`.
+   * Token count of the decorator-stripped, CBS-evaluated `prompt` under
+   * the encoding resolved from the active database tokenizer. Populated so
+   * the priority-desc budget filter has something to drop. Like the SPA
+   * (`lorebook.svelte.ts`), this is computed once at activation time and not
+   * refreshed after `inject_lore` mutates `prompt`.
    */
   tokens: number
   source: string
@@ -119,16 +132,13 @@ export interface LorebookActivationReport {
 }
 
 export interface ActivateLorebookInput {
+  includeSources?: boolean
+  resolveSpeakerName?: (characterId: string) => string | undefined
   database: Database
   currentChar: character
   currentChat: Chat
-  /**
-   * Optional model id used to pick the tiktoken encoding for the
-   * per-entry `tokens` count. Resolved through `encodingForModel`;
-   * leaving it `undefined` falls back to `cl100k_base`, matching the
-   * SPA's `tikJS` default (`tokenizer.ts`).
-   */
-  model?: string
+  /** Request-scoped CBS coordinates/memo reused by the live assembly path. */
+  cbsContext?: ExpandContext
   /**
    * Optional assembly-owned writer for chat vars that must survive beyond the
    * cloned working chat. The local working chat is still updated first so the
@@ -139,23 +149,31 @@ export interface ActivateLorebookInput {
 
 const POSITION_NAMED = new Set(['after_desc', 'before_desc', 'personality', 'scenario'])
 
-function collectEntries(input: ActivateLorebookInput): loreBook[] {
+function collectEntries(input: ActivateLorebookInput): Array<loreBook & { sourceKind?: LoreSourceKind }> {
   const { database, currentChar, currentChat } = input
   const characterLore = currentChar.globalLore ?? []
   const chatLore = currentChat.localLore ?? []
   const moduleLore = getActiveModules(database, currentChar, currentChat).flatMap((m) => m.lorebook ?? [])
-  return [...characterLore, ...chatLore, ...moduleLore]
+  return [
+    ...characterLore.map((entry) => (input.includeSources ? { ...entry, sourceKind: 'character' as const } : entry)),
+    ...chatLore.map((entry) => (input.includeSources ? { ...entry, sourceKind: 'chat' as const } : entry)),
+    ...moduleLore.map((entry) => (input.includeSources ? { ...entry, sourceKind: 'module' as const } : entry)),
+  ].filter((entry) => !isAgentOnlyLorebookEntry(entry))
 }
 
 function findCharByChaId(database: Database, chaId: string | undefined): character | undefined {
   if (!chaId) return undefined
-  return database.characters?.find((c) => c?.chaId === chaId)
+  return database.characters?.find((c: character) => c?.chaId === chaId)
 }
 
-function readChatVar(chat: Chat, key: string): string {
-  const stored = chat.scriptstate?.['$' + key]
-  if (stored === undefined || stored === null) return 'null'
-  return String(stored)
+function readChatVar(input: ActivateLorebookInput, key: string): string {
+  return (
+    readChatVariable(
+      input.currentChat.scriptstate as Record<string, unknown> | undefined,
+      key,
+      getChatDefaultVariables(input.currentChar, input.database),
+    ) ?? 'null'
+  )
 }
 
 function writeChatVar(chat: Chat, key: string, value: string): void {
@@ -170,6 +188,18 @@ function writeStickyChatVar(input: ActivateLorebookInput, key: string, value: st
 
 function loreId(entry: loreBook): string {
   return entry.id ?? String(pickHashRand(5555, entry.content))
+}
+
+function countLorebookTokens(input: ActivateLorebookInput, prompt: string, encoding: TokenEncoding): number {
+  const evaluated = isRisuChatParserFixedPoint(prompt)
+    ? prompt
+    : expandVariables(prompt, {
+        ...input.cbsContext,
+        database: input.database,
+        chara: input.currentChar,
+        runVar: false,
+      }).text
+  return tokenize(evaluated, encoding)
 }
 
 interface SearchArg {
@@ -287,6 +317,7 @@ function buildSearchableCorpus(
   messages: Message[],
   database: Database,
   currentChar: character,
+  resolveSpeakerName?: (characterId: string) => string | undefined,
 ): SearchableMessageCorpus {
   const username = database.username ?? 'user'
   const baseEntries = messages.map((msg) => {
@@ -298,7 +329,11 @@ function buildSearchableCorpus(
         kind: 'base',
       }) as SearchableMessageBase
     }
-    const speakerName = msg.name ?? findCharByChaId(database, msg.saying)?.name ?? currentChar.name
+    const speakerName =
+      msg.name ??
+      findCharByChaId(database, msg.saying)?.name ??
+      (msg.saying ? resolveSpeakerName?.(msg.saying) : undefined) ??
+      currentChar.name
     return normalizeSearchableBase({
       prompt: `\x01{{${speakerName}}}:` + msg.data + '\x01',
       data: msg.data,
@@ -440,12 +475,13 @@ function getCompiledLoreKeyRegexWithCompatibility(
  */
 function searchMatch(corpus: SearchableMessageCorpus, arg: SearchArg, matchLog: LoreMatchLogEntry[]): boolean {
   lorebookSearchEntryListInstrumentation.searchMatchCalls++
+  const allMode = arg.all ?? false
   const trimmedKeys: string[] = []
   for (const k of arg.keys) {
     const t = k.trim()
     if (t.length > 0) trimmedKeys.push(t)
   }
-  if (trimmedKeys.length === 0) return false
+  if (trimmedKeys.length === 0) return allMode
 
   const baseEntries = baseSearchEntriesForDepth(corpus, arg.searchDepth)
   const recursiveEntries = arg.dontSearchWhenRecursive ? NO_SEARCH_ENTRIES : corpus.recursiveEntries
@@ -471,7 +507,6 @@ function searchMatch(corpus: SearchableMessageCorpus, arg: SearchArg, matchLog: 
     return matched && !malformedRegex
   }
 
-  const allMode = arg.all ?? false
   let allModeMatched = true
   const lowerKeys = trimmedKeys.map((key) => key.toLocaleLowerCase())
   const compactKeys = lowerKeys.map((key) => key.replace(/ /g, ''))
@@ -509,12 +544,13 @@ async function searchMatchAsync(
   matchLog: LoreMatchLogEntry[],
   options: BoundedRegexCompatibilityOptions,
 ): Promise<boolean> {
+  const allMode = arg.all ?? false
   const trimmedKeys: string[] = []
   for (const k of arg.keys) {
     const t = k.trim()
     if (t.length > 0) trimmedKeys.push(t)
   }
-  if (trimmedKeys.length === 0) return false
+  if (trimmedKeys.length === 0) return allMode
 
   const baseEntries = baseSearchEntriesForDepth(corpus, arg.searchDepth)
   const recursiveEntries = arg.dontSearchWhenRecursive ? NO_SEARCH_ENTRIES : corpus.recursiveEntries
@@ -539,7 +575,6 @@ async function searchMatchAsync(
     return false
   }
 
-  const allMode = arg.all ?? false
   let allModeMatched = true
   const lowerKeys = trimmedKeys.map((key) => key.toLocaleLowerCase())
   const compactKeys = lowerKeys.map((key) => key.replace(/ /g, ''))
@@ -578,7 +613,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
   const disabledUIPrompts: string[] = []
   const matchLog: LoreMatchLogEntry[] = []
   const activatedIndexes = new Set<number>()
-  const searchCorpus = buildSearchableCorpus(currentChat.message ?? [], database, currentChar)
+  const searchCorpus = buildSearchableCorpus(currentChat.message ?? [], database, currentChar, input.resolveSpeakerName)
 
   // Includes the implicit first message, matching `loadLoreBookV3Prompt`.
   const chatLength = (currentChat.message?.length ?? 0) + 1
@@ -591,7 +626,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
   // 800, so we fall back to the same value here when neither override
   // is present.
   const loreBudget = currentChar.loreSettings?.tokenBudget ?? database.loreBookToken ?? 800
-  const encoding: TokenEncoding = encodingForModel(input.model)
+  const encoding: TokenEncoding = tokenizerEncodingFromDb(database)
 
   // As in `loadLoreBookV3Prompt`, walk every unfired entry; if any new entry
   // activates with recursion enabled, flip `matching = true` for
@@ -603,7 +638,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
     matching = false
 
     for (let i = 0; i < entries.length; i++) {
-      const entry = entries[i]
+      let entry = entries[i]
       if (!entry) continue
       if (activatedIndexes.has(i)) continue
       if (entry.mode === 'folder') continue
@@ -633,9 +668,8 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
         for (let j = 0; j < i; j++) {
           if (entries[j] && entries[j].id === entry.id) {
             if (!activatedIndexes.has(j)) {
-              entry.comment = entries[j].comment
-              entry.content = entries[j].content
-              entry.alwaysActive = true
+              entry = { ...entry, comment: entries[j].comment, content: entries[j].content, alwaysActive: true }
+              entries[i] = entry
               activated = true
             }
             break
@@ -777,7 +811,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
             return
           }
           case 'keep_activate_after_match': {
-            if (readChatVar(currentChat, '__internal_ka_' + loreId(entry)) === 'true') {
+            if (readChatVar(input, '__internal_ka_' + loreId(entry)) === 'true') {
               forceState = 'activate'
             } else {
               keepAfterMatch = true
@@ -789,7 +823,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
             return false
           }
           case 'dont_activate_after_match': {
-            if (readChatVar(currentChat, '__internal_da_' + loreId(entry)) === 'true') {
+            if (readChatVar(input, '__internal_da_' + loreId(entry)) === 'true') {
               forceState = 'deactivate'
             } else {
               dontAfterMatch = true
@@ -859,8 +893,9 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
         role,
         order,
         priority,
-        tokens: tokenize(stripped, encoding),
+        tokens: countLorebookTokens(input, stripped, encoding),
         source: entry.comment || `lorebook ${i}`,
+        ...(input.includeSources ? { sourceKind: entry.sourceKind } : {}),
         inject,
       })
       activatedIndexes.add(i)
@@ -944,6 +979,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
 }
 
 export async function activateLorebookAsync(input: ActivateLorebookInput): Promise<LorebookActivationReport> {
+  await ensureTokenizerLoadedForDb(input.database)
   const { database, currentChar, currentChat } = input
   const regexCompatibility = complexRegexCompatibilityOptions(database, 'input')
   if (!regexCompatibility.enabled) return activateLorebook(input)
@@ -953,21 +989,21 @@ export async function activateLorebookAsync(input: ActivateLorebookInput): Promi
   const disabledUIPrompts: string[] = []
   const matchLog: LoreMatchLogEntry[] = []
   const activatedIndexes = new Set<number>()
-  const searchCorpus = buildSearchableCorpus(currentChat.message ?? [], database, currentChar)
+  const searchCorpus = buildSearchableCorpus(currentChat.message ?? [], database, currentChar, input.resolveSpeakerName)
 
   const chatLength = (currentChat.message?.length ?? 0) + 1
   const defaultScanDepth = currentChar.loreSettings?.scanDepth ?? database.loreBookDepth ?? 5
   const defaultFullWord = currentChar.loreSettings?.fullWordMatching ?? false
   const recursiveScanning = currentChar.loreSettings?.recursiveScanning ?? true
   const loreBudget = currentChar.loreSettings?.tokenBudget ?? database.loreBookToken ?? 800
-  const encoding: TokenEncoding = encodingForModel(input.model)
+  const encoding: TokenEncoding = tokenizerEncodingFromDb(database)
 
   let matching = true
   while (matching) {
     matching = false
 
     for (let i = 0; i < entries.length; i++) {
-      const entry = entries[i]
+      let entry = entries[i]
       if (!entry) continue
       if (activatedIndexes.has(i)) continue
       if (entry.mode === 'folder') continue
@@ -994,9 +1030,8 @@ export async function activateLorebookAsync(input: ActivateLorebookInput): Promi
         for (let j = 0; j < i; j++) {
           if (entries[j] && entries[j].id === entry.id) {
             if (!activatedIndexes.has(j)) {
-              entry.comment = entries[j].comment
-              entry.content = entries[j].content
-              entry.alwaysActive = true
+              entry = { ...entry, comment: entries[j].comment, content: entries[j].content, alwaysActive: true }
+              entries[i] = entry
               activated = true
             }
             break
@@ -1138,7 +1173,7 @@ export async function activateLorebookAsync(input: ActivateLorebookInput): Promi
             return
           }
           case 'keep_activate_after_match': {
-            if (readChatVar(currentChat, '__internal_ka_' + loreId(entry)) === 'true') {
+            if (readChatVar(input, '__internal_ka_' + loreId(entry)) === 'true') {
               forceState = 'activate'
             } else {
               keepAfterMatch = true
@@ -1146,7 +1181,7 @@ export async function activateLorebookAsync(input: ActivateLorebookInput): Promi
             return false
           }
           case 'dont_activate_after_match': {
-            if (readChatVar(currentChat, '__internal_da_' + loreId(entry)) === 'true') {
+            if (readChatVar(input, '__internal_da_' + loreId(entry)) === 'true') {
               forceState = 'deactivate'
             } else {
               dontAfterMatch = true
@@ -1215,8 +1250,9 @@ export async function activateLorebookAsync(input: ActivateLorebookInput): Promi
         role,
         order,
         priority,
-        tokens: tokenize(stripped, encoding),
+        tokens: countLorebookTokens(input, stripped, encoding),
         source: entry.comment || `lorebook ${i}`,
+        ...(input.includeSources ? { sourceKind: entry.sourceKind } : {}),
         inject,
       })
       activatedIndexes.add(i)
@@ -1318,24 +1354,56 @@ export function resolvePosition(text: string, report: LorebookActivationReport, 
   return result.replace(POSITION_REGEX, '')
 }
 
+/**
+ * Build the prompt-template position parser shared by token preflight and the
+ * final render. In addition to resolving `{{position::}}` markers, it applies
+ * activated `@@inject_at <location>` entries to the matching template card.
+ *
+ * `@@inject_lore` entries never reach this stage: activation applies them to
+ * their target lore entry and removes the injector from `report.actives`.
+ * Non-lore `@@inject_at` entries intentionally remain in the report so their
+ * append / prepend / replace operation can run here.
+ */
+export function createPositionParser(
+  report: LorebookActivationReport,
+): (text: string, loc: string | undefined) => string {
+  const injections = report.actives.filter((entry) => entry.inject !== null && !entry.inject.lore)
+
+  return (text, loc) => {
+    for (const entry of injections) {
+      const injection = entry.inject!
+      if (injection.location !== loc) continue
+
+      switch (injection.operation) {
+        case 'append':
+          text += ' ' + entry.prompt
+          break
+        case 'prepend':
+          text = entry.prompt + ' ' + text
+          break
+        case 'replace':
+          text = text.replace(injection.param, entry.prompt)
+          break
+      }
+    }
+
+    return resolvePosition(text, report)
+  }
+}
+
 /** The slots `buildLorebookContext` distributes activated entries into. */
 export interface UnformatedLorebookSlots {
-  lorebook: OpenAIChat[]
-  description: OpenAIChat[]
-  postEverything: OpenAIChat[]
+  lorebook: PromptMessage[]
+  description: PromptMessage[]
+  postEverything: PromptMessage[]
 }
 
 export interface LorebookContext {
   /**
-   * `{{position::}}` resolver for the template / render walkers. The
-   * SPA's injection-lore branch is dead server-side because filtering removes
-   * lore-targeted injection entries from `report.actives`; non-lore injection
-   * entries can still survive. This just delegates to `resolvePosition` and
-   * ignores `loc`,
-   * matching `preflight.ts`'s `positionParserFor` so preflight and the
-   * final render agree.
+   * Shared `{{position::}}` and `@@inject_at` resolver for template preflight
+   * and final rendering.
    */
-  positionParser: (text: string, loc: string) => string
+  positionParser: (text: string, loc: string | undefined) => string
   /** `pos === 'depth' && depth > 0` or `reverse_depth` (via `getDepthPrompts`). */
   depthPrompts: LoreEntryActive[]
 }
@@ -1362,7 +1430,7 @@ export function buildLorebookContext(
   report: LorebookActivationReport,
   unformated: UnformatedLorebookSlots,
 ): LorebookContext {
-  const toRow = (lore: LoreEntryActive): OpenAIChat => ({
+  const toRow = (lore: LoreEntryActive): PromptMessage => ({
     role: lore.role,
     content: expandVariables(resolvePosition(lore.prompt, report), {
       ...ctx,
@@ -1391,7 +1459,47 @@ export function buildLorebookContext(
   }
 
   return {
-    positionParser: (text) => resolvePosition(text, report),
+    positionParser: createPositionParser(report),
     depthPrompts: getDepthPrompts(report),
   }
+}
+
+/** Diagnostics keep all activation writes inside the supplied, isolated working chat.
+ * Lore-to-lore injections are counted in the final receiving entry's category.
+ */
+export async function countActiveLoreTokens(source: ActivateLorebookInput) {
+  const currentChat = structuredClone(source.currentChat)
+  const currentChar = { ...source.currentChar, chats: [currentChat], chatPage: 0 }
+  const database = { ...source.database, characters: [currentChar], currentChar: 0 }
+  const input: ActivateLorebookInput = {
+    ...source,
+    database,
+    currentChar,
+    currentChat,
+    writeChatVar: undefined,
+    cbsContext: {
+      resolveSpeakerName: source.resolveSpeakerName,
+      ...source.cbsContext,
+      database,
+      selectedCharID: 0,
+      chatPage: 0,
+    },
+  }
+  let hasRandomActivation = false
+  for (const entry of collectEntries(input)) {
+    if (entry.mode === 'folder' || (!entry.alwaysActive && !entry.key)) continue
+    CCardLib.decorator.parse(entry.content, (name, args) => {
+      if (name === 'probability') {
+        const probability = parseInt(args[0])
+        if (Number.isFinite(probability) && probability >= 0 && probability < 100) hasRandomActivation = true
+      }
+    })
+  }
+  const report = await activateLorebookAsync({ ...input, includeSources: true, writeChatVar: undefined })
+  const counts = { character: 0, module: 0, chat: 0, hasRandomActivation }
+  const encoding = tokenizerEncodingFromDb(input.database)
+  for (const entry of report.actives) {
+    if (entry.sourceKind) counts[entry.sourceKind] += countLorebookTokens(input, entry.prompt, encoding)
+  }
+  return counts
 }

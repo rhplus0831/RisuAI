@@ -3,6 +3,7 @@
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
+  import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
 
   interface KeyValueRow {
     key: string
@@ -34,6 +35,7 @@
   }
 
   function removeRow(index: number): void {
+    if (!confirmSettingsItemRemoval()) return
     rows = rows.filter((_, rowIndex) => rowIndex !== index)
   }
 </script>

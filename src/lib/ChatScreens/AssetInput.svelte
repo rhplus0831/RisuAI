@@ -1,10 +1,12 @@
 <script lang="ts">
   import { FileMusicIcon, PlusIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
-  import { getDatabase, setCharacterByIndex, type character } from 'src/ts/storage/database.svelte'
+  import { setCharacterByIndex, type character } from 'src/ts/storage/database.svelte'
   import { getFileSrc, saveAsset } from 'src/ts/globalApi.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
   import { selectMultipleFile } from 'src/ts/filePicker'
+  import { getSelectedCharacterOwner } from 'src/ts/characterState'
+  import { charactersResourceState, getCharacterResourceOwner } from 'src/ts/server/resourceState.svelte'
   import {
     appendFreshCharacterAdditionalAssets,
     beginCharacterAdditionalAssetUpload,
@@ -21,6 +23,34 @@
   }
 
   const { currentCharacter, onSelect }: Props = $props()
+
+  function stableCharacterId(value: unknown): value is string {
+    return typeof value === 'string' && value.trim().length > 0
+  }
+
+  function selectedAssetCharacterOwner(): character | undefined {
+    const status = charactersResourceState.status
+    if (status === 'ready') {
+      const owner = getSelectedCharacterOwner()
+      if (!stableCharacterId(owner?.chaId) || charactersResourceState.rowStatuses[owner.chaId] === 'error') {
+        return undefined
+      }
+      return owner
+    }
+    if (status !== 'idle' && status !== 'loading') return undefined
+
+    const owner = getSelectedCharacterOwner()
+    if (stableCharacterId(owner?.chaId) && charactersResourceState.rowStatuses[owner.chaId] !== 'error') return owner
+    if (!stableCharacterId(currentCharacter?.chaId)) return undefined
+    const matches = charactersResourceState.characters.filter(
+      (candidate) => candidate?.chaId === currentCharacter.chaId,
+    )
+    if (matches.length > 1) return undefined
+    if (charactersResourceState.rowStatuses[currentCharacter.chaId] === 'error') return undefined
+    return matches[0] ?? currentCharacter
+  }
+
+  let assetCharacter = $derived(selectedAssetCharacterOwner())
   const QUICK_ADD_ADDITIONAL_ASSET_EXTENSIONS = ['png', 'webp', 'mp4', 'mp3', 'gif']
   type SelectedAdditionalAssetFile = NonNullable<Awaited<ReturnType<typeof selectMultipleFile>>>[number]
 
@@ -29,8 +59,8 @@
   let assetPreviewRun = 0
 
   const assetSourceKey = $derived(
-    currentCharacter.type === 'character'
-      ? (currentCharacter.additionalAssets ?? []).map((asset) => `${asset[1]}:${asset[2] ?? ''}`).join('\n')
+    assetCharacter?.type === 'character'
+      ? (assetCharacter.additionalAssets ?? []).map((asset) => `${asset[1]}:${asset[2] ?? ''}`).join('\n')
       : '',
   )
 
@@ -43,11 +73,11 @@
   }
 
   function currentQuickAddAdditionalAssetUploadTarget() {
-    if (currentCharacter.type !== 'character' || !currentCharacter.chaId) return null
+    if (assetCharacter?.type !== 'character' || !assetCharacter.chaId) return null
 
     return captureCharacterAdditionalAssetUploadTarget({
-      characterId: currentCharacter.chaId,
-      additionalAssets: currentCharacter.additionalAssets,
+      characterId: assetCharacter.chaId,
+      additionalAssets: assetCharacter.additionalAssets,
     })
   }
 
@@ -55,19 +85,31 @@
     index: number
     character: character | undefined
   } {
-    const database = getDatabase()
-    const index = database.characters?.findIndex((candidate) => candidate.chaId === characterId) ?? -1
-    return {
-      index,
-      character: index >= 0 ? database.characters[index] : undefined,
+    const status = charactersResourceState.status
+    if (status === 'ready') {
+      const character = getCharacterResourceOwner(characterId)
+      if (!character || charactersResourceState.rowStatuses[characterId] === 'error') {
+        return { index: -1, character: undefined }
+      }
+      return { index: charactersResourceState.characters.indexOf(character), character }
     }
+    if (status !== 'idle' && status !== 'loading') return { index: -1, character: undefined }
+
+    const matches = charactersResourceState.characters
+      .map((character, index) => ({ character, index }))
+      .filter(({ character }) => character?.chaId === characterId)
+    if (matches.length === 1 && charactersResourceState.rowStatuses[characterId] !== 'error') return matches[0]
+    if (matches.length > 1 || assetCharacter?.chaId !== characterId) {
+      return { index: -1, character: undefined }
+    }
+    return { index: $selectedCharID, character: assetCharacter }
   }
 
   function quickAddAdditionalAssetUploadFreshness(operation: CharacterAdditionalAssetUploadOperation) {
     const live = findAdditionalAssetUploadCharacter(operation.characterId)
 
     return {
-      currentCharacterId: getDatabase().characters?.[$selectedCharID]?.chaId,
+      currentCharacterId: assetCharacter?.chaId,
       rowCharacterId: live.character?.chaId ?? null,
       additionalAssets: live.character?.additionalAssets,
     }
@@ -104,7 +146,7 @@
     const nextAdditionalAssets = appendFreshCharacterAdditionalAssets({
       operation,
       freshness: {
-        currentCharacterId: getDatabase().characters?.[$selectedCharID]?.chaId,
+        currentCharacterId: assetCharacter?.chaId,
         rowCharacterId: live.character?.chaId ?? null,
         additionalAssets: live.character?.additionalAssets,
       },
@@ -147,14 +189,14 @@
     const run = ++assetPreviewRun
     const nextExtensions: Record<string, string | undefined> = {}
     assetFilePath = {}
-    if (currentCharacter.type === 'character') {
-      if (currentCharacter.additionalAssets) {
-        for (const additionalAsset of currentCharacter.additionalAssets) {
+    if (assetCharacter?.type === 'character') {
+      if (assetCharacter.additionalAssets) {
+        for (const additionalAsset of assetCharacter.additionalAssets) {
           const assetPath = additionalAsset[1]
           if (additionalAsset.length > 2 && additionalAsset[2]) {
-            nextExtensions[assetPath] = additionalAsset[2]
+            nextExtensions[assetPath] = additionalAsset[2].toLowerCase()
           } else {
-            nextExtensions[assetPath] = assetPath.split('.').pop()
+            nextExtensions[assetPath] = assetPath.split('.').pop()?.toLowerCase()
           }
           getFileSrc(assetPath).then((filePath) => {
             if (run !== assetPreviewRun) return
@@ -167,7 +209,7 @@
   })
 </script>
 
-{#if currentCharacter.type === 'character'}
+{#if assetCharacter?.type === 'character'}
   <button
     aria-label={`${language.add} ${language.additionalAssets}`}
     class="hover:text-green-500 bg-textcolor2 flex justify-center items-center w-16 h-16 m-1 rounded-md"
@@ -176,8 +218,8 @@
     }}>
     <PlusIcon />
   </button>
-  {#if currentCharacter.additionalAssets}
-    {#each currentCharacter.additionalAssets as additionalAsset, index (assetListRenderKey(additionalAsset, index))}
+  {#if assetCharacter.additionalAssets}
+    {#each assetCharacter.additionalAssets as additionalAsset, index (assetListRenderKey(additionalAsset, index))}
       <button
         aria-label={additionalAsset[0]}
         onclick={() => {

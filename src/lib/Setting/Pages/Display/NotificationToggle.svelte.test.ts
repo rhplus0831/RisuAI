@@ -6,40 +6,46 @@ const notificationMocks = vi.hoisted(() => ({
   initialize: vi.fn(),
   reconcile: vi.fn(),
   retryCleanup: vi.fn(),
-  retryCompensation: vi.fn(),
+  retrySetup: vi.fn(),
   retryStorage: vi.fn(),
 }))
 
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
+vi.mock('src/ts/server/settingsOwner.svelte', () => ({
   applyServerBackedSetting: notificationMocks.applyServerBackedSetting,
 }))
 
 vi.mock('src/ts/storage/database.svelte', async () => {
-  const { getResourceDatabase } = await import('src/ts/server/resourceState.svelte')
+  const { getResourceDatabase } = await import('src/ts/__tests__/resourceDatabaseState')
   return { getDatabase: getResourceDatabase }
 })
 
 vi.mock('src/ts/server/pushNotificationSetting', async () => {
   const { notificationCoordinatorState } = await import('./NotificationToggle.testState')
   return {
+    isRetryablePushNotificationFailure: (failure: { status: string; reason?: string }) =>
+      failure.status === 'fallback' &&
+      ['service-worker-failed', 'vapid-unavailable', 'subscription-failed', 'server-registration-failed'].includes(
+        failure.reason ?? '',
+      ),
     initializePushNotificationCoordinator: notificationMocks.initialize,
     pushNotificationCoordinatorState: notificationCoordinatorState,
     reconcileChatCompletionPushNotificationSetting: notificationMocks.reconcile,
     retryChatCompletionPushNotificationCleanup: notificationMocks.retryCleanup,
-    retryChatCompletionPushNotificationCompensation: notificationMocks.retryCompensation,
+    retryChatCompletionPushNotificationSetup: notificationMocks.retrySetup,
     retryChatCompletionPushNotificationStorage: notificationMocks.retryStorage,
   }
 })
 
 import { language } from 'src/lang'
+import {
+  PUSH_NOTIFICATION_WARNING_DISMISSED_KEY,
+  setPushNotificationWarningDismissed,
+} from 'src/ts/gui/pushNotificationWarningPreference'
 import NotificationToggle from './NotificationToggle.svelte'
 import { initialNotificationCoordinatorState, notificationCoordinatorState } from './NotificationToggle.testState'
-import {
-  getResourceDatabase as getDatabase,
-  replaceResourceDatabase as setDatabaseLite,
-  withResourceDatabaseWrite,
-} from 'src/ts/server/resourceState.svelte'
+import { replaceResourceDatabase as setDatabaseLite, settingsResourceState } from 'src/ts/server/resourceState.svelte'
 import type { EnablePushNotificationsResult } from 'src/ts/server/pushNotifications'
+import { getResourceDatabase as getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -61,6 +67,7 @@ function buttonNamed(name: string): HTMLButtonElement {
 }
 
 beforeEach(() => {
+  setPushNotificationWarningDismissed(false)
   target = document.createElement('div')
   document.body.appendChild(target)
   setDatabaseLite({ notification: false } as any)
@@ -70,11 +77,11 @@ beforeEach(() => {
   notificationMocks.initialize.mockResolvedValue(undefined)
   notificationMocks.reconcile.mockReset()
   notificationMocks.retryCleanup.mockReset()
-  notificationMocks.retryCompensation.mockReset()
+  notificationMocks.retrySetup.mockReset()
   notificationMocks.retryStorage.mockReset()
   notificationMocks.applyServerBackedSetting.mockImplementation((key: string, value: unknown) => {
     if (key !== 'notification') return
-    withResourceDatabaseWrite((database) => {
+    withTestDatabaseWrite((database) => {
       database.notification = value as boolean
     })
   })
@@ -86,6 +93,7 @@ afterEach(() => {
     component = undefined
   }
   target.remove()
+  setPushNotificationWarningDismissed(false)
   setDatabaseLite({} as any)
   notificationCoordinatorState.set(initialNotificationCoordinatorState())
 })
@@ -137,102 +145,98 @@ describe('NotificationToggle shared push acknowledgement', () => {
         status: 'fallback',
         reason: 'server-registration-failed',
         endpoint: 'https://push.example.test/unregistered',
-        localCleanup: 'succeeded',
       },
       message: language.pushNotifications.setupFailures.serverRegistrationFailed,
     },
   ]
 
-  it.each(failedEnablements)('renders the shared compensation for $name', async ({ result, message }) => {
+  it.each(failedEnablements)('keeps the preference checked and explains $name', async ({ result, message }) => {
     notificationMocks.reconcile.mockImplementationOnce(async () => {
-      withResourceDatabaseWrite((database) => {
-        database.notification = false
-      })
-      await tick()
       notificationCoordinatorState.set({
         ...initialNotificationCoordinatorState(),
+        desiredEnabled: true,
         setupFailure: result as Exclude<EnablePushNotificationsResult, { status: 'enabled' }>,
-        compensation: 'accepted',
-        cleanup: {
-          status: 'disabled',
-          subscriptionFound: false,
-          localUnsubscribed: null,
-          serverDeleted: null,
-          pendingEndpoints: [],
-          localInspectionPending: false,
-          failures: [],
-        },
       })
-      return { status: 'applied', enabled: true, result, compensation: 'accepted' }
+      return { status: 'applied', enabled: true, result }
     })
     component = mount(NotificationToggle, { target })
-
     checkbox().click()
-
-    await vi.waitFor(() => expect(target.querySelector('[role="alert"]')?.textContent).toContain(message))
-    expect(target.querySelector('[role="alert"]')?.textContent).toContain(
-      language.pushNotifications.compensationAccepted,
+    await vi.waitFor(() =>
+      expect(target.querySelector('[data-push-notification-warning]')?.textContent).toContain(message),
     )
+    expect(target.textContent).toContain(language.pushNotifications.preferenceEnabled)
     expect(notificationMocks.applyServerBackedSetting.mock.calls).toEqual([['notification', true]])
-    expect(notificationMocks.reconcile).toHaveBeenCalledWith(true)
-    expect(getDatabase().notification).toBe(false)
-    await vi.waitFor(() => expect(checkbox().checked).toBe(false))
+    expect(notificationMocks.reconcile).toHaveBeenCalledWith(true, { requestPermission: true })
+    expect(getDatabase().notification).toBe(true)
+    expect(checkbox().checked).toBe(true)
+    buttonNamed(language.pushNotifications.retrySetup).click()
+    expect(notificationMocks.retrySetup).toHaveBeenCalledOnce()
   })
 
-  it.each([
-    ['accepted', language.pushNotifications.compensationAccepted],
-    ['queued', language.pushNotifications.compensationQueued],
-    ['failed', language.pushNotifications.compensationFailed],
-  ] as const)('shows the exact %s false-setting outcome', async (compensation, message) => {
+  it('keeps the explanation visible while retrying and clears it after success', async () => {
     notificationCoordinatorState.set({
       ...initialNotificationCoordinatorState(),
+      desiredEnabled: true,
       setupFailure: { status: 'fallback', reason: 'vapid-unavailable' },
-      compensation,
     })
     component = mount(NotificationToggle, { target })
     await tick()
-
-    expect(target.querySelector('[role="alert"]')?.textContent).toContain(message)
-    if (compensation === 'failed') {
-      notificationMocks.retryCompensation.mockResolvedValueOnce('accepted')
-      buttonNamed(language.pushNotifications.retryCompensation).click()
-      await vi.waitFor(() => expect(notificationMocks.retryCompensation).toHaveBeenCalledOnce())
-    } else {
-      expect(target.textContent).not.toContain(language.pushNotifications.retryCompensation)
-    }
-  })
-
-  it('renders coordinator pending state', async () => {
-    notificationCoordinatorState.set({
-      ...initialNotificationCoordinatorState(),
-      phase: 'compensating',
-      setupFailure: { status: 'permission-denied' },
-    })
-    component = mount(NotificationToggle, { target })
+    notificationCoordinatorState.update((state) => ({ ...state, phase: 'enabling' }))
     await tick()
-
-    expect(notificationMocks.initialize).toHaveBeenCalledOnce()
-    expect(target.querySelector('[role="status"]')?.textContent).toContain(language.pushNotifications.compensating)
+    expect(target.textContent).toContain(language.pushNotifications.setupFailures.vapidUnavailable)
+    expect(buttonNamed(language.pushNotifications.retryingSetup).disabled).toBe(true)
+    notificationCoordinatorState.update((state) => ({ ...state, phase: 'idle', setupFailure: null }))
+    await tick()
+    expect(target.querySelector('[data-push-notification-warning]')).toBeNull()
   })
 
-  it('routes the checkbox through exact compensation retry after a failed false patch', async () => {
-    withResourceDatabaseWrite((database) => {
+  it('lets the user intentionally switch notifications off while setup is unavailable', async () => {
+    withTestDatabaseWrite((database) => {
       database.notification = true
     })
     notificationCoordinatorState.set({
       ...initialNotificationCoordinatorState(),
-      setupFailure: { status: 'fallback', reason: 'vapid-unavailable' },
-      compensation: 'failed',
+      desiredEnabled: true,
+      setupFailure: { status: 'permission-denied' },
     })
-    notificationMocks.retryCompensation.mockResolvedValueOnce('accepted')
     component = mount(NotificationToggle, { target })
     await tick()
-
+    expect(target.textContent).toContain(language.pushNotifications.permissionBlockedHelp)
     checkbox().click()
+    expect(notificationMocks.applyServerBackedSetting).toHaveBeenCalledWith('notification', false)
+    expect(notificationMocks.reconcile).toHaveBeenCalledWith(false, { requestPermission: false })
+  })
 
-    await vi.waitFor(() => expect(notificationMocks.retryCompensation).toHaveBeenCalledOnce())
+  it('restores dismissed banners locally while retaining notification diagnostics and the shared preference', async () => {
+    setPushNotificationWarningDismissed(true)
+    withTestDatabaseWrite((database) => {
+      database.notification = true
+    })
+    notificationCoordinatorState.set({
+      ...initialNotificationCoordinatorState(),
+      desiredEnabled: true,
+      setupFailure: { status: 'permission-denied' },
+    })
+    component = mount(NotificationToggle, { target })
+    await tick()
+    expect(target.querySelector('[data-push-notification-warning]')).not.toBeNull()
+    const bannerCheckbox = Array.from(target.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).find(
+      (input) => input.getAttribute('aria-label') === language.pushNotifications.showBannerOnBrowser,
+    )!
+    expect(bannerCheckbox.checked).toBe(false)
+    bannerCheckbox.click()
+    await tick()
+    expect(localStorage.getItem(PUSH_NOTIFICATION_WARNING_DISMISSED_KEY)).toBeNull()
+    expect(bannerCheckbox.checked).toBe(true)
+    bannerCheckbox.click()
+    await tick()
+    expect(localStorage.getItem(PUSH_NOTIFICATION_WARNING_DISMISSED_KEY)).toBe('true')
+    expect(settingsResourceState.value?.notification).toBe(true)
+    expect(checkbox().checked).toBe(true)
     expect(notificationMocks.applyServerBackedSetting).not.toHaveBeenCalled()
     expect(notificationMocks.reconcile).not.toHaveBeenCalled()
+    buttonNamed(language.pushNotifications.retrySetup).click()
+    expect(notificationMocks.retrySetup).toHaveBeenCalledOnce()
   })
 
   it('keeps partial cleanup visible and retryable across unmount and remount', async () => {
@@ -292,7 +296,7 @@ describe('NotificationToggle shared push acknowledgement', () => {
   })
 
   it('retries a device-ledger failure without requiring notifications to be off', async () => {
-    withResourceDatabaseWrite((database) => {
+    withTestDatabaseWrite((database) => {
       database.notification = true
     })
     notificationCoordinatorState.set({

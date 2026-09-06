@@ -7,7 +7,7 @@ import { createEmbedMemoryJobBatchHandler, createEmbedMemoryJobHandler } from '.
 import {
   MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
   MEMORY_EMBEDDING_FALLBACK_MAX_INPUT_BYTES,
-  VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS,
+  VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS,
   VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS,
 } from '../src/memoryEmbeddingModel.js'
 import { MEMORY_JOB_BATCH_MAX_JOBS, MemoryWorker } from '../src/memoryWorker.js'
@@ -92,9 +92,11 @@ function database(settings: Record<string, unknown> = {}) {
       model: 'custom-embed',
       key: 'sk-test',
     },
+    selectedHypaV3PresetId: 'memory-default',
     hypaV3PresetId: 0,
     hypaV3Presets: [
       {
+        id: 'memory-default',
         name: 'Default',
         settings: {
           embeddingRequestsPerMinute: 100,
@@ -103,6 +105,10 @@ function database(settings: Record<string, unknown> = {}) {
         },
       },
     ],
+    hypaV3Settings: {
+      embeddingRequestsPerMinute: 1,
+      embeddingMaxConcurrent: 1,
+    },
   }
 }
 
@@ -314,7 +320,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L21: fails an oversized single chunk before provider request construction', async () => {
+  it('fails an oversized single chunk before provider request construction', async () => {
     const db = openDatabase(makeDataDir())
     try {
       createMemoryChunk(db, {
@@ -350,7 +356,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L21: fails an oversized non-contextual batch item before provider dispatch', async () => {
+  it('fails an oversized non-contextual batch item before provider dispatch', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -430,28 +436,60 @@ describe('embed memory job handler', () => {
       seedBatchJob(db, { id: 'job-1', chunkId: 'chunk-1', text: 'chunk one' })
       seedBatchJob(db, { id: 'job-2', chunkId: 'chunk-2', text: 'chunk two' })
       seedBatchJob(db, { id: 'job-3', chunkId: 'chunk-3', text: 'chunk three' })
+      const selectedDatabase = {
+        ...database(),
+        selectedHypaV3PresetId: 'selected-memory',
+        hypaV3PresetId: 0,
+        hypaV3Presets: [
+          {
+            id: 'numeric-memory',
+            name: 'Numeric compatibility projection',
+            settings: { embeddingMaxConcurrent: 1 },
+          },
+          {
+            id: 'selected-memory',
+            name: 'Stable selection',
+            settings: { embeddingMaxConcurrent: 2 },
+          },
+        ],
+      }
       let active = 0
       let maxActive = 0
+      const releases: Array<() => void> = []
       const worker = new MemoryWorker({
         db,
         batchHandlers: {
           embed: createEmbedMemoryJobBatchHandler({
             db,
-            loadDatabase: () => database({ embeddingMaxConcurrent: 2 }),
+            loadDatabase: () => selectedDatabase,
+            sleep: async () => {},
             embed: async () => {
               active += 1
               maxActive = Math.max(maxActive, active)
-              await Promise.resolve()
-              active -= 1
+              await new Promise<void>((resolve) => {
+                releases.push(() => {
+                  active -= 1
+                  resolve()
+                })
+              })
               return { model: 'custom', vectors: [new Float32Array([1])], dim: 1 }
             },
           }),
         },
       })
 
-      expect(await worker.tick()).toBe(true)
+      const tick = worker.tick()
+      await flushMicrotasks()
+      expect(releases).toHaveLength(2)
 
-      expect(maxActive).toBeLessThanOrEqual(2)
+      // The stable selected preset allows two concurrent jobs; both the
+      // numeric compatibility projection and stale flat settings would
+      // incorrectly serialize this batch.
+      expect(maxActive).toBe(2)
+      for (const release of releases.splice(0)) release()
+      await flushMicrotasks()
+      for (const release of releases.splice(0)) release()
+      expect(await tick).toBe(true)
       expect(
         listMemoryEmbeddings(db, { chatId: 'chat-1' })
           .map((embedding) => embedding.chunkId)
@@ -495,7 +533,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L16: aborts a hung normal embedding provider call and continues the batch', async () => {
+  it('aborts a hung normal embedding provider call and continues the batch', async () => {
     vi.useFakeTimers()
     const db = openDatabase(makeDataDir())
     try {
@@ -545,7 +583,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L16: clears the embedding deadline after a provider call resolves under it', async () => {
+  it('clears the embedding deadline after a provider call resolves under it', async () => {
     vi.useFakeTimers()
     const db = openDatabase(makeDataDir())
     try {
@@ -587,7 +625,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L16: aborts a hung single contextual embedding provider call within the deadline', async () => {
+  it('aborts a hung single contextual embedding provider call within the deadline', async () => {
     vi.useFakeTimers()
     const db = openDatabase(makeDataDir())
     try {
@@ -635,7 +673,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('does not commit a staged embedding after a running batch job is cancelled', async () => {
+  it('commits a staged sibling embedding after another running batch job is cancelled', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, { id: 'job-1', chunkId: 'chunk-1', text: 'chunk one' })
@@ -646,6 +684,7 @@ describe('embed memory job handler', () => {
           embed: createEmbedMemoryJobBatchHandler({
             db,
             loadDatabase: () => database({ embeddingMaxConcurrent: 2 }),
+            sleep: async () => {},
             embed: async (opts) => {
               const text = String(opts.input[0] ?? '')
               if (text.includes('chunk one')) cancelMemoryJob(db, 'job-1')
@@ -657,18 +696,15 @@ describe('embed memory job handler', () => {
 
       expect(await worker.tick()).toBe(true)
 
-      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' })).toHaveLength(0)
+      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' })).toEqual([expect.objectContaining({ chunkId: 'chunk-2' })])
       expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'cancelled' })
-      expect(getMemoryJob(db, 'job-2')).toMatchObject({
-        status: 'pending',
-        error: 'embed job job-1 is no longer running',
-      })
+      expect(getMemoryJob(db, 'job-2')).toMatchObject({ status: 'completed', error: null })
     } finally {
       db.close()
     }
   })
 
-  it('L19: commits independent embed jobs after a sibling provider failure', async () => {
+  it('commits independent embed jobs after a sibling provider failure', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, { id: 'job-1', chunkId: 'chunk-1', text: 'chunk one' })
@@ -708,23 +744,26 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('groups Voyage contextual embed jobs and persists ordered group metadata', async () => {
+  it.each([
+    ['voyageContext3', 'voyage-context-3'],
+    ['voyageContext4', 'voyage-context-4'],
+  ])('groups %s embed jobs and persists ordered group metadata', async (model, wireModel) => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
         id: 'job-2',
         chunkId: 'chunk-2',
         text: 'second contextual chunk',
-        model: 'voyageContext3',
+        model,
       })
       seedBatchJob(db, {
         id: 'job-1',
         chunkId: 'chunk-1',
         text: 'first contextual chunk',
-        model: 'voyageContext3',
+        model,
       })
       const embedGroups = vi.fn(async () => ({
-        model: 'voyage-context-3',
+        model: wireModel,
         groups: [[new Float32Array([1, 2]), new Float32Array([3, 4])]],
         dim: 2,
       }))
@@ -747,14 +786,14 @@ describe('embed memory job handler', () => {
           provider: 'voyage-contextual',
           endpoint: 'https://api.voyageai.com/v1/contextualizedembeddings',
           apiKey: 'voyage-key',
-          model: 'voyage-context-3',
-          wireModel: 'voyage-context-3',
+          model: wireModel,
+          wireModel,
         },
         groups: [['first contextual chunk', 'second contextual chunk']],
       })
       const embeddings = listMemoryEmbeddings(db, {
         chatId: 'chat-1',
-        model: 'voyageContext3',
+        model,
       })
       expect(embeddings.map((embedding) => embedding.chunkId)).toEqual(['chunk-1', 'chunk-2'])
       expect(embeddings.map((embedding) => embedding.groupIndex)).toEqual([0, 1])
@@ -769,7 +808,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L21: fails an oversized contextual chunk before provider request construction', async () => {
+  it('fails an oversized contextual chunk before provider request construction', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -781,7 +820,7 @@ describe('embed memory job handler', () => {
       seedBatchJob(db, {
         id: 'job-2',
         chunkId: 'chunk-2',
-        text: 'x'.repeat((VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS + 1) * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN),
+        text: 'x'.repeat((VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS + 1) * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN),
         model: 'voyageContext3',
       })
       const embedGroups = vi.fn(async (opts: { groups: readonly (readonly string[])[] }) => ({
@@ -816,7 +855,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L22: sends a valid contextual batch under the model window in one request', async () => {
+  it('sends a valid contextual batch under the model window in one request', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -862,7 +901,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L22: emits a protocol metric when provider limits split a contextual batch', async () => {
+  it('emits a protocol metric when provider limits split a contextual batch', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -936,7 +975,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L19: retries an ordered Voyage contextual batch after provider failure', async () => {
+  it('retries an ordered Voyage contextual batch after provider failure', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -978,7 +1017,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L19: rolls back a Voyage contextual group when one staged vector cannot persist', async () => {
+  it('rolls back a Voyage contextual group when one staged vector cannot persist', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -1024,7 +1063,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('M7: caps the drained embed batch at MEMORY_JOB_BATCH_MAX_JOBS per tick', async () => {
+  it('caps the drained embed batch at MEMORY_JOB_BATCH_MAX_JOBS per tick', async () => {
     const db = openDatabase(makeDataDir())
     try {
       const total = MEMORY_JOB_BATCH_MAX_JOBS + 1
@@ -1057,7 +1096,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('M7: slices a contextual batch into token-aware sub-batches with per-sub-batch group ids', async () => {
+  it('slices a contextual batch into token-aware sub-batches with per-sub-batch group ids', async () => {
     const db = openDatabase(makeDataDir())
     try {
       // 40 chars ≈ 10 tokens each; a 20-token budget fits exactly two chunks.
@@ -1091,6 +1130,7 @@ describe('embed memory job handler', () => {
             db,
             loadDatabase: database,
             embedGroups: embedGroups as never,
+            sleep: async () => {},
             contextualSubBatchTokenBudget: 20,
           }),
         },
@@ -1119,7 +1159,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('M7: a failing contextual sub-batch is committed independently and does not fail unrelated chunks', async () => {
+  it('a failing contextual sub-batch is committed independently and does not fail unrelated chunks', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -1147,6 +1187,7 @@ describe('embed memory job handler', () => {
           embed: createEmbedMemoryJobBatchHandler({
             db,
             loadDatabase: database,
+            sleep: async () => {},
             contextualSubBatchTokenBudget: 20,
             embedGroups: async (opts) => {
               call += 1
@@ -1180,7 +1221,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L16: aborts a hung contextual embedding provider call within the deadline', async () => {
+  it('aborts a hung contextual embedding provider call within the deadline', async () => {
     vi.useFakeTimers()
     const db = openDatabase(makeDataDir())
     try {
@@ -1236,7 +1277,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('L18: the default loader performs zero whole-corpus payload reads per batch', async () => {
+  it('the default loader performs zero whole-corpus payload reads per batch', async () => {
     const dataDir = makeDataDir()
     const db = openDatabase(dataDir)
     try {
@@ -1295,7 +1336,7 @@ describe('embed memory job handler', () => {
     }
   })
 
-  it('does not commit staged Voyage contextual vectors after a running job is cancelled', async () => {
+  it('commits staged Voyage contextual sibling vectors after a running job is cancelled', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -1330,12 +1371,11 @@ describe('embed memory job handler', () => {
 
       expect(await worker.tick()).toBe(true)
 
-      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' })).toHaveLength(0)
+      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' })).toEqual([
+        expect.objectContaining({ chunkId: 'chunk-2', groupIndex: 1 }),
+      ])
       expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'cancelled' })
-      expect(getMemoryJob(db, 'job-2')).toMatchObject({
-        status: 'pending',
-        error: 'embed job job-1 is no longer running',
-      })
+      expect(getMemoryJob(db, 'job-2')).toMatchObject({ status: 'completed', error: null })
     } finally {
       db.close()
     }

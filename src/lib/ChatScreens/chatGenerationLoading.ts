@@ -1,38 +1,41 @@
-export type ChatGenerationLoadingStage = 0 | 1 | 2 | 3 | 4
+import { chatGenerationPhaseFromProcessStage, type ChatGenerationPhase } from 'src/ts/process/generationActivity.svelte'
+
+export const CHAT_GENERATION_INPUT_HOOK_STAGE = 5
+
+export type ChatGenerationLoadingPhase = ChatGenerationPhase | 'input-hook'
 
 export type ChatGenerationLoadingLanguageKey =
   | 'chatGenerationStageStarting'
   | 'chatGenerationStagePreparingPrompt'
   | 'chatGenerationStageCheckingMemory'
   | 'chatGenerationStageWaitingForModel'
+  | 'chatGenerationStageGenerating'
   | 'chatGenerationStageFinalizing'
+  | 'chatGenerationStageInputHook'
 
-const STAGE_LABEL_KEYS: Record<ChatGenerationLoadingStage, ChatGenerationLoadingLanguageKey> = {
-  0: 'chatGenerationStageStarting',
-  1: 'chatGenerationStagePreparingPrompt',
-  2: 'chatGenerationStageCheckingMemory',
-  3: 'chatGenerationStageWaitingForModel',
-  4: 'chatGenerationStageFinalizing',
+const PHASE_LABEL_KEYS: Record<ChatGenerationLoadingPhase, ChatGenerationLoadingLanguageKey> = {
+  starting: 'chatGenerationStageStarting',
+  preparing: 'chatGenerationStagePreparingPrompt',
+  'checking-memory': 'chatGenerationStageCheckingMemory',
+  'waiting-for-model': 'chatGenerationStageWaitingForModel',
+  generating: 'chatGenerationStageGenerating',
+  finalizing: 'chatGenerationStageFinalizing',
+  'input-hook': 'chatGenerationStageInputHook',
 }
 
-const STAGE_PROGRESS: Record<ChatGenerationLoadingStage, number> = {
-  0: 12,
-  1: 28,
-  2: 48,
-  3: 72,
-  4: 92,
+export function chatGenerationLoadingPhaseFromStage(stage: unknown): ChatGenerationLoadingPhase {
+  if (stage === CHAT_GENERATION_INPUT_HOOK_STAGE) return 'input-hook'
+  return chatGenerationPhaseFromProcessStage(stage)
 }
 
-export function normalizeChatGenerationLoadingStage(stage: unknown): ChatGenerationLoadingStage {
-  return stage === 1 || stage === 2 || stage === 3 || stage === 4 ? stage : 0
+export function normalizeChatGenerationLoadingPhase(phase: unknown): ChatGenerationLoadingPhase {
+  return typeof phase === 'string' && Object.hasOwn(PHASE_LABEL_KEYS, phase)
+    ? (phase as ChatGenerationLoadingPhase)
+    : 'starting'
 }
 
-export function getChatGenerationLoadingLanguageKey(stage: unknown): ChatGenerationLoadingLanguageKey {
-  return STAGE_LABEL_KEYS[normalizeChatGenerationLoadingStage(stage)]
-}
-
-export function getChatGenerationLoadingProgress(stage: unknown): number {
-  return STAGE_PROGRESS[normalizeChatGenerationLoadingStage(stage)]
+export function getChatGenerationLoadingLanguageKey(phase: unknown): ChatGenerationLoadingLanguageKey {
+  return PHASE_LABEL_KEYS[normalizeChatGenerationLoadingPhase(phase)]
 }
 
 export function getPostGenerationScriptProgress(startedAt: number, now: number, llmCallCount = 0): number {

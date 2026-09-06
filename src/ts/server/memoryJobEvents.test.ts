@@ -1,17 +1,21 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { ServerMemoryEvent } from './events'
 import { publishServerMemoryJobEvent, subscribeServerMemoryJobEvents } from './memoryJobEvents'
 
 function memoryEvent(jobId: string): ServerMemoryEvent {
   return {
     type: 'memory.job',
+    streamId: 'memory-stream-1',
+    version: jobId === 'job-1' ? 1 : 2,
     chatId: 'chat-1',
     job: {
       id: jobId,
+      instanceId: `${jobId}-instance`,
       kind: 'summarize',
       status: 'running',
       attemptCount: 1,
       maxAttempts: 3,
+      updatedAt: '2026-08-11T00:00:00.000Z',
     },
   }
 }
@@ -28,5 +32,23 @@ describe('server memory job event fanout', () => {
     publishServerMemoryJobEvent(memoryEvent('job-2'))
 
     expect(seen.map((event) => event.job.id)).toEqual(['job-1'])
+  })
+
+  it('isolates a throwing subscriber from later memory projections', () => {
+    const throwing = vi.fn(() => {
+      throw new Error('broken projection')
+    })
+    const later = vi.fn()
+    const unsubscribeThrowing = subscribeServerMemoryJobEvents(throwing)
+    const unsubscribeLater = subscribeServerMemoryJobEvents(later)
+
+    try {
+      expect(() => publishServerMemoryJobEvent(memoryEvent('job-1'))).not.toThrow()
+      expect(throwing).toHaveBeenCalledOnce()
+      expect(later).toHaveBeenCalledOnce()
+    } finally {
+      unsubscribeThrowing()
+      unsubscribeLater()
+    }
   })
 })

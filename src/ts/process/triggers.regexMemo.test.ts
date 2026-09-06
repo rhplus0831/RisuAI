@@ -12,11 +12,10 @@ import '../stores.svelte'
 import { getCompiledRegex, resetScriptCache } from './scripts'
 import { runTrigger } from './triggers'
 import { safeStructuredClone } from '../polyfill'
-import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
+
 import { ReloadGUIPointer, VariableReloadGUIPointer, selectedCharID } from '../stores.svelte'
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 import type { character } from '../storage/database.svelte'
-
 function seedDb(): void {
   selectedCharID.set(0)
   testDatabaseState.db = {
@@ -67,7 +66,6 @@ async function countRegexCompiles<T>(
 
 beforeEach(() => {
   ;(globalThis as Record<string, unknown>).safeStructuredClone = safeStructuredClone
-  setResourceWriteGuardEnabled(false)
   resetScriptCache()
   ReloadGUIPointer.set(0)
   VariableReloadGUIPointer.set(0)
@@ -82,8 +80,8 @@ afterEach(() => {
 // definition-level GUI reload, so `resetScriptCache()` is not called at the end
 // of a setVar pass. The compile counts below therefore assert both within-pass
 // reuse and cross-pass survival for variable-only trigger updates.
-describe('trigger-effect compiled regex memoization (L40)', () => {
-  it('H3: v2UpdateGUI bumps only the variable-only GUI pointer and preserves script caches', async () => {
+describe('trigger-effect compiled regex memoization', () => {
+  it('v2UpdateGUI bumps only the variable-only GUI pointer and preserves script caches', async () => {
     const regexBefore = getCompiledRegex('h3-update-gui-cache-proof', 'g')
     const char = characterWithTriggers([
       {
@@ -108,7 +106,7 @@ describe('trigger-effect compiled regex memoization (L40)', () => {
     expect(getCompiledRegex('h3-update-gui-cache-proof', 'g')).toBe(regexBefore)
   })
 
-  it('H3/L40: v2RegexTest memo survives variable-only trigger refreshes, output unchanged', async () => {
+  it('v2RegexTest memo survives variable-only trigger refreshes, output unchanged', async () => {
     const regexTestEffect = (outputVar: string) => ({
       type: 'v2RegexTest',
       valueType: 'value',
@@ -156,7 +154,7 @@ describe('trigger-effect compiled regex memoization (L40)', () => {
     expect(compiles.get('l40-w[a-z]+d')).toBe(1)
   })
 
-  it('L40: v2ReplaceString reuses the memoized regex within a pass and replaces identically', async () => {
+  it('v2ReplaceString reuses the memoized regex within a pass and replaces identically', async () => {
     const replaceEffect = (outputVar: string) => ({
       type: 'v2ReplaceString',
       sourceType: 'value',
@@ -197,7 +195,7 @@ describe('trigger-effect compiled regex memoization (L40)', () => {
     expect(compilesAfterPass).toBe(1)
   })
 
-  it('L40: low-level extractRegex compiles once per pass and extracts identically', async () => {
+  it('low-level extractRegex compiles once per pass and extracts identically', async () => {
     // `extractRegex` is gated on the trigger's lowLevelAccess, which runTrigger
     // derives from the character-level grant.
     const extractEffect = (inputVar: string) => ({

@@ -1,7 +1,9 @@
+import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
 import { STREAM_BUFFER_OVERFLOW_ERROR, streamBufferExceedsCap } from './sse.js'
 import { readBoundedBodyText } from './body.js'
 import { formatUpstreamFetchError, formatUpstreamHttpError, upstreamStatusText } from './upstreamError.js'
+import { extractApiResponseMetadata, mergeApiResponseMetadata } from './apiMetadata.js'
 
 export interface OllamaRequest {
   model: string
@@ -12,8 +14,10 @@ export interface OllamaRequest {
   temperature?: number
   topP?: number
   topK?: number
+  think?: boolean | 'low' | 'medium' | 'high'
   tools?: OllamaTool[]
   extraHeaders?: Record<string, string>
+  additionalParams?: Array<[string, string]>
   signal: AbortSignal
 }
 
@@ -51,8 +55,10 @@ interface OllamaResolveInput {
   temperature?: unknown
   topP?: unknown
   topK?: unknown
+  think?: unknown
   tools?: unknown
   extraHeaders?: Record<string, string>
+  additionalParams?: Array<[string, string]>
   signal: AbortSignal
 }
 
@@ -166,6 +172,10 @@ export function resolveOllamaRequest(input: OllamaResolveInput): OllamaRequest |
     typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
   const topP = typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
   const topK = typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
+  const think =
+    typeof input.think === 'boolean' || input.think === 'low' || input.think === 'medium' || input.think === 'high'
+      ? input.think
+      : undefined
   const tools = normalizeTools(input.tools)
 
   return {
@@ -177,8 +187,10 @@ export function resolveOllamaRequest(input: OllamaResolveInput): OllamaRequest |
     temperature,
     topP,
     topK,
+    think,
     tools,
     extraHeaders: input.extraHeaders,
+    additionalParams: input.additionalParams,
     signal: input.signal,
   }
 }
@@ -209,8 +221,21 @@ function buildPayload(req: OllamaRequest, stream: boolean): Record<string, unkno
     stream,
   }
   if (Object.keys(options).length > 0) body.options = options
+  if (req.think !== undefined) body.think = req.think
   if (req.tools !== undefined && req.tools.length > 0) body.tools = req.tools
   return body
+}
+
+function buildRequestInit(req: OllamaRequest, stream: boolean): { body: string; headers: Record<string, string> } {
+  const body = buildPayload(req, stream)
+  const requestHeaders = headers(req)
+  if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
+    applyAdditionalParameters(body, requestHeaders, req.additionalParams)
+  }
+  // Streaming is a transport invariant chosen by the caller, not a user body
+  // override. This matches the retained browser builder's post-DSL reset.
+  body.stream = stream
+  return { body: JSON.stringify(body), headers: requestHeaders }
 }
 
 export interface OllamaResponseMessage {
@@ -282,10 +307,11 @@ export async function runOllamaRaw(req: OllamaRequest): Promise<OllamaRawResult>
 
   let response: Response
   try {
+    const init = buildRequestInit(req, false)
     response = await fetch(endpoint(req), {
       method: 'POST',
-      headers: headers(req),
-      body: JSON.stringify(buildPayload(req, false)),
+      headers: init.headers,
+      body: init.body,
       signal: req.signal,
     })
   } catch (err) {
@@ -335,12 +361,16 @@ export async function runOllama(req: OllamaRequest): Promise<CompletionResult> {
 
   const body = raw.body
 
+  const thinking = typeof body.message?.thinking === 'string' ? body.message.thinking : ''
   const content = typeof body.message?.content === 'string' ? body.message.content : ''
-  if (content.length === 0) {
+  if (thinking.length === 0 && content.length === 0) {
     return { type: 'fail', result: 'upstream returned no message content' }
   }
-  const result: CompletionResult = { type: 'success', result: content }
+  const text = thinking.length > 0 ? `<Thoughts>\n${thinking}\n</Thoughts>\n\n${content}` : content
+  const result: CompletionResult = { type: 'success', result: text }
   if (raw.model) result.model = raw.model
+  const apiMetadata = extractApiResponseMetadata(body, ['message', 'error', 'model', 'done', 'done_reason'])
+  if (apiMetadata) result.apiMetadata = apiMetadata
   return result
 }
 
@@ -350,10 +380,11 @@ export async function* runOllamaStream(req: OllamaRequest): AsyncGenerator<Compl
   const url = endpoint(req)
   let response: Response
   try {
+    const init = buildRequestInit(req, true)
     response = await fetch(url, {
       method: 'POST',
-      headers: headers(req),
-      body: JSON.stringify(buildPayload(req, true)),
+      headers: init.headers,
+      body: init.body,
       signal: req.signal,
     })
   } catch (err) {
@@ -384,6 +415,27 @@ export async function* runOllamaStream(req: OllamaRequest): AsyncGenerator<Compl
   let buf = ''
   let finishReason: CompletionStreamFrame['finishReason'] = 'stop'
   let sawDone = false
+  let thinkingOpen = false
+  let apiMetadata: Record<string, unknown> | undefined
+
+  const visibleParts = function* (chunk: OllamaChunk): Generator<string> {
+    const thinking = typeof chunk.message?.thinking === 'string' ? chunk.message.thinking : ''
+    const content = typeof chunk.message?.content === 'string' ? chunk.message.content : ''
+    if (thinking.length > 0) {
+      if (!thinkingOpen) {
+        thinkingOpen = true
+        yield '<Thoughts>\n'
+      }
+      yield thinking
+    }
+    if (content.length > 0) {
+      if (thinkingOpen) {
+        thinkingOpen = false
+        yield '\n</Thoughts>\n\n'
+      }
+      yield content
+    }
+  }
 
   try {
     while (true) {
@@ -420,10 +472,11 @@ export async function* runOllamaStream(req: OllamaRequest): AsyncGenerator<Compl
           yield { kind: 'error', error: chunk.error }
           return
         }
-        const text = typeof chunk.message?.content === 'string' ? chunk.message.content : ''
-        if (text.length > 0) {
-          yield { kind: 'token', content: text }
-        }
+        apiMetadata = mergeApiResponseMetadata(
+          apiMetadata,
+          extractApiResponseMetadata(chunk, ['message', 'error', 'done', 'done_reason']),
+        )
+        for (const content of visibleParts(chunk)) yield { kind: 'token', content }
         if (chunk.done === true) {
           sawDone = true
           finishReason = mapDoneReason(chunk.done_reason)
@@ -445,10 +498,11 @@ export async function* runOllamaStream(req: OllamaRequest): AsyncGenerator<Compl
           yield { kind: 'error', error: chunk.error }
           return
         }
-        const text = typeof chunk.message?.content === 'string' ? chunk.message.content : ''
-        if (text.length > 0) {
-          yield { kind: 'token', content: text }
-        }
+        apiMetadata = mergeApiResponseMetadata(
+          apiMetadata,
+          extractApiResponseMetadata(chunk, ['message', 'error', 'done', 'done_reason']),
+        )
+        for (const content of visibleParts(chunk)) yield { kind: 'token', content }
         if (chunk.done === true) {
           sawDone = true
           finishReason = mapDoneReason(chunk.done_reason)
@@ -465,9 +519,12 @@ export async function* runOllamaStream(req: OllamaRequest): AsyncGenerator<Compl
     })
   }
 
+  if (!req.signal.aborted && thinkingOpen) {
+    yield { kind: 'token', content: '\n</Thoughts>\n\n' }
+  }
   if (!req.signal.aborted && sawDone) {
-    yield { kind: 'done', finishReason }
+    yield { kind: 'done', finishReason, ...(apiMetadata ? { apiMetadata } : {}) }
   } else if (!req.signal.aborted) {
-    yield { kind: 'done', finishReason: 'stop' }
+    yield { kind: 'done', finishReason: 'stop', ...(apiMetadata ? { apiMetadata } : {}) }
   }
 }

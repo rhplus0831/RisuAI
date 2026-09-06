@@ -68,7 +68,9 @@
     loading = true
     try {
       if (!bulkSnapshot) {
-        const translated = await runTranslator(sourceSnapshot, false, sourceLanguageSnapshot, outputLanguageSnapshot)
+        const translated = await runTranslator(sourceSnapshot, false, sourceLanguageSnapshot, outputLanguageSnapshot, {
+          translatorPresetId: null,
+        })
         if (!abandonStaleRun()) output = translated
         return
       }
@@ -146,6 +148,7 @@
               sourceLanguageSnapshot,
               outputLanguageSnapshot,
               {
+                translatorPresetId: null,
                 translatorNote: previousContext
                   ? `<Previous Content>${previousContext.trim()}</Previous Content>\n${previousContentNote}`
                   : '',

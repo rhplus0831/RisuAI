@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { applyMigrations, CURRENT_SCHEMA_VERSION, getSchemaState, openDatabase } from '../src/db.js'
+import { normalizeTranslatorPreset } from '@risuai/shared-core/translator-presets'
 
 const dataDirs: string[] = []
 
@@ -66,6 +67,16 @@ describe('schema migrations', () => {
       expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 0 })
       expect(listTables(db)).toEqual([
         'assets',
+        'bardwiki_change_manifest',
+        'bardwiki_chat_settings',
+        'bardwiki_document_search',
+        'bardwiki_document_sources',
+        'bardwiki_document_versions',
+        'bardwiki_documents',
+        'bardwiki_jobs',
+        'bardwiki_links',
+        'bardwiki_rebuild_staging',
+        'bardwiki_turn_receipts',
         'bot_presets',
         'characters',
         'chat_hypa_v3',
@@ -73,7 +84,12 @@ describe('schema migrations', () => {
         'command_events',
         'command_mutation_receipts',
         'database_metadata',
+        'generation_effects',
         'generation_finalization_retries',
+        'generation_operation_attempts',
+        'generation_operation_projection_state',
+        'generation_operations',
+        'greeting_translations',
         'hypa_v3_presets',
         'inlay_catalog',
         'loadouts',
@@ -92,12 +108,369 @@ describe('schema migrations', () => {
         'prompt_presets',
         'prompt_templates',
         'push_subscriptions',
+        'request_history',
         'schema_version',
         'settings',
         'translator_presets',
       ])
     } finally {
       db.close()
+    }
+  })
+
+  it('transactionally migrates flat model settings without changing command revision', () => {
+    const dataDir = makeDataDir()
+    const initial = openDatabase(dataDir)
+    initial.prepare('UPDATE schema_version SET version = 33, revision = 41 WHERE id = 1').run()
+    initial.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(
+      JSON.stringify({
+        aiModel: 'gpt-5',
+        subModel: 'claude-sonnet-4-5',
+        openAIKey: 'must-stay-flat',
+        maxContext: 8192,
+        modelProfiles: [],
+        modelRoleProfiles: {},
+        modelRuntimeDefaults: {},
+      }),
+    )
+    initial.close()
+
+    const migrated = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(migrated)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 41 })
+      const row = migrated.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      const settings = JSON.parse(row.data_json) as Record<string, any>
+      expect(settings.modelRoleProfiles.chatMain).toEqual({
+        mode: 'profile',
+        profileId: 'mp_legacy_chatMain',
+      })
+      expect(settings.modelProfiles).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: 'mp_legacy_chatMain', modelId: 'gpt-5' })]),
+      )
+      expect(JSON.stringify(settings.modelProfiles)).not.toContain('must-stay-flat')
+      expect(settings.openAIKey).toBe('must-stay-flat')
+    } finally {
+      migrated.close()
+    }
+
+    const reopened = openDatabase(dataDir)
+    try {
+      const row = reopened.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      const settings = JSON.parse(row.data_json) as Record<string, any>
+      expect(
+        settings.modelProfiles.filter((profile: { id: string }) => profile.id === 'mp_legacy_chatMain'),
+      ).toHaveLength(1)
+      expect(getSchemaState(reopened)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 41 })
+    } finally {
+      reopened.close()
+    }
+  })
+
+  it('rolls back and deterministically retries the durable model migration after an interrupted version bump', () => {
+    const dataDir = makeDataDir()
+    const initial = openDatabase(dataDir)
+    const legacySettings = {
+      aiModel: 'gpt-5',
+      subModel: 'claude-sonnet-4-5',
+      modelProfiles: [],
+      modelRoleProfiles: {},
+      modelRuntimeDefaults: {},
+    }
+    initial.prepare('UPDATE schema_version SET version = 33, revision = 9 WHERE id = 1').run()
+    initial.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(JSON.stringify(legacySettings))
+    initial.exec(`
+      CREATE TRIGGER fail_model_migration_version_bump
+      BEFORE UPDATE OF version ON schema_version
+      BEGIN
+        SELECT RAISE(ABORT, 'injected version bump failure');
+      END;
+    `)
+    initial.close()
+
+    expect(() => openDatabase(dataDir)).toThrow(/durable-model-profile-ownership.*injected version bump failure/)
+
+    const afterFailure = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      expect(getSchemaState(afterFailure)).toEqual({ version: 33, revision: 9 })
+      const row = afterFailure.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      expect(JSON.parse(row.data_json)).toEqual(legacySettings)
+      afterFailure.exec('DROP TRIGGER fail_model_migration_version_bump')
+    } finally {
+      afterFailure.close()
+    }
+
+    const retried = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(retried)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 9 })
+      const row = retried.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      const settings = JSON.parse(row.data_json) as Record<string, any>
+      expect(settings.modelProfiles.map((profile: { id: string }) => profile.id)).toEqual([
+        'mp_legacy_chatMain',
+        'mp_legacy_chatAux',
+      ])
+    } finally {
+      retried.close()
+    }
+  })
+
+  it('rolls back and deterministically retries durable persona selection identity repair', () => {
+    const dataDir = makeDataDir()
+    const initial = openDatabase(dataDir)
+    const legacySettings = { selectedPersona: 2, selectedPersonaId: 'duplicate' }
+    const legacyPersonas = [{ id: 'persona-1' }, { id: 'duplicate' }, { id: 'duplicate' }, {}]
+    initial.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(JSON.stringify(legacySettings))
+    const insertPersona = initial.prepare('INSERT INTO personas (position, data_json) VALUES (?, ?)')
+    legacyPersonas.forEach((persona, index) => insertPersona.run(index, JSON.stringify(persona)))
+    initial.prepare('UPDATE schema_version SET version = 34, revision = 17 WHERE id = 1').run()
+    initial.exec(`
+      CREATE TRIGGER fail_persona_identity_migration_version_bump
+      BEFORE UPDATE OF version ON schema_version
+      WHEN NEW.version = 35
+      BEGIN
+        SELECT RAISE(ABORT, 'injected persona identity version bump failure');
+      END;
+    `)
+    initial.close()
+
+    expect(() => openDatabase(dataDir)).toThrow(
+      /durable-persona-selection-identity.*injected persona identity version bump failure/,
+    )
+
+    const afterFailure = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      expect(getSchemaState(afterFailure)).toEqual({ version: 34, revision: 17 })
+      const settings = afterFailure.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+        data_json: string
+      }
+      expect(JSON.parse(settings.data_json)).toEqual(legacySettings)
+      expect(
+        (
+          afterFailure.prepare('SELECT data_json FROM personas ORDER BY position').all() as Array<{ data_json: string }>
+        ).map(({ data_json }) => JSON.parse(data_json)),
+      ).toEqual(legacyPersonas)
+      afterFailure.exec('DROP TRIGGER fail_persona_identity_migration_version_bump')
+    } finally {
+      afterFailure.close()
+    }
+
+    const retried = openDatabase(dataDir)
+    let repairedSettings: Record<string, unknown>
+    let repairedPersonas: unknown[]
+    try {
+      expect(getSchemaState(retried)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 17 })
+      repairedSettings = JSON.parse(
+        (retried.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }).data_json,
+      ) as Record<string, unknown>
+      repairedPersonas = (
+        retried.prepare('SELECT data_json FROM personas ORDER BY position').all() as Array<{ data_json: string }>
+      ).map(({ data_json }) => JSON.parse(data_json))
+      expect(repairedSettings).toMatchObject({ selectedPersona: 2, selectedPersonaId: 'persona-3' })
+      expect(repairedPersonas).toEqual([
+        { id: 'persona-1' },
+        { id: 'duplicate' },
+        { id: 'persona-3' },
+        { id: 'persona-4' },
+      ])
+    } finally {
+      retried.close()
+    }
+
+    const reopened = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(reopened)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 17 })
+      expect(
+        JSON.parse(
+          (reopened.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }).data_json,
+        ),
+      ).toEqual(repairedSettings)
+      expect(
+        (
+          reopened.prepare('SELECT data_json FROM personas ORDER BY position').all() as Array<{ data_json: string }>
+        ).map(({ data_json }) => JSON.parse(data_json)),
+      ).toEqual(repairedPersonas)
+    } finally {
+      reopened.close()
+    }
+  })
+
+  it('rolls back and deterministically retries durable Hypa V3 preset identity repair', () => {
+    const dataDir = makeDataDir()
+    const initial = openDatabase(dataDir)
+    const legacySettings = { hypaV3PresetId: 2, selectedHypaV3PresetId: 'duplicate' }
+    const legacyPresets = [{ id: 'hypa-v3-preset-1' }, { id: 'duplicate' }, { id: 'duplicate' }, {}]
+    initial.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(JSON.stringify(legacySettings))
+    const insertPreset = initial.prepare('INSERT INTO hypa_v3_presets (position, data_json) VALUES (?, ?)')
+    legacyPresets.forEach((preset, index) => insertPreset.run(index, JSON.stringify(preset)))
+    initial.prepare('UPDATE schema_version SET version = 35, revision = 23 WHERE id = 1').run()
+    initial.exec(`
+      CREATE TRIGGER fail_hypa_v3_identity_migration_version_bump
+      BEFORE UPDATE OF version ON schema_version
+      WHEN NEW.version = 36
+      BEGIN
+        SELECT RAISE(ABORT, 'injected Hypa V3 identity version bump failure');
+      END;
+    `)
+    initial.close()
+
+    expect(() => openDatabase(dataDir)).toThrow(
+      /durable-hypa-v3-preset-identity.*injected Hypa V3 identity version bump failure/,
+    )
+
+    const afterFailure = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      expect(getSchemaState(afterFailure)).toEqual({ version: 35, revision: 23 })
+      const settings = afterFailure.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+        data_json: string
+      }
+      expect(JSON.parse(settings.data_json)).toEqual(legacySettings)
+      expect(
+        (
+          afterFailure.prepare('SELECT data_json FROM hypa_v3_presets ORDER BY position').all() as Array<{
+            data_json: string
+          }>
+        ).map(({ data_json }) => JSON.parse(data_json)),
+      ).toEqual(legacyPresets)
+      afterFailure.exec('DROP TRIGGER fail_hypa_v3_identity_migration_version_bump')
+    } finally {
+      afterFailure.close()
+    }
+
+    const retried = openDatabase(dataDir)
+    let repairedSettings: Record<string, unknown>
+    let repairedPresets: unknown[]
+    try {
+      expect(getSchemaState(retried)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 23 })
+      repairedSettings = JSON.parse(
+        (retried.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }).data_json,
+      ) as Record<string, unknown>
+      repairedPresets = (
+        retried.prepare('SELECT data_json FROM hypa_v3_presets ORDER BY position').all() as Array<{
+          data_json: string
+        }>
+      ).map(({ data_json }) => JSON.parse(data_json))
+      expect(repairedSettings).toMatchObject({
+        hypaV3PresetId: 2,
+        selectedHypaV3PresetId: 'hypa-v3-preset-3',
+      })
+      expect(repairedPresets).toEqual([
+        { id: 'hypa-v3-preset-1' },
+        { id: 'duplicate' },
+        { id: 'hypa-v3-preset-3' },
+        { id: 'hypa-v3-preset-4' },
+      ])
+    } finally {
+      retried.close()
+    }
+
+    const reopened = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(reopened)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 23 })
+      expect(
+        JSON.parse(
+          (reopened.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }).data_json,
+        ),
+      ).toEqual(repairedSettings)
+      expect(
+        (
+          reopened.prepare('SELECT data_json FROM hypa_v3_presets ORDER BY position').all() as Array<{
+            data_json: string
+          }>
+        ).map(({ data_json }) => JSON.parse(data_json)),
+      ).toEqual(repairedPresets)
+    } finally {
+      reopened.close()
+    }
+  })
+
+  it.each([
+    { selection: 1, expected: 'translator-b' },
+    { selection: 0, expected: 'translator-a' },
+    { selection: undefined, expected: 'translator-a' },
+    { selection: null, expected: 'translator-a' },
+    { selection: '', expected: 'translator-a' },
+    { selection: 99, expected: 'translator-a' },
+    { selection: 'translator-b', expected: 'translator-b' },
+  ])('migrates translator selection $selection without changing preset bodies', ({ selection, expected }) => {
+    const dataDir = makeDataDir()
+    const initial = openDatabase(dataDir)
+    const settings = { translatorPresetId: selection, theme: 'light' }
+    const presets = ['translator-a', 'translator-b'].map((id) =>
+      normalizeTranslatorPreset({ id, name: id, prompt: `Prompt for ${id}`, maxResponse: 500 }),
+    )
+    initial.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(JSON.stringify(settings))
+    const insertPreset = initial.prepare('INSERT INTO translator_presets (position, data_json) VALUES (?, ?)')
+    presets.forEach((preset, index) => insertPreset.run(index, JSON.stringify(preset)))
+    initial.prepare('UPDATE schema_version SET version = 36, revision = 23 WHERE id = 1').run()
+    initial.close()
+
+    const migrated = openDatabase(dataDir)
+    let persistedSettings: string
+    try {
+      expect(getSchemaState(migrated)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 23 })
+      persistedSettings = (
+        migrated.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      ).data_json
+      expect(JSON.parse(persistedSettings)).toMatchObject({ translatorPresetId: expected, theme: 'light' })
+      if (typeof selection === 'string' && selection === expected) {
+        expect(persistedSettings).toBe(JSON.stringify(settings))
+      } else {
+        expect(JSON.parse(persistedSettings)).toMatchObject({
+          translatorPrompt: `Prompt for ${expected}`,
+          translatorMaxResponse: 500,
+        })
+      }
+      expect(migrated.prepare('SELECT data_json FROM translator_presets ORDER BY position').all()).toEqual(
+        presets.map((preset) => ({ data_json: JSON.stringify(preset) })),
+      )
+    } finally {
+      migrated.close()
+    }
+    const reopened = openDatabase(dataDir)
+    try {
+      expect(reopened.prepare('SELECT data_json FROM settings WHERE id = 1').get()).toEqual({
+        data_json: persistedSettings,
+      })
+    } finally {
+      reopened.close()
+    }
+  })
+
+  it('rolls back translator selection repair if the migration cannot commit', () => {
+    const dataDir = makeDataDir()
+    const initial = openDatabase(dataDir)
+    const settings = JSON.stringify({ translatorPresetId: 0 })
+    initial.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(settings)
+    initial
+      .prepare('INSERT INTO translator_presets (position, data_json) VALUES (0, ?)')
+      .run(JSON.stringify(normalizeTranslatorPreset({ id: 'translator-a', name: 'A' })))
+    initial.exec(`
+      UPDATE schema_version SET version = 36, revision = 23 WHERE id = 1;
+      CREATE TRIGGER fail_translator_identity_version_bump
+      BEFORE UPDATE OF version ON schema_version WHEN NEW.version = 37
+      BEGIN SELECT RAISE(ABORT, 'injected translator identity failure'); END;
+    `)
+    initial.close()
+    expect(() => openDatabase(dataDir)).toThrow(
+      /durable-translator-preset-selection-identity.*injected translator identity failure/,
+    )
+    const failed = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      expect(getSchemaState(failed)).toEqual({ version: 36, revision: 23 })
+      expect(failed.prepare('SELECT data_json FROM settings WHERE id = 1').get()).toEqual({ data_json: settings })
+      failed.exec('DROP TRIGGER fail_translator_identity_version_bump')
+    } finally {
+      failed.close()
+    }
+    const retried = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(retried)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 23 })
+      expect(
+        JSON.parse(
+          (retried.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }).data_json,
+        ).translatorPresetId,
+      ).toBe('translator-a')
+    } finally {
+      retried.close()
     }
   })
 
@@ -136,6 +509,94 @@ describe('schema migrations', () => {
       }>
       expect(columns.find((column) => column.name === 'alternate_messages_json')).toMatchObject({
         dflt_value: "'[]'",
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('migrates v28 to the operation ledger and nullable lineage columns without changing revision', () => {
+    const dataDir = makeDataDir()
+    seedSchemaVersion(dataDir, 28, 19)
+    const before = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      before.exec(`
+        CREATE TABLE command_events (
+          revision INTEGER PRIMARY KEY CHECK (revision >= 0),
+          type TEXT NOT NULL,
+          resource TEXT NOT NULL,
+          id TEXT,
+          parent_id TEXT,
+          origin_writer_session_id TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        INSERT INTO command_events (revision, type, resource)
+          VALUES (19, 'settings.updated', 'settings');
+        CREATE TABLE generation_finalization_retries (
+          generation_id TEXT PRIMARY KEY,
+          chat_id TEXT NOT NULL,
+          mode TEXT NOT NULL,
+          target_message_id TEXT,
+          message_json TEXT NOT NULL,
+          alternate_messages_json TEXT NOT NULL DEFAULT '[]',
+          chat_var_mutations_json TEXT NOT NULL,
+          target_snapshot_json TEXT,
+          failure_count INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          terminal_error TEXT,
+          status TEXT NOT NULL DEFAULT 'pending',
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        INSERT INTO generation_finalization_retries (
+          generation_id, chat_id, mode, message_json, chat_var_mutations_json
+        ) VALUES ('legacy-generation', 'chat-a', 'send', '{}', '[]');
+      `)
+    } finally {
+      before.close()
+    }
+
+    const db = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 19 })
+      expect(listTables(db)).toEqual(
+        expect.arrayContaining([
+          'generation_operations',
+          'generation_operation_attempts',
+          'generation_operation_projection_state',
+        ]),
+      )
+      expect(db.prepare('SELECT id, epoch FROM generation_operation_projection_state').get()).toEqual({
+        id: 1,
+        epoch: 0,
+      })
+      const eventColumns = (db.prepare('PRAGMA table_info(command_events)').all() as Array<{ name: string }>).map(
+        ({ name }) => name,
+      )
+      expect(eventColumns).toEqual(
+        expect.arrayContaining(['database_lineage', 'operation_id', 'source_message_id', 'job_id']),
+      )
+      const finalizationColumns = (
+        db.prepare('PRAGMA table_info(generation_finalization_retries)').all() as Array<{ name: string }>
+      ).map(({ name }) => name)
+      expect(finalizationColumns).toEqual(
+        expect.arrayContaining([
+          'database_lineage',
+          'operation_id',
+          'operation_attempt_no',
+          'actor_writer_session_id',
+          'actor_writer_epoch',
+          'accepted_message_id',
+          'terminal_outcome',
+        ]),
+      )
+      expect(db.prepare('SELECT database_lineage, operation_id FROM generation_finalization_retries').get()).toEqual({
+        database_lineage: null,
+        operation_id: null,
+      })
+      expect(db.prepare('SELECT database_lineage, operation_id FROM command_events').get()).toEqual({
+        database_lineage: null,
+        operation_id: null,
       })
     } finally {
       db.close()
@@ -210,15 +671,12 @@ describe('schema migrations', () => {
 
   it('persists stable ids for legacy global lorebooks and entries', () => {
     const dataDir = makeDataDir()
-    seedSchemaVersion(dataDir, 22, 8)
+    const initialized = openDatabase(dataDir)
+    initialized.close()
     const before = new DatabaseSync(path.join(dataDir, 'risu.db'))
     try {
-      before.exec(`
-        CREATE TABLE lore_books (
-          position INTEGER PRIMARY KEY,
-          data_json TEXT NOT NULL CHECK (json_valid(data_json))
-        )
-      `)
+      before.prepare('UPDATE schema_version SET version = 22, revision = 8 WHERE id = 1').run()
+      before.exec('DELETE FROM lore_books')
       const insert = before.prepare('INSERT INTO lore_books (position, data_json) VALUES (?, ?)')
       const entry = {
         key: 'legacy',
@@ -368,6 +826,7 @@ describe('schema migrations', () => {
                      database_lineage,
                      creator_writer_session_id,
                      request_fingerprint,
+                     response_json,
                      acknowledged_at,
                      delete_after
               FROM command_mutation_receipts
@@ -379,6 +838,11 @@ describe('schema migrations', () => {
         database_lineage: (metadata as { lineage: string }).lineage,
         creator_writer_session_id: 'writer-before-upgrade',
         request_fingerprint: 'fingerprint',
+        response_json: JSON.stringify({
+          revision: 13,
+          event: { type: 'settings.updated', resource: 'settings', revision: 13 },
+          extra: { settings: { theme: 'light' } },
+        }),
         acknowledged_at: null,
         delete_after: null,
       })
@@ -387,7 +851,7 @@ describe('schema migrations', () => {
     }
   })
 
-  it('L15: opens Fastify databases with WAL synchronous NORMAL', () => {
+  it('opens Fastify databases with WAL synchronous NORMAL', () => {
     const db = openDatabase(makeDataDir())
     try {
       const journalMode = db.prepare('PRAGMA journal_mode').get() as { journal_mode: string }
@@ -409,6 +873,16 @@ describe('schema migrations', () => {
       expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 7 })
       expect(listTables(db)).toEqual([
         'assets',
+        'bardwiki_change_manifest',
+        'bardwiki_chat_settings',
+        'bardwiki_document_search',
+        'bardwiki_document_sources',
+        'bardwiki_document_versions',
+        'bardwiki_documents',
+        'bardwiki_jobs',
+        'bardwiki_links',
+        'bardwiki_rebuild_staging',
+        'bardwiki_turn_receipts',
         'bot_presets',
         'characters',
         'chat_hypa_v3',
@@ -416,7 +890,12 @@ describe('schema migrations', () => {
         'command_events',
         'command_mutation_receipts',
         'database_metadata',
+        'generation_effects',
         'generation_finalization_retries',
+        'generation_operation_attempts',
+        'generation_operation_projection_state',
+        'generation_operations',
+        'greeting_translations',
         'hypa_v3_presets',
         'inlay_catalog',
         'loadouts',
@@ -435,6 +914,7 @@ describe('schema migrations', () => {
         'prompt_presets',
         'prompt_templates',
         'push_subscriptions',
+        'request_history',
         'schema_version',
         'settings',
         'translator_presets',
@@ -602,6 +1082,53 @@ describe('schema migrations', () => {
       expect(chunk).toEqual({ id: 'chunk-1', status: 'pending' })
     } finally {
       second.close()
+    }
+  })
+
+  it('backfills concrete instance identity for memory jobs created before v29', () => {
+    const dataDir = makeDataDir()
+    const seed = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      seed.exec(`
+        CREATE TABLE schema_version (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          version INTEGER NOT NULL,
+          revision INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO schema_version (id, version, revision) VALUES (1, 28, 17);
+        CREATE TABLE memory_jobs (
+          id TEXT PRIMARY KEY,
+          chat_id TEXT NOT NULL,
+          kind TEXT NOT NULL CHECK (kind IN ('chunk', 'embed', 'summarize')),
+          status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+          payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
+          error TEXT,
+          attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+          max_attempts INTEGER NOT NULL DEFAULT 3 CHECK (max_attempts > 0),
+          next_run_at TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO memory_jobs (
+          id, chat_id, kind, status, payload_json, next_run_at, created_at, updated_at
+        ) VALUES (
+          'legacy-job', 'chat-1', 'summarize', 'pending', '{}',
+          '2026-08-11T00:00:00.000Z', '2026-08-11T00:00:00.000Z', '2026-08-11T00:00:00.000Z'
+        );
+      `)
+    } finally {
+      seed.close()
+    }
+
+    const db = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 17 })
+      const row = db.prepare("SELECT instance_id FROM memory_jobs WHERE id = 'legacy-job'").get() as {
+        instance_id: string
+      }
+      expect(row.instance_id).toMatch(/^[0-9a-f]{32}$/)
+    } finally {
+      db.close()
     }
   })
 

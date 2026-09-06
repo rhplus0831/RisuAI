@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -294,22 +292,15 @@ vi.mock('./Scripts/TriggerList.svelte', async () => {
 
 import CharConfig from './CharConfig.svelte'
 import { CharConfigSubMenu, MobileGUI, selectedCharID } from 'src/ts/stores.svelte'
-import { getDatabase, setDatabaseLite, type character } from 'src/ts/storage/database.svelte'
+import { setDatabaseLite, type character } from 'src/ts/storage/database.svelte'
+import {
+  applyChatMetadataOwnerPatch,
+  charactersResourceState,
+  settingsResourceState,
+} from 'src/ts/server/resourceState.svelte'
 import { language } from 'src/lang'
-
-function charConfigSource(): string {
-  return readFileSync(resolve(process.cwd(), 'src/lib/SideBars/CharConfig.svelte'), 'utf8')
-}
-
-function sourceBetween(source: string, startNeedle: string, endNeedle: string): string {
-  const start = source.indexOf(startNeedle)
-  const end = source.indexOf(endNeedle, start + startNeedle.length)
-
-  expect(start).toBeGreaterThanOrEqual(0)
-  expect(end).toBeGreaterThan(start)
-
-  return source.slice(start, end)
-}
+import { CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS } from 'src/ts/server/scriptDefinitionOwner.svelte'
+import { getDatabase, getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -384,7 +375,11 @@ async function settleComponent(): Promise<void> {
   await tick()
 }
 
-async function mountCharConfig(subMenu: number, characterFields: Partial<character> = {}): Promise<void> {
+async function mountCharConfig(
+  subMenu: number,
+  characterFields: Partial<character> = {},
+  initialSubMenu = 0,
+): Promise<void> {
   setDatabaseLite({
     characters: [makeCharacter(characterFields)],
     currentChar: 0,
@@ -396,7 +391,7 @@ async function mountCharConfig(subMenu: number, characterFields: Partial<charact
     useAdditionalAssetsPreview: false,
   } as never)
   selectedCharID.set(0)
-  CharConfigSubMenu.set(0)
+  CharConfigSubMenu.set(initialSubMenu)
   MobileGUI.set(true)
 
   target = document.createElement('div')
@@ -404,8 +399,10 @@ async function mountCharConfig(subMenu: number, characterFields: Partial<charact
   component = mount(CharConfig, { target })
   await settleComponent()
 
-  CharConfigSubMenu.set(subMenu)
-  await settleComponent()
+  if (initialSubMenu !== subMenu) {
+    CharConfigSubMenu.set(subMenu)
+    await settleComponent()
+  }
 }
 
 function buttons(): HTMLButtonElement[] {
@@ -542,6 +539,150 @@ describe('CharConfig desktop section navigation', () => {
   })
 })
 
+describe('CharConfig initial draft rendering', () => {
+  it('mounts directly on Advanced when the selected character has no bias array', async () => {
+    await mountCharConfig(2, { bias: undefined }, 2)
+
+    expect(target.textContent).toContain(language.noBias)
+    expect(buttonByAccessibleName(`${language.add}: Bias`)).toBeTruthy()
+  })
+
+  it('seeds ordinary editor reads from the ready owner when the aggregate row is stale', async () => {
+    setDatabaseLite({
+      characters: [makeCharacter({ name: 'Aggregate stale' })],
+      currentChar: 0,
+      fishSpeechKey: '',
+      hypaV3: false,
+      newImageHandlingBeta: false,
+      showDeprecatedTriggerV1: false,
+      showUnrecommended: false,
+      useAdditionalAssetsPreview: false,
+    } as never)
+    const staleAggregate = getResourceDatabase().characters
+    charactersResourceState.characters = [makeCharacter({ name: 'Owner current' })]
+    selectedCharID.set(0)
+    CharConfigSubMenu.set(0)
+    MobileGUI.set(true)
+
+    target = document.createElement('div')
+    document.body.appendChild(target)
+    component = mount(CharConfig, { target })
+    await settleComponent()
+
+    expect(staleAggregate[0].name).toBe('Aggregate stale')
+    expect((target.querySelector('input[aria-label="Character Name"]') as HTMLInputElement)?.value).toBe(
+      'Owner current',
+    )
+  })
+
+  it('hides editable controls when the ready owner selection is ambiguous', async () => {
+    setDatabaseLite({
+      characters: [makeCharacter({ name: 'Aggregate fallback' })],
+      currentChar: 0,
+      fishSpeechKey: '',
+      hypaV3: false,
+      newImageHandlingBeta: false,
+      showDeprecatedTriggerV1: false,
+      showUnrecommended: false,
+      useAdditionalAssetsPreview: false,
+    } as never)
+    charactersResourceState.characters = [makeCharacter(), makeCharacter({ name: 'Duplicate' })]
+    selectedCharID.set(0)
+    CharConfigSubMenu.set(0)
+    MobileGUI.set(false)
+
+    target = document.createElement('div')
+    document.body.appendChild(target)
+    component = mount(CharConfig, { target })
+    await settleComponent()
+
+    expect(target.querySelector('[data-char-config-section="tts"]')).toBeNull()
+    expect(target.querySelector('[data-char-config-section="manage"]')).toBeNull()
+  })
+
+  it('does not revive the aggregate character row after the owner reports an error', async () => {
+    setDatabaseLite({
+      characters: [makeCharacter({ name: 'Aggregate fallback' })],
+      currentChar: 0,
+    } as never)
+    charactersResourceState.status = 'error'
+    charactersResourceState.error = 'owner unavailable'
+    selectedCharID.set(0)
+    CharConfigSubMenu.set(0)
+    MobileGUI.set(false)
+
+    target = document.createElement('div')
+    document.body.appendChild(target)
+    component = mount(CharConfig, { target })
+    await settleComponent()
+
+    expect(target.querySelector('[data-char-config-section="tts"]')).toBeNull()
+    expect(target.querySelector('[data-char-config-section="manage"]')).toBeNull()
+  })
+})
+
+describe('CharConfig settings owners', () => {
+  it('reacts to exact advanced and memory owner values', async () => {
+    await mountCharConfig(2, { virtualscript: '', personality: '', scenario: '' })
+
+    expect(target.querySelector(`textarea[aria-label="${language.personality}"]`)).toBeNull()
+    expect(target.querySelector(`textarea[aria-label="${language.scenario}"]`)).toBeNull()
+    expect(buttons().some((button) => button.textContent?.trim() === language.hypaMemoryV3Modal)).toBe(false)
+
+    settingsResourceState.value.showUnrecommended = true
+    settingsResourceState.value.hypaV3 = true
+    await settleComponent()
+
+    expect(target.querySelector(`textarea[aria-label="${language.personality}"]`)).toBeTruthy()
+    expect(target.querySelector(`textarea[aria-label="${language.scenario}"]`)).toBeTruthy()
+    expect(buttonByText(language.hypaMemoryV3Modal)).toBeTruthy()
+  })
+
+  it('reacts to the display and media owners in the additional-assets editor', async () => {
+    await mountCharConfig(1, { additionalAssets: [['portrait', 'asset-1', 'png']] })
+    buttonByText(language.additionalAssets).click()
+    await settleComponent()
+
+    expect(target.querySelector(`input[aria-label="${language.insertAssetPrompt}"]`)).toBeNull()
+    expect(buttons().some((button) => button.getAttribute('aria-label') === `${language.image}: portrait`)).toBe(false)
+
+    settingsResourceState.value.newImageHandlingBeta = true
+    settingsResourceState.value.useAdditionalAssetsPreview = true
+    await settleComponent()
+
+    expect(target.querySelector(`input[aria-label="${language.insertAssetPrompt}"]`)).toBeTruthy()
+    expect(buttonByAccessibleName(`${language.image}: portrait`)).toBeTruthy()
+  })
+
+  it('fails closed instead of rendering a stale setting after its owner errors', async () => {
+    await mountCharConfig(2, { personality: '' })
+    settingsResourceState.value.showUnrecommended = true
+    settingsResourceState.groupStatuses.advanced = 'error'
+    await settleComponent()
+
+    expect(target.querySelector(`textarea[aria-label="${language.personality}"]`)).toBeNull()
+  })
+})
+
+describe('CharConfig retired additional description', () => {
+  it('preserves imported data while replacing the editor with an unsupported notice', async () => {
+    await mountCharConfig(2, { additionalText: 'Imported private appendix' })
+
+    expect(target.querySelector(`textarea[aria-label="${language.additionalText}"]`)).toBeNull()
+    expect(target.querySelector('[data-risu-additional-text-unsupported="true"]')?.textContent).toContain(
+      language.additionalTextUnsupported,
+    )
+    expect(getDatabase().characters[0].additionalText).toBe('Imported private appendix')
+  })
+
+  it('hides the retired surface when no imported data exists', async () => {
+    await mountCharConfig(2, { additionalText: '' })
+
+    expect(target.querySelector('[data-risu-additional-text-unsupported="true"]')).toBeNull()
+    expect(target.querySelector(`textarea[aria-label="${language.additionalText}"]`)).toBeNull()
+  })
+})
+
 describe('CharConfig editor action accessibility', () => {
   it('names media actions and exposes display and removal toggle state', async () => {
     await mountCharConfig(1, {
@@ -617,102 +758,6 @@ describe('CharConfig character media callback freshness contracts', () => {
     window.dispatchEvent(new Event('resize'))
     await settleComponent()
     expect(navigationUserIcon()?.getAttribute('width')).toBe('24')
-  })
-
-  it('routes VITS and GPT-SoVITS media buttons through guarded helper functions', () => {
-    const source = charConfigSource()
-
-    expect(source).toContain("from 'src/ts/server/characterTtsAssetUpload'")
-    expect(source).toContain("import { registerOnnxModelFromFile } from 'src/ts/process/transformers'")
-    expect(source).toContain('async function registerVitsModelFromEditor()')
-    expect(source).toContain('async function uploadGptSoVitsReferenceAudioFromEditor()')
-    expect(source).toContain('onclick={registerVitsModelFromEditor}')
-    expect(source).toContain('onclick={uploadGptSoVitsReferenceAudioFromEditor}')
-    expect(source).not.toContain('onclick={async () => {\n          const model = await registerOnnxModel()')
-    expect(source).not.toContain("import { registerOnnxModel } from 'src/ts/process/transformers'")
-  })
-
-  it('issues additional asset upload tokens from the multi-file picker callback', () => {
-    const source = charConfigSource()
-    const body = sourceBetween(
-      source,
-      'async function uploadCharacterAdditionalAssetsFromEditor()',
-      'function currentEditorTtsAssetUploadTarget(',
-    )
-
-    expect(body).toContain('const files = await selectMultipleFile(CHARACTER_ADDITIONAL_ASSET_EXTENSIONS, {')
-    expect(body).toContain('onFilesSelected: () => {')
-    expect(body).toContain('operation = beginCharacterAdditionalAssetUpload(target)')
-    expect(body.indexOf('operation = beginCharacterAdditionalAssetUpload(target)')).toBeLessThan(
-      body.indexOf('if (!files || files.length === 0 || !operation) return'),
-    )
-    expect(body).toContain('clearCharacterAdditionalAssetUpload(operation)')
-  })
-
-  it('issues notification-image tokens from the picker callback and guards the target fields', () => {
-    const source = charConfigSource()
-    const body = sourceBetween(
-      source,
-      'function currentEditorNotificationImageUploadTarget()',
-      'function currentEditorTtsAssetUploadTarget(',
-    )
-
-    expect(body).toContain('rowNotificationImage: target.character.notificationImage')
-    expect(body).toContain('draftNotificationImage: characterDraft.value.notificationImage')
-    expect(body).toContain('const selected = (await selectSingleFile(NOTIFICATION_IMAGE_EXTENSIONS, {')
-    expect(body).toContain('onFileSelected: () => {')
-    expect(body).toContain('operation = beginCharacterNotificationImageUpload(target)')
-    expect(body.indexOf('operation = beginCharacterNotificationImageUpload(target)')).toBeLessThan(
-      body.indexOf('if (!selected || !operation) return'),
-    )
-    expect(body).toContain('if (!isCurrentEditorNotificationImageUpload(activeOperation)) return')
-    expect(body).toContain('applyFreshCharacterNotificationImageUpload({')
-    expect(body).toContain('clearCharacterNotificationImageUpload(operation)')
-  })
-
-  it('issues VITS tokens from the single-file picker callback and guards registration before final apply', () => {
-    const source = charConfigSource()
-    const body = sourceBetween(
-      source,
-      'async function registerVitsModelFromEditor()',
-      'async function uploadGptSoVitsReferenceAudioFromEditor()',
-    )
-
-    expect(body).toContain("const selected = (await selectSingleFile(['zip'], {")
-    expect(body).toContain('onFileSelected: () => {')
-    expect(body).toContain('operation = beginCharacterTtsAssetUpload(target)')
-    expect(body.indexOf('operation = beginCharacterTtsAssetUpload(target)')).toBeLessThan(
-      body.indexOf('if (!selected || !operation) return'),
-    )
-    expect(body).toContain('if (!isCurrentEditorTtsAssetUpload(activeOperation)) return')
-    expect(body).toContain('const model = await registerOnnxModelFromFile(selected, {')
-    expect(body).toContain('shouldContinue: () => isCurrentEditorTtsAssetUpload(activeOperation)')
-    expect(body).toContain('applyFreshCharacterVitsModelRegistration({')
-    expect(body).toContain('character.vits = nextModel')
-    expect(body).toContain('clearCharacterTtsAssetUpload(operation)')
-    expect(body).not.toContain('character.vits = model')
-  })
-
-  it('issues GPT-SoVITS audio tokens from the single-file picker callback and guards saveAsset before final apply', () => {
-    const source = charConfigSource()
-    const body = sourceBetween(
-      source,
-      'async function uploadGptSoVitsReferenceAudioFromEditor()',
-      'function clearOrRotateCharacterImage()',
-    )
-
-    expect(body).toContain("const audio = (await selectSingleFile(['wav', 'ogg', 'aac', 'mp3'], {")
-    expect(body).toContain('onFileSelected: () => {')
-    expect(body).toContain('operation = beginCharacterTtsAssetUpload(target)')
-    expect(body.indexOf('operation = beginCharacterTtsAssetUpload(target)')).toBeLessThan(
-      body.indexOf('if (!audio || !operation) return'),
-    )
-    expect(body).toContain('if (!isCurrentEditorTtsAssetUpload(activeOperation)) return')
-    expect(body).toContain("const saveId = await saveAsset(audio.data, '', audio.name)")
-    expect(body).toContain('applyFreshCharacterGptSoVitsReferenceAudioUpload({')
-    expect(body).toContain('character.gptSoVitsConfig.ref_audio_data = nextRefAudioData')
-    expect(body).toContain('clearCharacterTtsAssetUpload(operation)')
-    expect(body).not.toContain('character.gptSoVitsConfig.ref_audio_data = {\n              fileName: audio.name')
   })
 
   it('keeps an older delayed VITS picker read from superseding a newer selection', async () => {
@@ -894,19 +939,6 @@ describe('CharConfig TTS control accessible names', () => {
     )
   })
 
-  it('keeps every direct shared form control named for its visible setting', () => {
-    const source = charConfigSource()
-
-    for (const componentName of ['TextInput', 'TextAreaInput', 'NumberInput', 'SelectInput', 'SecretInput']) {
-      const tags = source.match(new RegExp(`<${componentName}\\b[\\s\\S]*?(?:\\/>|</${componentName}>)`, 'g')) ?? []
-      expect(tags.length, componentName).toBeGreaterThan(0)
-      expect(
-        tags.filter((tag) => !tag.includes('ariaLabel=')),
-        `${componentName} controls without names`,
-      ).toEqual([])
-    }
-  })
-
   it.each([
     { mode: 'novelai', name: language.ttsCustomVoiceSeed },
     { mode: 'openai', name: language.ttsAdvancedEndpoint },
@@ -1073,41 +1105,6 @@ describe('CharConfig draft-backed avatar and emotion controls', () => {
   })
 })
 
-describe('CharConfig character draft target guards', () => {
-  it('does not gate persistent character actions on the profile draft type field', () => {
-    const source = charConfigSource()
-
-    expect(source).not.toContain('characterDraft.value.type')
-    expect(source).toContain('function currentRealCharacterDraftTarget()')
-    expect(source).toContain('isServerCharacterShell(selectedCharacter)')
-    expect(source).toContain("selectedCharacter.type && selectedCharacter.type !== 'character'")
-    expect(source).toContain('characterDraft.characterId !== selectedCharacter.chaId')
-    expect(source).not.toContain('changeCharImage($selectedCharID')
-    expect(source).not.toContain('rmCharEmotion($selectedCharID')
-    expect(source).not.toContain('addCharEmotion($selectedCharID')
-  })
-
-  it('keeps script definitions out of the profile draft and validates the script draft target before adding', () => {
-    const source = charConfigSource()
-    const draftSeed = sourceBetween(
-      source,
-      'const characterDraft = createServerBackedCharacterDraft([',
-      '  let characterScriptsDraft = $state<customscript[]>([])',
-    )
-    const scriptAddHandler = sourceBetween(
-      source,
-      '<span class="text-textcolor mt-4">{language.regexScript}',
-      '<span class="text-textcolor mt-4">{language.triggerScript}',
-    )
-
-    expect(draftSeed).not.toContain("'type'")
-    expect(draftSeed).not.toContain("'customscript'")
-    expect(draftSeed).not.toContain("'triggerscript'")
-    expect(scriptAddHandler).toContain('const target = currentRealCharacterDraftTarget()')
-    expect(scriptAddHandler).toContain('scriptDraftCharacterId === target.character.chaId')
-  })
-})
-
 describe('CharConfig draft-type-less character actions', () => {
   it('removes an additional asset without changing the active chat greeting', async () => {
     await mountCharConfig(1, {
@@ -1186,7 +1183,80 @@ describe('CharConfig draft-type-less character actions', () => {
     ])
   })
 
-  it('keeps a retained alternate greeting cascade visible and identifies it as queued', async () => {
+  it('updates the ready character and chat owners without mutating a stale aggregate row', async () => {
+    serverCommandState.enabled = true
+    setDatabaseLite({
+      characters: [
+        makeCharacter({
+          name: 'Aggregate stale',
+          alternateGreetings: ['Aggregate zero', 'Aggregate one'],
+          chats: [{ id: 'aggregate-chat', name: 'Aggregate', message: [], note: '', localLore: [], fmIndex: 1 }],
+        }),
+      ],
+      currentChar: 0,
+      hypaV3: false,
+      newImageHandlingBeta: false,
+      showUnrecommended: false,
+      useAdditionalAssetsPreview: false,
+    } as never)
+    const staleAggregate = getResourceDatabase().characters
+    charactersResourceState.characters = [
+      makeCharacter({
+        name: 'Owner current',
+        alternateGreetings: ['Owner zero', 'Owner one'],
+        chats: [
+          { id: 'owner-chat-zero', name: 'Zero', message: [], note: '', localLore: [], fmIndex: 0 },
+          { id: 'owner-chat-one', name: 'One', message: [], note: '', localLore: [], fmIndex: 1 },
+        ],
+      }),
+    ]
+    selectedCharID.set(0)
+    CharConfigSubMenu.set(2)
+    MobileGUI.set(true)
+
+    target = document.createElement('div')
+    document.body.appendChild(target)
+    component = mount(CharConfig, { target })
+    await settleComponent()
+
+    buttonByAccessibleName(`${language.remove}: ${language.altGreet} 1`).click()
+    await settleComponent()
+
+    expect(staleAggregate[0].alternateGreetings).toEqual(['Aggregate zero', 'Aggregate one'])
+    expect(staleAggregate[0].chats[0].fmIndex).toBe(1)
+    expect(charactersResourceState.characters[0].alternateGreetings).toEqual(['Owner one'])
+    expect(charactersResourceState.characters[0].chats.map((chat) => chat.fmIndex)).toEqual([-1, 0])
+    expect(serverCommandState.alternateGreetingCalls).toEqual([
+      expect.objectContaining({
+        characterId: 'char-1',
+        alternateGreetings: ['Owner one'],
+        chatGreetingIndices: [
+          { chatId: 'owner-chat-zero', fmIndex: -1 },
+          { chatId: 'owner-chat-one', fmIndex: 0 },
+        ],
+      }),
+    ])
+  })
+
+  it('rejects a structural greeting mutation when chat ids are ambiguous', async () => {
+    serverCommandState.enabled = true
+    await mountCharConfig(2, {
+      alternateGreetings: ['Zero', 'One'],
+      chats: [
+        { id: 'duplicate-chat', name: 'First', message: [], note: '', localLore: [], fmIndex: 0 },
+        { id: 'duplicate-chat', name: 'Second', message: [], note: '', localLore: [], fmIndex: 1 },
+      ],
+    })
+
+    buttonByAccessibleName(`${language.remove}: ${language.altGreet} 1`).click()
+    await settleComponent()
+
+    expect(charactersResourceState.characters[0].alternateGreetings).toEqual(['Zero', 'One'])
+    expect(charactersResourceState.characters[0].chats.map((chat) => chat.fmIndex)).toEqual([0, 1])
+    expect(serverCommandState.alternateGreetingCalls).toHaveLength(0)
+  })
+
+  it('keeps a retained alternate greeting cascade without rendering queued status text', async () => {
     serverCommandState.enabled = true
     alternateGreetingMutationState.outcomes.push('queued')
     await mountCharConfig(2, {
@@ -1202,7 +1272,7 @@ describe('CharConfig draft-type-less character actions', () => {
 
     expect(getDatabase().characters[0].alternateGreetings).toEqual(['One', 'Zero'])
     expect(getDatabase().characters[0].chats.map((chat) => chat.fmIndex)).toEqual([1, 0])
-    expect(target.querySelector('[role="status"]')?.textContent).toBe(language.alternateGreetingMutationQueued)
+    expect(target.querySelector('[role="status"]')).toBeNull()
 
     alternateGreetingMutationState.settleQueued[0]?.('accepted')
     await settleComponent()
@@ -1225,6 +1295,30 @@ describe('CharConfig draft-type-less character actions', () => {
 
     expect(getDatabase().characters[0].alternateGreetings).toEqual(['Zero', 'One'])
     expect(getDatabase().characters[0].chats.map((chat) => chat.fmIndex)).toEqual([0, 1])
+    expect(target.querySelector('[role="alert"]')?.textContent).toBe(language.alternateGreetingMutationFailed)
+  })
+
+  it('does not roll a discarded queued mutation over newer chat-owner metadata', async () => {
+    serverCommandState.enabled = true
+    alternateGreetingMutationState.outcomes.push('queued')
+    await mountCharConfig(2, {
+      alternateGreetings: ['Zero', 'One'],
+      chats: [
+        { id: 'chat-zero', name: 'Zero', message: [], note: '', localLore: [], fmIndex: 0 },
+        { id: 'chat-one', name: 'One', message: [], note: '', localLore: [], fmIndex: 1 },
+      ],
+    })
+
+    buttonByAccessibleName(`${language.moveUp}: ${language.altGreet} 2`).click()
+    await settleComponent()
+    expect(charactersResourceState.characters[0].chats.map((chat) => chat.fmIndex)).toEqual([1, 0])
+
+    expect(applyChatMetadataOwnerPatch('char-1', 'chat-zero', { fmIndex: 7 })).toBe(true)
+    alternateGreetingMutationState.settleQueued[0]?.('discarded')
+    await settleComponent()
+
+    expect(charactersResourceState.characters[0].alternateGreetings).toEqual(['Zero', 'One'])
+    expect(charactersResourceState.characters[0].chats.map((chat) => chat.fmIndex)).toEqual([7, 1])
     expect(target.querySelector('[role="alert"]')?.textContent).toBe(language.alternateGreetingMutationFailed)
   })
 
@@ -1255,6 +1349,8 @@ describe('CharConfig draft-type-less character actions', () => {
     await settleComponent()
 
     expect(target.querySelector('[data-testid="regex-count"]')?.textContent).toBe('1')
+    await vi.advanceTimersByTimeAsync(CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS)
+    await settleComponent()
     expect(getDatabase().characters[0].customscript).toHaveLength(1)
     expect(getDatabase().characters[0].customscript[0]).toMatchObject({
       comment: '',
@@ -1275,6 +1371,8 @@ describe('CharConfig draft-type-less character actions', () => {
     await settleComponent()
 
     pendingImport.resolve([{ id: 'imported-script', comment: 'Imported', in: 'hello', out: 'hi', type: 'editinput' }])
+    await settleComponent()
+    await vi.advanceTimersByTimeAsync(CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS)
     await settleComponent()
 
     expect(getDatabase().characters[0].customscript).toHaveLength(2)
@@ -1332,6 +1430,8 @@ describe('CharConfig draft-type-less character actions', () => {
     await settleComponent()
 
     expect(target.querySelector('[data-testid="regex-count"]')?.textContent).toBe('2')
+    await vi.advanceTimersByTimeAsync(CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS)
+    await settleComponent()
     expect(getDatabase().characters[0].customscript).toHaveLength(2)
   })
 })

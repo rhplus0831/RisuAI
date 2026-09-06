@@ -59,7 +59,7 @@ function folderItem(items: SidebarCharacterListItem[], index = 1) {
 }
 
 describe('sidebar character list signature memo', () => {
-  it('L44: preserves sidebar order, folder ids, and drag indices from characterOrder', () => {
+  it('preserves sidebar order, folder ids, and drag indices from characterOrder', () => {
     const result = createSidebarCharacterListMemo()(baseOrder(), baseCharacters())
 
     expect(result.changed).toBe(true)
@@ -83,12 +83,13 @@ describe('sidebar character list signature memo', () => {
         id: 'folder-1',
         name: 'Folder One',
         color: 'blue',
+        askBeforeOpening: false,
         img: 'folder.webp',
       },
     ])
   })
 
-  it('L44: unrelated character metadata and chat changes reuse the sidebar list', () => {
+  it('unrelated character metadata and chat changes reuse the sidebar list', () => {
     const memo = createSidebarCharacterListMemo()
     const first = memo(baseOrder(), baseCharacters())
     const changedCharacters = baseCharacters()
@@ -109,7 +110,7 @@ describe('sidebar character list signature memo', () => {
     expect(second.items).toBe(first.items)
   })
 
-  it('L44: character name image index and order changes rebuild the sidebar list', () => {
+  it('character name image index and order changes rebuild the sidebar list', () => {
     const cases: Array<{
       name: string
       order: SidebarCharacterOrderEntry[]
@@ -177,7 +178,7 @@ describe('sidebar character list signature memo', () => {
     }
   })
 
-  it('L44: folder name color image and data changes rebuild the sidebar list', () => {
+  it('folder name, color, opening preference, image, and data changes rebuild the sidebar list', () => {
     const cases: Array<{
       name: string
       folder: SidebarCharacterOrderFolder
@@ -205,6 +206,13 @@ describe('sidebar character list signature memo', () => {
         },
       },
       {
+        name: 'folder opening preference',
+        folder: { ...baseFolder(), askBeforeOpening: true },
+        assert: (items) => {
+          expect(folderItem(items)?.askBeforeOpening).toBe(true)
+        },
+      },
+      {
         name: 'folder data',
         folder: { ...baseFolder(), data: ['beta', 'alpha'] },
         assert: (items) => {
@@ -225,7 +233,7 @@ describe('sidebar character list signature memo', () => {
     }
   })
 
-  it('L44: signature ignores unreferenced character names and images', () => {
+  it('signature ignores unreferenced character names and images', () => {
     const first = buildSidebarCharacterListSignature(baseOrder(), baseCharacters())
     const changedCharacters = baseCharacters().map((character) =>
       character.chaId === 'unused' ? { ...character, name: 'Unused Renamed', image: 'unused-new.webp' } : character,
@@ -233,5 +241,16 @@ describe('sidebar character list signature memo', () => {
     const second = buildSidebarCharacterListSignature(baseOrder(), changedCharacters)
 
     expect(second).toBe(first)
+  })
+
+  it('uses the explicitly supplied character owner when aggregate data conflicts', () => {
+    const owner = [{ chaId: 'owner', name: 'Owner', displayName: '', image: 'owner.png' }]
+    const aggregate = [{ chaId: 'aggregate', name: 'Aggregate', displayName: '', image: 'aggregate.png' }]
+    const order = ['owner']
+
+    expect(createSidebarCharacterListMemo()(order, owner).items).toEqual([
+      { type: 'normal', index: 0, name: 'Owner', img: 'owner.png' },
+    ])
+    expect(createSidebarCharacterListMemo()(order, aggregate).items).toEqual([])
   })
 })

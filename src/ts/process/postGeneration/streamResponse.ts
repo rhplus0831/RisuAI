@@ -1,5 +1,4 @@
 import {
-  getDatabase,
   type Chat,
   type Message,
   type MessageGenerationInfo,
@@ -7,12 +6,30 @@ import {
   type character,
 } from '../../storage/database.svelte'
 import { trimUntilPunctuation } from '../../util'
-import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
+import {
+  charactersResourceState,
+  getCharacterResourceOwner,
+  settingsResourceState,
+} from '../../server/resourceState.svelte'
+import { getChatMessageOwnerState } from '../../server/chatMessageHydration.svelte'
 import type { StreamResponseChunk, requestDataResponse } from '../request/request'
 import { processScriptFull } from '../scripts'
 import { createStreamRenderCoalescer, type RenderFlushScheduler } from './streamCoalescer'
 import { captureChatMessageMutationIntentEpoch } from '../../server/chatMessageMutationIntent'
-import { captureChatBodyProjectionEpoch, hasChatBodyProjectionEpochChanged } from '../../server/resourceState.svelte'
+import {
+  beginHalfStreamingProgress,
+  clearHalfStreamingProgress,
+  recordHalfStreamingToken,
+  type HalfStreamingProgressTarget,
+} from '../halfStreamingProgress'
+import {
+  beginGenerationDisplayProjection,
+  finishGenerationDisplayProjection,
+  updateGenerationDisplayProjection,
+  type GenerationDisplayProjectionRef,
+} from '../generationDisplayProjection.svelte'
+import { registerRetainedChatProjection } from '../../server/chatRetainedProjection'
+import { ensureMessageId } from '../../chatCommands'
 
 type StreamingResponse = Extract<requestDataResponse, { type: 'streaming' }>
 
@@ -37,6 +54,8 @@ export interface ConsumeStreamResponseOptions {
    * streamed reformatted text for live display.
    */
   skipEditOutput?: boolean
+  /** Called once when this attempt has observable provider text. */
+  onGenerationText?: () => void
   /**
    * Test seam: overrides the animation-frame scheduler the render coalescer
    * uses. Production callers omit it (`defaultRenderFlushScheduler`).
@@ -60,6 +79,14 @@ export interface StreamMessageProjection {
   previousData: string
   ownedData: string
   appended: boolean
+  /** Stream ownership was lost to a newer projection or user mutation. */
+  detached?: boolean
+  /** Original generated-row slot, used when half-stream Stop removed its placeholder. */
+  messageIndex?: number
+  /** The stream crossed an explicit durable replay gap before terminal reconciliation. */
+  gapTruncated?: boolean
+  /** Transient target-row projection used instead of an authoritative message write. */
+  displayProjection?: GenerationDisplayProjectionRef
 }
 
 export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions): Promise<ConsumeStreamResponseResult> {
@@ -68,7 +95,6 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
     arg,
     nowChatroom,
     currentChar,
-    selectedChar,
     selectedChat,
     generationId,
     generationInfo,
@@ -81,20 +107,18 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
   const reader = req.result.getReader()
   const streamCharacterId = opts.targetCharacterId || currentChar.chaId
   const currentLiveCharacter = (): character | undefined => {
-    const characters = getDatabase().characters
-    if (!Array.isArray(characters)) return undefined
-    const indexedCharacter = characters[selectedChar]
-    if (!streamCharacterId || indexedCharacter?.chaId === streamCharacterId) return indexedCharacter
-    return characters.find((candidate) => candidate?.chaId === streamCharacterId)
+    if (charactersResourceState.status !== 'ready' || !streamCharacterId) return undefined
+    return getCharacterResourceOwner(streamCharacterId)
   }
-  let streamChatId: string | undefined = opts.targetChatId
+  let streamChatId: string | undefined = opts.targetChatId || currentChar.chats?.[selectedChat]?.id
   const currentLiveChat = (): Chat | undefined => {
-    const chats = currentLiveCharacter()?.chats
-    if (!Array.isArray(chats)) return undefined
-    const indexedChat = chats[selectedChat]
-    if (!streamChatId || indexedChat?.id === streamChatId) return indexedChat
-    return chats.find((chat) => chat.id === streamChatId)
+    const character = currentLiveCharacter()
+    const chats = character?.chats
+    if (!Array.isArray(chats) || !streamChatId) return undefined
+    const matches = chats.filter((chat) => chat.id === streamChatId)
+    return matches.length === 1 ? matches[0] : undefined
   }
+  const currentTranscriptOwner = () => (streamChatId ? getChatMessageOwnerState(streamChatId) : undefined)
   const bumpReloadKey = (): void => {
     const character = currentLiveCharacter()
     if (character) character.reloadKeys += 1
@@ -104,20 +128,62 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
     throw new Error('Active chat is unavailable for the streaming response')
   }
   streamChatId = initialChat.id
-  const initialMessages = Array.isArray(initialChat.message) ? initialChat.message : []
+  const halfStreaming = req.halfStreaming === true
+  const halfStreamingTarget: HalfStreamingProgressTarget = {
+    characterId: streamCharacterId,
+    chatId: streamChatId,
+    generationId,
+  }
+  if (halfStreaming && req.halfStreamingProgressManaged !== true) {
+    beginHalfStreamingProgress(halfStreamingTarget)
+  }
+  const initialMessages = currentTranscriptOwner()?.messages
+  if (!initialMessages) {
+    throw new Error('Active chat transcript owner is unavailable for the streaming response')
+  }
+  // Keep the explicit chat row pointed at its transcript owner. Hydration may
+  // replace either projection later; the retained callback below rejoins them.
+  initialChat.message = initialMessages
   let msgIndex = initialMessages.length
   let prefix = ''
   let streamTargetMessageId: string | undefined = generationId
-  let anonymousStreamTarget: Message | undefined
   let lastStreamOwnedData = ''
   let appendedGeneratedMessage = false
-  if (arg.continue) {
+  let retainedAppendedMessage: Message | undefined
+  let retainedTranscriptFence: Array<Pick<Message, 'chatId' | 'role' | 'data' | 'name'>> | undefined
+  const displayProjection = req.generationDisplayProjection
+  const projectsRegenerateTarget = displayProjection?.mode === 'regenerate' && !!displayProjection.targetMessageId
+  const extendsContinue = arg.continue === true && req.continueDisposition !== 'append'
+  if (projectsRegenerateTarget) {
+    const targetIndex = initialMessages.findIndex((message) => message.chatId === displayProjection.targetMessageId)
+    const target = initialMessages[targetIndex]
+    if (targetIndex < 0 || target?.role !== 'char') {
+      finishGenerationDisplayProjection(displayProjection)
+      throw new Error('Regenerate display target is unavailable for the streaming response')
+    }
+    msgIndex = targetIndex
+    streamTargetMessageId = displayProjection.targetMessageId
+    lastStreamOwnedData = target.data ?? ''
+    beginGenerationDisplayProjection(displayProjection)
+    updateGenerationDisplayProjection(displayProjection, {
+      generationId,
+      status: 'preparing',
+      gapTruncated: req.replayGapTruncated === true,
+      projectionEpoch: displayProjection.projectionEpoch,
+    })
+  } else if (extendsContinue) {
     msgIndex -= 1
     const continueTarget = initialMessages[msgIndex]
-    prefix = continueTarget?.data ?? ''
-    lastStreamOwnedData = prefix
-    streamTargetMessageId = continueTarget?.chatId
-    if (!streamTargetMessageId) anonymousStreamTarget = continueTarget
+    const visibleContinueData = continueTarget?.data ?? ''
+    prefix = typeof req.continueBase === 'string' ? req.continueBase : visibleContinueData
+    // A retried reattach can begin while the row already displays this
+    // generation's prior partial. That visible value is still stream-owned;
+    // only the composition prefix must come from the immutable server base.
+    lastStreamOwnedData = visibleContinueData
+    streamTargetMessageId = continueTarget ? ensureMessageId(continueTarget) : undefined
+    if (!streamTargetMessageId) {
+      throw new Error('Continue target has no stable message identity')
+    }
   } else {
     const existingGeneratedIndex = initialMessages.findIndex(
       (message) =>
@@ -131,23 +197,23 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
       streamTargetMessageId = initialMessages[existingGeneratedIndex]?.chatId ?? generationId
       lastStreamOwnedData = initialMessages[existingGeneratedIndex]?.data ?? ''
     } else {
-      withTrustedResourceWrite(() => {
-        const targetChat = currentLiveChat()
-        if (!targetChat) {
-          throw new Error('Active chat is unavailable for the streaming response')
-        }
-        targetChat.message ??= []
-        targetChat.message.push({
-          role: 'char',
-          data: '',
-          saying: currentChar.chaId,
-          time: Date.now(),
-          generationInfo,
-          promptInfo,
-          chatId: generationId,
-        })
-        appendedGeneratedMessage = true
-      })
+      retainedTranscriptFence = initialMessages.map((message) => ({
+        chatId: message.chatId,
+        role: message.role,
+        data: message.data,
+        name: message.name,
+      }))
+      retainedAppendedMessage = {
+        role: 'char',
+        data: '',
+        saying: currentChar.chaId,
+        time: Date.now(),
+        generationInfo,
+        promptInfo,
+        chatId: generationId,
+      }
+      initialMessages.push(retainedAppendedMessage)
+      appendedGeneratedMessage = true
     }
   }
   const preStreamData = lastStreamOwnedData
@@ -163,26 +229,106 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
       )
       if (index >= 0) return index
     }
-    // Legacy rows can lack ids. Preserve compatibility only while the exact
-    // object captured at dispatch remains resident; never reinterpret msgIndex
-    // as permission to write a different row after an authoritative replace.
-    return anonymousStreamTarget ? messages.indexOf(anonymousStreamTarget) : -1
+    return -1
   }
 
-  const resolveStreamMessage = (): { chat: Chat; index: number; message: Message } | null => {
+  const resolveStreamMessage = (): { chat: Chat; messages: Message[]; index: number; message: Message } | null => {
     const chat = currentLiveChat()
-    const messages = chat?.message
-    if (!chat || !Array.isArray(messages)) return null
+    const messages = currentTranscriptOwner()?.messages
+    if (!chat || !messages) return null
     const index = findStreamMessageIndex(messages)
     if (index < 0) return null
     const message = messages[index]
     if (!message) return null
-    return { chat, index, message }
+    return { chat, messages, index, message }
   }
 
-  const projectionEpoch = streamChatId ? captureChatBodyProjectionEpoch(streamChatId) : undefined
+  let projectionEpoch = currentTranscriptOwner()?.projectionEpoch
   const mutationIntentEpoch = streamChatId ? captureChatMessageMutationIntentEpoch(streamChatId) : undefined
   let streamDetached = false
+  let releaseRetainedStreamProjection = () => {}
+
+  const matchesRetainedTranscriptFence = (messages: readonly Message[]): boolean => {
+    if (!retainedTranscriptFence || messages.length !== retainedTranscriptFence.length) return false
+    return retainedTranscriptFence.every((expected, index) => {
+      const message = messages[index]
+      return (
+        message?.chatId === expected.chatId &&
+        message?.role === expected.role &&
+        message?.data === expected.data &&
+        message?.name === expected.name
+      )
+    })
+  }
+
+  if (appendedGeneratedMessage && streamChatId && retainedAppendedMessage && retainedTranscriptFence) {
+    const transcriptFence = retainedTranscriptFence
+    releaseRetainedStreamProjection = registerRetainedChatProjection(
+      { kind: 'chat-body', chatId: streamChatId },
+      () => {
+        if (streamDetached || !streamChatId || !retainedAppendedMessage) return
+        if (
+          mutationIntentEpoch !== undefined &&
+          captureChatMessageMutationIntentEpoch(streamChatId) !== mutationIntentEpoch
+        ) {
+          streamDetached = true
+          return
+        }
+        const transcriptOwner = currentTranscriptOwner()
+        const messages = transcriptOwner?.messages
+        if (!messages) {
+          streamDetached = true
+          return
+        }
+        const targetChat = currentLiveChat()
+        if (!targetChat) {
+          streamDetached = true
+          return
+        }
+        const ownerProjectionUnchanged = transcriptOwner.projectionEpoch === projectionEpoch
+        // The hydration owner synchronizes its projection after retained
+        // callbacks run. When its epoch advanced, validate/reapply against the
+        // freshly hydrated character row instead of the still-stale projection
+        // map returned above.
+        const projectedMessages =
+          !ownerProjectionUnchanged && targetChat.message !== messages ? targetChat.message : messages
+        const existingIndex = findStreamMessageIndex(projectedMessages)
+        if (existingIndex >= 0) {
+          const existing = projectedMessages[existingIndex]
+          if (
+            existing?.data !== lastStreamOwnedData ||
+            (!ownerProjectionUnchanged &&
+              (existingIndex !== transcriptFence.length ||
+                !matchesRetainedTranscriptFence(projectedMessages.slice(0, existingIndex)) ||
+                projectedMessages.length !== transcriptFence.length + 1))
+          ) {
+            streamDetached = true
+            return
+          }
+          targetChat.message = projectedMessages
+          retainedAppendedMessage = existing
+          msgIndex = existingIndex
+          projectionEpoch = transcriptOwner.projectionEpoch
+          return
+        }
+        if (!matchesRetainedTranscriptFence(projectedMessages)) {
+          streamDetached = true
+          return
+        }
+        const restored = structuredClone(retainedAppendedMessage)
+        restored.data = lastStreamOwnedData
+        projectedMessages.push(restored)
+        targetChat.message = projectedMessages
+        retainedAppendedMessage = restored
+        msgIndex = projectedMessages.length - 1
+        projectionEpoch = transcriptOwner.projectionEpoch
+      },
+      () => {
+        streamDetached = true
+      },
+    )
+  }
+
   const ownsStreamTarget = (target: { message: Message } | null): boolean => {
     if (streamDetached) return false
     if (!target) {
@@ -191,7 +337,7 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
     }
     if (
       streamChatId &&
-      ((projectionEpoch !== undefined && hasChatBodyProjectionEpochChanged(streamChatId, projectionEpoch)) ||
+      ((projectionEpoch !== undefined && currentTranscriptOwner()?.projectionEpoch !== projectionEpoch) ||
         (mutationIntentEpoch !== undefined &&
           captureChatMessageMutationIntentEpoch(streamChatId) !== mutationIntentEpoch))
     ) {
@@ -205,15 +351,22 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
     return true
   }
 
-  withTrustedResourceWrite(() => {
-    const targetChat = currentLiveChat()
-    if (targetChat) targetChat.isStreaming = true
-    bumpReloadKey()
-  })
+  const streamingChat = currentLiveChat()
+  if (streamingChat) streamingChat.isStreaming = true
+  bumpReloadKey()
   let lastResponseChunk: StreamResponseChunk = {}
   let streamAborted: boolean = abortSignal.aborted
+  let streamCompleted = false
   let result = ''
+  let lastObservedResult = ''
+  let generationTextReported = false
   let emoChanged = false
+  const reportGenerationText = (): void => {
+    if (generationTextReported) return
+    generationTextReported = true
+    opts.onGenerationText?.()
+  }
+  if (!projectsRegenerateTarget && lastStreamOwnedData.length > 0) reportGenerationText()
   // Every `.data` write + `reloadKeys` bump re-runs
   // `risuChatParser` + `ParseMarkdown` over the whole growing message, so apply
   // the newest accumulated chunk at most once per animation frame instead of
@@ -233,25 +386,36 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
       nextData = result2.data
       emoChanged = result2.emoChanged
     }
-    withTrustedResourceWrite(() => {
+    if (projectsRegenerateTarget) {
       const target = resolveStreamMessage()
       if (!ownsStreamTarget(target)) return
       msgIndex = target.index
-      target.message.data = nextData
-      lastStreamOwnedData = nextData
-      bumpReloadKey()
-    })
+      updateGenerationDisplayProjection(displayProjection, {
+        generationId,
+        status: 'streaming',
+        text: nextData,
+        gapTruncated: req.replayGapTruncated === true,
+      })
+      return
+    }
+    const target = resolveStreamMessage()
+    if (!ownsStreamTarget(target)) return
+    msgIndex = target.index
+    target.message.data = nextData
+    lastStreamOwnedData = nextData
+    bumpReloadKey()
   }
   const renderCoalescer = createStreamRenderCoalescer(applyLatestChunk, opts.renderFlushScheduler)
   const removeEmptyGeneratedMessage = (): void => {
-    if (arg.continue) return
+    if (projectsRegenerateTarget) return
+    if (extendsContinue) return
     if (streamDetached) return
-    if (result.length > 0 && !streamAborted && !abortSignal.aborted) return
+    if (result.length > 0 && (!halfStreaming || streamCompleted) && !streamAborted && !abortSignal.aborted) return
     const target = resolveStreamMessage()
     if (!ownsStreamTarget(target)) return
     if (target.message.role !== 'char') return
     if ((target.message.data ?? '').length > 0) return
-    target.chat.message.splice(target.index, 1)
+    target.messages.splice(target.index, 1)
   }
   const abortReader = () => {
     streamAborted = true
@@ -277,10 +441,25 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
         if (!result) {
           result = ''
         }
-        if (getDatabase().removeIncompleteResponse) {
+        const rawStreamedResult = result
+        if (rawStreamedResult.length > 0) reportGenerationText()
+        if (
+          halfStreaming &&
+          req.halfStreamingProgressManaged !== true &&
+          rawStreamedResult.length > 0 &&
+          rawStreamedResult !== lastObservedResult
+        ) {
+          recordHalfStreamingToken(halfStreamingTarget)
+        }
+        lastObservedResult = rawStreamedResult
+        if (
+          settingsResourceState.status !== 'error' &&
+          settingsResourceState.groupStatuses.runtime === 'ready' &&
+          settingsResourceState.value.removeIncompleteResponse === true
+        ) {
           result = trimUntilPunctuation(result)
         }
-        renderCoalescer.notify()
+        if (!halfStreaming) renderCoalescer.notify()
         if (renderCoalescer.failed) {
           // An apply rejected (script error); stop reading and surface it via
           // `settle()` below, like the old per-chunk await failed fast.
@@ -288,8 +467,18 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
         }
       }
       if (readed.done) {
+        streamCompleted = true
         break
       }
+    }
+    if (halfStreaming && streamCompleted && !streamAborted && !abortSignal.aborted) {
+      renderCoalescer.notify()
+    }
+    if (halfStreaming && result.length > 0 && (streamAborted || abortSignal.aborted) && skipEditOutput !== true) {
+      // Local providers have no server terminal snapshot to reconcile. Apply
+      // their buffered partial through the normal client editoutput path before
+      // abort cleanup decides whether the placeholder is empty.
+      renderCoalescer.notify()
     }
     await renderCoalescer.settle()
   } finally {
@@ -297,15 +486,18 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
     // When the loop threw (reader error), still apply the last received chunk;
     // swallow apply errors here so they cannot mask the propagating one.
     await renderCoalescer.settle().catch(() => {})
-    withTrustedResourceWrite(() => {
-      // A successful server stream supplies either tokens or `done.result`.
-      // Therefore an empty generated row at stream termination is a placeholder
-      // left by abort/transport failure and should never remain in the transcript.
-      removeEmptyGeneratedMessage()
-      const targetChat = currentLiveChat()
-      if (targetChat) targetChat.isStreaming = false
-      bumpReloadKey()
-    })
+    releaseRetainedStreamProjection()
+    // A successful server stream supplies either tokens or `done.result`.
+    // Therefore an empty generated row at stream termination is a placeholder
+    // left by abort/transport failure and should never remain in the transcript.
+    removeEmptyGeneratedMessage()
+    const targetChat = currentLiveChat()
+    if (targetChat?.isStreaming) targetChat.isStreaming = false
+    bumpReloadKey()
+    if (halfStreaming) clearHalfStreamingProgress(halfStreamingTarget)
+    if (displayProjection && (streamAborted || abortSignal.aborted || !streamCompleted)) {
+      finishGenerationDisplayProjection(displayProjection)
+    }
     void reader.cancel().catch(() => {})
   }
 
@@ -322,6 +514,10 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
       previousData: preStreamData,
       ownedData: lastStreamOwnedData,
       appended: appendedGeneratedMessage,
+      detached: streamDetached,
+      messageIndex: msgIndex,
+      gapTruncated: req.replayGapTruncated === true,
+      ...(displayProjection ? { displayProjection } : {}),
     },
   }
 }

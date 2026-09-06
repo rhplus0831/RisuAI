@@ -9,6 +9,8 @@ import type { AuthState } from '../auth.js'
 import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
+import { attachAbort } from '../requestAbort.js'
+import { getMaintenanceCoordinator, MaintenanceBusyError, type MaintenanceLease } from '../maintenanceCoordinator.js'
 import {
   AutomaticBackupError,
   ValidationError,
@@ -21,12 +23,18 @@ import {
   type Persisted,
   type StagedAssetLiveFileCopy,
 } from '../repository.js'
-import { replaceLegacyHypaV3MemoryRowsInTransaction } from '../memoryLegacyImport.js'
+import {
+  listLegacySummaryTombstones,
+  replaceLegacyHypaV3MemoryRowsInTransaction,
+  type LegacyHypaV3BackfillResult,
+} from '../memoryLegacyImport.js'
 import {
   UnsupportedGroupCharactersError,
+  UnsupportedStandaloneChatBlocksError,
   decodeRisuSaveImportSnapshot,
-  normalizeRisuSaveImportDatabase,
+  normalizeRisuSaveJsonImportSnapshot,
 } from '../risuSave/importSnapshot.js'
+import type { RisuServerPortableMetadata } from '../risuSave/portableMetadata.js'
 import { decodeLocalBackup } from '../risuSave/localBackupImport.js'
 import {
   normalizeLegacyLocalBackupImportDatabase,
@@ -49,6 +57,7 @@ import {
 import type { LegacyRisuSaveEnvelopeKind } from '../risuSave/legacyEnvelopeCodec.js'
 import { importRateLimit } from '../routeRateLimits.js'
 import { emitProtocolMetric, protocolDurationMs, protocolMetricsEnabled, protocolNowMs } from '../protocolMetrics.js'
+import type { GreetingTranslationRow } from '../translation/greetingTranslationStore.js'
 
 interface ImportBody {
   database?: unknown
@@ -67,6 +76,7 @@ const LOCAL_BACKUP_EXPORT_FILENAME = 'database.bin'
 const ESTIMATED_BACKUP_BYTES_HEADER = 'x-risu-estimated-backup-bytes'
 const LOCAL_BACKUP_DATABASE_ENVELOPE = 'legacy-compressed'
 const SQLITE_EXPORT_ESTIMATE_FILE = 'risu.db'
+const BUNDLE_IMPORT_ROLLBACK_CLEANUP_WARNING = 'Bundle-import rollback could not remove some staged asset files'
 // Unlimited by default: the upload streams to a temp file and decodes in bounded
 // batches, so size is constrained by disk, not memory. A finite ceiling is opt-in
 // via RISU_API_IMPORT_MAX_BYTES (see config.ts).
@@ -96,17 +106,33 @@ export function registerSaveRoutes(
     : (options.maxExpandedImportBytes ?? DEFAULT_BUNDLE_INNER_RISU_MAX_EXPANDED_BYTES)
   app.post('/api/v1/import/risusave', { config: { rateLimit: importRateLimit } }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
+    const requestAbort = attachAbort(req, reply)
+    let maintenanceLease: MaintenanceLease | undefined
     try {
+      // Reject known conflicts before buffering/decoding, without holding live
+      // ownership while multipart input is still only temporary bytes.
+      getMaintenanceCoordinator(dataDir).beginExclusive('import', requestAbort.signal).release()
       if (req.isMultipart()) {
-        const snapshot = decodeRisuSaveImportSnapshot(await readUploadedRisuSave(req), {
+        const uploaded = await readUploadedRisuSave(req)
+        throwIfImportRequestAborted(requestAbort.signal)
+        const snapshot = decodeRisuSaveImportSnapshot(uploaded, {
           maxExpandedBytes: options.maxExpandedImportBytes,
         })
-        const { revision, event, databaseLineage, writerEpoch, assetReport } = await applyImportedDatabase(
-          db,
-          dataDir,
-          snapshot.database,
-          { automaticBackupRetention: options.automaticBackupRetention },
-        )
+        throwIfImportRequestAborted(requestAbort.signal)
+        maintenanceLease = getMaintenanceCoordinator(dataDir).beginExclusive('import', requestAbort.signal)
+        const { revision, event, databaseLineage, writerEpoch, assetReport, memoryLegacyReport } =
+          await applyImportedDatabase(
+            db,
+            dataDir,
+            snapshot.database,
+            snapshot.portableMetadata,
+            snapshot.greetingTranslations,
+            {
+              automaticBackupRetention: options.automaticBackupRetention,
+              signal: maintenanceLease.signal,
+              maintenanceLease,
+            },
+          )
         eventSink.emit(event)
         return {
           revision,
@@ -116,101 +142,55 @@ export function registerSaveRoutes(
           importReport: {
             incompleteChatCount: snapshot.incompleteChatCount,
             unsupportedReferenceCount: snapshot.unsupportedReferences.length,
+            ...(snapshot.skippedBlocks.length > 0 ? { skippedBlocks: snapshot.skippedBlocks } : {}),
           },
           assetReport,
+          ...(memoryLegacyReport ? { memoryLegacyReport } : {}),
         }
       }
 
       const body = (req.body ?? {}) as ImportBody
-      const database = normalizeRisuSaveImportDatabase(body.database)
-      // `normalizeRisuSaveImportDatabase` returns a request-body-isolated
+      const snapshot = normalizeRisuSaveJsonImportSnapshot(body.database)
+      // `normalizeRisuSaveJsonImportSnapshot` returns a request-body-isolated
       // throwaway object for JSON bodies, so the repository can split
       // message rows in place without a second full-corpus clone.
-      const { revision, event, databaseLineage, writerEpoch, assetReport } = await applyImportedDatabase(
-        db,
-        dataDir,
-        database,
-        {
-          automaticBackupRetention: options.automaticBackupRetention,
-          cloneBeforeMessageSplit: false,
-        },
-      )
-      eventSink.emit(event)
-      return { revision, event, databaseLineage, writerEpoch, assetReport }
-    } catch (err) {
-      if (err instanceof UnsupportedGroupCharactersError) {
-        reply.code(422)
-        return unsupportedGroupImportResponse(err)
-      }
-      if (err instanceof ValidationError) {
-        reply.code(400)
-        return { error: err.message }
-      }
-      if (err instanceof AutomaticBackupError) {
-        reply.code(500)
-        return { error: err.code }
-      }
-      throw err
-    }
-  })
-
-  app.post('/api/v1/import/bundle', { config: { rateLimit: importRateLimit } }, async (req, reply) => {
-    if (!(await requireAuth(authState, req, reply))) return
-    if (!req.isMultipart()) {
-      reply.code(400)
-      return { error: 'backup import requires a multipart .risu.zip or .bin upload' }
-    }
-
-    let uploadPath: string | null = null
-    try {
-      // Stream the (potentially very large) upload to a temp file instead of
-      // buffering it in memory, then stream-decode it; assets stage into temp
-      // files first so malformed embedded DB bytes cannot leak live side effects.
-      uploadPath = await streamUploadToTempFile(req, importMaxBytes)
-
-      const decoded = await decodeLocalBackup(uploadPath, {
-        maxExpandedBytes: importMaxBytes,
-      })
-
-      const snapshot = decodeRisuSaveImportSnapshot(decoded.databaseBytes, {
-        maxExpandedBytes: bundleInnerRisuMaxExpandedBytes,
-      })
-      let assetsCreated = false
-      const copiedAssetFiles: StagedAssetLiveFileCopy[] = []
-      const importedDatabase =
-        decoded.format === 'legacy-local-backup'
-          ? normalizeLegacyLocalBackupImportDatabase(snapshot.database, decoded.assetReferenceAliases)
-          : snapshot.database
-      const { revision, event, databaseLineage, writerEpoch, assetReport } = await applyImportedDatabase(
-        db,
-        dataDir,
-        importedDatabase,
-        {
-          automaticBackupRetention: options.automaticBackupRetention,
-          beforeRevision: () => {
-            const assetResults = persistStagedAssetsInTransaction(db, dataDir, decoded.stagedAssets, copiedAssetFiles)
-            assetsCreated = assetResults.some((result) => result.created)
+      maintenanceLease = getMaintenanceCoordinator(dataDir).beginExclusive('import', requestAbort.signal)
+      const { revision, event, databaseLineage, writerEpoch, assetReport, memoryLegacyReport } =
+        await applyImportedDatabase(
+          db,
+          dataDir,
+          snapshot.database,
+          snapshot.portableMetadata,
+          snapshot.greetingTranslations,
+          {
+            automaticBackupRetention: options.automaticBackupRetention,
+            cloneBeforeMessageSplit: false,
+            signal: maintenanceLease.signal,
+            maintenanceLease,
           },
-          onImportRollback: () => cleanupCopiedStagedAssetFiles(copiedAssetFiles),
-        },
-      )
+        )
       eventSink.emit(event)
       return {
         revision,
         event,
         databaseLineage,
         writerEpoch,
-        importReport: {
-          incompleteChatCount: snapshot.incompleteChatCount,
-          unsupportedReferenceCount: snapshot.unsupportedReferences.length,
-        },
         assetReport,
-        bundleReport: {
-          includedAssetCount: decoded.includedAssetCount,
-          assetsCreated,
-        },
+        ...(memoryLegacyReport ? { memoryLegacyReport } : {}),
       }
     } catch (err) {
+      if (err instanceof MaintenanceBusyError) {
+        reply.code(503)
+        return { error: err.code }
+      }
+      if (isAbortError(err)) {
+        reply.code(499)
+        return { error: 'import_aborted' }
+      }
+      if (err instanceof UnsupportedStandaloneChatBlocksError) {
+        reply.code(422)
+        return unsupportedStandaloneChatBlockImportResponse(err)
+      }
       if (err instanceof UnsupportedGroupCharactersError) {
         reply.code(422)
         return unsupportedGroupImportResponse(err)
@@ -225,9 +205,136 @@ export function registerSaveRoutes(
       }
       throw err
     } finally {
+      maintenanceLease?.release()
+      requestAbort.cleanup()
+    }
+  })
+
+  app.post('/api/v1/import/bundle', { config: { rateLimit: importRateLimit } }, async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    if (!req.isMultipart()) {
+      reply.code(400)
+      return { error: 'backup import requires a multipart .risu.zip or .bin upload' }
+    }
+
+    const requestAbort = attachAbort(req, reply)
+    let maintenanceLease: MaintenanceLease | undefined
+    let uploadPath: string | null = null
+    try {
+      // Reject known conflicts before buffering/decoding, without holding live
+      // ownership while multipart input is still only temporary bytes.
+      getMaintenanceCoordinator(dataDir).beginExclusive('import', requestAbort.signal).release()
+      // Stream the (potentially very large) upload to a temp file instead of
+      // buffering it in memory, then stream-decode it; assets stage into temp
+      // files first so malformed embedded DB bytes cannot leak live side effects.
+      uploadPath = await streamUploadToTempFile(req, importMaxBytes)
+      throwIfImportRequestAborted(requestAbort.signal)
+
+      const decoded = await decodeLocalBackup(uploadPath, {
+        maxExpandedBytes: importMaxBytes,
+        maxDatabaseBytes: bundleInnerRisuMaxExpandedBytes,
+        signal: requestAbort.signal,
+      })
+
+      throwIfImportRequestAborted(requestAbort.signal)
+      const snapshot = decodeRisuSaveImportSnapshot(decoded.databaseBytes, {
+        maxExpandedBytes: bundleInnerRisuMaxExpandedBytes,
+      })
+      throwIfImportRequestAborted(requestAbort.signal)
+      let assetsCreated = false
+      const copiedAssetFiles: StagedAssetLiveFileCopy[] = []
+      const importedDatabase =
+        decoded.format === 'legacy-local-backup'
+          ? normalizeLegacyLocalBackupImportDatabase(snapshot.database, decoded.assetReferenceAliases)
+          : snapshot.database
+      maintenanceLease = getMaintenanceCoordinator(dataDir).beginExclusive('import', requestAbort.signal)
+      const { revision, event, databaseLineage, writerEpoch, assetReport, memoryLegacyReport } =
+        await applyImportedDatabase(
+          db,
+          dataDir,
+          importedDatabase,
+          snapshot.portableMetadata,
+          snapshot.greetingTranslations,
+          {
+            automaticBackupRetention: options.automaticBackupRetention,
+            signal: maintenanceLease.signal,
+            maintenanceLease,
+            beforeRevision: () => {
+              const assetResults = persistStagedAssetsInTransaction(db, dataDir, decoded.stagedAssets, copiedAssetFiles)
+              assetsCreated = assetResults.some((result) => result.created)
+            },
+            onImportRollback: () => {
+              const cleanup = cleanupCopiedStagedAssetFiles(copiedAssetFiles)
+              if (cleanup.failures.length === 0) return
+              try {
+                req.log.warn(
+                  {
+                    err: new AggregateError(
+                      cleanup.failures.map((failure) => failure.error),
+                      BUNDLE_IMPORT_ROLLBACK_CLEANUP_WARNING,
+                    ),
+                    failureCount: cleanup.failures.length,
+                    attempted: cleanup.attempted,
+                    failedFiles: cleanup.failures.map((failure) => failure.file),
+                  },
+                  BUNDLE_IMPORT_ROLLBACK_CLEANUP_WARNING,
+                )
+              } catch {
+                // Logging is best-effort and must never replace the import error.
+              }
+            },
+          },
+        )
+      eventSink.emit(event)
+      return {
+        revision,
+        event,
+        databaseLineage,
+        writerEpoch,
+        importReport: {
+          incompleteChatCount: snapshot.incompleteChatCount,
+          unsupportedReferenceCount: snapshot.unsupportedReferences.length,
+          ...(snapshot.skippedBlocks.length > 0 ? { skippedBlocks: snapshot.skippedBlocks } : {}),
+        },
+        assetReport,
+        ...(memoryLegacyReport ? { memoryLegacyReport } : {}),
+        bundleReport: {
+          includedAssetCount: decoded.includedAssetCount,
+          assetsCreated,
+        },
+      }
+    } catch (err) {
+      if (err instanceof MaintenanceBusyError) {
+        reply.code(503)
+        return { error: err.code }
+      }
+      if (isAbortError(err)) {
+        reply.code(499)
+        return { error: 'import_aborted' }
+      }
+      if (err instanceof UnsupportedStandaloneChatBlocksError) {
+        reply.code(422)
+        return unsupportedStandaloneChatBlockImportResponse(err)
+      }
+      if (err instanceof UnsupportedGroupCharactersError) {
+        reply.code(422)
+        return unsupportedGroupImportResponse(err)
+      }
+      if (err instanceof ValidationError) {
+        reply.code(400)
+        return { error: err.message }
+      }
+      if (err instanceof AutomaticBackupError) {
+        reply.code(500)
+        return { error: err.code }
+      }
+      throw err
+    } finally {
+      requestAbort.cleanup()
       if (uploadPath) {
         await fs.promises.rm(path.dirname(uploadPath), { recursive: true, force: true }).catch(() => {})
       }
+      maintenanceLease?.release()
     }
   })
 
@@ -279,7 +386,7 @@ export function registerSaveRoutes(
       const persisted = loadPersistedWithMessages(db, dataDir)
       persisted.assets = getAllAssetMetadata(db)
       const estimatedBackupBytes = estimateDeviceBackupBytes(dataDir, persisted)
-      const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted)
+      const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted, loadPortableMetadata(db), db)
       const snapshotLoadMs = measure ? protocolDurationMs(snapshotStart) : undefined
       const encodeStart = measure ? protocolNowMs() : 0
       const risuBytes = encodeRisuSaveExportSnapshot(snapshot, exportOptions)
@@ -292,7 +399,7 @@ export function registerSaveRoutes(
         encodeMs,
         outputBytes: risuBytes.byteLength,
       })
-      const bundle = buildRepositoryRisuSaveBundleExport({
+      const bundle = await buildRepositoryRisuSaveBundleExport({
         dataDir,
         persisted,
         risuBytes,
@@ -327,7 +434,7 @@ export function registerSaveRoutes(
       const persisted = loadPersistedWithMessages(db, dataDir)
       persisted.assets = getAllAssetMetadata(db)
       const estimatedBackupBytes = estimateDeviceBackupBytes(dataDir, persisted)
-      const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted)
+      const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted, loadPortableMetadata(db), db)
       snapshot.database = prepareLegacyLocalBackupExportDatabase(snapshot.database, persisted.assets)
       const snapshotLoadMs = measure ? protocolDurationMs(snapshotStart) : undefined
       const encodeStart = measure ? protocolNowMs() : 0
@@ -341,7 +448,7 @@ export function registerSaveRoutes(
         encodeMs,
         outputBytes: risuBytes.byteLength,
       })
-      const localBackup = buildRepositoryRisuLocalBackupExport({
+      const localBackup = await buildRepositoryRisuLocalBackupExport({
         dataDir,
         persisted,
         databaseBytes: risuBytes,
@@ -371,6 +478,13 @@ function unsupportedGroupImportResponse(error: UnsupportedGroupCharactersError) 
     code: 'unsupported-group-characters',
     unsupportedGroupCount: error.count,
     unsupportedGroups: error.groups,
+  }
+}
+
+function unsupportedStandaloneChatBlockImportResponse(error: UnsupportedStandaloneChatBlocksError) {
+  return {
+    error: error.message,
+    code: 'unsupported-standalone-chat-blocks',
   }
 }
 
@@ -517,9 +631,13 @@ async function applyImportedDatabase(
   db: DatabaseSync,
   dataDir: string,
   database: unknown,
+  portableMetadata: RisuServerPortableMetadata,
+  greetingTranslations: readonly GreetingTranslationRow[],
   options: {
     cloneBeforeMessageSplit?: boolean
     automaticBackupRetention?: number
+    signal?: AbortSignal
+    maintenanceLease?: MaintenanceLease
     beforeRevision?: (db: DatabaseSync) => void
     onImportRollback?: () => void
   } = {},
@@ -529,14 +647,24 @@ async function applyImportedDatabase(
   databaseLineage: string
   writerEpoch: number
   assetReport: ReturnType<typeof summarizeRisuSaveAssetReport>
+  memoryLegacyReport?: LegacyHypaV3BackfillResult
 }> {
   let result: Awaited<ReturnType<typeof applyImport>>
+  let memoryLegacyReport: LegacyHypaV3BackfillResult | undefined
   try {
     result = await applyImport(db, dataDir, database, {
+      greetingTranslations,
       automaticBackupRetention: options.automaticBackupRetention,
+      signal: options.signal,
+      maintenanceLease: options.maintenanceLease,
       cloneBeforeMessageSplit: options.cloneBeforeMessageSplit,
       beforeRevision: () => {
-        replaceLegacyHypaV3MemoryRowsInTransaction(db, database)
+        const backfill = replaceLegacyHypaV3MemoryRowsInTransaction(
+          db,
+          database,
+          portableMetadata.memoryLegacySummaryTombstones,
+        )
+        if (backfill.skippedSummaries.length > 0) memoryLegacyReport = backfill
         options.beforeRevision?.(db)
       },
     })
@@ -547,5 +675,24 @@ async function applyImportedDatabase(
   return {
     ...result,
     assetReport: summarizeRisuSaveAssetReport(buildRepositoryRisuSaveAssetReport(dataDir, db)),
+    ...(memoryLegacyReport ? { memoryLegacyReport } : {}),
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError'
+}
+
+function throwIfImportRequestAborted(signal: AbortSignal): void {
+  if (!signal.aborted) return
+  const error = new Error('Import request aborted')
+  error.name = 'AbortError'
+  throw error
+}
+
+function loadPortableMetadata(db: DatabaseSync): RisuServerPortableMetadata {
+  return {
+    version: 1,
+    memoryLegacySummaryTombstones: listLegacySummaryTombstones(db),
   }
 }

@@ -1,0 +1,44 @@
+{
+  "source": "fcc14488c9f7aa55bded13ece309579b2331a51c",
+  "status": "failed-companion-inventory-count",
+  "command": "pnpm test:agent",
+  "elapsedSeconds": 139.323,
+  "assessment": "Every runtime test and frontend typecheck passes. Server checks stop before downstream typechecks because the companion resource-owner matrix retained the old 4215 reference total; the reviewed current baseline totals 4232. The count and positive matrix validation are being repaired; no gate is waived.",
+  "frontend": "680 files / 8207 tests passed, 3 skipped",
+  "server": "219 files / 3994 tests passed, 2 skipped",
+  "architectureErrors": [
+    "[architecture-inventory] client resource owner gap matrix reference count must be 4232"
+  ],
+  "aggregateSummary": "[test:agent] completed in 2m 18.9s\n  FAIL  server and browser-smoke typecheck (9.5s)\n  PASS  test topology validation (4.0s)\n  PASS  current documentation validation (0.5s)\n  PASS  frontend tests (1m 23.3s)\n  PASS  frontend check (45.9s)\n  PASS  server tests (38.6s)\n  PASS  browser-smoke build (12.5s)\n[ELIFECYCLE] Command failed with exit code 1.",
+  "commands": [
+    {
+      "name": "initial-preload",
+      "command": [
+        "pnpm",
+        "build:initial-preload"
+      ],
+      "environment": {},
+      "source": "fcc14488c9f7aa55bded13ece309579b2331a51c",
+      "exitCode": 0,
+      "elapsedSeconds": 18.748,
+      "log": "/tmp/phase6-final-fcc14488c/initial-preload.log",
+      "artifacts": [
+        "/tmp/phase6-final-fcc14488c/initial-preload.json",
+        "/tmp/phase6-final-fcc14488c/bundle-boundaries.json"
+      ]
+    },
+    {
+      "name": "agent",
+      "command": [
+        "pnpm",
+        "test:agent"
+      ],
+      "environment": {},
+      "source": "fcc14488c9f7aa55bded13ece309579b2331a51c",
+      "exitCode": 1,
+      "elapsedSeconds": 139.323,
+      "log": "/tmp/phase6-final-fcc14488c/agent.log",
+      "artifacts": []
+    }
+  ]
+}

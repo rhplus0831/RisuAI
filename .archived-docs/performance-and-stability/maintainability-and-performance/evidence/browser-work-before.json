@@ -1,0 +1,434 @@
+{
+  "source": "491cc1820",
+  "findings": {
+    "F03": {
+      "finding": "F03",
+      "evidenceKind": "structural-work-counters",
+      "node": "v24.19.0",
+      "samples": [
+        {
+          "name": "small",
+          "unrelatedCharacters": 1,
+          "unrelatedMessagesPerCharacter": 2,
+          "targetMessages": 2,
+          "messageBodyBytes": 256,
+          "snapshotApi": "currentChatStateSnapshot",
+          "rollbackApi": "restoreChatFolderRowMetadata",
+          "snapshotBytes": 1808,
+          "snapshotCloneCount": 1,
+          "largestCloneBytes": 1774,
+          "capturedCharacterCount": 2,
+          "capturedMessageCount": 4,
+          "folderRollbackCloneCount": 1,
+          "folderRollbackLargestCloneBytes": 5,
+          "unrelatedMessageIdentityPreserved": true
+        },
+        {
+          "name": "intermediate",
+          "unrelatedCharacters": 8,
+          "unrelatedMessagesPerCharacter": 100,
+          "targetMessages": 2,
+          "messageBodyBytes": 256,
+          "snapshotApi": "currentChatStateSnapshot",
+          "rollbackApi": "restoreChatFolderRowMetadata",
+          "snapshotBytes": 249264,
+          "snapshotCloneCount": 1,
+          "largestCloneBytes": 249230,
+          "capturedCharacterCount": 9,
+          "capturedMessageCount": 802,
+          "folderRollbackCloneCount": 1,
+          "folderRollbackLargestCloneBytes": 5,
+          "unrelatedMessageIdentityPreserved": true
+        },
+        {
+          "name": "large",
+          "unrelatedCharacters": 32,
+          "unrelatedMessagesPerCharacter": 1000,
+          "targetMessages": 2,
+          "messageBodyBytes": 256,
+          "snapshotApi": "currentChatStateSnapshot",
+          "rollbackApi": "restoreChatFolderRowMetadata",
+          "snapshotBytes": 9916585,
+          "snapshotCloneCount": 1,
+          "largestCloneBytes": 9916551,
+          "capturedCharacterCount": 33,
+          "capturedMessageCount": 32002,
+          "folderRollbackCloneCount": 1,
+          "folderRollbackLargestCloneBytes": 5,
+          "unrelatedMessageIdentityPreserved": true
+        }
+      ]
+    },
+    "F04": {
+      "finding": "F04",
+      "evidenceKind": "structural-work-counters",
+      "node": "v24.19.0",
+      "samples": [
+        {
+          "name": "small",
+          "unrelatedManifests": 0,
+          "unrelatedValueTextBytes": 256,
+          "fixedResponseBytes": 311,
+          "reads": {
+            "cold": 1,
+            "warm": 1,
+            "burst": 8
+          },
+          "atColdCompletion": {
+            "manifestKeys": 1,
+            "manifestValues": 1,
+            "entryKeys": 1,
+            "returnedRows": 3
+          },
+          "atWarmCompletion": {
+            "manifestKeys": 2,
+            "manifestValues": 2,
+            "entryKeys": 2,
+            "returnedRows": 6
+          },
+          "atBurstCompletion": {
+            "manifestKeys": 10,
+            "manifestValues": 10,
+            "entryKeys": 10,
+            "returnedRows": 30
+          },
+          "afterCacheVisible": {
+            "manifestKeys": 10,
+            "manifestValues": 10,
+            "entryKeys": 10,
+            "returnedRows": 30
+          },
+          "retained": {
+            "manifests": 1,
+            "entries": 1
+          },
+          "events": [
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:cold:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:warm:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-0:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-1:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-2:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-3:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-4:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-5:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-6:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-7:complete"
+          ]
+        },
+        {
+          "name": "intermediate",
+          "unrelatedManifests": 64,
+          "unrelatedValueTextBytes": 256,
+          "fixedResponseBytes": 311,
+          "reads": {
+            "cold": 1,
+            "warm": 1,
+            "burst": 8
+          },
+          "atColdCompletion": {
+            "manifestKeys": 1,
+            "manifestValues": 1,
+            "entryKeys": 1,
+            "returnedRows": 195
+          },
+          "atWarmCompletion": {
+            "manifestKeys": 2,
+            "manifestValues": 2,
+            "entryKeys": 2,
+            "returnedRows": 390
+          },
+          "atBurstCompletion": {
+            "manifestKeys": 10,
+            "manifestValues": 10,
+            "entryKeys": 10,
+            "returnedRows": 1950
+          },
+          "afterCacheVisible": {
+            "manifestKeys": 10,
+            "manifestValues": 10,
+            "entryKeys": 10,
+            "returnedRows": 1950
+          },
+          "retained": {
+            "manifests": 65,
+            "entries": 65
+          },
+          "events": [
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:cold:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:warm:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-0:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-1:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-2:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-3:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-4:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-5:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-6:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-7:complete"
+          ]
+        },
+        {
+          "name": "large-at-manifest-budget",
+          "unrelatedManifests": 512,
+          "unrelatedValueTextBytes": 256,
+          "fixedResponseBytes": 311,
+          "reads": {
+            "cold": 1,
+            "warm": 1,
+            "burst": 8
+          },
+          "atColdCompletion": {
+            "manifestKeys": 1,
+            "manifestValues": 1,
+            "entryKeys": 1,
+            "returnedRows": 1539
+          },
+          "atWarmCompletion": {
+            "manifestKeys": 2,
+            "manifestValues": 2,
+            "entryKeys": 2,
+            "returnedRows": 3075
+          },
+          "atBurstCompletion": {
+            "manifestKeys": 10,
+            "manifestValues": 10,
+            "entryKeys": 10,
+            "returnedRows": 15363
+          },
+          "afterCacheVisible": {
+            "manifestKeys": 10,
+            "manifestValues": 10,
+            "entryKeys": 10,
+            "returnedRows": 15363
+          },
+          "retained": {
+            "manifests": 512,
+            "entries": 512
+          },
+          "events": [
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:cold:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:warm:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-0:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-1:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-2:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-3:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-4:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-5:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-6:complete",
+            "enumerate:manifests:keys",
+            "enumerate:manifests:values",
+            "enumerate:entries:keys",
+            "resource:burst-7:complete"
+          ]
+        }
+      ]
+    },
+    "F05": {
+      "finding": "F05",
+      "evidenceKind": "structural-work-counters",
+      "node": "v24.19.0",
+      "samples": [
+        {
+          "name": "small",
+          "requests": 1,
+          "textBytesPerRequest": 128,
+          "immutable": false,
+          "expectedPayloadBytes": 244,
+          "normalizationClones": {
+            "count": 2,
+            "bytes": 306
+          },
+          "encryptedEnvelopeSerialization": {
+            "count": 1,
+            "bytes": 244
+          },
+          "transportSerialization": {
+            "count": 0,
+            "bytes": 0
+          }
+        },
+        {
+          "name": "small",
+          "requests": 1,
+          "textBytesPerRequest": 128,
+          "immutable": true,
+          "expectedPayloadBytes": 244,
+          "normalizationClones": {
+            "count": 0,
+            "bytes": 0
+          },
+          "encryptedEnvelopeSerialization": {
+            "count": 1,
+            "bytes": 244
+          },
+          "transportSerialization": {
+            "count": 0,
+            "bytes": 0
+          }
+        },
+        {
+          "name": "intermediate-multi-request",
+          "requests": 8,
+          "textBytesPerRequest": 8192,
+          "immutable": false,
+          "expectedPayloadBytes": 66205,
+          "normalizationClones": {
+            "count": 16,
+            "bytes": 131472
+          },
+          "encryptedEnvelopeSerialization": {
+            "count": 1,
+            "bytes": 66205
+          },
+          "transportSerialization": {
+            "count": 0,
+            "bytes": 0
+          }
+        },
+        {
+          "name": "intermediate-multi-request",
+          "requests": 8,
+          "textBytesPerRequest": 8192,
+          "immutable": true,
+          "expectedPayloadBytes": 66205,
+          "normalizationClones": {
+            "count": 0,
+            "bytes": 0
+          },
+          "encryptedEnvelopeSerialization": {
+            "count": 1,
+            "bytes": 66205
+          },
+          "transportSerialization": {
+            "count": 0,
+            "bytes": 0
+          }
+        },
+        {
+          "name": "large-near-limit",
+          "requests": 1,
+          "textBytesPerRequest": 16776192,
+          "immutable": false,
+          "expectedPayloadBytes": 16776308,
+          "normalizationClones": {
+            "count": 2,
+            "bytes": 33552434
+          },
+          "encryptedEnvelopeSerialization": {
+            "count": 1,
+            "bytes": 16776308
+          },
+          "transportSerialization": {
+            "count": 0,
+            "bytes": 0
+          }
+        },
+        {
+          "name": "large-near-limit",
+          "requests": 1,
+          "textBytesPerRequest": 16776192,
+          "immutable": true,
+          "expectedPayloadBytes": 16776308,
+          "normalizationClones": {
+            "count": 0,
+            "bytes": 0
+          },
+          "encryptedEnvelopeSerialization": {
+            "count": 1,
+            "bytes": 16776308
+          },
+          "transportSerialization": {
+            "count": 0,
+            "bytes": 0
+          }
+        }
+      ]
+    }
+  }
+}

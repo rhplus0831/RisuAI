@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "replayCapCanonicalTerminal": {
+    "healthy": true,
+    "retainedEventTypes": ["replay_gap", "info", "done"],
+    "clientStatus": "ok",
+    "canonicalTerminalResult": "Canonical terminal reply.",
+    "clientDisplayedResult": "Canonical terminal reply."
+  },
+  "retriedExtendContinueDuplicate": {
+    "healthy": true,
+    "afterFirstAttempt": "Seed answer. Continued reply.",
+    "duringRetry": "Seed answer. Continued reply.",
+    "canonicalTerminalResult": "Seed answer. Continued reply.",
+    "afterCanonicalTerminal": "Seed answer. Continued reply."
+  }
+}

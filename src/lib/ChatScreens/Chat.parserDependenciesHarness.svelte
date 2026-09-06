@@ -1,9 +1,15 @@
 <script lang="ts">
   import Chat from './Chat.svelte'
+  import type { ChatGenerationLoadingPhase } from './chatGenerationLoading'
 
   export interface ParserDependencyRow {
     id: string
     data: string
+    generationStage?: number
+    generationPhase?: ChatGenerationLoadingPhase
+    generationStartedAt?: number
+    isGenerationLoading?: boolean
+    isGenerationProjection?: boolean
     name: string
     parserIdx?: number
     role: string
@@ -54,6 +60,12 @@
     role={row.role}
     totalLength={rows.length}
     firstMessage={index === 0}
+    isGenerationLoading={row.isGenerationLoading}
+    isGenerationProjection={row.isGenerationProjection}
+    generationPresentationMode={row.isGenerationProjection ? 'send' : undefined}
+    generationStage={row.generationStage}
+    generationPhase={row.generationPhase}
+    generationStartedAt={row.generationStartedAt}
     img=""
     rerollIcon={false}
     disabled={false} />

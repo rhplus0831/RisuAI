@@ -4,6 +4,7 @@
 // hydrated control case proves the greeting still paints after hydration.
 
 import { mount, tick, unmount } from 'svelte'
+import { _setPluginRuntimePhaseForTesting } from 'src/ts/plugins/plugins.svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 interface TestStore<T> {
@@ -13,6 +14,8 @@ interface TestStore<T> {
 
 const shellMocks = vi.hoisted(() => ({
   abortActiveGeneration: vi.fn(),
+  activeChatGenerations: undefined as TestStore<Array<Record<string, unknown>>> | undefined,
+  activeGenerationJobs: undefined as TestStore<Array<Record<string, unknown>>> | undefined,
   activeGenerationTarget: undefined as TestStore<Record<string, unknown> | null> | undefined,
   alertError: vi.fn(),
   alertNormal: vi.fn(),
@@ -38,6 +41,7 @@ const shellMocks = vi.hoisted(() => ({
   hydrateActiveChatFully: vi.fn(async () => undefined),
   hydrateActiveChatWindow: vi.fn(async () => undefined),
   hydrationFailed: false,
+  hydrationPending: false,
   currentRouteSubscribers: new Set<(value: unknown) => void>(),
   currentRouteValue: {
     kind: 'character',
@@ -78,8 +82,21 @@ vi.mock('../../ts/util', async (importActual) => {
 })
 
 vi.mock('../../ts/translator/translator', () => ({
+  getTranslatorSettingsSignatureKey: () => 'test-translator-settings',
   isExpTranslator: () => false,
   translate: vi.fn(async (message: string) => message),
+}))
+
+vi.mock('src/ts/server/greetingTranslations.svelte', () => ({
+  currentGreetingTranslatorSettingsSignature: () => 'test-translator-settings',
+  findGreetingTranslation: () => null,
+  greetingTranslationProjectionVersion: {
+    subscribe(run: (value: number) => void) {
+      run(0)
+      return () => undefined
+    },
+  },
+  refreshGreetingTranslationProjection: vi.fn(async () => ({ status: 'unavailable' as const })),
 }))
 
 vi.mock('../../ts/process/modules', () => ({
@@ -124,6 +141,20 @@ vi.mock('src/ts/process/index.svelte', async () => {
   }
 })
 
+vi.mock('src/ts/process/generationActivity.svelte', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/process/generationActivity.svelte')>()
+  const { writable } = await import('svelte/store')
+  shellMocks.activeChatGenerations ??= writable([])
+  return { ...actual, activeChatGenerations: shellMocks.activeChatGenerations }
+})
+
+vi.mock('src/ts/process/reattach', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/process/reattach')>()
+  const { writable } = await import('svelte/store')
+  shellMocks.activeGenerationJobs ??= writable([])
+  return { ...actual, activeGenerationJobs: shellMocks.activeGenerationJobs }
+})
+
 vi.mock('src/ts/process/rerollNavigation.svelte', () => ({
   clearRerollBuffer: vi.fn(),
   markRerollChar: vi.fn(),
@@ -164,17 +195,15 @@ vi.mock('src/ts/activeChatGenerationSettings', async (importActual) => {
   return { ...actual, guardActiveChatGenerationSettingsForSend: shellMocks.guardActiveChatGenerationSettingsForSend }
 })
 
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({ applyServerBackedSetting: vi.fn() }))
-vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
-  withTrustedResourceWrite: (callback: () => void) => callback(),
-}))
+vi.mock('src/ts/server/settingsOwner.svelte', () => ({ applyServerBackedSetting: vi.fn() }))
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
   applyServerChatMessagesResource: vi.fn(),
+  getChatMessageOwnerState: () => undefined,
   hasChatMessageHydrationFailed: () => shellMocks.hydrationFailed,
   hydrateActiveChat: shellMocks.hydrateActiveChat,
   hydrateActiveChatFully: shellMocks.hydrateActiveChatFully,
   hydrateActiveChatWindow: shellMocks.hydrateActiveChatWindow,
-  isChatMessageHydrationPending: () => false,
+  isChatMessageHydrationPending: () => shellMocks.hydrationPending,
 }))
 
 vi.mock('src/ts/router', () => ({
@@ -201,8 +230,9 @@ vi.mock('html-to-image', () => ({ toCanvas: shellMocks.toCanvas }))
 
 import DefaultChatScreen from './DefaultChatScreen.svelte'
 import { PlaygroundStore, ScrollToMessageStore, selectedCharID } from 'src/ts/stores.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
+import { charactersResourceState, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import { isServerCharacterShell, SERVER_CHARACTER_SHELL_MARKER, type Database } from 'src/ts/storage/database.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -293,13 +323,18 @@ function seedDatabase(character: Record<string, unknown>) {
     alwaysScrollToNewMessage: false,
     autoScrollToNewMessage: false,
     characters: [character],
+    currentChar: 0,
     chatDisplayTailCount: 30,
     enableRisuaiProTools: false,
     fixedChatTextarea: false,
     hypaV3: false,
     newMessageButtonStyle: 'bottom-center',
-    personas: [{ name: 'User', icon: '', largePortrait: false, personaPrompt: '' }],
+    modules: [],
+    promptPresets: [],
+    personas: [{ id: 'persona-default', name: 'User', icon: '', largePortrait: false, personaPrompt: '', note: '' }],
     playMessage: false,
+    personaPrompt: '',
+    selectedPersonaId: 'persona-default',
     selectedPersona: 0,
     showMenuChatList: false,
     showMenuHypaMemoryModal: false,
@@ -311,6 +346,8 @@ function seedDatabase(character: Record<string, unknown>) {
     useChatSticker: false,
     useSayNothing: false,
     username: 'User',
+    userIcon: '',
+    userNote: '',
   } as unknown as Database)
 }
 
@@ -328,9 +365,13 @@ function greetingBubble(): HTMLElement | null {
 }
 
 beforeEach(() => {
+  _setPluginRuntimePhaseForTesting('ready')
   shellMocks.hydrateActiveChat.mockClear()
   shellMocks.hydrationFailed = false
+  shellMocks.hydrationPending = false
   shellMocks.activeGenerationTarget!.set(null)
+  shellMocks.activeChatGenerations!.set([])
+  shellMocks.activeGenerationJobs!.set([])
   shellMocks.doingChat!.set(false)
   target = document.createElement('div')
   document.body.appendChild(target)
@@ -349,7 +390,7 @@ afterEach(() => {
   replaceResourceDatabase({} as never)
 })
 
-describe('UIA-001 / BOOT-1: bootstrap shell greeting render (DOM oracle, Tier 1)', () => {
+describe('bootstrap shell greeting render (DOM oracle)', () => {
   it('paints the greeting bubble once the character is hydrated (correct-store control)', async () => {
     seedDatabase(makeHydratedCharacter())
     const error = tryMount()
@@ -382,6 +423,29 @@ describe('UIA-001 / BOOT-1: bootstrap shell greeting render (DOM oracle, Tier 1)
     // complete-but-empty greeting painted for a shell).
     expect(greetingBubble(), 'greeting bubble must be absent for an un-hydrated shell').toBeNull()
   })
+
+  it('fails closed when the ready projection has no selected owner', async () => {
+    seedDatabase(makeHydratedCharacter())
+    charactersResourceState.currentChar = 99
+
+    const error = tryMount()
+    await tick()
+
+    expect(error).toBeNull()
+    expect(greetingBubble()).toBeNull()
+  })
+
+  it('fails closed when the ready projection has duplicate selected owners', async () => {
+    const character = makeHydratedCharacter()
+    seedDatabase(character)
+    charactersResourceState.characters = [character as never, structuredClone(character) as never]
+
+    const error = tryMount()
+    await tick()
+
+    expect(error).toBeNull()
+    expect(greetingBubble()).toBeNull()
+  })
 })
 
 describe('chat history hydration failure', () => {
@@ -401,6 +465,28 @@ describe('chat history hydration failure', () => {
     await tick()
 
     expect(shellMocks.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
+  })
+})
+
+describe('chat history hydration loading', () => {
+  it('keeps the composer mounted while showing message-shaped transcript placeholders', async () => {
+    shellMocks.hydrationPending = true
+    seedDatabase(makeHydratedCharacter())
+
+    const error = tryMount()
+    await tick()
+
+    expect(error).toBeNull()
+    const skeleton = target.querySelector<HTMLElement>('[data-chat-message-skeleton]')
+    expect(skeleton).toBeTruthy()
+    expect(skeleton?.getAttribute('role')).toBe('status')
+    expect(skeleton?.getAttribute('aria-busy')).toBe('true')
+    expect(skeleton?.getAttribute('data-chat-loading-mode')).toBe('hydration')
+    expect(skeleton?.textContent).toContain('loadingChat')
+    expect(skeleton?.querySelectorAll('[data-chat-skeleton-row]')).toHaveLength(3)
+    expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    expect(skeleton?.contains(target.querySelector('[data-testid="default-chat-composer"]'))).toBe(false)
+    expect(target.querySelector('[data-testid="chat-display-loading"]')).toBeNull()
   })
 })
 
@@ -425,7 +511,7 @@ describe('playground character creation reconciliation', () => {
 })
 
 describe('generation control ownership', () => {
-  it('does not expose the previous chat abort control while its stream settles', async () => {
+  it('shows the abort control only on its owner while another chat remains sendable', async () => {
     const stream = deferred<void>()
     seedDatabase(makeHydratedCharacterWithTwoChats())
     shellMocks.activeGenerationTarget!.set({
@@ -435,9 +521,21 @@ describe('generation control ownership', () => {
       chatId: 'chat-0',
     })
     shellMocks.doingChat!.set(true)
+    shellMocks.activeChatGenerations!.set([
+      {
+        id: 1,
+        targetKey: 'chat:chat-0',
+        target: { selectedCharID: 0, chatPage: 0, characterId: 'character-0', chatId: 'chat-0' },
+        characterId: 'character-0',
+        chatId: 'chat-0',
+        stage: 3,
+        kind: 'message',
+      },
+    ])
     const settleStream = stream.promise.finally(() => {
       shellMocks.doingChat!.set(false)
       shellMocks.activeGenerationTarget!.set(null)
+      shellMocks.activeChatGenerations!.set([])
     })
 
     const error = tryMount()
@@ -456,7 +554,7 @@ describe('generation control ownership', () => {
     await tick()
 
     expect(target.querySelector('[data-testid="default-chat-cancel-button"]')).toBeNull()
-    expect(target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')?.disabled).toBe(true)
+    expect(target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')?.disabled).toBe(false)
 
     getResourceDatabase().characters[0].chatPage = 0
     shellMocks.setCurrentRoute({

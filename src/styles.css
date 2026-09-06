@@ -139,6 +139,14 @@
     color: var(--color-gray-400);
   }
 
+  /* Native select popups may keep the platform background while inheriting app text colors.
+     Scope this to select descendants so datalist suggestions remain browser-owned. */
+  select option,
+  select optgroup {
+    background-color: var(--risu-theme-darkbg);
+    color: var(--risu-theme-textcolor);
+  }
+
   dialog {
     margin: auto;
   }
@@ -154,6 +162,8 @@ body {
 }
 
 :root {
+  --risu-theme-color-scheme: dark;
+  color-scheme: var(--risu-theme-color-scheme);
   --FontColorStandard: #fafafa;
   --FontColorBold: #e5e5e5;
   --FontColorItalic: #8c8d93;
@@ -250,6 +260,13 @@ html.risu-reduced-motion *::after {
 html,
 body {
   height: var(--risu-height-size);
+}
+
+/* Paint the document canvas explicitly: during mobile keyboard transitions
+   WebKit can briefly expose area outside the document, which otherwise renders
+   as the platform backdrop (pure black on iOS PWAs) instead of the theme. */
+html {
+  background-color: var(--risu-theme-bgcolor);
 }
 
 .chattext p {
@@ -368,6 +385,11 @@ body {
   overflow: clip;
 }
 
+html[data-risu-visual-viewport-active='true'] [data-risu-visual-viewport-shell] {
+  height: var(--risu-visual-viewport-height) !important;
+  max-height: var(--risu-visual-viewport-height);
+}
+
 /* Block the async gap between a writer-loss frame and the takeover dialog
    mounting. The alert overlay opts back in so Refresh/Stay Offline remain the
    only pointer-accessible actions until the user decides. */
@@ -474,6 +496,14 @@ body {
 
 .x-risu-button-default {
   @apply border text-textcolor rounded-md shadow-xs focus:outline-hidden focus:ring-2 transition-colors duration-200 border-darkborderc px-4 py-2 bg-darkbutton hover:bg-borderc focus:ring-borderc;
+}
+
+@layer components {
+  .risu-card {
+    @apply rounded-md border p-3;
+    background: rgb(255 255 255 / 0.05);
+    border-color: rgb(255 255 255 / 0.09);
+  }
 }
 
 .loadmove {
@@ -635,11 +665,19 @@ html.risu-reduced-motion .risu-ongoing-pulse {
   flex-shrink: 0;
 }
 
+.default-chat-screen[data-chat-initial-display-pending]
+  > :not([data-chat-message-skeleton]):not([data-default-chat-composer-flow]) {
+  display: none;
+}
+
 .chat-message-container .dyna-icon {
   display: none;
 }
 
-.chat-message-container:first-of-type .dyna-icon {
+/* Anchored by Chats.svelte on the newest non-comment row, not :first-of-type:
+   a branch-provenance comment row can sit newest but renders no swipe
+   controls, which would leave the chat without any visible reroll button. */
+.chat-message-container[data-risu-dyna-icons] .dyna-icon {
   display: block;
 }
 

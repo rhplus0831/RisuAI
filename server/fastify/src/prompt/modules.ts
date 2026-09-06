@@ -1,7 +1,24 @@
-import type { Chat, Database, character, customscript, loreBook } from '../../../../src/ts/storage/database.svelte'
-import type { RisuModule } from '../../../../src/ts/process/modules'
-import type { triggerscript } from '../../../../src/ts/process/triggers'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+  DeepReadonly,
+  FastifyLoreBook as loreBook,
+} from './serverTypes.js'
+import type { ServerTriggerScript as triggerscript } from './triggerDescriptors.js'
+import type { ServerModule, ServerModuleRegexScript as customscript } from './moduleDescriptors.js'
+import {
+  hasModuleActivationIdentifiers,
+  moduleActivationIdentifiersKey,
+  resolveModuleActivationStates,
+  type ModuleActivationIdentifiers,
+} from '@risuai/shared-core/module-activation'
+import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
+import { parseModuleIntegration, resolveAgentPresetModuleIntegration } from '@risuai/shared-core/module-integration'
 import { attachTriggerSource } from './triggerSource.js'
+import { selectedPersonaIndexFromStableId } from '@risuai/shared-core/persona-selection-identity'
+
+type RisuModule = DeepReadonly<ServerModule>
 
 /**
  * Server-side module helpers ported from `src/ts/process/modules.ts`. Resolves
@@ -15,7 +32,7 @@ import { attachTriggerSource } from './triggerSource.js'
  * dedupe is cached per loaded `Database` object. Keying the cache on the
  * database object (WeakMap) instead of the SPA's module-global string keeps
  * cross-request isolation: every request loads a fresh `Database`, so a new
- * request can never see a stale hit. The requested-id key and the
+ * request can never see a stale hit. The activation-identifier key and the
  * `database.modules` array reference both guard recomputation, so a
  * mid-assembly module toggle (chat/char/db id-list change) or wholesale
  * `modules` replacement invalidates the entry.
@@ -29,22 +46,11 @@ import { attachTriggerSource } from './triggerSource.js'
  * helpers below.
  */
 
-function dedupeById(modules: RisuModule[]): RisuModule[] {
-  const seen = new Set<string>()
-  const out: RisuModule[] = []
-  for (const m of modules) {
-    if (!m || seen.has(m.id)) continue
-    seen.add(m.id)
-    out.push(m)
-  }
-  return out
-}
-
 interface ActiveModulesMemoEntry {
-  /** The requested-id inputs the cached result was computed from. */
+  /** The activation identifiers the cached result was computed from. */
   key: string
   /** The `database.modules` array the cached result was filtered from. */
-  modulesRef: RisuModule[] | undefined
+  modulesRef: readonly RisuModule[] | undefined
   result: RisuModule[]
 }
 
@@ -55,40 +61,92 @@ const activeModulesMemo = new WeakMap<Database, ActiveModulesMemoEntry>()
  *  contract — every consumer only iterates it. */
 const NO_ACTIVE_MODULES: RisuModule[] = []
 
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function resolveServerEffectiveAgentPresetId(
+  database: Database,
+  settings: Chat['generationSettings'],
+): string | undefined {
+  if (settings && Object.prototype.hasOwnProperty.call(settings, 'agentPresetId')) {
+    return nonEmptyString(settings.agentPresetId) ? settings.agentPresetId.trim() : undefined
+  }
+  return nonEmptyString(database.agentPresetDefaultId) ? database.agentPresetDefaultId.trim() : undefined
+}
+
+function resolveServerPersonaModuleIds(database: Database, currentChat: Chat | undefined): string[] {
+  let personaId: string | null = null
+  if (currentChat?.generationSettings !== undefined) {
+    const chatPersonaId = currentChat.generationSettings.personaId
+    personaId = nonEmptyString(chatPersonaId) ? chatPersonaId : null
+  } else if (nonEmptyString(currentChat?.bindedPersona)) {
+    personaId = currentChat.bindedPersona
+  } else {
+    const selectedIndex = selectedPersonaIndexFromStableId(database)
+    const selectedPersonaId = selectedIndex >= 0 ? database.personas?.[selectedIndex]?.id : undefined
+    personaId = nonEmptyString(selectedPersonaId) ? selectedPersonaId : null
+  }
+  if (!personaId) return []
+
+  const persona = database.personas?.find((candidate) => candidate.id === personaId)
+  if (!persona || !Array.isArray(persona.modules)) return []
+  return Array.from(
+    new Set(persona.modules.filter((moduleId: unknown): moduleId is string => nonEmptyString(moduleId))),
+  )
+}
+
+function resolveServerActiveModuleIdentifiers(
+  database: Database,
+  currentCharacter: character | undefined,
+  currentChat: Chat | undefined,
+): ModuleActivationIdentifiers {
+  const promptPresetId = currentChat?.generationSettings?.promptPresetId
+  const promptPresetIntegration =
+    typeof promptPresetId === 'string' && promptPresetId.trim().length > 0
+      ? {
+          source: 'promptPresetIntegration' as const,
+          value: resolveUniquePromptPreset(database.promptPresets, promptPresetId)?.moduleIntergration,
+        }
+      : { source: 'legacyIntegration' as const, value: database.moduleIntergration }
+  const agentPresetIntegration = resolveAgentPresetModuleIntegration(
+    database.agentPresets,
+    resolveServerEffectiveAgentPresetId(database, currentChat?.generationSettings),
+  )
+
+  return {
+    global: database.enabledModules,
+    chat: currentChat?.modules,
+    character: currentCharacter?.modules,
+    persona: resolveServerPersonaModuleIds(database, currentChat),
+    [promptPresetIntegration.source]: parseModuleIntegration(promptPresetIntegration.value),
+    agentPresetIntegration: parseModuleIntegration(agentPresetIntegration),
+  }
+}
+
 export function getActiveModules(
   database: Database,
   currentChar: character | undefined,
   currentChat: Chat | undefined,
 ): RisuModule[] {
-  let ids: string[] = [...(database.enabledModules ?? [])]
-  if (currentChat?.modules) ids = ids.concat(currentChat.modules)
-  if (currentChar?.modules) ids = ids.concat(currentChar.modules)
-  if (database.moduleIntergration) {
-    ids = ids.concat(
-      database.moduleIntergration
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0),
-    )
-  }
-  if (ids.length === 0) return NO_ACTIVE_MODULES
+  const activationIdentifiers = resolveServerActiveModuleIdentifiers(database, currentChar, currentChat)
+  if (!hasModuleActivationIdentifiers(activationIdentifiers)) return NO_ACTIVE_MODULES
 
-  // JSON keying (not the SPA's '-' join) — module ids are UUIDs containing '-'.
-  const key = JSON.stringify(ids)
+  const key = moduleActivationIdentifiersKey(activationIdentifiers)
   const memo = activeModulesMemo.get(database)
   if (memo && memo.key === key && memo.modulesRef === database.modules) {
     return memo.result
   }
 
-  const idSet = new Set(ids)
-  const all = database.modules ?? []
-  const matched = all.filter((m) => m && (idSet.has(m.id) || (m.namespace ? idSet.has(m.namespace) : false)))
-  const result = dedupeById(matched)
+  const result = resolveModuleActivationStates({
+    modules: database.modules ?? [],
+    identifiers: activationIdentifiers,
+  }).map((state) => state.module)
   activeModulesMemo.set(database, { key, modulesRef: database.modules, result })
   return result
 }
 
-export function getModuleRegexScripts(modules: RisuModule[]): customscript[] {
+export function getModuleRegexScripts(modules: readonly RisuModule[]): customscript[] {
   const out: customscript[] = []
   for (const m of modules) {
     if (!m?.regex) continue
@@ -97,7 +155,7 @@ export function getModuleRegexScripts(modules: RisuModule[]): customscript[] {
   return out
 }
 
-export function getModuleLorebooks(modules: RisuModule[]): loreBook[] {
+export function getModuleLorebooks(modules: readonly RisuModule[]): loreBook[] {
   const out: loreBook[] = []
   for (const m of modules) {
     if (!m?.lorebook) continue
@@ -111,8 +169,8 @@ export function getModuleLorebooks(modules: RisuModule[]): loreBook[] {
  * `src/ts/process/modules.ts` `getModuleAssets()` for the prompt
  * leaf's `{{asset_prompt::…}}` resolution.
  */
-export function getModuleAssets(modules: RisuModule[]): [string, string, string][] {
-  const out: [string, string, string][] = []
+export function getModuleAssets(modules: readonly RisuModule[]): Array<readonly [string, string, string]> {
+  const out: Array<readonly [string, string, string]> = []
   for (const m of modules) {
     if (!m?.assets) continue
     for (const a of m.assets) out.push(a)
@@ -130,7 +188,7 @@ export function getModuleAssets(modules: RisuModule[]): [string, string, string]
  * (`{ ...t, lowLevelAccess }`) and never mutates the module's own trigger
  * objects. The server also attaches source metadata for diagnostics.
  */
-export function getModuleTriggers(modules: RisuModule[]): triggerscript[] {
+export function getModuleTriggers(modules: readonly RisuModule[]): triggerscript[] {
   const out: triggerscript[] = []
   for (const m of modules) {
     if (!m?.trigger) continue
@@ -143,7 +201,7 @@ export function getModuleTriggers(modules: RisuModule[]): triggerscript[] {
           ownerType: 'module',
           ownerId: m.id,
           ownerName: m.name,
-          triggerId: (t as { id?: string }).id,
+          triggerId: t.id,
           triggerIndex: index,
           triggerComment: t.comment,
           triggerType: t.type,

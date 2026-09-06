@@ -45,6 +45,7 @@ import { LLMFormat } from '../../../model/types'
 import { setDatabase, type Database } from '../../../storage/database.svelte'
 import { selectedCharID } from '../../../stores.svelte'
 import { requestChatDataMain } from '../request'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface PreviewPayload {
   url: string
@@ -102,6 +103,8 @@ function db(overrides: Partial<Database> = {}): Database {
 
 function makeRequest() {
   return {
+    // Ollama remains a named static compatibility format in this wire-level suite.
+    staticModel: getDatabase().aiModel,
     formated: [{ role: 'user' as const, content: 'hello ollama' }],
     bias: {},
     maxTokens: 96,
@@ -380,6 +383,7 @@ describe('requestOllama profile provider options through requestChatDataMain', (
     const result = await requestChatDataMain(
       {
         ...makeRequest(),
+        chatId: 'chat-cloud',
         previewBody: false,
         tools: [
           {
@@ -400,6 +404,7 @@ describe('requestOllama profile provider options through requestChatDataMain', (
       expect(parsedUrl.searchParams.get('operation')).toBe('ollama-cloud-tool')
       expect(parsedUrl.searchParams.get('protocol')).toBe('native')
       expect(parsedUrl.searchParams.get('staticModel')).toBe('ollama-cloud')
+      expect(parsedUrl.searchParams.get('chatId')).toBe('chat-cloud')
       expect(new Headers(init.headers).get('risu-auth')).toBe('browser-auth-token')
       expect(JSON.stringify(init)).not.toContain('sk-browser-must-not-send')
       expect(new Headers(init.headers).get('authorization')).toBeNull()
@@ -483,7 +488,9 @@ describe('requestOllama profile provider options through requestChatDataMain', (
       .mockResolvedValueOnce({
         json: async () => ({
           output: [
+            { id: 'rs_responses_stale', type: 'reasoning', summary: [] },
             {
+              id: 'fc_responses_stale',
               type: 'function_call',
               call_id: 'responses-call-1',
               name: 'lookup',
@@ -523,6 +530,14 @@ describe('requestOllama profile provider options through requestChatDataMain', (
       expect(JSON.stringify(options)).not.toContain('sk-responses-browser-must-not-send')
     }
     const secondBody = JSON.parse(String(fetchMock.mock.calls[1][1].body))
+    expect(JSON.stringify(secondBody.input)).not.toMatch(/rs_responses_stale|fc_responses_stale/u)
+    expect(secondBody.input).toContainEqual({
+      type: 'function_call',
+      call_id: 'responses-call-1',
+      name: 'lookup',
+      arguments: '{"query":"weather"}',
+      status: 'completed',
+    })
     expect(secondBody.input).toContainEqual({
       type: 'function_call_output',
       call_id: 'responses-call-1',

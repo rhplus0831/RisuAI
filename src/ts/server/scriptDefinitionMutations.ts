@@ -1,3 +1,5 @@
+export { serializeScriptDefinitionCollectionDigestInput } from '@risuai/shared-core/mutation-certificates'
+
 export type ScriptDefinitionCollectionMutation =
   | { op: 'update'; id: string; patch: Record<string, unknown>; deleteKeys: string[] }
   | { op: 'create'; row: Record<string, unknown>; index: number }
@@ -10,15 +12,6 @@ export type ScriptDefinitionMutationPlan =
   | { kind: 'mutation'; mutation: ScriptDefinitionCollectionMutation }
 
 type DefinitionRow = Record<string, unknown> & { id: string }
-
-/**
- * Stable, constant-size certificate input for a complete definition array.
- * Command requests keep the final array client-only while the server returns
- * its digest, proving that a compact row mutation produced the same state.
- */
-export function serializeScriptDefinitionCollectionDigestInput(rows: readonly unknown[]): string {
-  return `script-definition-collection-v1:${JSON.stringify(sortJsonValue(rows))}`
-}
 
 /**
  * Reduce one definition-array replacement to the single strict mutation the
@@ -154,15 +147,4 @@ function cloneDefinedValue(value: unknown): unknown {
 
 function stringArraysEqual(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index])
-}
-
-function sortJsonValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortJsonValue)
-  if (!value || typeof value !== 'object') return value
-
-  const sorted = Object.create(null) as Record<string, unknown>
-  for (const key of Object.keys(value).sort()) {
-    sorted[key] = sortJsonValue((value as Record<string, unknown>)[key])
-  }
-  return sorted
 }

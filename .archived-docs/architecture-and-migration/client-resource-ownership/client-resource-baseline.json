@@ -1,0 +1,1402 @@
+{
+  "schemaVersion": 1,
+  "openingAnchor": "c0df82d5240a29a33efa5995e08cc970e0147573",
+  "conventionRelease": "b01e88b03461753afe8f573029ce2e5ab47892ef",
+  "policy": "New normal-runtime aggregate reads, trusted writes, bridge families, lifecycle flushes, broad epochs, and unclassified seams are forbidden. Baseline changes require an explicit reviewed owner, dependency, phase, and removal trigger.",
+  "policies": {
+    "broad-settings-shell:test-fixture": {
+      "resourceFamily": "broad-settings-shell",
+      "role": "test-fixture",
+      "targetOwnerApi": "test-only aggregate adapter over explicit resource-owner state",
+      "workstream1Dependency": "Released owner contracts; production imports are forbidden by the static architecture gate",
+      "workstream2Dependency": "Canonical persisted owners released; the adapter does not participate in production state",
+      "migrationPhase": "Workstream 3 Phase 7 retained test-fixture decision",
+      "removalTrigger": "Retain only while compatibility fixtures need whole-database setup or assertions."
+    },
+    "character-chat:test-fixture": {
+      "resourceFamily": "character-chat",
+      "role": "test-fixture",
+      "targetOwnerApi": "test-only aggregate adapter over explicit resource-owner state",
+      "workstream1Dependency": "Released owner contracts; production imports are forbidden by the static architecture gate",
+      "workstream2Dependency": "Canonical persisted owners released; the adapter does not participate in production state",
+      "migrationPhase": "Workstream 3 Phase 7 retained test-fixture decision",
+      "removalTrigger": "Retain only while compatibility fixtures need whole-database setup or assertions."
+    },
+    "compatibility-infrastructure:test-fixture": {
+      "resourceFamily": "compatibility-infrastructure",
+      "role": "test-fixture",
+      "targetOwnerApi": "test-only aggregate adapter over explicit resource-owner state",
+      "workstream1Dependency": "Released owner contracts; production imports are forbidden by the static architecture gate",
+      "workstream2Dependency": "Canonical persisted owners released; the adapter does not participate in production state",
+      "migrationPhase": "Workstream 3 Phase 7 retained test-fixture decision",
+      "removalTrigger": "Retain only while compatibility fixtures need whole-database setup or assertions."
+    },
+    "cross-cutting:test-fixture": {
+      "resourceFamily": "cross-cutting",
+      "role": "test-fixture",
+      "targetOwnerApi": "test-only aggregate adapter over explicit resource-owner state",
+      "workstream1Dependency": "Released owner contracts; production imports are forbidden by the static architecture gate",
+      "workstream2Dependency": "Canonical persisted owners released; the adapter does not participate in production state",
+      "migrationPhase": "Workstream 3 Phase 7 retained test-fixture decision",
+      "removalTrigger": "Retain only while compatibility fixtures need whole-database setup or assertions."
+    },
+    "leaf-settings-collections:test-fixture": {
+      "resourceFamily": "leaf-settings-collections",
+      "role": "test-fixture",
+      "targetOwnerApi": "test-only aggregate adapter over explicit resource-owner state",
+      "workstream1Dependency": "Released owner contracts; production imports are forbidden by the static architecture gate",
+      "workstream2Dependency": "Canonical persisted owners released; the adapter does not participate in production state",
+      "migrationPhase": "Workstream 3 Phase 7 retained test-fixture decision",
+      "removalTrigger": "Retain only while compatibility fixtures need whole-database setup or assertions."
+    },
+    "lorebook:test-fixture": {
+      "resourceFamily": "lorebook",
+      "role": "test-fixture",
+      "targetOwnerApi": "test-only aggregate adapter over explicit resource-owner state",
+      "workstream1Dependency": "Released owner contracts; production imports are forbidden by the static architecture gate",
+      "workstream2Dependency": "Canonical persisted owners released; the adapter does not participate in production state",
+      "migrationPhase": "Workstream 3 Phase 7 retained test-fixture decision",
+      "removalTrigger": "Retain only while compatibility fixtures need whole-database setup or assertions."
+    },
+    "model-translator:test-fixture": {
+      "resourceFamily": "model-translator",
+      "role": "test-fixture",
+      "targetOwnerApi": "test-only aggregate adapter over explicit resource-owner state",
+      "workstream1Dependency": "Released owner contracts; production imports are forbidden by the static architecture gate",
+      "workstream2Dependency": "Canonical persisted owners released; the adapter does not participate in production state",
+      "migrationPhase": "Workstream 3 Phase 7 retained test-fixture decision",
+      "removalTrigger": "Retain only while compatibility fixtures need whole-database setup or assertions."
+    },
+    "prompt-template:test-fixture": {
+      "resourceFamily": "prompt-template",
+      "role": "test-fixture",
+      "targetOwnerApi": "test-only aggregate adapter over explicit resource-owner state",
+      "workstream1Dependency": "Released owner contracts; production imports are forbidden by the static architecture gate",
+      "workstream2Dependency": "Canonical persisted owners released; the adapter does not participate in production state",
+      "migrationPhase": "Workstream 3 Phase 7 retained test-fixture decision",
+      "removalTrigger": "Retain only while compatibility fixtures need whole-database setup or assertions."
+    },
+    "script-definition:test-fixture": {
+      "resourceFamily": "script-definition",
+      "role": "test-fixture",
+      "targetOwnerApi": "test-only aggregate adapter over explicit resource-owner state",
+      "workstream1Dependency": "Released owner contracts; production imports are forbidden by the static architecture gate",
+      "workstream2Dependency": "Canonical persisted owners released; the adapter does not participate in production state",
+      "migrationPhase": "Workstream 3 Phase 7 retained test-fixture decision",
+      "removalTrigger": "Retain only while compatibility fixtures need whole-database setup or assertions."
+    }
+  },
+  "consumers": [
+    {
+      "lane": "test",
+      "detector": "aggregate-read",
+      "symbol": "getDatabase",
+      "policy": "broad-settings-shell:test-fixture",
+      "files": [
+        {
+          "file": "src/lib/Setting/Settings.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/ts/bootstrap.test.ts",
+          "count": 197
+        },
+        {
+          "file": "src/ts/storage/database.svelte.test.ts",
+          "count": 440
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-read",
+      "symbol": "getDatabase",
+      "policy": "character-chat:test-fixture",
+      "files": [
+        {
+          "file": "src/lib/Others/ChatList.svelte.test.ts",
+          "count": 8
+        },
+        {
+          "file": "src/lib/SideBars/SideChatList.svelte.test.ts",
+          "count": 8
+        },
+        {
+          "file": "src/ts/chatCommands.test.ts",
+          "count": 634
+        },
+        {
+          "file": "src/ts/process/mcp/risuaccess/tests/characters.setCharacterInfo.test.ts",
+          "count": 95
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-read",
+      "symbol": "getDatabase",
+      "policy": "cross-cutting:test-fixture",
+      "files": [
+        {
+          "file": "src/lib/Others/AlertComp.dom.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/Others/BookmarkList.svelte.test.ts",
+          "count": 14
+        },
+        {
+          "file": "src/lib/Others/GridCatalog.svelte.test.ts",
+          "count": 11
+        },
+        {
+          "file": "src/lib/Others/HypaV3Modal.resetRace.test.ts",
+          "count": 5
+        },
+        {
+          "file": "src/lib/Others/HypaV3Modal.serverReliability.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/lib/Others/ownerPaths.test.ts",
+          "count": 7
+        },
+        {
+          "file": "src/lib/Others/WelcomeRisu.svelte.test.ts",
+          "count": 4
+        },
+        {
+          "file": "src/lib/Setting/Pages/BotSettings.pendingFlush.svelte.test.ts",
+          "count": 17
+        },
+        {
+          "file": "src/lib/Setting/Pages/CustomGUISettingMenu.svelte.test.ts",
+          "count": 9
+        },
+        {
+          "file": "src/lib/Setting/Pages/Display/CustomBackgroundToggle.svelte.test.ts",
+          "count": 12
+        },
+        {
+          "file": "src/lib/Setting/Pages/Display/NotificationToggle.svelte.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/lib/Setting/pickerGenerationSettings.test.ts",
+          "count": 60
+        },
+        {
+          "file": "src/lib/Setting/SettingRenderer.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/SideBars/CharConfig.svelte.test.ts",
+          "count": 34
+        },
+        {
+          "file": "src/lib/SideBars/DevTool.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/ts/hotkey.preview.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/buildDescription.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/normalizeTemplate.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/orchestrateResponse.test.ts",
+          "count": 6
+        },
+        {
+          "file": "src/ts/process/__tests__/preflightTemplateTokens.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/runStage4.test.ts",
+          "count": 8
+        },
+        {
+          "file": "src/ts/process/mcp/mcp.test.ts",
+          "count": 30
+        },
+        {
+          "file": "src/ts/process/request/tests/anthropicProfileOptions.test.ts",
+          "count": 7
+        },
+        {
+          "file": "src/ts/process/request/tests/cohereHordeOobaLegacyProfileOptions.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/request/tests/durableGeneration.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/request/tests/google.fastify.test.ts",
+          "count": 7
+        },
+        {
+          "file": "src/ts/process/request/tests/koboldProfileOptions.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/request/tests/ollamaProfileOptions.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/request/tests/openaiProfileOptions.test.ts",
+          "count": 5
+        },
+        {
+          "file": "src/ts/process/request/tests/openaiResponsesLegacyProfileOptions.test.ts",
+          "count": 3
+        },
+        {
+          "file": "src/ts/storage/database.resourceState.test.ts",
+          "count": 10
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-read",
+      "symbol": "getDatabase",
+      "policy": "leaf-settings-collections:test-fixture",
+      "files": [
+        {
+          "file": "src/lib/Setting/lorepreset.svelte.test.ts",
+          "count": 5
+        },
+        {
+          "file": "src/lib/Setting/Pages/AgentPresetSettings.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/Setting/Pages/Module/ModuleMenu.svelte.test.ts",
+          "count": 4
+        },
+        {
+          "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts",
+          "count": 20
+        },
+        {
+          "file": "src/ts/agentPresets.test.ts",
+          "count": 67
+        },
+        {
+          "file": "src/ts/moduleCommands.test.ts",
+          "count": 182
+        },
+        {
+          "file": "src/ts/persona.iconUpload.test.ts",
+          "count": 49
+        },
+        {
+          "file": "src/ts/persona.test.ts",
+          "count": 231
+        },
+        {
+          "file": "src/ts/pluginCommands.durable.svelte-node.test.ts",
+          "count": 5
+        },
+        {
+          "file": "src/ts/pluginCommands.svelte-node.test.ts",
+          "count": 161
+        },
+        {
+          "file": "src/ts/plugins/plugins.test.ts",
+          "count": 178
+        },
+        {
+          "file": "src/ts/process/mcp/risuaccess/tests/modules.optimisticProjection.test.ts",
+          "count": 71
+        },
+        {
+          "file": "src/ts/process/mcp/risuaccess/tests/modules.test.ts",
+          "count": 15
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-read",
+      "symbol": "getDatabase",
+      "policy": "lorebook:test-fixture",
+      "files": [
+        {
+          "file": "src/lib/SideBars/LoreBook/LoreBookList.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/ts/process/__tests__/lorebook.owner.test.ts",
+          "count": 22
+        },
+        {
+          "file": "src/ts/server/lorebookOwner.durable.svelte.test.ts",
+          "count": 71
+        },
+        {
+          "file": "src/ts/server/lorebookOwner.svelte.test.ts",
+          "count": 192
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-read",
+      "symbol": "getDatabase",
+      "policy": "model-translator:test-fixture",
+      "files": [
+        {
+          "file": "src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte.test.ts",
+          "count": 205
+        },
+        {
+          "file": "src/lib/Setting/Pages/Model/ModelPresetList.svelte.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/lib/Setting/Pages/Model/ModelProfileList.svelte.test.ts",
+          "count": 23
+        },
+        {
+          "file": "src/lib/Setting/Pages/Model/ModelProfileRoleList.svelte.test.ts",
+          "count": 16
+        },
+        {
+          "file": "src/lib/Setting/Pages/Model/ModelRuntimeDefaultsEditor.svelte.test.ts",
+          "count": 6
+        },
+        {
+          "file": "src/lib/Setting/Pages/Model/ModelSettingsShell.svelte.test.ts",
+          "count": 7
+        },
+        {
+          "file": "src/lib/Setting/Pages/Model/ProviderCredentialList.svelte.test.ts",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-read",
+      "symbol": "getDatabase",
+      "policy": "prompt-template:test-fixture",
+      "files": [
+        {
+          "file": "src/ts/process/__tests__/buildPlainPromptSections.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/buildStaticPromptSections.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/sendChatPromptAssembly.lazyPromptTemplate.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/request/tests/serverPromptAssembly.test.ts",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-read",
+      "symbol": "getDatabase",
+      "policy": "script-definition:test-fixture",
+      "files": [
+        {
+          "file": "src/ts/process/modules.test.ts",
+          "count": 7
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-replacement",
+      "symbol": "setDatabase",
+      "policy": "broad-settings-shell:test-fixture",
+      "files": [
+        {
+          "file": "src/ts/storage/database.svelte.test.ts",
+          "count": 34
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-replacement",
+      "symbol": "setDatabase",
+      "policy": "character-chat:test-fixture",
+      "files": [
+        {
+          "file": "src/ts/characters.exportChat.test.ts",
+          "count": 16
+        },
+        {
+          "file": "src/ts/process/__tests__/formatHistoryMessage.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/sendChatContext.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/sendChatErrors.test.ts",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-replacement",
+      "symbol": "setDatabase",
+      "policy": "cross-cutting:test-fixture",
+      "files": [
+        {
+          "file": "src/lib/Others/HypaV3Modal.reroll.dom.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/__tests__/sendCloneCountProbe.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__fixtures__/loadFixture.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/buildDescription.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/buildHistoryWindow.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/buildMemoryWindow.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/dispatchRequest.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/igp.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/imggenStableDiff.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/nonStreamResponse.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/normalizeTemplate.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/orchestrateResponse.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/outputTrigger.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/preflightTemplateTokens.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/runStage4.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/stage4Finalize.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/streamResponse.test.ts",
+          "count": 3
+        },
+        {
+          "file": "src/ts/process/request/tests/anthropicProfileOptions.test.ts",
+          "count": 7
+        },
+        {
+          "file": "src/ts/process/request/tests/cohereHordeOobaLegacyProfileOptions.test.ts",
+          "count": 10
+        },
+        {
+          "file": "src/ts/process/request/tests/durableGeneration.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/request/tests/google.fastify.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/request/tests/koboldProfileOptions.test.ts",
+          "count": 4
+        },
+        {
+          "file": "src/ts/process/request/tests/ollamaProfileOptions.test.ts",
+          "count": 10
+        },
+        {
+          "file": "src/ts/process/request/tests/openaiProfileOptions.test.ts",
+          "count": 19
+        },
+        {
+          "file": "src/ts/process/request/tests/openaiResponsesLegacyProfileOptions.test.ts",
+          "count": 7
+        },
+        {
+          "file": "src/ts/process/request/tests/requestTokenizerSnapshot.dom.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/ts/storage/database.resourceState.test.ts",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-replacement",
+      "symbol": "setDatabaseLite",
+      "policy": "broad-settings-shell:test-fixture",
+      "files": [
+        {
+          "file": "src/lib/Setting/Settings.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/ts/storage/database.svelte.test.ts",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-replacement",
+      "symbol": "setDatabaseLite",
+      "policy": "character-chat:test-fixture",
+      "files": [
+        {
+          "file": "src/lib/Others/ChatList.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/SideBars/SideChatList.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/ts/chatCommands.test.ts",
+          "count": 18
+        },
+        {
+          "file": "src/ts/process/mcp/risuaccess/tests/characters.setCharacterInfo.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/server/characterDraft.svelte.test.ts",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-replacement",
+      "symbol": "setDatabaseLite",
+      "policy": "cross-cutting:test-fixture",
+      "files": [
+        {
+          "file": "src/lib/Others/AlertComp.dom.test.ts",
+          "count": 6
+        },
+        {
+          "file": "src/lib/Others/BookmarkList.svelte.test.ts",
+          "count": 3
+        },
+        {
+          "file": "src/lib/Others/GridCatalog.svelte.test.ts",
+          "count": 6
+        },
+        {
+          "file": "src/lib/Others/HypaV3Modal.resetRace.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/lib/Others/HypaV3Modal.serverReliability.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/lib/Others/IrisModal.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/Others/ownerPaths.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/lib/Others/WelcomeRisu.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/Setting/Pages/BotSettings.pendingFlush.svelte.test.ts",
+          "count": 15
+        },
+        {
+          "file": "src/lib/Setting/Pages/CustomGUISettingMenu.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/Setting/Pages/Display/CustomBackgroundToggle.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/Setting/Pages/Display/NotificationToggle.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/Setting/Pages/OtherBotSettings.svelte.test.ts",
+          "count": 5
+        },
+        {
+          "file": "src/lib/Setting/pickerGenerationSettings.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/lib/Setting/SettingRenderer.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/SideBars/CharConfig.svelte.test.ts",
+          "count": 6
+        },
+        {
+          "file": "src/lib/SideBars/CustomSidebar.svelte.test.ts",
+          "count": 3
+        },
+        {
+          "file": "src/lib/SideBars/DevTool.svelte.test.ts",
+          "count": 6
+        },
+        {
+          "file": "src/lib/SideBars/Sidebar.keyboard.dom.test.ts",
+          "count": 5
+        },
+        {
+          "file": "src/ts/hotkey.preview.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/mcp/mcp.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/ts/storage/database.resourceState.test.ts",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-replacement",
+      "symbol": "setDatabaseLite",
+      "policy": "leaf-settings-collections:test-fixture",
+      "files": [
+        {
+          "file": "src/lib/Setting/lorepreset.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/Setting/Pages/AgentPresetSettings.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/Setting/Pages/Module/ModuleMenu.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/lib/Setting/Pages/PersonaSettings.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/Setting/Pages/PluginSettings.svelte.test.ts",
+          "count": 9
+        },
+        {
+          "file": "src/ts/agentPresets.test.ts",
+          "count": 10
+        },
+        {
+          "file": "src/ts/moduleCommands.test.ts",
+          "count": 10
+        },
+        {
+          "file": "src/ts/persona.iconUpload.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/persona.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/pluginCommands.durable.svelte-node.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/pluginCommands.svelte-node.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/plugins/plugins.test.ts",
+          "count": 5
+        },
+        {
+          "file": "src/ts/process/mcp/risuaccess/tests/modules.optimisticProjection.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/mcp/risuaccess/tests/modules.test.ts",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-replacement",
+      "symbol": "setDatabaseLite",
+      "policy": "lorebook:test-fixture",
+      "files": [
+        {
+          "file": "src/lib/SideBars/LoreBook/LoreBookList.svelte.test.ts",
+          "count": 23
+        },
+        {
+          "file": "src/lib/SideBars/LoreBook/LoreBookSetting.svelte.test.ts",
+          "count": 5
+        },
+        {
+          "file": "src/ts/process/__tests__/lorebook.owner.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/server/lorebookOwner.durable.svelte.test.ts",
+          "count": 12
+        },
+        {
+          "file": "src/ts/server/lorebookOwner.svelte.test.ts",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-replacement",
+      "symbol": "setDatabaseLite",
+      "policy": "model-translator:test-fixture",
+      "files": [
+        {
+          "file": "src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/Setting/Pages/Model/ModelPresetList.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/Setting/Pages/Model/ModelProfileList.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/Setting/Pages/Model/ModelProfileRoleList.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/Setting/Pages/Model/ModelRoleEditor.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/Setting/Pages/Model/ModelRuntimeDefaultsEditor.svelte.test.ts",
+          "count": 3
+        },
+        {
+          "file": "src/lib/Setting/Pages/Model/ModelSettingsShell.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/Setting/Pages/Model/ProviderCredentialList.svelte.test.ts",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-replacement",
+      "symbol": "setDatabaseLite",
+      "policy": "prompt-template:test-fixture",
+      "files": [
+        {
+          "file": "src/ts/process/__tests__/sendChatPromptAssembly.lazyPromptTemplate.test.ts",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-replacement",
+      "symbol": "setDatabaseLite",
+      "policy": "script-definition:test-fixture",
+      "files": [
+        {
+          "file": "src/ts/server/scriptDefinitionOwner.svelte.test.ts",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-replacement",
+      "symbol": "setDatabase",
+      "policy": "lorebook:test-fixture",
+      "files": [
+        {
+          "file": "src/ts/process/__tests__/buildLorebookContext.test.ts",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-replacement",
+      "symbol": "setDatabase",
+      "policy": "model-translator:test-fixture",
+      "files": [
+        {
+          "file": "src/ts/process/request/tests/modelRoleRouting.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/request/tests/pluginProviderModelId.test.ts",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-replacement",
+      "symbol": "setDatabase",
+      "policy": "prompt-template:test-fixture",
+      "files": [
+        {
+          "file": "src/ts/process/__tests__/buildPlainPromptSections.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/buildStaticPromptSections.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/renderFinalPrompt.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/request/tests/serverPromptAssembly.test.ts",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-snapshot",
+      "symbol": "composeResourceDatabaseSnapshot",
+      "policy": "compatibility-infrastructure:test-fixture",
+      "files": [
+        {
+          "file": "src/ts/server/resourceState.svelte.test.ts",
+          "count": 10
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "aggregate-snapshot",
+      "symbol": "composeResourceDatabaseSnapshot",
+      "policy": "cross-cutting:test-fixture",
+      "files": [
+        {
+          "file": "src/ts/__tests__/resourceDatabaseState.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__fixtures__/loadFixture.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__fixtures__/mocks/serverCompletionFetch.ts",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "resource-facade-read",
+      "symbol": "getResourceDatabase",
+      "policy": "broad-settings-shell:test-fixture",
+      "files": [
+        {
+          "file": "src/ts/server/settingsOwner.durable.svelte.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/server/settingsOwner.svelte.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/server/shellHydration.svelte-node.test.ts",
+          "count": 7
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "resource-facade-read",
+      "symbol": "getResourceDatabase",
+      "policy": "character-chat:test-fixture",
+      "files": [
+        {
+          "file": "src/lib/ChatScreens/BackgroundDom.parserDependencies.test.ts",
+          "count": 6
+        },
+        {
+          "file": "src/lib/ChatScreens/Chat.customHtml.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/ChatScreens/Chat.parserDependencies.test.ts",
+          "count": 21
+        },
+        {
+          "file": "src/lib/ChatScreens/ChatBody.parseMemo.test.ts",
+          "count": 28
+        },
+        {
+          "file": "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts",
+          "count": 108
+        },
+        {
+          "file": "src/lib/ChatScreens/DefaultChatScreen.shellGreeting.dom.test.ts",
+          "count": 4
+        },
+        {
+          "file": "src/lib/ChatScreens/Suggestion.svelte.test.ts",
+          "count": 43
+        },
+        {
+          "file": "src/lib/SideBars/chatGenerationSettingsControls.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/activeChatGenerationSettings.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/characterCommands.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/ts/characters.changeChar.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/characters.imageEmotion.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/characters.importChat.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/sendChat.serverPreview.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/sendChatContext.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/sendChatErrors.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/serverBackedSendChat.findMessage.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/serverGeneratedMessageTranslation.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/server/characterDraft.svelte.test.ts",
+          "count": 7
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "resource-facade-read",
+      "symbol": "getResourceDatabase",
+      "policy": "compatibility-infrastructure:test-fixture",
+      "files": [
+        {
+          "file": "src/ts/server/resourceState.svelte.test.ts",
+          "count": 111
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "resource-facade-read",
+      "symbol": "getResourceDatabase",
+      "policy": "cross-cutting:test-fixture",
+      "files": [
+        {
+          "file": "src/App.routeEffect.dom.test.ts",
+          "count": 7
+        },
+        {
+          "file": "src/lib/_audit/optimisticTogglePaint.dom.test.ts",
+          "count": 3
+        },
+        {
+          "file": "src/lib/SideBars/CharConfig.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/SideBars/Sidebar.keyboard.dom.test.ts",
+          "count": 3
+        },
+        {
+          "file": "src/ts/__tests__/renderCostHarness.ts",
+          "count": 2
+        },
+        {
+          "file": "src/ts/compatibilityAdapters.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/generationReferenceCascade.test.ts",
+          "count": 10
+        },
+        {
+          "file": "src/ts/observerProjectionLifecycle.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/ts/process/__tests__/buildMemoryWindow.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/igp.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/nonStreamResponse.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/outputTrigger.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/__tests__/streamResponse.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/scriptings.test.ts",
+          "count": 8
+        },
+        {
+          "file": "src/ts/router.test.ts",
+          "count": 9
+        },
+        {
+          "file": "src/ts/server/resourceInvalidation.test.ts",
+          "count": 44
+        },
+        {
+          "file": "src/ts/server/resourceRefresh.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/ts/server/routeResourceLoader.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/ts/setting/utils.test.ts",
+          "count": 58
+        },
+        {
+          "file": "src/ts/storage/database.resourceState.test.ts",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "resource-facade-read",
+      "symbol": "getResourceDatabase",
+      "policy": "leaf-settings-collections:test-fixture",
+      "files": [
+        {
+          "file": "src/ts/loadout.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/storage/database.importPreset.test.ts",
+          "count": 45
+        }
+      ]
+    },
+    {
+      "lane": "test",
+      "detector": "resource-facade-read",
+      "symbol": "getResourceDatabase",
+      "policy": "prompt-template:test-fixture",
+      "files": [
+        {
+          "file": "src/ts/process/__tests__/renderFinalPrompt.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/server/promptTemplateMutations.svelte.test.ts",
+          "count": 104
+        }
+      ]
+    }
+  ],
+  "bridgeFamilies": [],
+  "temporarySeams": [
+    {
+      "id": "character-aggregate-endpoint",
+      "file": "packages/protocol/src/routeOperation.ts",
+      "marker": "/api/v1/characters/aggregate",
+      "count": 2,
+      "owner": "Fastify compatibility character/chat resource read",
+      "disposition": "retained external compatibility; first-party production clients use narrow owners",
+      "migrationPhase": "Workstream 3 Phase 7 retained-seam decision",
+      "removalTrigger": "Remove after path-only access telemetry records zero supported-client requests for 30 consecutive days."
+    },
+    {
+      "id": "character-aggregate-endpoint",
+      "file": "packages/protocol/src/routeOperation.ts",
+      "marker": "/characters/aggregate",
+      "count": 2,
+      "owner": "Fastify compatibility character/chat resource read",
+      "disposition": "retained external compatibility; first-party production clients use narrow owners",
+      "migrationPhase": "Workstream 3 Phase 7 retained-seam decision",
+      "removalTrigger": "Remove after path-only access telemetry records zero supported-client requests for 30 consecutive days."
+    },
+    {
+      "id": "character-aggregate-endpoint",
+      "file": "server/fastify/__tests__/helpers/resourceDatabase.ts",
+      "marker": "/api/v1/characters/aggregate",
+      "count": 1,
+      "owner": "Fastify compatibility character/chat resource read",
+      "disposition": "retained external compatibility; first-party production clients use narrow owners",
+      "migrationPhase": "Workstream 3 Phase 7 retained-seam decision",
+      "removalTrigger": "Remove after path-only access telemetry records zero supported-client requests for 30 consecutive days."
+    },
+    {
+      "id": "character-aggregate-endpoint",
+      "file": "server/fastify/__tests__/helpers/resourceDatabase.ts",
+      "marker": "/characters/aggregate",
+      "count": 1,
+      "owner": "Fastify compatibility character/chat resource read",
+      "disposition": "retained external compatibility; first-party production clients use narrow owners",
+      "migrationPhase": "Workstream 3 Phase 7 retained-seam decision",
+      "removalTrigger": "Remove after path-only access telemetry records zero supported-client requests for 30 consecutive days."
+    },
+    {
+      "id": "character-aggregate-endpoint",
+      "file": "server/fastify/__tests__/payloadBudgets.test.ts",
+      "marker": "/api/v1/characters/aggregate",
+      "count": 1,
+      "owner": "Fastify compatibility character/chat resource read",
+      "disposition": "retained external compatibility; first-party production clients use narrow owners",
+      "migrationPhase": "Workstream 3 Phase 7 retained-seam decision",
+      "removalTrigger": "Remove after path-only access telemetry records zero supported-client requests for 30 consecutive days."
+    },
+    {
+      "id": "character-aggregate-endpoint",
+      "file": "server/fastify/__tests__/payloadBudgets.test.ts",
+      "marker": "/characters/aggregate",
+      "count": 1,
+      "owner": "Fastify compatibility character/chat resource read",
+      "disposition": "retained external compatibility; first-party production clients use narrow owners",
+      "migrationPhase": "Workstream 3 Phase 7 retained-seam decision",
+      "removalTrigger": "Remove after path-only access telemetry records zero supported-client requests for 30 consecutive days."
+    },
+    {
+      "id": "character-aggregate-endpoint",
+      "file": "server/fastify/__tests__/resourceReads.test.ts",
+      "marker": "/api/v1/characters/aggregate",
+      "count": 1,
+      "owner": "Fastify compatibility character/chat resource read",
+      "disposition": "retained external compatibility; first-party production clients use narrow owners",
+      "migrationPhase": "Workstream 3 Phase 7 retained-seam decision",
+      "removalTrigger": "Remove after path-only access telemetry records zero supported-client requests for 30 consecutive days."
+    },
+    {
+      "id": "character-aggregate-endpoint",
+      "file": "server/fastify/__tests__/resourceReads.test.ts",
+      "marker": "/characters/aggregate",
+      "count": 1,
+      "owner": "Fastify compatibility character/chat resource read",
+      "disposition": "retained external compatibility; first-party production clients use narrow owners",
+      "migrationPhase": "Workstream 3 Phase 7 retained-seam decision",
+      "removalTrigger": "Remove after path-only access telemetry records zero supported-client requests for 30 consecutive days."
+    },
+    {
+      "id": "character-aggregate-endpoint",
+      "file": "server/fastify/__tests__/routeProtection.test.ts",
+      "marker": "/api/v1/characters/aggregate",
+      "count": 1,
+      "owner": "Fastify compatibility character/chat resource read",
+      "disposition": "retained external compatibility; first-party production clients use narrow owners",
+      "migrationPhase": "Workstream 3 Phase 7 retained-seam decision",
+      "removalTrigger": "Remove after path-only access telemetry records zero supported-client requests for 30 consecutive days."
+    },
+    {
+      "id": "character-aggregate-endpoint",
+      "file": "server/fastify/__tests__/routeProtection.test.ts",
+      "marker": "/characters/aggregate",
+      "count": 1,
+      "owner": "Fastify compatibility character/chat resource read",
+      "disposition": "retained external compatibility; first-party production clients use narrow owners",
+      "migrationPhase": "Workstream 3 Phase 7 retained-seam decision",
+      "removalTrigger": "Remove after path-only access telemetry records zero supported-client requests for 30 consecutive days."
+    },
+    {
+      "id": "character-aggregate-endpoint",
+      "file": "server/fastify/src/routes/resourceReads.ts",
+      "marker": "/api/v1/characters/aggregate",
+      "count": 2,
+      "owner": "Fastify compatibility character/chat resource read",
+      "disposition": "retained external compatibility; first-party production clients use narrow owners",
+      "migrationPhase": "Workstream 3 Phase 7 retained-seam decision",
+      "removalTrigger": "Remove after path-only access telemetry records zero supported-client requests for 30 consecutive days."
+    },
+    {
+      "id": "character-aggregate-endpoint",
+      "file": "server/fastify/src/routes/resourceReads.ts",
+      "marker": "/characters/aggregate",
+      "count": 2,
+      "owner": "Fastify compatibility character/chat resource read",
+      "disposition": "retained external compatibility; first-party production clients use narrow owners",
+      "migrationPhase": "Workstream 3 Phase 7 retained-seam decision",
+      "removalTrigger": "Remove after path-only access telemetry records zero supported-client requests for 30 consecutive days."
+    },
+    {
+      "id": "character-aggregate-endpoint",
+      "file": "src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts",
+      "marker": "/api/v1/characters/aggregate",
+      "count": 1,
+      "owner": "Fastify compatibility character/chat resource read",
+      "disposition": "retained external compatibility; first-party production clients use narrow owners",
+      "migrationPhase": "Workstream 3 Phase 7 retained-seam decision",
+      "removalTrigger": "Remove after path-only access telemetry records zero supported-client requests for 30 consecutive days."
+    },
+    {
+      "id": "character-aggregate-endpoint",
+      "file": "src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts",
+      "marker": "/characters/aggregate",
+      "count": 1,
+      "owner": "Fastify compatibility character/chat resource read",
+      "disposition": "retained external compatibility; first-party production clients use narrow owners",
+      "migrationPhase": "Workstream 3 Phase 7 retained-seam decision",
+      "removalTrigger": "Remove after path-only access telemetry records zero supported-client requests for 30 consecutive days."
+    },
+    {
+      "id": "observer-shell-rollout",
+      "file": "server/fastify/browser-smoke/fastBootstrapHarness.ts",
+      "marker": "risu:fast-bootstrap-observer-shell",
+      "count": 1,
+      "owner": "deployment-owned pre-writer observer-shell rollout",
+      "disposition": "retained operational rollout control; production ignores the smoke-only session override",
+      "migrationPhase": "Workstream 3 Phase 7 retained-seam decision",
+      "removalTrigger": "Remove after deployment telemetry satisfies the documented observer-shell safety and latency thresholds."
+    },
+    {
+      "id": "observer-shell-rollout",
+      "file": "server/fastify/browser-smoke/fastifyBrowserSmoke.spec.ts",
+      "marker": "risu:fast-bootstrap-observer-shell",
+      "count": 1,
+      "owner": "deployment-owned pre-writer observer-shell rollout",
+      "disposition": "retained operational rollout control; production ignores the smoke-only session override",
+      "migrationPhase": "Workstream 3 Phase 7 retained-seam decision",
+      "removalTrigger": "Remove after deployment telemetry satisfies the documented observer-shell safety and latency thresholds."
+    },
+    {
+      "id": "observer-shell-rollout",
+      "file": "src/ts/observerShellFlag.test.ts",
+      "marker": "VITE_FAST_BOOTSTRAP_OBSERVER",
+      "count": 5,
+      "owner": "deployment-owned pre-writer observer-shell rollout",
+      "disposition": "retained operational rollout control; production ignores the smoke-only session override",
+      "migrationPhase": "Workstream 3 Phase 7 retained-seam decision",
+      "removalTrigger": "Remove after deployment telemetry satisfies the documented observer-shell safety and latency thresholds."
+    },
+    {
+      "id": "observer-shell-rollout",
+      "file": "src/ts/observerShellFlag.ts",
+      "marker": "risu:fast-bootstrap-observer-shell",
+      "count": 1,
+      "owner": "deployment-owned pre-writer observer-shell rollout",
+      "disposition": "retained operational rollout control; production ignores the smoke-only session override",
+      "migrationPhase": "Workstream 3 Phase 7 retained-seam decision",
+      "removalTrigger": "Remove after deployment telemetry satisfies the documented observer-shell safety and latency thresholds."
+    },
+    {
+      "id": "observer-shell-rollout",
+      "file": "src/ts/observerShellFlag.ts",
+      "marker": "VITE_FAST_BOOTSTRAP_OBSERVER",
+      "count": 1,
+      "owner": "deployment-owned pre-writer observer-shell rollout",
+      "disposition": "retained operational rollout control; production ignores the smoke-only session override",
+      "migrationPhase": "Workstream 3 Phase 7 retained-seam decision",
+      "removalTrigger": "Remove after deployment telemetry satisfies the documented observer-shell safety and latency thresholds."
+    },
+    {
+      "id": "observer-shell-rollout",
+      "file": "src/vite-env.d.ts",
+      "marker": "VITE_FAST_BOOTSTRAP_OBSERVER",
+      "count": 1,
+      "owner": "deployment-owned pre-writer observer-shell rollout",
+      "disposition": "retained operational rollout control; production ignores the smoke-only session override",
+      "migrationPhase": "Workstream 3 Phase 7 retained-seam decision",
+      "removalTrigger": "Remove after deployment telemetry satisfies the documented observer-shell safety and latency thresholds."
+    }
+  ]
+}

@@ -8,7 +8,11 @@ vi.mock('../src/prompt/chatDispatch.js', () => ({
   dispatchChatProvider: rawTranslationMocks.dispatchChatProvider,
 }))
 
-import { translateRawMessageData, type RawMessageTranslatorType } from '../src/translation/rawMessageTranslation.js'
+import {
+  resolveRawMessageTranslatorIdentity,
+  translateRawMessageData,
+  type RawMessageTranslatorType,
+} from '../src/translation/rawMessageTranslation.js'
 import { tokenize } from '../src/prompt/tokens.js'
 
 type FetchInput = Parameters<typeof fetch>[0]
@@ -58,20 +62,60 @@ function settingsFor(translatorType: Exclude<RawMessageTranslatorType, 'llm'>): 
   return settings
 }
 
-function llmSettings(translatorSendTextAsIs: boolean): Record<string, unknown> {
+function llmSettings(translatorSendTextAsIs: boolean, translatorExcludeThoughts = false): Record<string, unknown> {
   return {
     translatorType: 'llm',
     translator: 'ko',
     translatorInputLanguage: 'en',
     aiModel: 'echo_model',
     translatorSendTextAsIs,
+    translatorExcludeThoughts,
+    translatorPresetId: 'default',
+    translatorPresets: [
+      {
+        id: 'default',
+        name: 'Default',
+        prompt: 'Translate',
+        maxResponse: 1000,
+        steps: [
+          {
+            id: 'default-step',
+            name: 'Default',
+            enabled: true,
+            prompt: 'Translate',
+            maxResponse: 1000,
+            model: { mode: 'inheritTranslate' },
+          },
+        ],
+      },
+    ],
   }
 }
 
 function historyLlmSettings(count: number, translatorSendTextAsIs = true): Record<string, unknown> {
+  const prompt = `History:\n{{slot::history::${count}}}\nTranslations:\n{{slot::historytrans::${count}}}\nSource={{slot::content}}`
   return {
     ...llmSettings(translatorSendTextAsIs),
-    translatorPrompt: `History:\n{{slot::history::${count}}}\nTranslations:\n{{slot::historytrans::${count}}}\nSource={{slot::content}}`,
+    translatorPrompt: prompt,
+    translatorPresets: [
+      {
+        id: 'history-preset',
+        name: 'History',
+        prompt,
+        maxResponse: 1000,
+        steps: [
+          {
+            id: 'history-step',
+            name: 'History',
+            enabled: true,
+            prompt,
+            maxResponse: 1000,
+            model: { mode: 'inheritTranslate' },
+          },
+        ],
+      },
+    ],
+    translatorPresetId: 'history-preset',
   }
 }
 
@@ -153,6 +197,98 @@ afterEach(() => {
 })
 
 describe('translateRawMessageData', () => {
+  it('changes the server settings hash for every pipeline execution field but not step labels', () => {
+    const createSettings = () => ({
+      ...llmSettings(true),
+      providerCredentials: [
+        {
+          id: 'credential-a',
+          name: 'Credential A',
+          type: 'apiKey',
+          apiKey: 'secret-a',
+        },
+      ],
+      modelProfiles: [
+        {
+          id: 'profile-a',
+          name: 'Profile A',
+          providerId: 'debug-echo',
+          modelId: 'debug-echo',
+          providerOptions: { credentialId: 'credential-a' },
+        },
+      ],
+      translatorPresetId: 'preset-a',
+      translatorPresets: [
+        {
+          id: 'preset-a',
+          name: 'Preset A',
+          prompt: 'Prompt {{slot::content}}',
+          maxResponse: 100,
+          steps: [
+            {
+              id: 'step-a',
+              name: 'Step A',
+              enabled: true,
+              prompt: 'Prompt {{slot::content}}',
+              maxResponse: 100,
+              model: { mode: 'inheritTranslate' },
+              outputKey: 'draft',
+            },
+          ],
+        },
+      ],
+    })
+    const hash = (settings: Record<string, unknown>) => resolveRawMessageTranslatorIdentity({ settings }).settingsHash
+    const baselineSettings = createSettings()
+    const baseline = hash(baselineSettings)
+    const mutations = [
+      (step: any) => (step.prompt = 'Changed {{slot::content}}'),
+      (step: any) => (step.maxResponse = 200),
+      (step: any) => (step.model = { mode: 'modelProfile', profileId: 'profile-a' }),
+      (step: any) => (step.outputKey = 'renamed'),
+      (step: any) => (step.enabled = false),
+    ]
+    for (const mutate of mutations) {
+      const changed = createSettings()
+      mutate(changed.translatorPresets[0].steps[0])
+      expect(hash(changed)).not.toBe(baseline)
+    }
+    const rotatedCredential = createSettings()
+    rotatedCredential.providerCredentials[0].apiKey = 'rotated-secret'
+    expect(hash(rotatedCredential)).not.toBe(baseline)
+    const relabeled = createSettings()
+    relabeled.translatorPresets[0].name = 'Renamed preset'
+    relabeled.translatorPresets[0].steps[0].id = 'renamed-step-id'
+    relabeled.translatorPresets[0].steps[0].name = 'Renamed step'
+    expect(hash(relabeled)).toBe(baseline)
+
+    const excludingThoughts = { ...createSettings(), translatorExcludeThoughts: true }
+    expect(hash(excludingThoughts)).not.toBe(baseline)
+  })
+
+  it('ignores a conflicting flat model when the durable translate profile owns identity', () => {
+    const settings = {
+      ...llmSettings(true),
+      aiModel: 'stale-flat-model',
+      modelProfiles: [
+        {
+          id: 'translate-profile',
+          name: 'Translate Profile',
+          modelId: 'echo_model',
+          runtimeOptions: { temperature: 35, maxResponse: 256 },
+        },
+      ],
+      modelRoleProfiles: {
+        translate: { mode: 'profile', profileId: 'translate-profile' },
+      },
+    }
+
+    const conflictingFlatModel = { ...settings, aiModel: 'conflicting-flat-model' }
+    const identity = (value: Record<string, unknown>) =>
+      resolveRawMessageTranslatorIdentity({ settings: value }).settingsHash
+    expect(identity(conflictingFlatModel)).toBe(identity(settings))
+  })
+
   it.each(providerCases)('uses the $name wire contract and returns normalized metadata', async (providerCase) => {
     const fetchMock = vi.fn(async (_input: FetchInput, _init?: RequestInit): Promise<Response> => {
       return jsonResponse(providerCase.response)
@@ -324,9 +460,14 @@ describe('translateRawMessageData', () => {
   })
 
   it('sends one untouched LLM request and stores its response verbatim when send-text-as-is is enabled', async () => {
-    const text = ['  before', '{{img::assets/image.png}}', '', '<risu-style>color:red</risu-style>', 'after  '].join(
-      '\n',
-    )
+    const text = [
+      '  before',
+      '<Thoughts>keep this by default</Thoughts>',
+      '{{img::assets/image.png}}',
+      '',
+      '<risu-style>color:red</risu-style>',
+      'after  ',
+    ].join('\n')
     const rawResponse = '  translated exactly\n\n'
     rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames(rawResponse))
 
@@ -340,6 +481,222 @@ describe('translateRawMessageData', () => {
     const request = rawTranslationMocks.dispatchChatProvider.mock.calls[0][0]
     expect(request.formated).toContainEqual({ role: 'user', content: text })
     expect(result.text).toBe(rawResponse)
+  })
+
+  it('resolves the chat-bound translator pipeline and settings hash', async () => {
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
+    const settings = {
+      ...llmSettings(true),
+      translatorPresets: [
+        {
+          id: 'global-preset',
+          name: 'Global',
+          prompt: 'Global {{slot::content}}',
+          maxResponse: 100,
+          steps: [
+            {
+              id: 'global-step',
+              name: 'Global',
+              enabled: true,
+              prompt: 'Global {{slot::content}}',
+              maxResponse: 100,
+              model: { mode: 'inheritTranslate' },
+            },
+          ],
+        },
+        {
+          id: 'chat-preset',
+          name: 'Chat',
+          prompt: 'Chat {{slot::content}}',
+          maxResponse: 200,
+          steps: [
+            {
+              id: 'chat-step',
+              name: 'Chat',
+              enabled: true,
+              prompt: 'Chat {{slot::content}}',
+              maxResponse: 200,
+              model: { mode: 'inheritTranslate' },
+            },
+          ],
+        },
+      ],
+      translatorPresetId: 'global-preset',
+    }
+
+    const globalIdentity = resolveRawMessageTranslatorIdentity({ settings })
+    const boundIdentity = resolveRawMessageTranslatorIdentity({
+      settings,
+      chat: { translatorPresetId: 'chat-preset' },
+    })
+    const result = await translateRawMessageData({
+      settings,
+      chat: { translatorPresetId: 'chat-preset' },
+      text: 'source',
+      signal: new AbortController().signal,
+    })
+
+    expect(boundIdentity.settingsHash).not.toBe(globalIdentity.settingsHash)
+    expect(result.settingsHash).toBe(boundIdentity.settingsHash)
+    expect(rawTranslationMocks.dispatchChatProvider.mock.calls[0][0]).toMatchObject({
+      formated: [{ role: 'system', content: 'Chat source' }],
+      outputTokens: 200,
+    })
+  })
+
+  it('materializes durable profile runtime samplers for LLM translation dispatch', async () => {
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
+    const settings = {
+      ...llmSettings(true),
+      modelProfiles: [
+        {
+          id: 'translate-profile',
+          name: 'Translate Profile',
+          modelId: 'echo_model',
+          runtimeOptions: {
+            temperature: 35,
+            topP: 0.42,
+            topK: 17,
+            frequencyPenalty: 25,
+            presencePenalty: 30,
+            useStreaming: true,
+          },
+        },
+      ],
+      modelRoleProfiles: {
+        translate: { mode: 'profile', profileId: 'translate-profile' },
+      },
+    }
+
+    await translateRawMessageData({
+      settings,
+      text: 'source',
+      signal: new AbortController().signal,
+    })
+
+    expect(rawTranslationMocks.dispatchChatProvider.mock.calls[0][0].database).toMatchObject({
+      aiModel: 'echo_model',
+      temperature: 35,
+      top_p: 0.42,
+      top_k: 17,
+      frequencyPenalty: 25,
+      PresensePenalty: 30,
+      halfStreaming: false,
+      useStreaming: false,
+    })
+  })
+
+  it('falls back from a missing step profile to the selected translate profile', async () => {
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
+    const settings = {
+      ...llmSettings(true),
+      modelProfiles: [
+        {
+          id: 'translate-profile',
+          name: 'Translate Profile',
+          modelId: 'echo_model',
+          runtimeOptions: { temperature: 41 },
+        },
+      ],
+      modelRoleProfiles: {
+        translate: { mode: 'profile', profileId: 'translate-profile' },
+      },
+      translatorPresets: [
+        {
+          id: 'pipeline',
+          name: 'Pipeline',
+          prompt: 'Translate {{slot::content}}',
+          maxResponse: 123,
+          steps: [
+            {
+              id: 'translate',
+              name: 'Translate',
+              enabled: true,
+              prompt: 'Translate {{slot::content}}',
+              maxResponse: 123,
+              model: { mode: 'modelProfile', profileId: 'missing-profile' },
+            },
+          ],
+        },
+      ],
+      translatorPresetId: 'pipeline',
+    }
+
+    await translateRawMessageData({
+      settings,
+      text: 'source',
+      signal: new AbortController().signal,
+    })
+
+    expect(rawTranslationMocks.dispatchChatProvider.mock.calls[0][0]).toMatchObject({
+      outputTokens: 123,
+      profile: { profileId: 'translate-profile', modelId: 'echo_model' },
+      database: { aiModel: 'echo_model', temperature: 41, useStreaming: false },
+    })
+  })
+
+  it('uses the debug default when the legacy translate model is empty', async () => {
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
+
+    await translateRawMessageData({
+      settings: { ...llmSettings(true), aiModel: '' },
+      text: 'source',
+      signal: new AbortController().signal,
+    })
+
+    expect(rawTranslationMocks.dispatchChatProvider.mock.calls[0][0]).toMatchObject({
+      profile: { modelId: 'echo_model' },
+      database: { aiModel: 'echo_model', useStreaming: false },
+    })
+  })
+
+  it('surfaces an LLM provider error frame as a translation failure', async () => {
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () =>
+      (async function* () {
+        yield { kind: 'error' as const, error: 'translation provider unavailable', status: 503 }
+      })(),
+    )
+
+    await expect(
+      translateRawMessageData({
+        settings: llmSettings(true),
+        text: 'source',
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow('translation provider unavailable')
+  })
+
+  it('removes internal reasoning from send-text-as-is source text when exclusion is enabled', async () => {
+    const text =
+      '<Thoughts data-private="true">draft secret <think>nested secret</think></Thoughts>\n' +
+      'visible source\n<THINK>more private reasoning</THINK>'
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
+
+    await translateRawMessageData({
+      settings: llmSettings(true, true),
+      text,
+      signal: new AbortController().signal,
+    })
+
+    expect(rawTranslationMocks.dispatchChatProvider).toHaveBeenCalledTimes(1)
+    expect(rawTranslationMocks.dispatchChatProvider.mock.calls[0][0].formated).toContainEqual({
+      role: 'user',
+      content: 'visible source',
+    })
+  })
+
+  it('removes internal reasoning wrappers from an LLM translation result', async () => {
+    const rawResponse =
+      '<Thoughts>private translation reasoning</Thoughts>\n<think>more private reasoning</think>\n번역됨'
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames(rawResponse))
+
+    const result = await translateRawMessageData({
+      settings: llmSettings(true),
+      text: 'source',
+      signal: new AbortController().signal,
+    })
+
+    expect(result.text).toBe('번역됨')
   })
 
   it('runs an LLM translator pipeline sequentially with per-step limits, named outputs, and model profiles', async () => {
@@ -381,7 +738,7 @@ describe('translateRawMessageData', () => {
           ],
         },
       ],
-      translatorPresetId: 0,
+      translatorPresetId: 'pipeline',
     }
     rawTranslationMocks.dispatchChatProvider
       .mockImplementationOnce(async () => textFrames('draft output'))
@@ -434,7 +791,7 @@ describe('translateRawMessageData', () => {
         { role: 'user', data: 'current source' },
       ],
       messageIndex: 4,
-      greeting: 'unused greeting',
+      greeting: { source: 'unused greeting' },
     }
 
     await translateRawMessageData({
@@ -455,6 +812,45 @@ describe('translateRawMessageData', () => {
     ])
   })
 
+  it('removes internal reasoning from send-text-as-is source and translated history slots', async () => {
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
+
+    await translateRawMessageData({
+      settings: {
+        ...historyLlmSettings(3),
+        translatorExcludeThoughts: true,
+      },
+      text: '<Thoughts>current private</Thoughts>\ncurrent source',
+      historyContext: {
+        messages: [
+          {
+            role: 'user',
+            data: '<Thoughts>old private</Thoughts>\nold source',
+            translation: { text: '<think>old translated private</think>\nold translated' },
+          },
+          {
+            role: 'char',
+            data: 'new source\n<think>new private</think>',
+            translation: { text: 'new translated\n<Thoughts>new translated private</Thoughts>' },
+          },
+          { role: 'user', data: 'current source' },
+        ],
+        messageIndex: 2,
+        greeting: {
+          source: '<think>greeting private</think>\ngreeting source',
+          translated: '<Thoughts>translated greeting private</Thoughts>\ngreeting translated',
+        },
+      },
+      signal: new AbortController().signal,
+    })
+
+    expect(rawTranslationMocks.dispatchChatProvider.mock.calls[0][0].formated[0].content).toBe(
+      `History:\n${historyBlock('char', 'greeting source')}${historyBlock('user', 'old source')}${historyBlock('char', 'new source')}\n` +
+        `Translations:\n${historyBlock('char', 'greeting translated')}${historyBlock('user', 'old translated')}${historyBlock('char', 'new translated')}\n` +
+        'Source=current source',
+    )
+  })
+
   it('treats allBefore as a reset boundary and does not restore the greeting behind it', async () => {
     rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
 
@@ -469,7 +865,7 @@ describe('translateRawMessageData', () => {
           { role: 'char', data: 'current source' },
         ],
         messageIndex: 3,
-        greeting: 'hidden greeting',
+        greeting: { source: 'hidden greeting', translated: 'hidden greeting translated' },
       },
       signal: new AbortController().signal,
     })
@@ -481,7 +877,7 @@ describe('translateRawMessageData', () => {
     )
   })
 
-  it('prepends the greeting when history is exhausted and gives it an empty translation block', async () => {
+  it('prepends the persisted greeting source and translation when history is exhausted', async () => {
     rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
 
     await translateRawMessageData({
@@ -493,14 +889,14 @@ describe('translateRawMessageData', () => {
           { role: 'char', data: 'current source' },
         ],
         messageIndex: 1,
-        greeting: 'selected greeting',
+        greeting: { source: 'selected greeting', translated: 'selected greeting translated' },
       },
       signal: new AbortController().signal,
     })
 
     expect(rawTranslationMocks.dispatchChatProvider.mock.calls[0][0].formated[0].content).toBe(
       `History:\n${historyBlock('char', 'selected greeting')}${historyBlock('user', 'prior source')}\n` +
-        `Translations:\n${historyBlock('char', '')}${historyBlock('user', 'prior translated')}\n` +
+        `Translations:\n${historyBlock('char', 'selected greeting translated')}${historyBlock('user', 'prior translated')}\n` +
         'Source=current source',
     )
   })
@@ -524,7 +920,7 @@ describe('translateRawMessageData', () => {
           { role: 'user', data: 'current source' },
         ],
         messageIndex: 2,
-        greeting: '',
+        greeting: { source: '' },
       },
       signal: new AbortController().signal,
     })
@@ -546,7 +942,7 @@ describe('translateRawMessageData', () => {
           { role: 'char', data: 'current source' },
         ],
         messageIndex: 1,
-        greeting: 'must not leak greeting',
+        greeting: { source: 'must not leak greeting', translated: 'must not leak greeting translated' },
       },
       signal: new AbortController().signal,
     })

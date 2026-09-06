@@ -2,7 +2,7 @@ import { Buffer } from 'buffer'
 import { language } from '../../lang'
 import { MASKED_PROVIDER_SECRET } from '../providerSecretMask'
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
-import type { ImageGenerationCredential, ImageGenerationRequest } from './imageGenerationProtocol'
+import type { ImageGenerationCredential, ImageGenerationRequest } from '@risuai/protocol/image-generation-operation'
 
 const IMAGE_GENERATION_ENDPOINT = '/api/v1/image-generation'
 const MAX_IMAGE_RESPONSE_BYTES = 20 * 1024 * 1024

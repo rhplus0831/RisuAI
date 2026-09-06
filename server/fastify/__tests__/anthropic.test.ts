@@ -75,6 +75,7 @@ describe('runAnthropic (non-streaming)', () => {
           { type: 'text', text: ' world' },
         ],
         stop_reason: 'end_turn',
+        usage: { input_tokens: 5, output_tokens: 2 },
       })
     })
 
@@ -93,6 +94,7 @@ describe('runAnthropic (non-streaming)', () => {
       type: 'success',
       result: 'hello world',
       model: 'claude-3-5-sonnet-20241022',
+      apiMetadata: { usage: { input_tokens: 5, output_tokens: 2 } },
     })
 
     expect(captured!.url).toBe('https://api.anthropic.com/v1/messages')
@@ -131,6 +133,7 @@ describe('runAnthropic (non-streaming)', () => {
         ['extra.flag', 'true'],
         ['extra.nested.value', 'json::[1, 2]'],
         ['temperature', '{{none}}'],
+        ['stream', 'true'],
       ],
       signal: new AbortController().signal,
     })
@@ -138,6 +141,7 @@ describe('runAnthropic (non-streaming)', () => {
     expect(sent.model).toBe('m')
     expect(sent.max_tokens).toBe(512)
     expect(sent.temperature).toBeUndefined()
+    expect(sent.stream).toBe(false)
     expect(sent.extra).toEqual({ flag: true, nested: { value: [1, 2] } })
     const headers = captured!.init.headers as Record<string, string>
     expect(headers['anthropic-beta']).toBe('prompt-caching-2024-07-31')
@@ -343,8 +347,12 @@ function sseUpstream(chunks: string[]): Response {
   })
 }
 
-function deltaEvent(text: string): string {
-  return `event: content_block_delta\n` + `data: ${JSON.stringify({ delta: { type: 'text_delta', text } })}\n\n`
+function deltaEvent(text: string, type: 'text' | 'text_delta' = 'text_delta'): string {
+  return `event: content_block_delta\n` + `data: ${JSON.stringify({ delta: { type, text } })}\n\n`
+}
+
+function errorEvent(message: string, type: string): string {
+  return `event: error\n` + `data: ${JSON.stringify({ type: 'error', error: { type, message } })}\n\n`
 }
 
 function messageDeltaEvent(stopReason: string): string {
@@ -384,6 +392,26 @@ describe('runAnthropicStream', () => {
     expect(frames).toEqual([
       { kind: 'token', content: 'hello' },
       { kind: 'token', content: ' world' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
+  it('accepts the proxy-compatible text delta type', async () => {
+    vi.stubGlobal('fetch', async () => sseUpstream([deltaEvent('proxy text', 'text'), MESSAGE_STOP]))
+    const frames: unknown[] = []
+    for await (const f of runAnthropicStream({
+      model: 'm',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.anthropic.com/v1',
+      version: '2023-06-01',
+      maxTokens: 1024,
+      signal: new AbortController().signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toEqual([
+      { kind: 'token', content: 'proxy text' },
       { kind: 'done', finishReason: 'stop' },
     ])
   })
@@ -452,6 +480,28 @@ describe('runAnthropicStream', () => {
     expect(frames).toEqual([
       { kind: 'token', content: 'partial' },
       { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
+  it('surfaces in-stream error payloads as failure frames without a trailing done', async () => {
+    vi.stubGlobal('fetch', async () =>
+      sseUpstream([deltaEvent('partial'), errorEvent('Overloaded', 'overloaded_error')]),
+    )
+    const frames: unknown[] = []
+    for await (const f of runAnthropicStream({
+      model: 'm',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.anthropic.com/v1',
+      version: '2023-06-01',
+      maxTokens: 1024,
+      signal: new AbortController().signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toEqual([
+      { kind: 'token', content: 'partial' },
+      { kind: 'error', error: 'Overloaded', code: 'overloaded_error' },
     ])
   })
 
@@ -594,7 +644,7 @@ describe('runAnthropicStream', () => {
     ])
   })
 
-  it('L22: bounds the accumulation buffer when upstream never sends an event delimiter', async () => {
+  it('bounds the accumulation buffer when upstream never sends an event delimiter', async () => {
     // > MAX_STREAM_BUFFER_CHARS of delimiter-less bytes, streamed in 1 MB
     // chunks. Without the cap the adapter would buffer the whole stream.
     const chunk = 'x'.repeat(1024 * 1024)

@@ -265,6 +265,7 @@ describe('Fastify proxy routing', () => {
     expect(fakeWebSocketProtocols).toEqual([['risu-stream-v1', 'risu-auth.proxy-auth-token']])
     expect(fakeWebSocketUrls[0]).not.toContain('proxy-auth-token')
     expect(fakeWebSocketUrls[0]).not.toContain('/proxy-stream-jobs')
+    expect(proxyDeleteCalls()).toHaveLength(1)
   })
 
   it('returns the existing 499 response shape when aborted before headers', async () => {
@@ -340,6 +341,58 @@ describe('Fastify proxy routing', () => {
     expect(proxyDeleteCalls()).toHaveLength(0)
   })
 
+  it('DELETEs the active proxy job when the response body consumer cancels', async () => {
+    const resPromise = startStreamingProxyFetch()
+    const socket = await waitForWebSocket()
+    socket.emit({
+      type: 'upstream_headers',
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    })
+    const res = await resPromise
+
+    await res.body?.cancel('consumer stopped reading')
+
+    expect(proxyDeleteCalls()).toHaveLength(1)
+    expect(proxyDeleteCalls()[0]).toMatchObject({
+      url: '/api/v1/proxy/stream-jobs/job%201',
+      init: {
+        method: 'DELETE',
+        headers: {
+          'risu-auth': 'proxy-auth-token',
+        },
+      },
+    })
+  })
+
+  it('rejects and DELETEs the job when a malformed frame arrives after headers', async () => {
+    const resPromise = startStreamingProxyFetch()
+    const socket = await waitForWebSocket()
+    socket.emit({
+      type: 'upstream_headers',
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    })
+    const res = await resPromise
+
+    socket.emit({ type: 'chunk', dataBase64: 42 })
+
+    await expect(res.text()).rejects.toThrow('invalid protocol frame')
+    expect(proxyDeleteCalls()).toHaveLength(1)
+  })
+
+  it('returns a terminal proxy error and DELETEs when a body chunk arrives before headers', async () => {
+    const resPromise = startStreamingProxyFetch()
+    const socket = await waitForWebSocket()
+
+    socket.emitBinary(new TextEncoder().encode('out-of-order'))
+    const res = await resPromise
+
+    expect(res.status).toBe(502)
+    await expect(res.text()).resolves.toBe('Proxy WebSocket sent a body chunk before upstream headers')
+    expect(proxyDeleteCalls()).toHaveLength(1)
+  })
+
   it('closes on terminal server error without DELETEing the finished job', async () => {
     const controller = new AbortController()
     const resPromise = startStreamingProxyFetch(controller.signal)
@@ -354,7 +407,7 @@ describe('Fastify proxy routing', () => {
     expect(proxyDeleteCalls()).toHaveLength(0)
   })
 
-  it('does not DELETE on WebSocket close before terminal when the request was not locally aborted', async () => {
+  it('rejects and DELETEs on WebSocket close before a terminal frame', async () => {
     const resPromise = startStreamingProxyFetch()
     const socket = await waitForWebSocket()
     socket.emit({
@@ -367,7 +420,7 @@ describe('Fastify proxy routing', () => {
     socket.close()
 
     expect(res.status).toBe(200)
-    await expect(res.text()).resolves.toBe('')
-    expect(proxyDeleteCalls()).toHaveLength(0)
+    await expect(res.text()).rejects.toThrow('closed before a terminal frame')
+    expect(proxyDeleteCalls()).toHaveLength(1)
   })
 })

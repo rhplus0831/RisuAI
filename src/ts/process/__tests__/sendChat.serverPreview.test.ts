@@ -12,7 +12,13 @@ import { get } from 'svelte/store'
 // before reaching them.
 
 const localAssemblerState = vi.hoisted(() => ({ throwIfEntered: false }))
-const alertState = vi.hoisted(() => ({ errors: [] as string[] }))
+const messageCompletionSoundState = vi.hoisted(() => ({ play: vi.fn() }))
+const characterHydrationState = vi.hoisted(() => ({ hydrate: vi.fn(async (_characterId: string) => true) }))
+const alertState = vi.hoisted(() => ({
+  errors: [] as string[],
+  confirmations: [] as string[],
+  confirmationResult: true,
+}))
 
 vi.mock('../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../platform')>()
@@ -33,6 +39,10 @@ vi.mock('../../alert', async (importActual) => {
     alertError: (message: string) => {
       alertState.errors.push(message)
     },
+    alertConfirm: async (message: string) => {
+      alertState.confirmations.push(message)
+      return alertState.confirmationResult
+    },
   }
 })
 
@@ -41,6 +51,14 @@ vi.mock('../inlayScreen', () => import('../__fixtures__/mocks/inlayScreen'))
 vi.mock('../stableDiff', () => import('../__fixtures__/mocks/stableDiff'))
 vi.mock('../prereroll', () => import('../__fixtures__/mocks/prereroll'))
 vi.mock('../files/inlays', () => import('../__fixtures__/mocks/inlays'))
+
+vi.mock('../messageCompletionSound', () => ({
+  playMessageCompletionSoundIfEnabled: messageCompletionSoundState.play,
+}))
+
+vi.mock('../../server/characterShellHydration.svelte', () => ({
+  hydrateCharacterShell: characterHydrationState.hydrate,
+}))
 
 vi.mock('../memory/hypav3', async (importActual) => {
   const actual = await importActual<typeof import('../memory/hypav3')>()
@@ -90,19 +108,22 @@ import {
   resetServerCompletionCalls,
   serverCompletionFetch,
 } from '../__fixtures__/mocks/serverCompletionFetch'
-import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
+import { replaceResourceDatabase } from '../../server/resourceState.svelte'
 import { abortChat, activeGenerationTarget, chatProcessStage, doingChat } from '../index.svelte'
 import * as chatModule from '../index.svelte'
 import { dispatchSaveChatGenerationSettings } from '../../chatCommands'
 import { currentPersonaStateSnapshot, queueSelectedPersonaUpdate, updateSelectedPersonaField } from '../../persona'
 import { clearCachedServerCommandRevision } from '../../server/commands'
 import { language } from '../../../lang'
+import { selectedCharID } from '../../stores.svelte'
 import {
   clearPendingMutationOutbox,
   listPendingMutations,
   preparePendingMutationOutbox,
   resetPendingMutationOutboxForTests,
 } from '../../server/pendingMutationOutbox'
+import { resetChatUnreadForTests, setVisibleChat, unreadChatIds } from '../chatUnread.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {
@@ -125,13 +146,25 @@ beforeEach(() => {
   abortChat.set(false)
   chatProcessStage.set(0)
   localAssemblerState.throwIfEntered = false
+  messageCompletionSoundState.play.mockReset()
+  characterHydrationState.hydrate.mockReset()
+  characterHydrationState.hydrate.mockImplementation(async (characterId: string) => {
+    const character = testDatabaseState.db.characters.find((candidate) => candidate.chaId === characterId)
+    if (!character) return false
+    delete (character as unknown as Record<string, unknown>).__serverCharacterShell
+    return true
+  })
   alertState.errors = []
+  alertState.confirmations = []
+  alertState.confirmationResult = true
   contextCommandRevision = 1
+  resetChatUnreadForTests()
 })
 
 afterEach(() => {
   while (cleanups.length > 0) cleanups.pop()!()
   vi.unstubAllGlobals()
+  resetChatUnreadForTests()
 })
 
 function markActiveChatGenerationSettingsReady(): void {
@@ -254,6 +287,7 @@ function queuePersonaPromptSave(prompt: string): string {
   testDatabaseState.db.selectedPersona = selectedPersona
   const persona = testDatabaseState.db.personas[selectedPersona]
   if (!persona?.id) throw new Error('Fixture did not seed a selected persona')
+  testDatabaseState.db.selectedPersonaId = persona.id
   const previous = currentPersonaStateSnapshot()
   updateSelectedPersonaField('personaPrompt', prompt)
   const attempted = currentPersonaStateSnapshot()
@@ -262,6 +296,29 @@ function queuePersonaPromptSave(prompt: string): string {
 }
 
 describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
+  it('hydrates a character shell before entering generation', async () => {
+    await seedEcho()
+    const character = testDatabaseState.db.characters[0] as unknown as Record<string, unknown>
+    const characterId = String(character.chaId)
+    character.__serverCharacterShell = true
+    setServerChatPrompt([{ role: 'user', content: 'hi' }], { promptText: 'hi' })
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
+
+    await expect(chatModule.sendChat(-1, { preview: true })).resolves.toBe(true)
+    expect(characterHydrationState.hydrate).toHaveBeenCalledWith(characterId)
+  })
+
+  it('rejects generation when character detail hydration is not ready', async () => {
+    await seedEcho()
+    const character = testDatabaseState.db.characters[0] as unknown as Record<string, unknown>
+    character.__serverCharacterShell = true
+    characterHydrationState.hydrate.mockResolvedValueOnce(false)
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
+
+    await expect(chatModule.sendChat(-1, { preview: true })).resolves.toBe(false)
+    expect(getServerChatCalls()).toHaveLength(0)
+  })
+
   it('routes mode=preview to /chat and fills previewFormated', async () => {
     await seedEcho()
     setServerChatPrompt(
@@ -275,6 +332,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
 
     const ok = await chatModule.sendChat(-1, { preview: true })
     expect(ok).toBe(true)
+    expect(messageCompletionSoundState.play).not.toHaveBeenCalled()
     expect(chatModule.previewFormated).toEqual([{ role: 'user', content: 'hi', name: 'User' }])
 
     const calls = getServerChatCalls()
@@ -293,8 +351,151 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
 
     const ok = await chatModule.sendChat(-1, { previewPrompt: true })
     expect(ok).toBe(true)
+    expect(messageCompletionSoundState.play).not.toHaveBeenCalled()
     expect(chatModule.previewBody).toBe('FLATTENED PROMPT')
     expect(getServerChatCalls()[0]).toMatchObject({ mode: 'preview_prompt' })
+  })
+
+  it('discards a formatted preview when navigation changes during generation-settings maintenance', async () => {
+    await seedEcho()
+    const character = testDatabaseState.db.characters[0]
+    const firstChat = character.chats[0]
+    firstChat.id = 'chat-1'
+    character.chats.push({
+      ...safeStructuredClone(firstChat),
+      id: 'chat-2',
+      name: 'other chat',
+      message: [{ role: 'user', data: 'other chat message', chatId: 'other-message' }],
+    })
+    setServerChatPrompt(
+      [{ role: 'user', content: 'stale formatted preview' }],
+      { promptText: 'STALE FORMATTED PREVIEW' },
+      { formated: [{ role: 'user', content: 'stale formatted preview' }] },
+    )
+    const previousPreview = safeStructuredClone(chatModule.previewFormated)
+    let resolveSettingsSave!: (response: Response) => void
+    const pendingSettingsSave = new Promise<Response>((resolve) => {
+      resolveSettingsSave = resolve
+    })
+    let settingsSaveRequests = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.endsWith('/generation-settings')) {
+          settingsSaveRequests += 1
+          return pendingSettingsSave
+        }
+        return serverChatWithContextFetch(input, init)
+      }) as unknown as typeof fetch,
+    )
+    expect(
+      dispatchSaveChatGenerationSettings(firstChat.id, {
+        ...firstChat.generationSettings!,
+        jailbreakToggle: true,
+      }),
+    ).toBe(true)
+    await waitForState(() => expect(settingsSaveRequests).toBe(1))
+
+    const previewPromise = chatModule.sendChat(-1, { preview: true })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(getServerChatCalls()).toHaveLength(0)
+    character.chatPage = 1
+    resolveSettingsSave(
+      jsonResponse({
+        revision: 2,
+        event: {
+          type: 'chat.updated',
+          revision: 2,
+          resource: 'characterRow',
+          id: firstChat.id,
+          parentId: character.chaId,
+        },
+        chatId: firstChat.id,
+        characterId: character.chaId,
+        certificate: 'chat-generation-settings-sparse-v1',
+        patchedKeys: ['jailbreakToggle'],
+        deletedKeys: [],
+        sidebarTogglePatchedKeys: [],
+        sidebarToggleDeletedKeys: [],
+        prunedSidebarToggleKeys: [],
+      }),
+    )
+
+    await expect(previewPromise).resolves.toBe(false)
+    expect(chatModule.previewFormated).toEqual(previousPreview)
+    expect(getServerChatCalls()).toHaveLength(1)
+    expect(getServerChatCalls()[0]).toMatchObject({ mode: 'preview', chatId: 'chat-1' })
+  })
+
+  it('discards a raw-body preview when navigation changes during generation-settings maintenance', async () => {
+    await seedEcho()
+    const character = testDatabaseState.db.characters[0]
+    const firstChat = character.chats[0]
+    firstChat.id = 'chat-1'
+    character.chats.push({
+      ...safeStructuredClone(firstChat),
+      id: 'chat-2',
+      name: 'other chat',
+      message: [{ role: 'user', data: 'other chat message', chatId: 'other-message' }],
+    })
+    setServerChatPrompt([{ role: 'user', content: 'stale raw preview' }], {
+      promptText: 'STALE RAW PREVIEW',
+    })
+    const previousPreview = chatModule.previewBody
+    let resolveSettingsSave!: (response: Response) => void
+    const pendingSettingsSave = new Promise<Response>((resolve) => {
+      resolveSettingsSave = resolve
+    })
+    let settingsSaveRequests = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.endsWith('/generation-settings')) {
+          settingsSaveRequests += 1
+          return pendingSettingsSave
+        }
+        return serverChatWithContextFetch(input, init)
+      }) as unknown as typeof fetch,
+    )
+    expect(
+      dispatchSaveChatGenerationSettings(firstChat.id, {
+        ...firstChat.generationSettings!,
+        jailbreakToggle: true,
+      }),
+    ).toBe(true)
+    await waitForState(() => expect(settingsSaveRequests).toBe(1))
+
+    const previewPromise = chatModule.sendChat(-1, { previewPrompt: true })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(getServerChatCalls()).toHaveLength(0)
+    character.chatPage = 1
+    resolveSettingsSave(
+      jsonResponse({
+        revision: 2,
+        event: {
+          type: 'chat.updated',
+          revision: 2,
+          resource: 'characterRow',
+          id: firstChat.id,
+          parentId: character.chaId,
+        },
+        chatId: firstChat.id,
+        characterId: character.chaId,
+        certificate: 'chat-generation-settings-sparse-v1',
+        patchedKeys: ['jailbreakToggle'],
+        deletedKeys: [],
+        sidebarTogglePatchedKeys: [],
+        sidebarToggleDeletedKeys: [],
+        prunedSidebarToggleKeys: [],
+      }),
+    )
+
+    await expect(previewPromise).resolves.toBe(false)
+    expect(chatModule.previewBody).toBe(previousPreview)
+    expect(getServerChatCalls()).toHaveLength(1)
+    expect(getServerChatCalls()[0]).toMatchObject({ mode: 'preview_prompt', chatId: 'chat-1' })
   })
 
   it.each([
@@ -443,8 +644,9 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     expect(getServerChatCalls()).toHaveLength(1)
   })
 
-  it('rechecks the active target after context persistence before generation', async () => {
+  it('keeps targeting the original chat when navigation changes during context persistence', async () => {
     await seedEcho()
+    setServerChatDispatchResult('server reply', { model: 'echo_model', outputTokens: 2, maxContext: 4000 })
     const character = testDatabaseState.db.characters[0]
     const firstChat = character.chats[0]
     firstChat.id = 'chat-1'
@@ -479,9 +681,40 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     character.chatPage = 1
     resolveContext(contextCommandSuccessResponse(contextInit))
 
-    await expect(sendPromise).resolves.toBe(false)
-    expect(getServerChatCalls()).toHaveLength(0)
+    await expect(sendPromise).resolves.toBe(true)
+    expect(getServerChatCalls()).toHaveLength(1)
+    expect(getServerChatCalls()[0]).toMatchObject({ chatId: 'chat-1' })
     expect(get(activeGenerationTarget)).toBeNull()
+  })
+
+  it('starts generation for an explicit captured target when another chat is already active', async () => {
+    await seedEcho()
+    setServerChatDispatchResult('server reply', { model: 'echo_model', outputTokens: 2, maxContext: 4000 })
+    const character = testDatabaseState.db.characters[0]
+    const firstChat = character.chats[0]
+    firstChat.id = 'chat-1'
+    character.chats.push({
+      ...safeStructuredClone(firstChat),
+      id: 'chat-2',
+      name: 'active other chat',
+      message: [{ role: 'user', data: 'other chat message', chatId: 'other-message' }],
+    })
+    character.chatPage = 1
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
+
+    const ok = await chatModule.sendChat(-1, {
+      expectedTarget: {
+        selectedCharID: 0,
+        chatPage: 0,
+        characterId: character.chaId,
+        chatId: 'chat-1',
+      },
+    })
+
+    expect(ok).toBe(true)
+    expect(getServerChatCalls()).toHaveLength(1)
+    expect(getServerChatCalls()[0]).toMatchObject({ chatId: 'chat-1' })
+    expect(character.chatPage).toBe(1)
   })
 
   it('blocks generation and shows a localized error when context persistence fails', async () => {
@@ -575,11 +808,69 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       }) as unknown as typeof fetch,
     )
 
-    await expect(chatModule.sendChat(-1, { reattachJobId: 'job-reattach' })).resolves.toBe(true)
+    const onReattachOutcome = vi.fn()
+    await expect(chatModule.sendChat(-1, { reattachJobId: 'job-reattach', onReattachOutcome })).resolves.toBe(true)
 
+    expect(onReattachOutcome).toHaveBeenCalledWith({ status: 'completed' })
+    expect(messageCompletionSoundState.play).toHaveBeenCalledOnce()
     expect(maintenanceCalls).toEqual([])
     expect(testDatabaseState.db.characters[0].lastInteraction).toBe(previousLastInteraction)
     expect(getServerChatCalls()).toHaveLength(1)
+  })
+
+  it('reports a terminal SSE failure to the reattach owner', async () => {
+    await seedEcho()
+    setServerChatError('terminal generation failure')
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
+    const onReattachOutcome = vi.fn()
+
+    await expect(chatModule.sendChat(-1, { reattachJobId: 'job-terminal', onReattachOutcome })).resolves.toBe(false)
+
+    expect(onReattachOutcome).toHaveBeenCalledWith({
+      status: 'terminal_failure',
+      error: 'terminal generation failure',
+    })
+  })
+
+  it('reports an expired reattach job as missing', async () => {
+    await seedEcho()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse(
+          {
+            error: 'generation job not found',
+          },
+          404,
+        ),
+      ) as unknown as typeof fetch,
+    )
+    const onReattachOutcome = vi.fn()
+
+    await expect(chatModule.sendChat(-1, { reattachJobId: 'job-expired', onReattachOutcome })).resolves.toBe(false)
+
+    expect(onReattachOutcome).toHaveBeenCalledWith({
+      status: 'missing_job',
+      error: 'generation job not found',
+    })
+  })
+
+  it('reports a reattach fetch failure as retryable transport', async () => {
+    await seedEcho()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('network unavailable')
+      }) as unknown as typeof fetch,
+    )
+    const onReattachOutcome = vi.fn()
+
+    await expect(chatModule.sendChat(-1, { reattachJobId: 'job-offline', onReattachOutcome })).resolves.toBe(false)
+
+    expect(onReattachOutcome).toHaveBeenCalledWith({
+      status: 'retryable_transport_failure',
+      error: 'Network error: network unavailable',
+    })
   })
 
   it.each([
@@ -637,7 +928,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     expect(personaPatchCalls).toHaveLength(1)
     expect(personaPatchCalls[0].body).toMatchObject({
       patch: { personaPrompt: 'fresh persona prompt for generation' },
-      mirrorLegacyProfile: true,
+      mirrorLegacyProfile: false,
     })
     expect(requestOrder).toEqual(['persona', 'chat'])
     expect(getServerChatCalls()).toHaveLength(1)
@@ -669,6 +960,139 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       regenerateMessageId: 'msg-assistant-1',
       userMessage: '',
     })
+  })
+
+  it('confirms, persists, and retries once when the server predicts non-Hypa history truncation', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-hypa-confirmation',
+      writerEpoch: 1,
+      databaseLineage: 'lineage-hypa-confirmation',
+      requestedWriterWasActive: true,
+    })
+    await seedEcho()
+    const character = testDatabaseState.db.characters[0]
+    const chat = character.chats[0]
+    chat.id = 'chat-confirm-hypa-truncation'
+    setServerChatDispatchResult('confirmed reply', {
+      model: 'echo_model',
+      generationId: 'uuid-confirmed',
+      inputTokens: 7,
+      outputTokens: 50,
+      maxContext: 4000,
+      stageTiming: { stage1: 1, stage2: 0, stage3: 0, stage4: 0 },
+    })
+    let generationRequests = 0
+    const acknowledgementBodies: Record<string, unknown>[] = []
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (url.endsWith('/api/v1/bootstrap')) {
+        return jsonResponse({ revision: contextCommandRevision })
+      }
+      if (/\/api\/v1\/commands\/characters\/[^/]+$/.test(url)) {
+        return contextCommandSuccessResponse(init)
+      }
+      if (url.endsWith('/api/v1/commands/mutation-receipts/ack')) {
+        return jsonResponse({ acknowledged: true })
+      }
+      if (url.endsWith('/api/v1/commands/chats/chat-confirm-hypa-truncation')) {
+        const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : {}
+        acknowledgementBodies.push(body)
+        const baseRevision = typeof body.baseRevision === 'number' ? body.baseRevision : contextCommandRevision
+        contextCommandRevision = Math.max(contextCommandRevision, baseRevision) + 1
+        return jsonResponse({
+          revision: contextCommandRevision,
+          event: {
+            type: 'chat.updated',
+            revision: contextCommandRevision,
+            resource: 'chatRow',
+            id: chat.id,
+            parentId: character.chaId,
+          },
+          chatId: chat.id,
+          selectedChatId: chat.id,
+        })
+      }
+      if (url.endsWith('/api/v1/generate/chat')) {
+        generationRequests += 1
+        if (generationRequests === 1) {
+          return jsonResponse(
+            {
+              error: 'hypa_context_truncation_confirmation_required',
+              message: 'Confirmation is required before omitting older chat history without Hypa Memory.',
+              chatId: chat.id,
+            },
+            409,
+          )
+        }
+        return serverChatFetch(input, init)
+      }
+      return serverCompletionFetch(input, init)
+    })
+
+    try {
+      await expect(chatModule.sendChat(-1)).resolves.toBe(true)
+
+      expect(alertState.confirmations).toEqual([language.hypaContextTruncationConfirm])
+      expect(acknowledgementBodies).toEqual([
+        {
+          baseRevision: expect.any(Number),
+          patch: { hypaContextTruncationAcknowledged: true },
+          select: false,
+        },
+      ])
+      expect(chat.hypaContextTruncationAcknowledged).toBe(true)
+      expect(generationRequests).toBe(2)
+      expect(getServerChatCalls()).toHaveLength(1)
+      expect(getServerChatCalls()[0].clientCapabilities).toMatchObject({
+        hypaContextTruncationConfirmation: true,
+      })
+      expect(chat.message.at(-1)?.data).toBe('confirmed reply')
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('cancels cleanly without persisting when non-Hypa truncation is declined', async () => {
+    await seedEcho()
+    const character = testDatabaseState.db.characters[0]
+    const chat = character.chats[0]
+    chat.id = 'chat-decline-hypa-truncation'
+    alertState.confirmationResult = false
+    let generationRequests = 0
+    let acknowledgementRequests = 0
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (/\/api\/v1\/commands\/characters\/[^/]+$/.test(url)) {
+        return contextCommandSuccessResponse(init)
+      }
+      if (url.includes('/api/v1/commands/chats/')) {
+        acknowledgementRequests += 1
+        return jsonResponse({ error: 'unexpected acknowledgement' }, 500)
+      }
+      if (url.endsWith('/api/v1/generate/chat')) {
+        generationRequests += 1
+        return jsonResponse(
+          {
+            error: 'hypa_context_truncation_confirmation_required',
+            message: 'Confirmation is required before omitting older chat history without Hypa Memory.',
+            chatId: chat.id,
+          },
+          409,
+        )
+      }
+      return serverCompletionFetch(input, init)
+    })
+
+    await expect(chatModule.sendChat(-1)).resolves.toBe(false)
+
+    expect(alertState.confirmations).toEqual([language.hypaContextTruncationConfirm])
+    expect(generationRequests).toBe(1)
+    expect(acknowledgementRequests).toBe(0)
+    expect(chat.hypaContextTruncationAcknowledged).toBeUndefined()
+    expect(alertState.errors).toEqual([])
   })
 
   it('routes send through /chat assembly, applies patches, and dispatches locally', async () => {
@@ -717,6 +1141,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
 
     const ok = await chatModule.sendChat(-1)
     expect(ok).toBe(true)
+    expect(messageCompletionSoundState.play).toHaveBeenCalledOnce()
 
     expect(getServerChatCalls()[0]).toMatchObject({
       mode: 'send',
@@ -731,6 +1156,66 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       inputTokens: 7,
       outputTokens: 50,
     })
+  })
+
+  it('plays the completion sound when a successful generation finishes after navigation', async () => {
+    await seedEcho()
+    const backgroundChatId = testDatabaseState.db.characters[0].chats[0].id!
+    setServerChatDispatchResult('background reply', {
+      model: 'echo_model',
+      generationId: 'uuid-background',
+      inputTokens: 7,
+      outputTokens: 50,
+      maxContext: 4000,
+    })
+    let releaseGenerationResponse: () => void = () => {
+      throw new Error('generation response was not requested')
+    }
+    const generationResponseGate = new Promise<void>((resolve) => {
+      releaseGenerationResponse = resolve
+    })
+    let markGenerationRequested: () => void = () => {
+      throw new Error('generation request observer was not initialized')
+    }
+    const generationRequested = new Promise<void>((resolve) => {
+      markGenerationRequested = resolve
+    })
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (url.endsWith('/api/v1/generate/chat')) {
+        markGenerationRequested()
+        await generationResponseGate
+      }
+      return serverChatWithContextFetch(input, init)
+    })
+
+    const sendPromise = chatModule.sendChat(-1)
+    await generationRequested
+    selectedCharID.set(-1)
+    releaseGenerationResponse()
+
+    await expect(sendPromise).resolves.toBe(true)
+    expect(messageCompletionSoundState.play).toHaveBeenCalledOnce()
+    expect(get(unreadChatIds)).toEqual(new Set([backgroundChatId]))
+  })
+
+  it('does not mark a completed reply unread while its chat is visible', async () => {
+    await seedEcho()
+    const character = testDatabaseState.db.characters[0]
+    const chatId = character.chats[0].id!
+    setVisibleChat(chatId)
+    setServerChatDispatchResult('visible reply', {
+      model: 'echo_model',
+      generationId: 'uuid-visible',
+      inputTokens: 7,
+      outputTokens: 50,
+      maxContext: 4000,
+    })
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
+
+    await expect(chatModule.sendChat(-1)).resolves.toBe(true)
+
+    expect(get(unreadChatIds)).toEqual(new Set())
   })
 
   it('streams a server-dispatched send without receiving assembled prompt rows', async () => {
@@ -750,8 +1235,43 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     expect(testDatabaseState.db.characters[0].chats[0].message.at(-1)?.data).toBe('metadata-only reply')
   })
 
-  it('allows one server-requested resend for a root send', async () => {
+  it('dispatches an empty send from an assistant tail when say-nothing is disabled', async () => {
     await seedEcho()
+    testDatabaseState.db.useSayNothing = false
+    const chat = testDatabaseState.db.characters[0].chats[0]
+    chat.message.push({ role: 'char', data: 'first reply', chatId: 'msg-assistant-1' })
+    setServerChatDispatchResult(
+      'second reply',
+      {
+        model: 'echo_model',
+        generationId: 'uuid-empty-send',
+        inputTokens: 7,
+        outputTokens: 50,
+        maxContext: 4000,
+      },
+      'uuid-empty-send',
+    )
+    vi.stubGlobal('fetch', serverChatWithContextFetch)
+
+    await expect(chatModule.sendChat(-1)).resolves.toBe(true)
+
+    expect(getServerChatCalls()).toHaveLength(1)
+    expect(getServerChatCalls()[0]).toMatchObject({
+      mode: 'send',
+      userMessage: '',
+      emptySend: true,
+      syntheticSayNothing: false,
+    })
+    expect(chat.message.map(({ role, data }) => ({ role, data }))).toEqual([
+      { role: 'user', data: 'ping' },
+      { role: 'char', data: 'first reply' },
+      { role: 'char', data: 'second reply' },
+    ])
+  })
+
+  it('plain-resends a sendAIprompt request without a say-nothing row', async () => {
+    await seedEcho()
+    testDatabaseState.db.useSayNothing = true
     setServerChatPrompt(
       [{ role: 'user', content: 'server-only prompt' }],
       { promptText: 'SERVER PROMPT', inputTokens: 11, outputTokens: 22 },
@@ -766,13 +1286,46 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       stageTiming: { stage1: 1, stage2: 0, stage3: 0, stage4: 0 },
     })
     setServerChatPostGenerationQueue([{ resendChat: true }, {}])
-    vi.stubGlobal('fetch', serverChatWithContextFetch)
+    let chatPosts = 0
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (url.endsWith('/api/v1/generate/chat') && (init?.method ?? 'GET') === 'POST') {
+        chatPosts += 1
+        if (chatPosts === 2) {
+          setServerChatDispatchResult(
+            'resend reply',
+            {
+              model: 'echo_model',
+              generationId: 'uuid-1',
+              inputTokens: 7,
+              outputTokens: 50,
+              maxContext: 4000,
+              stageTiming: { stage1: 1, stage2: 0, stage3: 0, stage4: 0 },
+            },
+            'uuid-1',
+          )
+        }
+      }
+      return serverChatWithContextFetch(input, init)
+    })
 
     const ok = await chatModule.sendChat(-1)
 
     expect(ok).toBe(true)
     expect(getServerChatCalls()).toHaveLength(2)
+    expect(getServerChatCalls()[1]).toMatchObject({
+      mode: 'send',
+      userMessage: '',
+      emptySend: true,
+      syntheticSayNothing: false,
+    })
     expect(getServerCompletionCalls()).toEqual([])
+    expect(messageCompletionSoundState.play).toHaveBeenCalledOnce()
+    expect(testDatabaseState.db.characters[0].chats[0].message.map(({ role, data }) => ({ role, data }))).toEqual([
+      { role: 'user', data: 'ping' },
+      { role: 'char', data: 'fixture echo reply' },
+      { role: 'char', data: 'resend reply' },
+    ])
   })
 
   it('caps repeated server-requested resend cycles for a root send', async () => {
@@ -798,6 +1351,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     expect(ok).toBe(false)
     expect(getServerChatCalls()).toHaveLength(2)
     expect(getServerCompletionCalls()).toEqual([])
+    expect(messageCompletionSoundState.play).not.toHaveBeenCalled()
   })
 
   it('applies stop-trigger patches before surfacing the server assembly error', async () => {
@@ -829,11 +1383,40 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
 
     const ok = await chatModule.sendChat(-1)
     expect(ok).toBe(false)
+    expect(messageCompletionSoundState.play).not.toHaveBeenCalled()
 
     const chat = testDatabaseState.db.characters[0].chats[0]
     expect(chat.scriptstate?.$mood).toBe('bright')
     expect(chat.message.map((m) => m.data)).toEqual(['patched ping', expect.stringContaining('mutated before stop')])
     expect(getServerCompletionCalls()).toEqual([])
+  })
+
+  it('reports generation-in-progress as a typed send failure', async () => {
+    await seedEcho()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+        if (url.endsWith('/api/v1/generate/chat')) {
+          return jsonResponse(
+            {
+              error: 'generation_in_progress',
+              reason: 'A generation is already running for this chat.',
+            },
+            409,
+          )
+        }
+        return serverChatWithContextFetch(input, init)
+      }) as unknown as typeof fetch,
+    )
+    const onFailure = vi.fn()
+
+    await expect(chatModule.sendChat(-1, { onFailure })).resolves.toBe(false)
+
+    expect(onFailure).toHaveBeenCalledOnce()
+    expect(onFailure).toHaveBeenCalledWith({ cause: 'generation_in_progress' })
+    expect(alertState.errors).toContain('A generation is already running for this chat.')
+    expect(get(doingChat)).toBe(false)
   })
 
   it('does not enter the local assembler for the supported subset (server-mandatory)', async () => {
@@ -890,7 +1473,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     expect(getServerChatCalls()).toHaveLength(0)
   })
 
-  it('routes a non-interactive Lua trigger to /chat (slice 3b: the VM runs editRequest server-side)', async () => {
+  it('routes a non-interactive Lua trigger to /chat for server-side editRequest', async () => {
     await seedEcho()
     // Armed: a non-interactive Lua char is now in-subset (server-mandatory), so the
     // local assembler must never be entered.

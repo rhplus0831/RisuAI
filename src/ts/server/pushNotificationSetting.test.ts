@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 
 vi.mock('./pushNotifications', () => ({
@@ -11,12 +11,15 @@ vi.mock('./pushNotifications', () => ({
     localInspectionPending: false,
     failures: [],
   })),
+  requestChatCompletionNotificationPermission: vi.fn(async () => 'granted'),
   enableChatCompletionPushNotifications: vi.fn(async () => ({ status: 'enabled', endpoint: 'test' })),
 }))
 
-vi.mock('./settingsBridge.svelte', () => ({
+vi.mock('./settingsOwner.svelte', () => ({
   persistServerBackedSettingsPatchWithSettlement: vi.fn(async () => ({ status: 'accepted' })),
 }))
+
+vi.mock('./activeWriterSession', () => ({ isWriterAccessLost: () => false }))
 
 import {
   createPushNotificationCoordinator,
@@ -24,14 +27,9 @@ import {
   createPushNotificationSettingReconciler,
 } from './pushNotificationSetting'
 import type { PushNotificationRetryStorage } from './pushNotificationRetryStorage'
-import type {
-  ServerBackedSettingsFinalSettlement,
-  ServerBackedSettingsPersistenceReceipt,
-} from './settingsBridge.svelte'
-import {
-  applySettingsRuntimeProjectionEffects,
-  setSettingsRuntimeProjectionHook,
-} from './settingsRuntimeProjectionHooks'
+import { persistServerBackedSettingsPatchWithSettlement } from './settingsOwner.svelte'
+import type { CreatePushNotificationCoordinatorDependencies } from './pushNotificationSetting'
+import type { BrowserLifecycleRecoveryTrigger } from './lifecycleRecovery'
 
 interface Deferred<T> {
   promise: Promise<T>
@@ -82,33 +80,24 @@ function disabledResult() {
   }
 }
 
-function controlledQueuedReceipt(mutationId = 'settings-notification-false') {
-  const listeners = new Set<(settlement: ServerBackedSettingsFinalSettlement) => void>()
-  const final = deferred<ServerBackedSettingsFinalSettlement>()
-  let settled: ServerBackedSettingsFinalSettlement | null = null
-  const receipt: ServerBackedSettingsPersistenceReceipt = {
-    status: 'queued',
-    mutationId,
-    settlement: final.promise,
-    subscribeSettlement(listener) {
-      if (settled) {
-        listener(settled)
-        return () => {}
-      }
-      listeners.add(listener)
-      return () => listeners.delete(listener)
-    },
-  }
-  return {
-    receipt,
-    settle(settlement: ServerBackedSettingsFinalSettlement) {
-      settled = settlement
-      for (const listener of [...listeners]) listener(settlement)
-      listeners.clear()
-      final.resolve(settlement)
-    },
-  }
+const coordinators: ReturnType<typeof createPushNotificationCoordinator>[] = []
+
+function makeCoordinator(dependencies: CreatePushNotificationCoordinatorDependencies = {}) {
+  const coordinator = createPushNotificationCoordinator({
+    retryStorage: memoryRetryStorage().storage,
+    subscribeRecovery: () => () => {},
+    ...dependencies,
+  })
+  coordinators.push(coordinator)
+  return coordinator
 }
+
+beforeEach(() => vi.useFakeTimers())
+afterEach(() => {
+  for (const coordinator of coordinators.splice(0)) coordinator.dispose()
+  vi.useRealTimers()
+  vi.clearAllMocks()
+})
 
 describe('push notification setting reconciliation', () => {
   it('coalesces duplicate requests and applies the latest state after an in-flight operation', async () => {
@@ -188,7 +177,6 @@ describe('push notification setting reconciliation', () => {
       status: 'fallback' as const,
       reason: 'server-registration-failed' as const,
       endpoint,
-      localCleanup: 'succeeded' as const,
     }))
     const disable = vi
       .fn()
@@ -218,362 +206,326 @@ describe('push notification setting reconciliation', () => {
     await applyDesiredState.apply(false)
 
     expect(disable.mock.calls).toEqual([
-      [[endpoint], false],
+      [[], false],
       [[endpoint], false],
     ])
   })
 
-  it.each([
+  const setupFailures = [
     { status: 'permission-denied' as const },
-    { status: 'fallback' as const, reason: 'notification-unavailable' as const },
-    { status: 'fallback' as const, reason: 'permission-default' as const },
-    { status: 'fallback' as const, reason: 'service-worker-unavailable' as const },
-    { status: 'fallback' as const, reason: 'push-unavailable' as const },
-    { status: 'fallback' as const, reason: 'vapid-unavailable' as const },
-    { status: 'fallback' as const, reason: 'subscription-failed' as const },
-    {
-      status: 'fallback' as const,
-      reason: 'server-registration-failed' as const,
-      endpoint: 'https://push.example.test/unregistered',
-      localCleanup: 'succeeded' as const,
-    },
-  ])('persists false for terminal enable result $status $reason', async (enableResult) => {
-    const retryStorage = memoryRetryStorage()
-    const persistSettingsPatch = vi.fn(async () => ({ status: 'accepted' as const }))
-    const coordinator = createPushNotificationCoordinator({
-      enablePushNotifications: vi.fn(async () => enableResult),
-      disablePushNotifications: vi.fn(async () => disabledResult()),
-      persistSettingsPatch,
-      retryStorage: retryStorage.storage,
-    })
+    ...(
+      [
+        'notification-unavailable',
+        'permission-default',
+        'service-worker-unavailable',
+        'service-worker-failed',
+        'push-unavailable',
+        'vapid-unavailable',
+        'subscription-failed',
+        'server-registration-failed',
+      ] as const
+    ).map((reason) => ({ status: 'fallback' as const, reason })),
+  ]
 
-    await coordinator.reconcile(true)
-
-    expect(persistSettingsPatch).toHaveBeenCalledWith({ notification: false })
-    expect(get(coordinator.state)).toMatchObject({
-      setupFailure: enableResult,
-      compensation: 'accepted',
-    })
-  })
-
-  it.each(['accepted', 'queued', 'failed'] as const)(
-    'centrally exposes a %s exact false-setting compensation receipt',
-    async (compensation) => {
-      const retryStorage = memoryRetryStorage()
-      const queued = controlledQueuedReceipt()
-      const persistSettingsPatch = vi.fn(
-        async (): Promise<ServerBackedSettingsPersistenceReceipt> =>
-          compensation === 'queued' ? queued.receipt : { status: compensation },
-      )
-      const coordinator = createPushNotificationCoordinator({
-        enablePushNotifications: vi.fn(async () => ({
-          status: 'fallback' as const,
-          reason: 'vapid-unavailable' as const,
-        })),
-        disablePushNotifications: vi.fn(async () => disabledResult()),
-        persistSettingsPatch,
-        retryStorage: retryStorage.storage,
-      })
-
-      const outcome = await coordinator.reconcile(true)
-
-      expect(persistSettingsPatch).toHaveBeenCalledOnce()
-      expect(persistSettingsPatch).toHaveBeenCalledWith({ notification: false })
-      expect(outcome).toMatchObject({
-        status: 'applied',
-        enabled: true,
-        result: { status: 'fallback', reason: 'vapid-unavailable' },
-        compensation,
-        cleanup: { status: 'disabled' },
-      })
-      expect(get(coordinator.state)).toMatchObject({
-        phase: 'idle',
-        setupFailure: { status: 'fallback', reason: 'vapid-unavailable' },
-        compensation,
-        cleanup: { status: 'disabled' },
-      })
-    },
-  )
-
-  it('does not overwrite a queued compensation that settled before subscription', async () => {
-    const retryStorage = memoryRetryStorage()
-    const queued = controlledQueuedReceipt()
-    queued.settle('accepted')
-    const coordinator = createPushNotificationCoordinator({
-      enablePushNotifications: vi.fn(async () => ({ status: 'permission-denied' as const })),
-      disablePushNotifications: vi.fn(async () => disabledResult()),
-      persistSettingsPatch: vi.fn(async () => queued.receipt),
-      retryStorage: retryStorage.storage,
-    })
-
-    const outcome = await coordinator.reconcile(true)
-
-    expect(outcome).toMatchObject({ compensation: 'queued' })
-    expect(get(coordinator.state).compensation).toBe('accepted')
-  })
-
-  it.each(['accepted', 'failed'] as const)(
-    'updates queued compensation after replay is finally %s',
-    async (finalSettlement) => {
-      const retryStorage = memoryRetryStorage()
-      const queued = controlledQueuedReceipt()
-      const enablePushNotifications = vi.fn(async () => ({ status: 'permission-denied' as const }))
-      const coordinator = createPushNotificationCoordinator({
-        enablePushNotifications,
-        disablePushNotifications: vi.fn(async () => disabledResult()),
-        persistSettingsPatch: vi.fn(async () => queued.receipt),
-        retryStorage: retryStorage.storage,
-      })
-
-      await coordinator.reconcile(true)
-      expect(get(coordinator.state).compensation).toBe('queued')
-
-      queued.settle(finalSettlement)
-      const rollbackProjection = finalSettlement === 'failed' ? await coordinator.reconcile(true) : undefined
-
-      expect(get(coordinator.state).compensation).toBe(finalSettlement)
-      if (finalSettlement === 'failed') {
-        expect(rollbackProjection).toEqual({ status: 'superseded', enabled: true })
-        expect(enablePushNotifications).toHaveBeenCalledOnce()
-      }
-    },
-  )
-
-  it('keeps a failed false-setting compensation visibly retryable', async () => {
-    const retryStorage = memoryRetryStorage()
-    const persistSettingsPatch = vi
-      .fn()
-      .mockResolvedValueOnce({ status: 'failed' })
-      .mockResolvedValueOnce({ status: 'accepted' })
-    const coordinator = createPushNotificationCoordinator({
-      enablePushNotifications: vi.fn(async () => ({ status: 'permission-denied' as const })),
-      disablePushNotifications: vi.fn(async () => disabledResult()),
-      persistSettingsPatch,
-      retryStorage: retryStorage.storage,
-    })
-
-    await coordinator.reconcile(true)
-    expect(get(coordinator.state).compensation).toBe('failed')
-
-    await expect(coordinator.retryCompensation()).resolves.toBe('accepted')
-
-    expect(persistSettingsPatch.mock.calls).toEqual([[{ notification: false }], [{ notification: false }]])
-    expect(get(coordinator.state)).toMatchObject({
-      phase: 'idle',
-      setupFailure: { status: 'permission-denied' },
-      compensation: 'accepted',
-      cleanup: { status: 'disabled' },
-    })
-  })
-
-  it('does not loop enablement when failed compensation rolls the setting projection back to true', async () => {
-    const retryStorage = memoryRetryStorage()
-    const enablePushNotifications = vi.fn(async () => ({ status: 'permission-denied' as const }))
-    const projectionOutcomes: unknown[] = []
-    let projectedNotification = true
-    let projectionChain = Promise.resolve()
-    let coordinator!: ReturnType<typeof createPushNotificationCoordinator>
-    const persistSettingsPatch = vi.fn(async () => {
-      projectedNotification = false
-      applySettingsRuntimeProjectionEffects(['notification'])
-      await projectionChain
-      projectedNotification = true
-      applySettingsRuntimeProjectionEffects(['notification'])
-      await projectionChain
-      return { status: 'failed' as const }
-    })
-    coordinator = createPushNotificationCoordinator({
-      enablePushNotifications,
-      disablePushNotifications: vi.fn(async () => disabledResult()),
-      persistSettingsPatch,
-      retryStorage: retryStorage.storage,
-    })
-    setSettingsRuntimeProjectionHook((keys) => {
-      if (!keys.includes('notification')) return
-      projectionChain = projectionChain.then(async () => {
-        projectionOutcomes.push(await coordinator.reconcile(projectedNotification))
-      })
-    })
-
-    try {
-      await coordinator.reconcile(true)
-    } finally {
-      setSettingsRuntimeProjectionHook(null)
-    }
-
-    expect(projectionOutcomes).toEqual([
-      expect.objectContaining({ status: 'applied', enabled: false }),
-      { status: 'superseded', enabled: true },
-    ])
-    expect(enablePushNotifications).toHaveBeenCalledOnce()
-    expect(persistSettingsPatch).toHaveBeenCalledOnce()
-    expect(get(coordinator.state)).toMatchObject({
-      phase: 'idle',
-      compensation: 'failed',
-      cleanup: { status: 'disabled' },
-    })
-  })
-
-  it('hydrates and automatically retries a failed DELETE endpoint after reload', async () => {
-    const endpoint = 'https://push.example.test/reload-retry'
-    const retryStorage = memoryRetryStorage()
-    const firstDisable = vi.fn(async () => ({
-      status: 'partial' as const,
-      subscriptionFound: false,
-      localUnsubscribed: null,
-      serverDeleted: false,
-      pendingEndpoints: [endpoint],
-      localInspectionPending: false,
-      failures: [{ step: 'server-deletion' as const, endpoint }],
-    }))
-    const firstCoordinator = createPushNotificationCoordinator({
-      enablePushNotifications: vi.fn(async () => ({
-        status: 'fallback' as const,
-        reason: 'server-registration-failed' as const,
-        endpoint,
-        localCleanup: 'succeeded' as const,
-      })),
-      disablePushNotifications: firstDisable,
-      persistSettingsPatch: vi.fn(async () => ({ status: 'accepted' as const })),
-      retryStorage: retryStorage.storage,
-    })
-
-    await firstCoordinator.reconcile(true)
-
-    expect(retryStorage.persisted()).toEqual([endpoint])
-    expect(get(firstCoordinator.state)).toMatchObject({
-      cleanup: { status: 'partial' },
-      pendingEndpoints: [endpoint],
-    })
-
-    const reloadedDisable = vi.fn(async () => ({
-      ...disabledResult(),
-      serverDeleted: true,
-    }))
-    const reloadedCoordinator = createPushNotificationCoordinator({
-      enablePushNotifications: vi.fn(async () => ({ status: 'enabled' as const, endpoint: 'unused' })),
-      disablePushNotifications: reloadedDisable,
-      persistSettingsPatch: vi.fn(async () => ({ status: 'accepted' as const })),
-      retryStorage: retryStorage.storage,
-    })
-
-    await reloadedCoordinator.initialize()
-
-    expect(reloadedDisable).toHaveBeenCalledOnce()
-    expect(reloadedDisable).toHaveBeenCalledWith([endpoint], false)
-    expect(retryStorage.persisted()).toEqual([])
-    expect(get(reloadedCoordinator.state)).toMatchObject({
-      phase: 'idle',
-      cleanup: { status: 'disabled', serverDeleted: true },
-      pendingEndpoints: [],
-      localInspectionPending: false,
-    })
-  })
-
-  it('retains an incomplete local inspection across reloads until it succeeds', async () => {
-    const retryStorage = memoryRetryStorage([], true)
-    const incompleteDisable = vi.fn(async () => ({
-      status: 'partial' as const,
-      subscriptionFound: false,
-      localUnsubscribed: null,
-      serverDeleted: null,
-      pendingEndpoints: [],
-      localInspectionPending: true,
-      failures: [{ step: 'service-worker' as const }],
-    }))
-    const firstCoordinator = createPushNotificationCoordinator({
-      enablePushNotifications: vi.fn(async () => ({ status: 'enabled' as const, endpoint: 'unused' })),
-      disablePushNotifications: incompleteDisable,
-      persistSettingsPatch: vi.fn(async () => ({ status: 'accepted' as const })),
-      retryStorage: retryStorage.storage,
-    })
-
-    await firstCoordinator.initialize()
-
-    expect(incompleteDisable).toHaveBeenCalledWith([], true)
-    expect(retryStorage.inspectionPending()).toBe(true)
-    expect(get(firstCoordinator.state)).toMatchObject({
-      cleanup: { status: 'partial' },
-      localInspectionPending: true,
-    })
-
-    const completedDisable = vi.fn(async () => disabledResult())
-    const reloadedCoordinator = createPushNotificationCoordinator({
-      enablePushNotifications: vi.fn(async () => ({ status: 'enabled' as const, endpoint: 'unused' })),
-      disablePushNotifications: completedDisable,
-      persistSettingsPatch: vi.fn(async () => ({ status: 'accepted' as const })),
-      retryStorage: retryStorage.storage,
-    })
-
-    await reloadedCoordinator.initialize()
-
-    expect(completedDisable).toHaveBeenCalledWith([], true)
-    expect(retryStorage.inspectionPending()).toBe(false)
-    expect(get(reloadedCoordinator.state)).toMatchObject({
-      cleanup: { status: 'disabled' },
-      localInspectionPending: false,
-    })
-  })
-
-  it('retries device-ledger storage without changing the push subscription state', async () => {
-    const storageFailure = new Error('storage unavailable')
-    const retryStorage: PushNotificationRetryStorage = {
-      loadPendingCleanup: vi
-        .fn()
-        .mockRejectedValueOnce(storageFailure)
-        .mockResolvedValueOnce({ pendingEndpoints: [], localInspectionPending: false }),
-      savePendingCleanup: vi.fn(async () => undefined),
-    }
-    const enablePushNotifications = vi.fn(async () => ({ status: 'enabled' as const, endpoint: 'unused' }))
+  it.each(setupFailures)('preserves enabled preference and subscriptions after $status $reason', async (failure) => {
     const disablePushNotifications = vi.fn(async () => disabledResult())
-    const coordinator = createPushNotificationCoordinator({
-      enablePushNotifications,
+    const coordinator = makeCoordinator({
+      enablePushNotifications: vi.fn(async () => failure),
       disablePushNotifications,
-      persistSettingsPatch: vi.fn(async () => ({ status: 'accepted' as const })),
-      retryStorage,
     })
-
-    await coordinator.initialize()
-    expect(get(coordinator.state).retryStorageError).toBe(storageFailure)
-
-    await coordinator.retryStorage()
-
-    expect(retryStorage.loadPendingCleanup).toHaveBeenCalledTimes(2)
-    expect(get(coordinator.state)).toMatchObject({ phase: 'idle', retryStorageError: null })
-    expect(enablePushNotifications).not.toHaveBeenCalled()
+    await coordinator.reconcile(true)
+    expect(persistServerBackedSettingsPatchWithSettlement).not.toHaveBeenCalled()
     expect(disablePushNotifications).not.toHaveBeenCalled()
+    expect(get(coordinator.state)).toMatchObject({ desiredEnabled: true, setupFailure: failure })
   })
 
-  it('does not compensate a stale enable failure after a newer disable request', async () => {
-    const retryStorage = memoryRetryStorage()
-    const enable = deferred<{ status: 'fallback'; reason: 'vapid-unavailable' }>()
-    const persistSettingsPatch = vi.fn(async () => ({ status: 'accepted' as const }))
-    const disablePushNotifications = vi.fn(async () => disabledResult())
-    const coordinator = createPushNotificationCoordinator({
-      enablePushNotifications: vi.fn(() => enable.promise),
-      disablePushNotifications,
-      persistSettingsPatch,
-      retryStorage: retryStorage.storage,
-    })
-
-    const staleEnable = coordinator.reconcile(true)
-    await vi.waitFor(() => expect(get(coordinator.state).phase).toBe('enabling'))
-    const latestDisable = coordinator.reconcile(false)
-    enable.resolve({ status: 'fallback', reason: 'vapid-unavailable' })
-
-    await expect(staleEnable).resolves.toEqual({ status: 'superseded', enabled: true })
-    await expect(latestDisable).resolves.toMatchObject({
-      status: 'applied',
-      enabled: false,
-      result: { status: 'disabled' },
-    })
-    expect(persistSettingsPatch).not.toHaveBeenCalled()
-    expect(disablePushNotifications).toHaveBeenCalledOnce()
+  it('backs off temporary failures and clears the warning only after recovery', async () => {
+    const recovered = deferred<{ status: 'enabled'; endpoint: string }>()
+    const failure = { status: 'fallback' as const, reason: 'vapid-unavailable' as const }
+    const enable = vi
+      .fn()
+      .mockResolvedValueOnce(failure)
+      .mockResolvedValueOnce(failure)
+      .mockReturnValueOnce(recovered.promise)
+    const permission = vi.fn()
+    const coordinator = makeCoordinator({ enablePushNotifications: enable, requestPermission: permission })
+    await coordinator.reconcile(true)
+    expect(get(coordinator.state).nextRetryAt).toBe(Date.now() + 5_000)
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(enable).toHaveBeenCalledTimes(2)
+    expect(get(coordinator.state).nextRetryAt).toBe(Date.now() + 10_000)
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(get(coordinator.state)).toMatchObject({ phase: 'enabling', setupFailure: failure, desiredEnabled: true })
+    recovered.resolve({ status: 'enabled', endpoint: 'recovered' })
+    await vi.advanceTimersByTimeAsync(0)
     expect(get(coordinator.state)).toMatchObject({
       phase: 'idle',
       setupFailure: null,
-      compensation: null,
-      cleanup: { status: 'disabled' },
+      nextRetryAt: null,
+      desiredEnabled: true,
     })
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(enable).toHaveBeenCalledTimes(3)
+    expect(permission).not.toHaveBeenCalled()
+  })
+
+  it('caps repeated retries at one minute', async () => {
+    const coordinator = makeCoordinator({
+      enablePushNotifications: vi.fn(async () => ({
+        status: 'fallback' as const,
+        reason: 'subscription-failed' as const,
+      })),
+    })
+    await coordinator.reconcile(true)
+    for (const delay of [5_000, 10_000, 20_000, 40_000, 60_000, 60_000]) {
+      expect(get(coordinator.state).nextRetryAt).toBe(Date.now() + delay)
+      await vi.advanceTimersByTimeAsync(delay)
+    }
+  })
+
+  it.each([
+    'permission-default',
+    'notification-unavailable',
+    'push-unavailable',
+    'service-worker-unavailable',
+  ] as const)('waits for user action or a lifecycle check for %s', async (reason) => {
+    const enable = vi.fn(async () => ({ status: 'fallback' as const, reason }))
+    const permission = vi.fn()
+    const coordinator = makeCoordinator({ enablePushNotifications: enable, requestPermission: permission })
+    await coordinator.reconcile(true)
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(enable).toHaveBeenCalledOnce()
+    expect(permission).not.toHaveBeenCalled()
+    expect(get(coordinator.state).nextRetryAt).toBeNull()
+  })
+
+  it('requests permission immediately on user retry, coalesces projections and forces fresh setup', async () => {
+    const permission = deferred<void>()
+    const requestPermission = vi.fn(() => permission.promise)
+    const enable = vi
+      .fn()
+      .mockResolvedValueOnce({ status: 'permission-denied' })
+      .mockResolvedValueOnce({ status: 'enabled', endpoint: 'restored' })
+    const coordinator = makeCoordinator({ enablePushNotifications: enable, requestPermission })
+    await coordinator.reconcile(true)
+    const retry = coordinator.retrySetup()
+    expect(requestPermission).toHaveBeenCalledOnce()
+    expect(get(coordinator.state).phase).toBe('enabling')
+    expect(coordinator.reconcile(true)).toBe(retry)
+    expect(get(coordinator.state).setupFailure).toEqual({ status: 'permission-denied' })
+    permission.resolve()
+    await retry
+    expect(enable).toHaveBeenCalledTimes(2)
+    expect(get(coordinator.state).setupFailure).toBeNull()
+  })
+
+  it('opens an explicit permission request before startup hydration finishes', async () => {
+    const hydration = deferred<{ pendingEndpoints: string[]; localInspectionPending: boolean }>()
+    const requestPermission = vi.fn(async () => 'granted')
+    const coordinator = makeCoordinator({
+      requestPermission,
+      retryStorage: {
+        loadPendingCleanup: () => hydration.promise,
+        savePendingCleanup: vi.fn(async () => {}),
+      },
+    })
+    const enabling = coordinator.reconcile(true, { requestPermission: true })
+    expect(requestPermission).toHaveBeenCalledOnce()
+    hydration.resolve({ pendingEndpoints: [], localInspectionPending: false })
+    await enabling
+  })
+
+  it('recovers on online and foreground signals without permission prompts', async () => {
+    let onRecovery!: (trigger: BrowserLifecycleRecoveryTrigger) => void
+    let online = false
+    const enable = vi
+      .fn()
+      .mockResolvedValueOnce({ status: 'fallback', reason: 'vapid-unavailable' })
+      .mockResolvedValueOnce({ status: 'permission-denied' })
+      .mockResolvedValue({ status: 'enabled', endpoint: 'restored' })
+    const requestPermission = vi.fn()
+    const coordinator = makeCoordinator({
+      enablePushNotifications: enable,
+      requestPermission,
+      isOnline: () => online,
+      subscribeRecovery: (listener) => {
+        onRecovery = listener
+        return () => {}
+      },
+    })
+    await coordinator.reconcile(true)
+    expect(get(coordinator.state).nextRetryAt).toBeNull()
+    online = true
+    onRecovery('online')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(get(coordinator.state).setupFailure).toEqual({ status: 'permission-denied' })
+    await vi.advanceTimersByTimeAsync(1_000)
+    onRecovery('visibility')
+    onRecovery('focus')
+    onRecovery('pageshow')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(enable).toHaveBeenCalledTimes(3)
+    expect(requestPermission).not.toHaveBeenCalled()
+    expect(get(coordinator.state).setupFailure).toBeNull()
+  })
+
+  it('cancels retry and warning on intentional disable', async () => {
+    const enable = vi.fn(async () => ({ status: 'fallback' as const, reason: 'server-registration-failed' as const }))
+    const disable = vi.fn(async () => disabledResult())
+    const coordinator = makeCoordinator({ enablePushNotifications: enable, disablePushNotifications: disable })
+    await coordinator.reconcile(true)
+    await coordinator.reconcile(false)
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(enable).toHaveBeenCalledOnce()
+    expect(disable).toHaveBeenCalledOnce()
+    expect(get(coordinator.state)).toMatchObject({ desiredEnabled: false, setupFailure: null, nextRetryAt: null })
+    await expect(coordinator.retrySetup()).resolves.toMatchObject({ status: 'superseded' })
+  })
+
+  it('does not let a late failed retry override a newer disable', async () => {
+    const pending = deferred<{ status: 'fallback'; reason: 'subscription-failed' }>()
+    const enable = vi
+      .fn()
+      .mockResolvedValueOnce({ status: 'fallback', reason: 'subscription-failed' })
+      .mockReturnValueOnce(pending.promise)
+    const disable = vi.fn(async () => disabledResult())
+    const coordinator = makeCoordinator({ enablePushNotifications: enable, disablePushNotifications: disable })
+    await coordinator.reconcile(true)
+    await vi.advanceTimersByTimeAsync(5_000)
+    const disabling = coordinator.reconcile(false)
+    pending.resolve({ status: 'fallback', reason: 'subscription-failed' })
+    await disabling
+    expect(get(coordinator.state)).toMatchObject({ desiredEnabled: false, setupFailure: null, nextRetryAt: null })
+    expect(disable).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(enable).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops automatic retry after writer access is lost', async () => {
+    let canRetry = true
+    const enable = vi.fn(async () => ({ status: 'fallback' as const, reason: 'vapid-unavailable' as const }))
+    const coordinator = makeCoordinator({ enablePushNotifications: enable, canRetry: () => canRetry })
+    await coordinator.reconcile(true)
+    canRetry = false
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(enable).toHaveBeenCalledOnce()
+    expect(get(coordinator.state).nextRetryAt).toBeNull()
+  })
+
+  it('disposes retries and listeners, ignores late results, and revalidates on remount', async () => {
+    const pending = deferred<{ status: 'fallback'; reason: 'subscription-failed' }>()
+    const enable = vi
+      .fn()
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValue({ status: 'enabled', endpoint: 'remount' })
+    const stopRecovery = vi.fn()
+    const coordinator = makeCoordinator({ enablePushNotifications: enable, subscribeRecovery: () => stopRecovery })
+    const enabling = coordinator.reconcile(true)
+    await vi.advanceTimersByTimeAsync(0)
+    coordinator.dispose()
+    coordinator.dispose()
+    pending.resolve({ status: 'fallback', reason: 'subscription-failed' })
+    await expect(enabling).resolves.toMatchObject({ status: 'superseded' })
+    expect(stopRecovery).toHaveBeenCalledOnce()
+    expect(get(coordinator.state)).toMatchObject({
+      phase: 'idle',
+      desiredEnabled: false,
+      setupFailure: null,
+      nextRetryAt: null,
+    })
+    await coordinator.reconcile(true)
+    expect(enable).toHaveBeenCalledTimes(2)
+    expect(get(coordinator.state)).toMatchObject({ desiredEnabled: true, setupFailure: null })
+  })
+
+  it('fences reconciliation waiting on initialization when disposed', async () => {
+    const hydration = deferred<{ pendingEndpoints: string[]; localInspectionPending: boolean }>()
+    const enable = vi.fn()
+    const disable = vi.fn()
+    const coordinator = makeCoordinator({
+      enablePushNotifications: enable,
+      disablePushNotifications: disable,
+      retryStorage: {
+        loadPendingCleanup: () => hydration.promise,
+        savePendingCleanup: vi.fn(async () => {}),
+      },
+    })
+    const enabling = coordinator.reconcile(true)
+    coordinator.dispose()
+    hydration.resolve({ pendingEndpoints: ['https://push.example/stale'], localInspectionPending: true })
+    await enabling
+    expect(enable).not.toHaveBeenCalled()
+    expect(disable).not.toHaveBeenCalled()
+    expect(get(coordinator.state)).toMatchObject({ phase: 'idle', desiredEnabled: false, pendingEndpoints: [] })
+  })
+
+  it('shows and automatically retries unexpected setup errors', async () => {
+    const failure = new Error('temporary browser failure')
+    const enable = vi
+      .fn()
+      .mockRejectedValueOnce(failure)
+      .mockResolvedValueOnce({ status: 'enabled', endpoint: 'restored' })
+    const coordinator = makeCoordinator({ enablePushNotifications: enable })
+    await coordinator.reconcile(true)
+    expect(get(coordinator.state)).toMatchObject({ desiredEnabled: true, operationError: failure })
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(get(coordinator.state)).toMatchObject({ desiredEnabled: true, operationError: null, nextRetryAt: null })
+  })
+
+  it('retains intentional disable cleanup across reload and retries it', async () => {
+    const endpoint = 'https://push.example/cleanup'
+    const storage = memoryRetryStorage()
+    const first = makeCoordinator({
+      retryStorage: storage.storage,
+      disablePushNotifications: vi.fn(async () => ({
+        ...disabledResult(),
+        status: 'partial' as const,
+        pendingEndpoints: [endpoint],
+        localInspectionPending: true,
+        failures: [{ step: 'server-deletion' as const, endpoint }],
+      })),
+    })
+    await first.reconcile(false)
+    first.dispose()
+    const disable = vi.fn(async () => disabledResult())
+    const reloaded = makeCoordinator({ retryStorage: storage.storage, disablePushNotifications: disable })
+    await reloaded.initialize()
+    expect(disable).toHaveBeenCalledWith([endpoint], true)
+    expect(storage.persisted()).toEqual([])
+    expect(storage.inspectionPending()).toBe(false)
+  })
+
+  it('recreates the warning on reload when the enabled preference still cannot be applied', async () => {
+    const failure = { status: 'permission-denied' as const }
+    const first = makeCoordinator({ enablePushNotifications: vi.fn(async () => failure) })
+    await first.reconcile(true)
+    first.dispose()
+    const reloaded = makeCoordinator({ enablePushNotifications: vi.fn(async () => failure) })
+    await reloaded.reconcile(true)
+    expect(get(reloaded.state)).toMatchObject({ desiredEnabled: true, setupFailure: failure })
+    expect(persistServerBackedSettingsPatchWithSettlement).not.toHaveBeenCalled()
+  })
+
+  it('retries device-ledger storage without changing notification state', async () => {
+    const storageFailure = new Error('storage unavailable')
+    const enable = vi.fn()
+    const disable = vi.fn()
+    const coordinator = makeCoordinator({
+      enablePushNotifications: enable,
+      disablePushNotifications: disable,
+      retryStorage: {
+        loadPendingCleanup: vi
+          .fn()
+          .mockRejectedValueOnce(storageFailure)
+          .mockResolvedValue({ pendingEndpoints: [], localInspectionPending: false }),
+        savePendingCleanup: vi.fn(async () => {}),
+      },
+    })
+    await coordinator.initialize()
+    expect(get(coordinator.state).retryStorageError).toBe(storageFailure)
+    await coordinator.retryStorage()
+    expect(get(coordinator.state).retryStorageError).toBeNull()
+    expect(enable).not.toHaveBeenCalled()
+    expect(disable).not.toHaveBeenCalled()
   })
 })

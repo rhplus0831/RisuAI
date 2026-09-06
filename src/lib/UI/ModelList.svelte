@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { getHordeModels } from 'src/ts/horde/getModels'
   import Accordion from './Accordion.svelte'
   import { language } from 'src/lang'
   import CheckInput from './GUI/CheckInput.svelte'
-  import { getModelInfo, getModelList } from 'src/ts/model/modellist'
+  import { getModelInfo, getModelList, type ModelCatalogCustomModel } from 'src/ts/model/modellist'
   import { ArrowLeft } from '@lucide/svelte'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   interface Props {
@@ -38,6 +39,11 @@
   }
 
   let showUnrec = $state(false)
+  let customModels = $derived(
+    settingsResourceState.status === 'ready'
+      ? ((settingsResourceState.value.customModels ?? []) as ModelCatalogCustomModel[])
+      : [],
+  )
   let providers = $derived(
     getModelList({
       recommendedOnly: !showUnrec,
@@ -56,11 +62,11 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    data-modal-root
-    class="fixed top-0 w-full h-full left-0 bg-black/50 z-50 flex justify-center items-center"
-    onclick={() => {
+    use:modalBackdropDismiss={() => {
       openOptions = false
-    }}>
+    }}
+    data-modal-root
+    class="fixed top-0 w-full h-full left-0 bg-black/50 z-50 flex justify-center items-center">
     <div
       use:modalFocusTrap
       class="w-96 max-w-full max-h-full overflow-y-auto overflow-x-hidden bg-bgcolor p-4 flex flex-col"
@@ -133,9 +139,9 @@
         {/await}
       </Accordion>
 
-      {#if getDatabase().customModels?.length > 0}
+      {#if customModels.length > 0}
         <Accordion name={language.customModels}>
-          {#each getDatabase().customModels as model}
+          {#each customModels as model}
             <button
               class="hover:bg-selected px-6 py-2 text-lg"
               onclick={() => {
@@ -167,5 +173,5 @@
     'drop-shadow-lg p-3 flex justify-center items-center ml-2 mr-2 rounded-lg bg-darkbutton border-darkborderc border': true,
     'my-4': !noMargin,
   }}>
-  {getModelInfo(value)?.fullName || language.none}
+  {getModelInfo(value, { customModels })?.fullName || language.none}
 </button>

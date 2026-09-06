@@ -1,25 +1,25 @@
 import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { isDeepStrictEqual } from 'node:util'
-import {
-  resolveModelProfile,
-  type FirstClassModelProfileProviderId,
-} from '../../../../src/ts/model/modelProfileResolver.js'
-import { resolveMemoryModelCapability } from '../../../../src/ts/model/memoryModelCapability.js'
-import type { Database } from '../../../../src/ts/storage/database.svelte.js'
+import { resolveModelProfile, type FirstClassModelProfileProviderId } from '@risuai/shared-core/model-profile-resolver'
+import { resolveMemoryModelCapability } from '@risuai/shared-core/memory-model-capability'
 import {
   MODEL_ROLES,
   modelRoleProfileInheritSource,
   resolveModelForRole,
   type ModelRole,
-} from '../../../../src/ts/model/modelRoles.js'
+} from '@risuai/shared-core/model-roles'
 import {
   ModelProfileRecordValidationError,
+  normalizeModelProfileOrder,
+  normalizeModelProfiles,
   normalizeModelProfileRuntimeOptions,
   normalizeModelRoleProfiles,
+  readModelProfileOrder,
   readModelProfiles,
   readModelRuntimeDefaults,
   readModelRoleProfiles,
+  type ModelProfileOrderEntry,
   type ModelProfileRecord,
   type ModelProfileRecordFallbackRef,
   type ModelProfileRecordProviderOptions,
@@ -27,11 +27,16 @@ import {
   type ModelRoleProfileBinding,
   type ModelRoleProfileMap,
   type ModelRuntimeDefaults,
-} from '../../../../src/ts/model/modelProfileRecords.js'
-import { AnthropicModels } from '../../../../src/ts/model/providers/anthropic.js'
-import { GoogleModels } from '../../../../src/ts/model/providers/google.js'
-import { OpenAIModels } from '../../../../src/ts/model/providers/openai.js'
-import { LLMFormat } from '../../../../src/ts/model/types.js'
+} from '@risuai/shared-core/model-profile-records'
+import {
+  ProviderCredentialRecordValidationError,
+  readProviderCredentials,
+  type ProviderCredentialRecord,
+} from '@risuai/shared-core/provider-credential-records'
+import { AnthropicModels } from '@risuai/shared-core/anthropic-models'
+import { GoogleModels } from '@risuai/shared-core/google-models'
+import { OpenAIModels } from '@risuai/shared-core/openai-models'
+import { LLMFormat } from '@risuai/shared-core/model-types'
 import { resolveMaskedProviderSecretPlaceholders } from '../providerSecrets.js'
 import {
   EntityNotFoundError,
@@ -118,6 +123,7 @@ const RUNTIME_DEFAULT_KEY_MAP = {
   extractJson: 'extractJson',
   jsonSchema: 'jsonSchema',
   customTokenizer: 'customTokenizer',
+  halfStreaming: 'halfStreaming',
   useStreaming: 'useStreaming',
   jsonSchemaEnabled: 'jsonSchemaEnabled',
   strictJsonSchema: 'strictJsonSchema',
@@ -154,10 +160,13 @@ export function createModelProfileCommand(
   const requestedProfile = readCreateProfileBody(body)
   return applyModelProfileMutation(args, (target) => {
     const profiles = currentProfiles(target)
+    const profileOrder = currentProfileOrder(target, profiles)
     const profileId = mintModelProfileId(profiles)
     const profile = readProfileRow({ ...requestedProfile, id: profileId })
+    validateProfileCredentialReference(profile, target, 'profile.providerOptions.credentialId')
     const nextProfiles = readProfilesForWrite([...profiles, profile], target)
     target.modelProfiles = nextProfiles
+    target.modelProfileOrder = [...profileOrder, { kind: 'profile', profileId }]
     return {
       event: { ...COMMAND_EVENT_CATALOG.modelProfileCreated, id: profileId },
       extra: { profileId },
@@ -181,6 +190,7 @@ export function updateModelProfileCommand(
       throw new RevisionMismatchError(args.baseRevision, `Model profile changed since editing began: ${profileId}`)
     }
     const nextRows = [...profiles]
+    validateProfileCredentialReference(requestedProfile, target, 'profile.providerOptions.credentialId')
     nextRows[index] = requestedProfile
     target.modelProfiles = readProfilesForWrite(nextRows, target)
     return {
@@ -196,17 +206,38 @@ export function duplicateModelProfileCommand(
   const sourceProfileId = readNonEmptyString(args.profileId, 'profileId')
   const body = readObject(args.body, 'request body')
   const name = readOptionalNonEmptyString(body.name, 'name')
-  const includeSecrets = readOptionalBoolean(body.includeSecrets, 'includeSecrets') ?? false
   return applyModelProfileMutation(args, (target) => {
     const profiles = currentProfiles(target)
+    const profileOrder = currentProfileOrder(target, profiles)
     const source = profiles.find((profile) => profile.id === sourceProfileId)
     if (!source) throw new EntityNotFoundError(`Model profile not found: ${sourceProfileId}`)
     const profileId = mintModelProfileId(profiles)
-    const profile = duplicateProfile(source, profileId, name, includeSecrets)
+    const profile = duplicateProfile(source, profileId, name)
     target.modelProfiles = readProfilesForWrite([...profiles, profile], target)
+    target.modelProfileOrder = [...profileOrder, { kind: 'profile', profileId }]
     return {
       event: { ...COMMAND_EVENT_CATALOG.modelProfileDuplicated, id: profileId },
       extra: { profileId, sourceProfileId },
+    }
+  })
+}
+
+export function reorderModelProfilesCommand(
+  args: ModelProfileCommandArgs,
+): JsonCommandMutationResult<{ profileIds: string[]; order: ModelProfileOrderEntry[] }> {
+  const body = readObject(args.body, 'request body')
+  return applyModelProfileMutation(args, (target) => {
+    const profiles = currentProfiles(target)
+    const order = readProfileOrderBody(body, profiles)
+    const profilesById = new Map(profiles.map((profile) => [profile.id, profile]))
+    const profileIds = order.flatMap((entry) => (entry.kind === 'profile' ? [entry.profileId] : []))
+    const reorderedProfiles = profileIds.map((profileId) => profilesById.get(profileId)!)
+
+    target.modelProfiles = readProfilesForWrite(reorderedProfiles, target)
+    target.modelProfileOrder = order
+    return {
+      event: COMMAND_EVENT_CATALOG.modelProfilesReordered,
+      extra: { profileIds: [...profileIds], order: cloneJsonValue(order) },
     }
   })
 }
@@ -217,44 +248,59 @@ export function deleteModelProfileCommand(
   const profileId = readNonEmptyString(args.profileId, 'profileId')
   const body = readObject(args.body, 'request body')
   const reassignments = readReassignmentMap(body.reassignments)
-  return applyModelProfileMutation(args, (target) => {
-    const profiles = currentProfiles(target)
-    if (!profiles.some((profile) => profile.id === profileId)) {
-      throw new EntityNotFoundError(`Model profile not found: ${profileId}`)
-    }
-
-    const remainingProfiles = profiles.filter((profile) => profile.id !== profileId)
-    const remainingIds = new Set(remainingProfiles.map((profile) => profile.id))
-    const bindings = currentRoleProfiles(target)
-    const reassignedRoles: ModelRole[] = []
-    const nextBindings: ModelRoleProfileMap = { ...bindings }
-
-    for (const role of MODEL_ROLES) {
-      const binding = bindings[role]
-      if (binding.mode !== 'profile' || binding.profileId !== profileId) continue
-      const reassignment = reassignments[role]
-      if (!reassignment) {
-        throw new ValidationError(`reassignments.${role} is required`)
+  return applyModelProfileMutation(
+    args,
+    (target) => {
+      const profiles = currentProfiles(target)
+      const profileOrder = currentProfileOrder(target, profiles)
+      if (!profiles.some((profile) => profile.id === profileId)) {
+        throw new EntityNotFoundError(`Model profile not found: ${profileId}`)
       }
-      validateBindingTarget(role, reassignment, remainingIds, `reassignments.${role}`)
-      nextBindings[role] = reassignment
-      reassignedRoles.push(role)
-    }
 
-    for (const role of Object.keys(reassignments)) {
-      if (!reassignedRoles.includes(role as ModelRole)) {
-        throw new ValidationError(`reassignments.${role} does not target the deleted profile`)
+      const modelPresetLabels = modelPresetLabelsUsingProfile(target, profileId)
+      if (modelPresetLabels.length > 0) {
+        throw new ValidationError(
+          `Model profile ${profileId} is used by Model Presets: ${modelPresetLabels.join(', ')}`,
+        )
       }
-    }
 
-    target.modelProfiles = readProfilesForWrite(remainingProfiles, target)
-    target.modelRoleProfiles = nextBindings
-    if (reassignedRoles.includes('memory')) validateMemoryRoleCapability(target)
-    return {
-      event: { ...COMMAND_EVENT_CATALOG.modelProfileDeleted, id: profileId },
-      extra: { profileId, reassignedRoles },
-    }
-  })
+      const remainingProfiles = profiles.filter((profile) => profile.id !== profileId)
+      const remainingIds = new Set(remainingProfiles.map((profile) => profile.id))
+      const bindings = currentRoleProfiles(target)
+      const reassignedRoles: ModelRole[] = []
+      const nextBindings: ModelRoleProfileMap = { ...bindings }
+
+      for (const role of MODEL_ROLES) {
+        const binding = bindings[role]
+        if (binding.mode !== 'profile' || binding.profileId !== profileId) continue
+        const reassignment = reassignments[role]
+        if (!reassignment) {
+          throw new ValidationError(`reassignments.${role} is required`)
+        }
+        validateBindingTarget(role, reassignment, remainingIds, `reassignments.${role}`)
+        nextBindings[role] = reassignment
+        reassignedRoles.push(role)
+      }
+
+      for (const role of Object.keys(reassignments)) {
+        if (!reassignedRoles.includes(role as ModelRole)) {
+          throw new ValidationError(`reassignments.${role} does not target the deleted profile`)
+        }
+      }
+
+      target.modelProfiles = readProfilesForWrite(remainingProfiles, target)
+      target.modelProfileOrder = profileOrder.filter(
+        (entry) => entry.kind !== 'profile' || entry.profileId !== profileId,
+      )
+      target.modelRoleProfiles = nextBindings
+      if (reassignedRoles.includes('memory')) validateMemoryRoleCapability(target)
+      return {
+        event: { ...COMMAND_EVENT_CATALOG.modelProfileDeleted, id: profileId },
+        extra: { profileId, reassignedRoles },
+      }
+    },
+    'modelPresets',
+  )
 }
 
 export function updateModelRoleProfilesCommand(
@@ -331,12 +377,15 @@ export function createAndBindModelProfileCommand(
   const requestedProfile = readCreateProfileBody(body)
   return applyModelProfileMutation(args, (target) => {
     const profiles = currentProfiles(target)
+    const profileOrder = currentProfileOrder(target, profiles)
     const profileId = mintModelProfileId(profiles)
     const profile = readProfileRow({ ...requestedProfile, id: profileId })
+    validateProfileCredentialReference(profile, target, 'profile.providerOptions.credentialId')
     const nextProfiles = readProfilesForWrite([...profiles, profile], target)
     const nextBindings = currentRoleProfiles(target)
     nextBindings[role] = { mode: 'profile', profileId }
     target.modelProfiles = nextProfiles
+    target.modelProfileOrder = [...profileOrder, { kind: 'profile', profileId }]
     target.modelRoleProfiles = nextBindings
     if (role === 'memory') validateMemoryRoleCapability(target)
     return {
@@ -363,6 +412,11 @@ export function convertLegacyModelProfilesCommand(
 ): JsonCommandMutationResult<{ profileIdsByRole: ProfileIdsByRole; convertedRoles: ModelRole[] }> {
   return applyModelProfileMutation(args, (target) => {
     const existingProfiles = currentProfiles(target)
+    const existingProfileOrder = currentProfileOrder(target, existingProfiles)
+    const existingCredentials = currentProviderCredentials(target)
+    const nextCredentials = [...existingCredentials]
+    const credentialMinter = createLegacyCredentialMinter(nextCredentials)
+    mintLegacyProviderCredentials(target, credentialMinter)
     const usedIds = new Set(existingProfiles.map((profile) => profile.id))
     const runtimeDefaults = legacyRuntimeDefaults(target)
     const roleModels = Object.fromEntries(
@@ -385,6 +439,7 @@ export function convertLegacyModelProfilesCommand(
         role,
         modelId: roleModels[role],
         database: target,
+        credentialMinter,
         runtimeOptions: roleRuntimeOptions[role],
         fallbacks: legacyFallbacks[role],
       })
@@ -415,6 +470,8 @@ export function convertLegacyModelProfilesCommand(
     }
 
     target.modelProfiles = readProfilesForWrite(nextProfiles, target)
+    target.modelProfileOrder = normalizeModelProfileOrder(existingProfileOrder, nextProfiles)
+    target.providerCredentials = readProviderCredentialRows(nextCredentials)
     target.modelRoleProfiles = nextBindings
     target.modelRuntimeDefaults = runtimeDefaults
     return {
@@ -430,6 +487,7 @@ export function convertLegacyModelProfilesCommand(
 function applyModelProfileMutation<TExtra extends ModelProfileMutationExtra = {}>(
   args: Omit<ModelProfileCommandArgs, 'body'>,
   mutateTarget: (target: Record<string, unknown>) => { event: CommandEventDraft; extra: TExtra },
+  readScope: 'settings' | 'modelPresets' = 'settings',
 ): JsonCommandMutationResult<TExtra> {
   return applyTargetedCommandMutation<TExtra>({
     db: args.db,
@@ -438,8 +496,10 @@ function applyModelProfileMutation<TExtra extends ModelProfileMutationExtra = {}
     eventSink: args.eventSink,
     ...(args.eventOrigin ? { eventOrigin: args.eventOrigin } : {}),
     ...(args.mutationReceiptKey ? { mutationReceiptKey: args.mutationReceiptKey } : {}),
-    mutationPath: TARGETED_MUTATION_PATHS.settings,
-    settingsScopedRead: true,
+    mutationPath: readScope === 'modelPresets' ? TARGETED_MUTATION_PATHS.collection : TARGETED_MUTATION_PATHS.settings,
+    ...(readScope === 'modelPresets'
+      ? { collectionScopedRead: ['modelPresets'] as const }
+      : { settingsScopedRead: true }),
     mutate(database, innerDb) {
       const target = readSettingsTarget(database)
       const result = mutateTarget(target)
@@ -457,11 +517,34 @@ function readSettingsTarget(database: unknown): Record<string, unknown> {
 }
 
 function currentProfiles(target: Record<string, unknown>): ModelProfileRecord[] {
-  return Array.isArray(target.modelProfiles) ? readProfilesForWrite(target.modelProfiles, target) : []
+  return normalizeModelProfiles(target.modelProfiles ?? [])
+}
+
+function currentProfileOrder(
+  target: Record<string, unknown>,
+  profiles: readonly ModelProfileRecord[] = currentProfiles(target),
+): ModelProfileOrderEntry[] {
+  return normalizeModelProfileOrder(target.modelProfileOrder, profiles)
 }
 
 function currentRoleProfiles(target: Record<string, unknown>): ModelRoleProfileMap {
   return normalizeModelRoleProfiles(target.modelRoleProfiles)
+}
+
+function modelPresetLabelsUsingProfile(target: Record<string, unknown>, profileId: string): string[] {
+  if (!Array.isArray(target.modelPresets)) return []
+  const labels: string[] = []
+  target.modelPresets.forEach((value, index) => {
+    if (!isRecord(value)) return
+    const bindings = normalizeModelRoleProfiles(value.modelRoleProfiles)
+    const referencesProfile = MODEL_ROLES.some((role) => {
+      const binding = bindings[role]
+      return binding.mode === 'profile' && binding.profileId === profileId
+    })
+    if (!referencesProfile) return
+    labels.push(nonBlankString(value.name) ?? `#${index + 1}`)
+  })
+  return labels
 }
 
 function readProfilesForWrite(value: unknown, sourceDatabase: unknown): ModelProfileRecord[] {
@@ -574,26 +657,17 @@ function validateBindingTarget(
 }
 
 function validateMemoryRoleCapability(target: Record<string, unknown>): void {
-  const profile = resolveModelProfile({ database: target as unknown as Database, role: 'memory' })
+  const profile = resolveModelProfile({ database: target, role: 'memory' })
   const capability = resolveMemoryModelCapability(profile)
   if (capability.ok === false) {
     throw new ValidationError(`bindings.memory is unsupported: ${capability.error}`)
   }
 }
 
-function duplicateProfile(
-  source: ModelProfileRecord,
-  profileId: string,
-  name: string | undefined,
-  includeSecrets: boolean,
-): ModelProfileRecord {
+function duplicateProfile(source: ModelProfileRecord, profileId: string, name: string | undefined): ModelProfileRecord {
   const copy = cloneJsonValue(source)
   copy.id = profileId
   copy.name = name ?? `${source.name} Copy`
-  if (!includeSecrets) {
-    delete copy.providerOptions?.apiKey
-    if (copy.providerOptions?.vertex) delete copy.providerOptions.vertex.privateKey
-  }
   return readProfileRow(copy)
 }
 
@@ -602,10 +676,11 @@ function createLegacyConvertedProfile(input: {
   role: ModelRole
   modelId: string
   database: Record<string, unknown>
+  credentialMinter: LegacyCredentialMinter
   runtimeOptions?: ModelProfileRecordRuntimeOptions
   fallbacks?: ModelProfileRecordFallbackRef[]
 }): ModelProfileRecord {
-  const provider = legacyProviderMapping(input.database, input.modelId)
+  const provider = legacyProviderMapping(input.database, input.modelId, input.credentialMinter)
   const row: ModelProfileRecord = {
     id: input.id,
     name: ROLE_PROFILE_NAMES[input.role],
@@ -621,6 +696,7 @@ function createLegacyConvertedProfile(input: {
 function legacyProviderMapping(
   database: Record<string, unknown>,
   modelId: string,
+  credentialMinter: LegacyCredentialMinter,
 ): {
   modelId: string
   providerId?: FirstClassModelProfileProviderId
@@ -636,7 +712,7 @@ function legacyProviderMapping(
       modelId: 'custom-api',
       providerId: 'custom-api',
       providerOptions: removeEmptyProviderOptions({
-        apiKey: nonBlankString(database.proxyKey),
+        credentialId: credentialMinter.apiKey(nonBlankString(database.proxyKey), 'Proxy (imported)'),
         baseUrl: legacyReverseProxyBaseUrl(
           nonBlankString(database.forceReplaceUrl),
           database.autofillRequestUrl !== false,
@@ -652,7 +728,9 @@ function legacyProviderMapping(
     return {
       modelId: normalizedModelId,
       providerId: 'openai',
-      providerOptions: removeEmptyProviderOptions({ apiKey: nonBlankString(database.openAIKey) }),
+      providerOptions: removeEmptyProviderOptions({
+        credentialId: credentialMinter.apiKey(nonBlankString(database.openAIKey), 'OpenAI (imported)'),
+      }),
     }
   }
 
@@ -660,7 +738,9 @@ function legacyProviderMapping(
     return {
       modelId: normalizedModelId,
       providerId: 'anthropic',
-      providerOptions: removeEmptyProviderOptions({ apiKey: nonBlankString(database.claudeAPIKey) }),
+      providerOptions: removeEmptyProviderOptions({
+        credentialId: credentialMinter.apiKey(nonBlankString(database.claudeAPIKey), 'Anthropic (imported)'),
+      }),
     }
   }
 
@@ -675,16 +755,21 @@ function legacyProviderMapping(
           vertex: removeEmptyRecord({
             projectId: nonBlankString(google.projectId),
             region: nonBlankString(database.vertexRegion),
-            clientEmail: nonBlankString(database.vertexClientEmail),
-            privateKey: nonBlankString(database.vertexPrivateKey),
           }),
+          credentialId: credentialMinter.vertexServiceAccount(
+            nonBlankString(database.vertexClientEmail),
+            nonBlankString(database.vertexPrivateKey),
+            'Vertex AI (imported)',
+          ),
         }),
       }
     }
     return {
       modelId: normalizedModelId,
       providerId: 'google',
-      providerOptions: removeEmptyProviderOptions({ apiKey: nonBlankString(google.accessToken) }),
+      providerOptions: removeEmptyProviderOptions({
+        credentialId: credentialMinter.apiKey(nonBlankString(google.accessToken), 'Google (imported)'),
+      }),
     }
   }
 
@@ -790,9 +875,137 @@ function mintModelProfileIdFromIds(existingIds: Set<string>): string {
   throw new Error('Unable to mint a unique model profile id')
 }
 
+interface LegacyCredentialMinter {
+  apiKey(secret: string | undefined, name: string): string | undefined
+  vertexServiceAccount(
+    clientEmail: string | undefined,
+    privateKey: string | undefined,
+    name: string,
+  ): string | undefined
+}
+
+function createLegacyCredentialMinter(credentials: ProviderCredentialRecord[]): LegacyCredentialMinter {
+  const bySecret = new Map<string, string>()
+  for (const credential of credentials) {
+    if (credential.type === 'apiKey' && credential.apiKey) {
+      bySecret.set(`apiKey:${credential.apiKey}`, credential.id)
+    } else if (credential.type === 'vertexServiceAccount' && credential.vertex) {
+      bySecret.set(
+        `vertexServiceAccount:${credential.vertex.clientEmail}\u0000${credential.vertex.privateKey}`,
+        credential.id,
+      )
+    }
+  }
+
+  const mint = (key: string, record: Omit<ProviderCredentialRecord, 'id'>): string => {
+    const existing = bySecret.get(key)
+    if (existing) return existing
+    const id = mintProviderCredentialIdFromIds(new Set(credentials.map((credential) => credential.id)))
+    credentials.push({ ...record, id })
+    bySecret.set(key, id)
+    return id
+  }
+
+  return {
+    apiKey(secret, name) {
+      if (!secret) return undefined
+      return mint(`apiKey:${secret}`, { name, type: 'apiKey', apiKey: secret })
+    },
+    vertexServiceAccount(clientEmail, privateKey, name) {
+      if (!clientEmail || !privateKey) return undefined
+      return mint(`vertexServiceAccount:${clientEmail}\u0000${privateKey}`, {
+        name,
+        type: 'vertexServiceAccount',
+        vertex: { clientEmail, privateKey },
+      })
+    },
+  }
+}
+
+function mintLegacyProviderCredentials(
+  database: Record<string, unknown>,
+  credentialMinter: LegacyCredentialMinter,
+): void {
+  const google = recordOrEmpty(database.google)
+  credentialMinter.apiKey(nonBlankString(database.openAIKey), 'OpenAI (imported)')
+  credentialMinter.apiKey(nonBlankString(database.claudeAPIKey), 'Anthropic (imported)')
+  credentialMinter.apiKey(nonBlankString(google.accessToken), 'Google (imported)')
+  credentialMinter.vertexServiceAccount(
+    nonBlankString(database.vertexClientEmail),
+    nonBlankString(database.vertexPrivateKey),
+    'Vertex AI (imported)',
+  )
+  credentialMinter.apiKey(nonBlankString(database.proxyKey), 'Proxy (imported)')
+}
+
+function mintProviderCredentialIdFromIds(existingIds: Set<string>): string {
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    const id = `cred_${randomUUID().replaceAll('-', '').slice(0, 20)}`
+    if (!existingIds.has(id)) return id
+  }
+  throw new Error('Unable to mint a unique provider credential id')
+}
+
+function currentProviderCredentials(target: Record<string, unknown>): ProviderCredentialRecord[] {
+  return readProviderCredentialRows(target.providerCredentials ?? [])
+}
+
+function readProviderCredentialRows(value: unknown): ProviderCredentialRecord[] {
+  try {
+    return readProviderCredentials(value)
+  } catch (error) {
+    if (error instanceof ProviderCredentialRecordValidationError) {
+      throw new ValidationError(error.message)
+    }
+    throw error
+  }
+}
+
+function validateProfileCredentialReference(
+  profile: ModelProfileRecord,
+  target: Record<string, unknown>,
+  path: string,
+): void {
+  const credentialId = profile.providerOptions?.credentialId
+  if (!credentialId) return
+  if (!currentProviderCredentials(target).some((credential) => credential.id === credentialId)) {
+    throw new ValidationError(`${path} must reference an existing provider credential`)
+  }
+}
+
 function readObject(value: unknown, path: string): Record<string, unknown> {
   if (!isRecord(value)) throw new ValidationError(`${path} must be an object`)
   return value
+}
+
+function readProfileIdOrder(value: unknown): string[] {
+  if (!Array.isArray(value)) throw new ValidationError('profileIds must be an array')
+  return value.map((profileId, index) => readNonEmptyString(profileId, `profileIds[${index}]`))
+}
+
+function readProfileOrderBody(
+  body: Record<string, unknown>,
+  profiles: readonly ModelProfileRecord[],
+): ModelProfileOrderEntry[] {
+  try {
+    if (Object.prototype.hasOwnProperty.call(body, 'order')) {
+      return readModelProfileOrder(body.order, profiles)
+    }
+    const legacyProfileIds = readProfileIdOrder(body.profileIds)
+    if (legacyProfileIds.length !== profiles.length) {
+      throw new ValidationError('profileIds must include every existing model profile exactly once')
+    }
+    const profileIds = new Set(profiles.map((profile) => profile.id))
+    const seen = new Set<string>()
+    return legacyProfileIds.map((profileId) => {
+      if (seen.has(profileId)) throw new ValidationError(`Duplicate model profile id: ${profileId}`)
+      seen.add(profileId)
+      if (!profileIds.has(profileId)) throw new ValidationError(`Unknown model profile id: ${profileId}`)
+      return { kind: 'profile' as const, profileId }
+    })
+  } catch (error) {
+    throwModelProfileValidationError(error)
+  }
 }
 
 function readModelRole(value: unknown, path: string): ModelRole {
@@ -811,12 +1024,6 @@ function readNonEmptyString(value: unknown, path: string): string {
 function readOptionalNonEmptyString(value: unknown, path: string): string | undefined {
   if (value === undefined) return undefined
   return readNonEmptyString(value, path)
-}
-
-function readOptionalBoolean(value: unknown, path: string): boolean | undefined {
-  if (value === undefined) return undefined
-  if (typeof value !== 'boolean') throw new ValidationError(`${path} must be a boolean`)
-  return value
 }
 
 function isOpenAIModelId(modelId: string): boolean {

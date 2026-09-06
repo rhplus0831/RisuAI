@@ -7,9 +7,33 @@ import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { CURRENT_SCHEMA_VERSION } from '../src/db.js'
-import { assetsDir, getAllAssetMetadata, listBackups, loadPersistedWithMessages } from '../src/repository.js'
+import { getDatabaseLineage } from '../src/databaseLineage.js'
+import { createBardWikiDocument, updateBardWikiChatSettings } from '../src/bardWikiRepository.js'
+import { BackupCopyPool } from '../src/backupCopyPool.js'
+import { GENERATION_FINALIZATION_LEGACY_SNAPSHOT_ERROR } from '../src/generationFinalizationRetry.js'
+import { MessageTranslationJobRegistry } from '../src/messageTranslationJobs.js'
+import { retryQueuedGenerationFinalizations } from '../src/routes/generationChat.js'
+import {
+  SQLITE_BACKUP_EXCLUDED_TABLES,
+  SQLITE_BACKUP_TABLES,
+  addAsset,
+  assetsDir,
+  getAllAssetMetadata,
+  listBackups,
+  loadPersistedWithMessages,
+} from '../src/repository.js'
 import type { FastifyInstance } from 'fastify'
-import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
+import { injectComposedResourceDatabase } from './helpers/resourceDatabase.js'
+import {
+  createGenerationOperation,
+  reserveGenerationOperationAttempt,
+  transitionGenerationOperation,
+} from '../src/generationOperations.js'
+import {
+  EXPECTED_CANONICAL_OWNER_PERSISTENCE_SNAPSHOT,
+  canonicalOwnerPersistenceDatabase,
+  canonicalOwnerPersistenceSnapshot,
+} from './helpers/canonicalOwnerPersistence.js'
 
 const subtle = webcrypto.subtle
 const PNG_BYTES = Buffer.from(
@@ -53,15 +77,19 @@ function harnessConfig(dataDir: string, automaticBackupRetention?: number) {
   }
 }
 
-async function startHarness(automaticBackupRetention?: number): Promise<Harness> {
+async function startHarness(
+  automaticBackupRetention?: number,
+  configureApp?: (app: FastifyInstance) => void,
+): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-'))
   const commandEvents = createCommandEventSink()
   const { app } = await buildApp({
     config: harnessConfig(dataDir, automaticBackupRetention),
     commandEvents,
+    generationChat: { finalizationRetry: false },
   })
-  installResourceDatabaseBootstrapAdapter(app)
+  configureApp?.(app)
   return { app, dataDir, commandEvents }
 }
 
@@ -71,8 +99,8 @@ async function restartHarness(harness: Harness): Promise<void> {
   const { app } = await buildApp({
     config: harnessConfig(harness.dataDir),
     commandEvents,
+    generationChat: { finalizationRetry: false },
   })
-  installResourceDatabaseBootstrapAdapter(app)
   harness.app = app
   harness.commandEvents = commandEvents
 }
@@ -146,6 +174,69 @@ function readBackupDatabase(dataDir: string, id: string): Record<string, unknown
   }
 }
 
+function insertFinalizationRetry(db: DatabaseSync, generationId: string, chatId: string): void {
+  db.prepare(
+    `INSERT INTO generation_finalization_retries (
+       generation_id,
+       chat_id,
+       mode,
+       target_message_id,
+       message_json,
+       alternate_messages_json,
+       chat_var_mutations_json,
+       target_snapshot_json,
+       failure_count,
+       last_error,
+       terminal_error,
+       status,
+       created_at,
+       updated_at
+     ) VALUES (?, ?, 'send', NULL, ?, ?, ?, ?, 2, 'last failure', 'terminal failure', 'terminal', ?, ?)`,
+  ).run(
+    generationId,
+    chatId,
+    JSON.stringify({ role: 'char', data: `message-${generationId}`, chatId: `message-${generationId}` }),
+    JSON.stringify([{ role: 'char', data: `alternate-${generationId}`, chatId: `alternate-${generationId}` }]),
+    JSON.stringify([{ key: `key-${generationId}`, value: `value-${generationId}` }]),
+    JSON.stringify({ chatId, targetMessageId: null, messageCount: 1 }),
+    '2026-07-23T00:00:00.000Z',
+    '2026-07-23T00:00:01.000Z',
+  )
+}
+
+function insertPushSubscription(db: DatabaseSync, endpoint: string): void {
+  db.prepare(
+    `INSERT INTO push_subscriptions (
+       endpoint, subscription_json, failure_count, last_error, created_at, updated_at
+     ) VALUES (?, ?, 0, NULL, ?, ?)`,
+  ).run(
+    endpoint,
+    JSON.stringify({ endpoint, keys: { p256dh: `p256dh-${endpoint}`, auth: `auth-${endpoint}` } }),
+    '2026-07-23T00:00:00.000Z',
+    '2026-07-23T00:00:01.000Z',
+  )
+}
+
+function insertRequestHistory(db: DatabaseSync, id: string, prompt: string, response: string): void {
+  db.prepare(
+    `INSERT INTO request_history (
+       id, started_at, completed_at, status, source, profile_json, prompt_json,
+       response_text, metadata_json, api_metadata_json
+     ) VALUES (?, 1, 2, 'success', 'backup-test', ?, ?, ?, '{}', '{}')`,
+  ).run(
+    id,
+    JSON.stringify({
+      id: 'backup-test-profile',
+      role: 'primary',
+      sourceKind: 'settings',
+      modelId: 'backup-test-model',
+      requestModel: 'backup-test-model',
+    }),
+    JSON.stringify([{ role: 'user', content: prompt }]),
+    response,
+  )
+}
+
 let harness: Harness
 
 beforeEach(async () => {
@@ -157,7 +248,52 @@ afterEach(async () => {
   await stopHarness(harness)
 })
 
-describe('Phase 2D backups', () => {
+describe('backups', () => {
+  describe('SQLite backup table ownership policy', () => {
+    it('classifies every production schema table as restored or deliberately device-local', () => {
+      const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+      try {
+        const liveTables = (
+          db
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+            .all() as Array<{ name: string }>
+        ).map((row) => row.name)
+        const backupTables = [...SQLITE_BACKUP_TABLES]
+        const excludedEntries = Object.entries(SQLITE_BACKUP_EXCLUDED_TABLES)
+        const excludedTables = excludedEntries.map(([table]) => table)
+        const liveTableSet = new Set(liveTables)
+        const backupTableSet = new Set<string>(backupTables)
+        const excludedTableSet = new Set(excludedTables)
+        const instructions =
+          'Add a new durable table to SQLITE_BACKUP_TABLES so it round-trips with backups, or add it to ' +
+          'SQLITE_BACKUP_EXCLUDED_TABLES with a rationale when it is deliberately device-local.'
+
+        expect(
+          liveTables.filter((table) => !backupTableSet.has(table) && !excludedTableSet.has(table)),
+          `Every production SQLite table must have an explicit backup policy. ${instructions}`,
+        ).toEqual([])
+        expect(
+          backupTables.filter((table) => excludedTableSet.has(table)).sort(),
+          'SQLITE_BACKUP_TABLES and SQLITE_BACKUP_EXCLUDED_TABLES must be disjoint; choose exactly one policy.',
+        ).toEqual([])
+        expect(
+          backupTables.filter((table) => !liveTableSet.has(table)).sort(),
+          `SQLITE_BACKUP_TABLES contains tables absent from the production schema. Remove renamed/dead entries, or update their schema creation. ${instructions}`,
+        ).toEqual([])
+        expect(
+          excludedTables.filter((table) => !liveTableSet.has(table)).sort(),
+          `SQLITE_BACKUP_EXCLUDED_TABLES contains tables absent from the production schema. Remove renamed/dead entries, or update their schema creation. ${instructions}`,
+        ).toEqual([])
+        expect(
+          excludedEntries.filter(([, reason]) => reason.trim().length === 0).map(([table]) => table),
+          'Every SQLITE_BACKUP_EXCLUDED_TABLES entry must document why the table is deliberately device-local.',
+        ).toEqual([])
+      } finally {
+        db.close()
+      }
+    })
+  })
+
   it('rejects all four routes without auth when password is set', async () => {
     await harness.app.inject({
       method: 'POST',
@@ -284,12 +420,12 @@ describe('Phase 2D backups', () => {
 
       expect(imported.statusCode).toBe(500)
       expect(imported.json()).toEqual({ error: 'automatic_backup_failed' })
-      const bootstrap = await harness.app.inject({
+      const bootstrap = await injectComposedResourceDatabase(harness.app, {
         method: 'GET',
         url: '/api/v1/bootstrap',
         headers: { 'risu-auth': assertion },
       })
-      expect(bootstrap.json().database).toMatchObject({ tag: 'before-busy-safety-snapshot' })
+      expect(bootstrap.resourceDatabase).toMatchObject({ tag: 'before-busy-safety-snapshot' })
       expect(listBackups(harness.dataDir).filter((backup) => backup.kind === 'automatic')).toEqual(automaticBefore)
     } finally {
       reader.exec('ROLLBACK')
@@ -335,7 +471,14 @@ describe('Phase 2D backups', () => {
 
   it('round-trips: import A, backup, import B, restore, bootstrap returns A', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
-    await importDb(harness.app, assertion, { tag: 'A' })
+    await importDb(harness.app, assertion, {
+      tag: 'A',
+      loadouts: [
+        { id: 'loadout-a', name: 'Shared name' },
+        { id: 'loadout-b', name: 'Shared name' },
+      ],
+      lastLoadedLoadoutName: 'Shared name',
+    })
     const backup = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/backups',
@@ -346,12 +489,12 @@ describe('Phase 2D backups', () => {
     const backupId = backup.json().id
 
     await importDb(harness.app, assertion, { tag: 'B' })
-    const beforeRestore = await harness.app.inject({
+    const beforeRestore = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(beforeRestore.json().database).toMatchObject({
+    expect(beforeRestore.resourceDatabase).toMatchObject({
       tag: 'B',
       characters: [],
       botPresets: [],
@@ -379,21 +522,978 @@ describe('Phase 2D backups', () => {
       revision: revisionAfter,
     })
 
-    const afterRestore = await harness.app.inject({
+    const afterRestore = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(afterRestore.json().database).toMatchObject({
+    expect(afterRestore.resourceDatabase).toMatchObject({
       tag: 'A',
       characters: [],
       botPresets: [],
       modules: [],
-      loadouts: [],
+      loadouts: [
+        { id: 'loadout-a', name: 'Shared name' },
+        { id: 'loadout-b', name: 'Shared name' },
+      ],
+      lastLoadedLoadoutName: 'Shared name',
       plugins: [],
       pluginCustomStorage: {},
     })
     expect(afterRestore.json().revision).toBe(revisionAfter)
+  })
+
+  it('restores canonical owner identities and cache inputs across a server restart', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, canonicalOwnerPersistenceDatabase())
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'canonical owner snapshot' },
+    })
+    expect(backup.statusCode).toBe(201)
+
+    await importDb(harness.app, assertion, { tag: 'replacement state' })
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    await restartHarness(harness)
+    const reopened = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(canonicalOwnerPersistenceSnapshot(loadPersistedWithMessages(reopened, harness.dataDir).database)).toEqual(
+        EXPECTED_CANONICAL_OWNER_PERSISTENCE_SNAPSHOT,
+      )
+    } finally {
+      reopened.close()
+    }
+  })
+
+  it('round-trips every BardWiki-owned table and rebuilds excluded search and link resolution', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const livePath = path.join(harness.dataDir, 'risu.db')
+    const seed = new DatabaseSync(livePath)
+    let targetId: string
+    let sourceId: string
+    try {
+      seed.prepare("INSERT INTO characters (id, position, data_json) VALUES ('character-wiki', 0, '{}')").run()
+      seed
+        .prepare(
+          "INSERT INTO chats (id, character_id, position, data_json) VALUES ('chat-wiki', 'character-wiki', 0, '{}')",
+        )
+        .run()
+      updateBardWikiChatSettings(seed, 'chat-wiki', { enabledOverride: true, maxDocumentsOverride: 5 })
+      const target = createBardWikiDocument(seed, {
+        id: 'document-target',
+        chatId: 'chat-wiki',
+        kind: 'location',
+        title: 'Old Tavern',
+        logicalPath: 'Places/Old Tavern',
+        aliases: ['The Inn'],
+        markdown: '## Old Tavern\nA quiet inn.',
+        commandRevision: 1,
+      })
+      const source = createBardWikiDocument(seed, {
+        id: 'document-source',
+        chatId: 'chat-wiki',
+        kind: 'event',
+        title: 'Arrival',
+        logicalPath: 'Events/Arrival',
+        markdown: 'They met at [[Places/Old Tavern]].',
+        commandRevision: 1,
+      })
+      targetId = target.id
+      sourceId = source.id
+      seed
+        .prepare(
+          `INSERT INTO bardwiki_turn_receipts (
+          id, chat_id, user_message_id, user_content_hash, assistant_message_id,
+          assistant_content_hash, confirmation_mode, state, change_set_id, event_document_id
+        ) VALUES ('receipt-wiki', 'chat-wiki', 'user-wiki', 'hash-user', 'assistant-wiki',
+          'hash-assistant', 'explicit', 'applied', 'change-wiki', ?)`,
+        )
+        .run(source.id)
+      seed
+        .prepare(
+          `INSERT INTO bardwiki_jobs (
+          id, instance_id, chat_id, receipt_id, kind, status, payload_json
+        ) VALUES ('job-wiki', 'instance-wiki', 'chat-wiki', 'receipt-wiki', 'apply_turn', 'completed', '{}')`,
+        )
+        .run()
+      seed
+        .prepare(
+          `INSERT INTO bardwiki_document_sources (
+          document_id, document_version, receipt_id, message_id, role, content_hash
+        ) VALUES (?, 1, 'receipt-wiki', 'assistant-wiki', 'assistant', 'hash-assistant')`,
+        )
+        .run(source.id)
+      seed
+        .prepare(
+          `INSERT INTO bardwiki_change_manifest (
+          receipt_id, document_id, after_version, after_hash
+        ) VALUES ('receipt-wiki', ?, 1, ?)`,
+        )
+        .run(source.id, source.contentHash)
+      seed
+        .prepare(
+          `INSERT INTO bardwiki_rebuild_staging (rebuild_job_id, ordinal, change_json)
+         VALUES ('job-wiki', 0, '{"operation":"create"}')`,
+        )
+        .run()
+    } finally {
+      seed.close()
+    }
+
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'BardWiki ownership' },
+    })
+    expect(backup.statusCode).toBe(201)
+
+    const backupDb = new DatabaseSync(path.join(harness.dataDir, 'backups', backup.json().id as string, 'risu.db'))
+    try {
+      backupDb.prepare("UPDATE bardwiki_document_search SET title_terms = 'poisoned-derived-state'").run()
+      backupDb.prepare('UPDATE bardwiki_links SET resolved_document_id = NULL').run()
+    } finally {
+      backupDb.close()
+    }
+
+    const mutate = new DatabaseSync(livePath)
+    try {
+      mutate.exec('PRAGMA foreign_keys = ON')
+      mutate.prepare("DELETE FROM chats WHERE id = 'chat-wiki'").run()
+      expect(mutate.prepare('SELECT COUNT(*) AS count FROM bardwiki_documents').get()).toEqual({ count: 0 })
+    } finally {
+      mutate.close()
+    }
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const verify = new DatabaseSync(livePath, { readOnly: true })
+    try {
+      expect(
+        verify.prepare('SELECT enabled_override, max_documents_override FROM bardwiki_chat_settings').get(),
+      ).toEqual({ enabled_override: 1, max_documents_override: 5 })
+      expect(verify.prepare('SELECT id FROM bardwiki_documents ORDER BY id').all()).toEqual([
+        { id: sourceId },
+        { id: targetId },
+      ])
+      expect(
+        verify.prepare('SELECT document_id, version FROM bardwiki_document_versions ORDER BY document_id').all(),
+      ).toEqual([
+        { document_id: sourceId, version: 1 },
+        { document_id: targetId, version: 1 },
+      ])
+      expect(verify.prepare('SELECT id, state FROM bardwiki_turn_receipts').all()).toEqual([
+        { id: 'receipt-wiki', state: 'applied' },
+      ])
+      expect(verify.prepare('SELECT id, status FROM bardwiki_jobs').all()).toEqual([
+        { id: 'job-wiki', status: 'completed' },
+      ])
+      expect(verify.prepare('SELECT document_id, receipt_id FROM bardwiki_document_sources').all()).toEqual([
+        { document_id: sourceId, receipt_id: 'receipt-wiki' },
+      ])
+      expect(verify.prepare('SELECT receipt_id, document_id FROM bardwiki_change_manifest').all()).toEqual([
+        { receipt_id: 'receipt-wiki', document_id: sourceId },
+      ])
+      expect(verify.prepare('SELECT rebuild_job_id, change_json FROM bardwiki_rebuild_staging').all()).toEqual([
+        { rebuild_job_id: 'job-wiki', change_json: '{"operation":"create"}' },
+      ])
+      expect(verify.prepare('SELECT raw_target, resolved_document_id FROM bardwiki_links').all()).toEqual([
+        { raw_target: 'Places/Old Tavern', resolved_document_id: targetId },
+      ])
+      expect(
+        verify
+          .prepare('SELECT title_terms, alias_terms, heading_terms FROM bardwiki_document_search WHERE document_id = ?')
+          .get(targetId),
+      ).toEqual({ title_terms: 'old tavern', alias_terms: 'the inn', heading_terms: 'old tavern' })
+    } finally {
+      verify.close()
+    }
+  })
+
+  it.each(['restore', 'import'] as const)(
+    'rejects an old-lineage command held across a whole-database %s boundary',
+    async (replacementKind) => {
+      await stopHarness(harness)
+      let holdCommand = false
+      let markCommandHeld!: () => void
+      let releaseCommand!: () => void
+      const commandHeld = new Promise<void>((resolve) => {
+        markCommandHeld = resolve
+      })
+      const commandRelease = new Promise<void>((resolve) => {
+        releaseCommand = resolve
+      })
+      harness = await startHarness(undefined, (app) => {
+        app.addHook('preHandler', async (req) => {
+          if (!holdCommand || req.url.split('?')[0] !== '/api/v1/commands/settings/display') return
+          markCommandHeld()
+          await commandRelease
+        })
+      })
+
+      const { assertion } = await setupAuthedClient(harness.app)
+      await importDb(harness.app, assertion, { tag: 'replacement-A', theme: 'dark' })
+      const backup = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/backups',
+        headers: { 'risu-auth': assertion },
+        payload: { label: 'held-command restore target' },
+      })
+      expect(backup.statusCode).toBe(201)
+      await importDb(harness.app, assertion, { tag: 'live-B', theme: 'dark' })
+
+      const writerSession = 'tier4-held-command-writer'
+      const beforeReplacement = await injectComposedResourceDatabase(harness.app, {
+        method: 'GET',
+        url: '/api/v1/bootstrap',
+        headers: { 'risu-auth': assertion, 'risu-writer-session': writerSession },
+      })
+      expect(beforeReplacement.statusCode).toBe(200)
+      const oldLineage = beforeReplacement.json().databaseLineage as string
+      holdCommand = true
+      const heldCommand = harness.app.inject({
+        method: 'PATCH',
+        url: '/api/v1/commands/settings/display',
+        headers: {
+          'risu-auth': assertion,
+          'risu-writer-session': writerSession,
+          'risu-mutation-id': `held-across-${replacementKind}`,
+          'risu-database-lineage': oldLineage,
+        },
+        payload: {
+          baseRevision: beforeReplacement.json().revision,
+          patch: { theme: 'light' },
+        },
+      })
+      await commandHeld
+
+      const replacement =
+        replacementKind === 'restore'
+          ? await harness.app.inject({
+              method: 'POST',
+              url: `/api/v1/backups/${backup.json().id}/restore`,
+              headers: { 'risu-auth': assertion, 'risu-writer-session': writerSession },
+            })
+          : await harness.app.inject({
+              method: 'POST',
+              url: '/api/v1/import/risusave',
+              headers: { 'risu-auth': assertion, 'risu-writer-session': writerSession },
+              payload: { database: { characters: [], tag: 'replacement-A', theme: 'dark' } },
+            })
+      releaseCommand()
+
+      expect(replacement.statusCode).toBe(200)
+      expect(replacement.json().databaseLineage).not.toBe(oldLineage)
+      const rejected = await heldCommand
+      expect(rejected.statusCode).toBe(409)
+      expect(rejected.json()).toEqual({
+        error: 'database_lineage_conflict',
+        databaseLineage: replacement.json().databaseLineage,
+      })
+
+      const afterReplacement = await injectComposedResourceDatabase(harness.app, {
+        method: 'GET',
+        url: '/api/v1/bootstrap',
+        headers: { 'risu-auth': assertion, 'risu-writer-session': writerSession },
+      })
+      expect(afterReplacement.resourceDatabase).toMatchObject({ tag: 'replacement-A', theme: 'dark' })
+    },
+  )
+
+  it('clears device-local request history when restoring a SQLite backup', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const liveDbPath = path.join(harness.dataDir, 'risu.db')
+    const snapshotDb = new DatabaseSync(liveDbPath)
+    try {
+      insertRequestHistory(snapshotDb, 'snapshot-history', 'snapshot prompt', 'snapshot response')
+    } finally {
+      snapshotDb.close()
+    }
+
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'request history exclusion snapshot' },
+    })
+    expect(backup.statusCode).toBe(201)
+
+    const backupDb = new DatabaseSync(path.join(harness.dataDir, 'backups', backup.json().id, 'risu.db'), {
+      readOnly: true,
+    })
+    try {
+      expect(backupDb.prepare('SELECT id FROM request_history').all()).toEqual([{ id: 'snapshot-history' }])
+    } finally {
+      backupDb.close()
+    }
+
+    const liveDb = new DatabaseSync(liveDbPath)
+    try {
+      liveDb.exec('DELETE FROM request_history')
+      insertRequestHistory(liveDb, 'live-history', 'live prompt', 'live response')
+    } finally {
+      liveDb.close()
+    }
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const verify = new DatabaseSync(liveDbPath, { readOnly: true })
+    try {
+      expect(verify.prepare('SELECT id FROM request_history').all()).toEqual([])
+    } finally {
+      verify.close()
+    }
+  })
+
+  it('restores retry and tombstone snapshot state while preserving live push subscriptions', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'durability-character',
+          name: 'Durability Character',
+          chats: [
+            {
+              id: 'durability-chat',
+              name: 'Durability Chat',
+              note: '',
+              localLore: [],
+              message: [{ role: 'user', data: 'remember this', chatId: 'durability-message' }],
+              hypaV3Data: {
+                summaries: [{ text: 'Snapshot A legacy summary', chatMemos: ['durability-message'] }],
+              },
+            },
+          ],
+        },
+      ],
+    })
+
+    const liveDbPath = path.join(harness.dataDir, 'risu.db')
+    const seedSnapshotA = new DatabaseSync(liveDbPath)
+    let tombstoneA: { summary_id: string; chat_id: string; deleted_at: string }
+    let retryA: Record<string, unknown>
+    try {
+      const legacySummary = seedSnapshotA
+        .prepare("SELECT id FROM memory_summaries WHERE text = 'Snapshot A legacy summary'")
+        .get() as { id: string }
+      seedSnapshotA.prepare('DELETE FROM memory_summaries WHERE id = ?').run(legacySummary.id)
+      insertFinalizationRetry(seedSnapshotA, 'generation-A', 'durability-chat')
+      insertPushSubscription(seedSnapshotA, 'https://push.example/snapshot-A')
+      tombstoneA = seedSnapshotA
+        .prepare(
+          `SELECT summary_id, chat_id, deleted_at
+           FROM memory_legacy_summary_tombstones
+           WHERE summary_id = ?`,
+        )
+        .get(legacySummary.id) as typeof tombstoneA
+      retryA = seedSnapshotA
+        .prepare('SELECT * FROM generation_finalization_retries WHERE generation_id = ?')
+        .get('generation-A') as Record<string, unknown>
+    } finally {
+      seedSnapshotA.close()
+    }
+
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'durability ownership snapshot A' },
+    })
+    expect(backup.statusCode).toBe(201)
+
+    const seedLiveB = new DatabaseSync(liveDbPath)
+    try {
+      seedLiveB.exec(`
+        DELETE FROM generation_finalization_retries;
+        DELETE FROM memory_legacy_summary_tombstones;
+        DELETE FROM push_subscriptions;
+      `)
+      insertFinalizationRetry(seedLiveB, 'generation-B', 'live-chat-B')
+      seedLiveB
+        .prepare(
+          `INSERT INTO memory_legacy_summary_tombstones (summary_id, chat_id, deleted_at)
+           VALUES (?, ?, ?)`,
+        )
+        .run('summary-B', 'live-chat-B', '2026-07-23T01:00:00.000Z')
+      insertPushSubscription(seedLiveB, 'https://push.example/live-B')
+    } finally {
+      seedLiveB.close()
+    }
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const verify = new DatabaseSync(liveDbPath)
+    try {
+      expect(verify.prepare('SELECT * FROM generation_finalization_retries').all()).toEqual([retryA])
+      expect(
+        verify.prepare('SELECT summary_id, chat_id, deleted_at FROM memory_legacy_summary_tombstones').all(),
+      ).toEqual([tombstoneA])
+      expect(verify.prepare('SELECT endpoint, subscription_json FROM push_subscriptions').all()).toEqual([
+        {
+          endpoint: 'https://push.example/live-B',
+          subscription_json: JSON.stringify({
+            endpoint: 'https://push.example/live-B',
+            keys: {
+              p256dh: 'p256dh-https://push.example/live-B',
+              auth: 'auth-https://push.example/live-B',
+            },
+          }),
+        },
+      ])
+    } finally {
+      verify.close()
+    }
+
+    await restartHarness(harness)
+    const afterRestart = new DatabaseSync(liveDbPath)
+    try {
+      expect(
+        afterRestart.prepare("SELECT id FROM memory_summaries WHERE text = 'Snapshot A legacy summary'").all(),
+      ).toEqual([])
+      expect(
+        afterRestart.prepare('SELECT summary_id, chat_id, deleted_at FROM memory_legacy_summary_tombstones').all(),
+      ).toEqual([tombstoneA])
+    } finally {
+      afterRestart.close()
+    }
+  })
+
+  it('round-trips the operation ledger and rewrites every protocol lineage before boot reconciliation', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'operation-character',
+          name: 'Operation Character',
+          chats: [
+            {
+              id: 'operation-chat',
+              name: 'Operation Chat',
+              note: '',
+              localLore: [],
+              message: [
+                { role: 'user', data: 'accepted', chatId: 'operation-user' },
+                { role: 'char', data: 'persisted result', chatId: 'operation-result' },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+
+    const liveDbPath = path.join(harness.dataDir, 'risu.db')
+    const seed = new DatabaseSync(liveDbPath)
+    let originalLineage: string
+    let originalProjectionEpoch: number
+    try {
+      seed.exec('PRAGMA foreign_keys = ON')
+      originalLineage = getDatabaseLineage(seed)
+      createGenerationOperation(seed, {
+        databaseLineage: originalLineage,
+        operationId: 'operation-round-trip',
+        protocolVersion: 1,
+        requestOrigin: 'accepted_send',
+        creatorWriterSessionId: 'writer-round-trip',
+        creatorWriterEpoch: 3,
+        bindingServerInstanceId: 'server-before-backup',
+        characterId: 'operation-character',
+        chatId: 'operation-chat',
+        mode: 'send',
+        acceptedMessageId: 'operation-user',
+        requestFingerprint: 'b'.repeat(64),
+        intent: { mode: 'send' },
+        acceptedRevision: 1,
+        state: 'accepted',
+      })
+      reserveGenerationOperationAttempt(seed, {
+        databaseLineage: originalLineage,
+        operationId: 'operation-round-trip',
+        expectedState: 'accepted',
+        expectedStateVersion: 1,
+        retryRequestId: 'operation-round-trip',
+        jobId: 'job-round-trip',
+        serverInstanceId: 'server-before-backup',
+        actorWriterSessionId: 'writer-round-trip',
+        actorWriterEpoch: 3,
+        launchRevision: 1,
+      })
+      transitionGenerationOperation(seed, {
+        databaseLineage: originalLineage,
+        operationId: 'operation-round-trip',
+        expectedState: 'launching',
+        expectedStateVersion: 2,
+        nextState: 'owned_by_job',
+      })
+      seed
+        .prepare(
+          `
+          UPDATE messages
+          SET json = json_set(
+            json,
+            '$.generationInfo',
+            json(?)
+          )
+          WHERE uid = 'operation-result'
+        `,
+        )
+        .run(JSON.stringify({ databaseLineage: originalLineage, operationId: 'operation-round-trip' }))
+      insertFinalizationRetry(seed, 'job-round-trip', 'operation-chat')
+      seed
+        .prepare(
+          `
+          UPDATE generation_finalization_retries
+          SET database_lineage = ?, operation_id = 'operation-round-trip', operation_attempt_no = 1,
+              actor_writer_session_id = 'writer-round-trip', actor_writer_epoch = 3,
+              accepted_message_id = 'operation-user', terminal_outcome = 'completed'
+          WHERE generation_id = 'job-round-trip'
+        `,
+        )
+        .run(originalLineage)
+      seed
+        .prepare(
+          `
+          UPDATE command_events
+          SET database_lineage = ?, operation_id = 'operation-round-trip',
+              source_message_id = 'operation-user', job_id = 'job-round-trip'
+          WHERE revision = 1
+        `,
+        )
+        .run(originalLineage)
+      originalProjectionEpoch = (
+        seed.prepare('SELECT epoch FROM generation_operation_projection_state WHERE id = 1').get() as { epoch: number }
+      ).epoch
+    } finally {
+      seed.close()
+    }
+
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'operation ledger round trip' },
+    })
+    expect(backup.statusCode).toBe(201)
+
+    const replaceLive = new DatabaseSync(liveDbPath)
+    try {
+      replaceLive.exec(`
+        DELETE FROM generation_operation_attempts;
+        DELETE FROM generation_operations;
+        DELETE FROM generation_finalization_retries;
+      `)
+    } finally {
+      replaceLive.close()
+    }
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+    const restoredLineage = restored.json().databaseLineage as string
+    expect(restoredLineage).not.toBe(originalLineage)
+
+    const verify = new DatabaseSync(liveDbPath, { readOnly: true })
+    try {
+      expect(
+        verify
+          .prepare(
+            `SELECT database_lineage, state, state_version, projection_epoch, result_message_id
+             FROM generation_operations WHERE operation_id = 'operation-round-trip'`,
+          )
+          .get(),
+      ).toEqual({
+        database_lineage: restoredLineage,
+        state: 'completed',
+        state_version: 4,
+        projection_epoch: expect.any(Number),
+        result_message_id: 'operation-result',
+      })
+      const projectionEpoch = (
+        verify.prepare('SELECT epoch FROM generation_operation_projection_state WHERE id = 1').get() as {
+          epoch: number
+        }
+      ).epoch
+      expect(projectionEpoch).toBeGreaterThan(originalProjectionEpoch)
+      expect(
+        verify
+          .prepare(
+            `SELECT database_lineage, status FROM generation_operation_attempts
+             WHERE operation_id = 'operation-round-trip'`,
+          )
+          .get(),
+      ).toEqual({ database_lineage: restoredLineage, status: 'completed' })
+      expect(
+        verify
+          .prepare(
+            `SELECT database_lineage, operation_id, operation_attempt_no, terminal_outcome
+             FROM generation_finalization_retries WHERE generation_id = 'job-round-trip'`,
+          )
+          .get(),
+      ).toEqual({
+        database_lineage: restoredLineage,
+        operation_id: 'operation-round-trip',
+        operation_attempt_no: 1,
+        terminal_outcome: 'completed',
+      })
+      expect(
+        verify
+          .prepare(
+            `SELECT database_lineage, operation_id, source_message_id, job_id
+             FROM command_events WHERE operation_id = 'operation-round-trip'`,
+          )
+          .get(),
+      ).toEqual({
+        database_lineage: restoredLineage,
+        operation_id: 'operation-round-trip',
+        source_message_id: 'operation-user',
+        job_id: 'job-round-trip',
+      })
+      const restoredMessage = verify.prepare("SELECT json FROM messages WHERE uid = 'operation-result'").get() as {
+        json: string
+      }
+      expect(JSON.parse(restoredMessage.json)).toMatchObject({
+        generationInfo: {
+          databaseLineage: restoredLineage,
+          operationId: 'operation-round-trip',
+        },
+      })
+    } finally {
+      verify.close()
+    }
+  })
+
+  it('restores historical retry tables with schema-aware defaults', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, { tag: 'historical-queue-backup' })
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'historical queue shape' },
+    })
+    expect(backup.statusCode).toBe(201)
+
+    const backupDb = new DatabaseSync(path.join(harness.dataDir, 'backups', backup.json().id, 'risu.db'))
+    try {
+      backupDb.exec(`
+        DROP TABLE generation_finalization_retries;
+        CREATE TABLE generation_finalization_retries (
+          generation_id TEXT PRIMARY KEY,
+          chat_id TEXT NOT NULL,
+          mode TEXT NOT NULL,
+          target_message_id TEXT,
+          message_json TEXT NOT NULL,
+          chat_var_mutations_json TEXT NOT NULL,
+          failure_count INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          terminal_error TEXT,
+          status TEXT NOT NULL DEFAULT 'pending',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO generation_finalization_retries (
+          generation_id,
+          chat_id,
+          mode,
+          target_message_id,
+          message_json,
+          chat_var_mutations_json,
+          failure_count,
+          last_error,
+          terminal_error,
+          status,
+          created_at,
+          updated_at
+        ) VALUES (
+          'generation-old',
+          'chat-old',
+          'continue',
+          'target-old',
+          '{"role":"char","data":"historical payload","chatId":"message-old"}',
+          '[{"key":"historical","value":"retained"}]',
+          3,
+          'historical failure',
+          'historical terminal failure',
+          'terminal',
+          '2026-07-20T00:00:00.000Z',
+          '2026-07-20T00:00:01.000Z'
+        );
+      `)
+    } finally {
+      backupDb.close()
+    }
+
+    const live = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      insertFinalizationRetry(live, 'generation-live', 'chat-live')
+    } finally {
+      live.close()
+    }
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const verify = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      expect(
+        verify
+          .prepare(
+            `SELECT generation_id, chat_id, mode, target_message_id, message_json,
+                    alternate_messages_json, chat_var_mutations_json, target_snapshot_json,
+                    failure_count, last_error, terminal_error, status, created_at, updated_at
+             FROM generation_finalization_retries`,
+          )
+          .all(),
+      ).toEqual([
+        {
+          generation_id: 'generation-old',
+          chat_id: 'chat-old',
+          mode: 'continue',
+          target_message_id: 'target-old',
+          message_json: '{"role":"char","data":"historical payload","chatId":"message-old"}',
+          alternate_messages_json: '[]',
+          chat_var_mutations_json: '[{"key":"historical","value":"retained"}]',
+          target_snapshot_json: null,
+          failure_count: 3,
+          last_error: 'historical failure',
+          terminal_error: 'historical terminal failure',
+          status: 'terminal',
+          created_at: '2026-07-20T00:00:00.000Z',
+          updated_at: '2026-07-20T00:00:01.000Z',
+        },
+      ])
+    } finally {
+      verify.close()
+    }
+  })
+
+  it('quarantines a restored unfenced continue retry after the target is edited without replaying or pruning it', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, {
+      currentChar: 0,
+      characters: [
+        {
+          type: 'character',
+          chaId: 'legacy-character',
+          name: 'Legacy Character',
+          chatPage: 0,
+          chats: [
+            {
+              id: 'legacy-chat',
+              name: 'Legacy Chat',
+              note: '',
+              localLore: [],
+              message: [
+                { role: 'user', data: 'story', chatId: 'legacy-user' },
+                { role: 'char', data: 'original target', chatId: 'legacy-target' },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'legacy unfenced continue retry' },
+    })
+    expect(backup.statusCode).toBe(201)
+
+    const backupDb = new DatabaseSync(path.join(harness.dataDir, 'backups', backup.json().id, 'risu.db'))
+    try {
+      backupDb.exec(`
+        DROP TABLE generation_finalization_retries;
+        CREATE TABLE generation_finalization_retries (
+          generation_id TEXT PRIMARY KEY,
+          chat_id TEXT NOT NULL,
+          mode TEXT NOT NULL,
+          target_message_id TEXT,
+          message_json TEXT NOT NULL,
+          chat_var_mutations_json TEXT NOT NULL,
+          failure_count INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          terminal_error TEXT,
+          status TEXT NOT NULL DEFAULT 'pending',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO generation_finalization_retries (
+          generation_id,
+          chat_id,
+          mode,
+          target_message_id,
+          message_json,
+          chat_var_mutations_json,
+          status,
+          created_at,
+          updated_at
+        ) VALUES (
+          'legacy-continue-generation',
+          'legacy-chat',
+          'continue',
+          'legacy-target',
+          '{"role":"char","data":"unsafe restored replacement","chatId":"legacy-target"}',
+          '[]',
+          'pending',
+          '2026-07-20T00:00:00.000Z',
+          '2026-07-20T00:00:01.000Z'
+        );
+      `)
+    } finally {
+      backupDb.close()
+    }
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    const edited = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/messages/legacy-target',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: bootstrap.json().revision,
+        patch: { data: 'newer edit after restore' },
+      },
+    })
+    expect(edited.statusCode).toBe(200)
+
+    const liveDbPath = path.join(harness.dataDir, 'risu.db')
+    const liveDb = new DatabaseSync(liveDbPath)
+    try {
+      expect(
+        retryQueuedGenerationFinalizations({
+          db: liveDb,
+          dataDir: harness.dataDir,
+          eventSink: harness.commandEvents,
+          messageTranslationJobs: new MessageTranslationJobRegistry(),
+        }),
+      ).toEqual({ attempted: 1, persisted: 0, terminal: 1, retryable: 0 })
+
+      expect(
+        liveDb
+          .prepare(
+            `SELECT status, failure_count, last_error, terminal_error, target_snapshot_json
+             FROM generation_finalization_retries
+             WHERE generation_id = 'legacy-continue-generation'`,
+          )
+          .get(),
+      ).toEqual({
+        status: 'terminal',
+        failure_count: 1,
+        last_error: GENERATION_FINALIZATION_LEGACY_SNAPSHOT_ERROR,
+        terminal_error: GENERATION_FINALIZATION_LEGACY_SNAPSHOT_ERROR,
+        target_snapshot_json: null,
+      })
+      expect(liveDb.prepare("SELECT data FROM messages WHERE uid = 'legacy-target'").get()).toEqual({
+        data: 'newer edit after restore',
+      })
+      expect(
+        liveDb.prepare("SELECT COUNT(*) AS count FROM messages WHERE data = 'unsafe restored replacement'").get(),
+      ).toEqual({ count: 0 })
+
+      expect(
+        liveDb
+          .prepare(
+            "SELECT generation_id FROM generation_finalization_retries WHERE generation_id = 'legacy-continue-generation'",
+          )
+          .get(),
+      ).toEqual({ generation_id: 'legacy-continue-generation' })
+    } finally {
+      liveDb.close()
+    }
+  })
+
+  it('clears snapshot-owned rows when an older backup lacks durability or greeting tables', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, { tag: 'pre-durability-tables' })
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'backup before durability tables' },
+    })
+    expect(backup.statusCode).toBe(201)
+
+    const backupDb = new DatabaseSync(path.join(harness.dataDir, 'backups', backup.json().id, 'risu.db'))
+    try {
+      backupDb.exec(`
+        DROP TABLE generation_finalization_retries;
+        DROP TRIGGER tombstone_deleted_legacy_memory_summary;
+        DROP TABLE memory_legacy_summary_tombstones;
+        DROP TABLE greeting_translations;
+      `)
+    } finally {
+      backupDb.close()
+    }
+
+    const live = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      insertFinalizationRetry(live, 'generation-live', 'chat-live')
+      live
+        .prepare(
+          `INSERT INTO memory_legacy_summary_tombstones (summary_id, chat_id, deleted_at)
+           VALUES ('summary-live', 'chat-live', '2026-07-23T02:00:00.000Z')`,
+        )
+        .run()
+    } finally {
+      live.close()
+    }
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const verify = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      expect(verify.prepare('SELECT * FROM generation_finalization_retries').all()).toEqual([])
+      expect(verify.prepare('SELECT * FROM memory_legacy_summary_tombstones').all()).toEqual([])
+      expect(verify.prepare('SELECT * FROM greeting_translations').all()).toEqual([])
+    } finally {
+      verify.close()
+    }
   })
 
   it('snapshots pre-restore state and also protects restores of automatic snapshots', async () => {
@@ -417,12 +1517,12 @@ describe('Phase 2D backups', () => {
     })
     expect(restored.statusCode).toBe(200)
 
-    const afterRestore = await harness.app.inject({
+    const afterRestore = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(afterRestore.json().database).toMatchObject({ tag: 'A' })
+    expect(afterRestore.resourceDatabase).toMatchObject({ tag: 'A' })
 
     const automaticAfter = listBackups(harness.dataDir).filter((backup) => backup.kind === 'automatic')
     expect(automaticAfter.some((backup) => backup.id === automaticA!.id)).toBe(true)
@@ -474,16 +1574,16 @@ describe('Phase 2D backups', () => {
     expect(manual.statusCode).toBe(201)
     await importDb(harness.app, assertion, { tag: 'B' })
 
-    const originalWriteFileSync = fs.writeFileSync.bind(fs)
-    vi.spyOn(fs, 'writeFileSync').mockImplementation((file, data, options) => {
+    const originalWriteFile = fs.promises.writeFile.bind(fs.promises)
+    vi.spyOn(fs.promises, 'writeFile').mockImplementation(async (file, data, options) => {
       if (
-        String(file).endsWith(`${path.sep}manifest.json`) &&
+        String(file).endsWith(`${path.sep}.manifest.json`) &&
         String(file).includes(`${path.sep}backups${path.sep}`) &&
         String(data).includes('"kind":"automatic"')
       ) {
         throw new Error('injected automatic backup manifest failure')
       }
-      return originalWriteFileSync(file, data, options)
+      return originalWriteFile(file, data, options)
     })
 
     const automaticBefore = listBackups(harness.dataDir).filter((backup) => backup.kind === 'automatic')
@@ -495,12 +1595,12 @@ describe('Phase 2D backups', () => {
     expect(restored.statusCode).toBe(500)
     expect(restored.json()).toEqual({ error: 'automatic_backup_failed' })
 
-    const after = await harness.app.inject({
+    const after = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(after.json().database).toMatchObject({ tag: 'B' })
+    expect(after.resourceDatabase).toMatchObject({ tag: 'B' })
     expect(listBackups(harness.dataDir).filter((backup) => backup.kind === 'automatic')).toEqual(automaticBefore)
   })
 
@@ -571,7 +1671,7 @@ describe('Phase 2D backups', () => {
       writeFileSync(path.join(scratchDir, 'untouched'), 'sentinel')
     }
 
-    const before = await harness.app.inject({
+    const before = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -588,13 +1688,13 @@ describe('Phase 2D backups', () => {
     expect(restored.json()).toEqual({ error: testCase.expectedError })
     expect(listBackups(harness.dataDir).filter((backup) => backup.kind === 'automatic')).toEqual([])
 
-    const after = await harness.app.inject({
+    const after = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(after.json().revision).toBe(revisionBefore)
-    expect(after.json().database).toMatchObject({ tag: liveTag })
+    expect(after.resourceDatabase).toMatchObject({ tag: liveTag })
     expect(readFileSync(liveAssetFile, 'utf8')).toBe('live-asset')
     expect(readFileSync(liveSaveFile, 'utf8')).toBe('live-save')
     for (const scratchDir of restoreScratchDirs) {
@@ -628,12 +1728,12 @@ describe('Phase 2D backups', () => {
     expect(restored.statusCode).toBe(500)
     expect(readFileSync(path.join(parkedAssets, 'only-surviving-copy'), 'utf8')).toBe('preserve-me')
     expect(existsSync(path.join(harness.dataDir, `.restore-journal-${backupId}.json`))).toBe(false)
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database).toMatchObject({ tag: 'live-B' })
+    expect(bootstrap.resourceDatabase).toMatchObject({ tag: 'live-B' })
   })
 
   it('repairs stable lorebook ids while restoring a pre-v23 SQLite backup', async () => {
@@ -686,12 +1786,12 @@ describe('Phase 2D backups', () => {
     })
     expect(restored.statusCode).toBe(200)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    const restoredLorebook = bootstrap.json().database.loreBook[0] as {
+    const restoredLorebook = bootstrap.resourceDatabase.loreBook[0] as {
       id: string
       data: Array<{ id: string }>
     }
@@ -716,16 +1816,183 @@ describe('Phase 2D backups', () => {
     })
     expect(added.statusCode).toBe(200)
 
-    const reloaded = await harness.app.inject({
+    const reloaded = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(reloaded.json().database.loreBook[0]).toMatchObject({
+    expect(reloaded.resourceDatabase.loreBook[0]).toMatchObject({
       id: restoredLorebook.id,
       data: [
         expect.objectContaining({ id: restoredLorebook.data[0].id }),
         expect.objectContaining({ id: addedEntry.id }),
+      ],
+    })
+  })
+
+  it('repairs durable persona selection identity while restoring a pre-v35 SQLite backup', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, {
+      tag: 'pre-v35-persona',
+      selectedPersonaId: 'persona-before-backup',
+      selectedPersona: 0,
+      personas: [{ id: 'persona-before-backup', name: 'Before backup' }],
+    })
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'pre-v35 persona identity' },
+    })
+    expect(backup.statusCode).toBe(201)
+
+    const backupDb = new DatabaseSync(path.join(harness.dataDir, 'backups', backup.json().id, 'risu.db'))
+    try {
+      const settingsRow = backupDb.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+        data_json: string
+      }
+      const settings = JSON.parse(settingsRow.data_json) as Record<string, unknown>
+      settings.selectedPersona = 2
+      settings.selectedPersonaId = 'duplicate-persona'
+      backupDb.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+      backupDb.exec('DELETE FROM personas')
+      const insertPersona = backupDb.prepare('INSERT INTO personas (position, data_json) VALUES (?, ?)')
+      insertPersona.run(0, JSON.stringify({ id: 'duplicate-persona', name: 'First' }))
+      insertPersona.run(1, JSON.stringify({ id: 'duplicate-persona', name: 'Second' }))
+      insertPersona.run(2, JSON.stringify({ name: 'Selected' }))
+      backupDb.prepare('UPDATE schema_version SET version = 34 WHERE id = 1').run()
+    } finally {
+      backupDb.close()
+    }
+
+    await importDb(harness.app, assertion, { tag: 'live-after-persona-backup' })
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.resourceDatabase).toMatchObject({
+      selectedPersona: 2,
+      selectedPersonaId: 'persona-3',
+      personas: [
+        { id: 'duplicate-persona', name: 'First' },
+        { id: 'persona-2', name: 'Second' },
+        { id: 'persona-3', name: 'Selected' },
+      ],
+    })
+  })
+
+  it('repairs a legacy numeric translator selection when restoring a SQLite backup', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, {
+      tag: 'legacy-translator-selection',
+      translatorPresetId: 'translator-b',
+      translatorPresets: [
+        { id: 'translator-a', name: 'First', prompt: 'First prompt', maxResponse: 500 },
+        { id: 'translator-b', name: 'Second', prompt: 'Second prompt', maxResponse: 700 },
+      ],
+    })
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'legacy translator selection' },
+    })
+    expect(backup.statusCode).toBe(201)
+    const backupDb = new DatabaseSync(path.join(harness.dataDir, 'backups', backup.json().id, 'risu.db'))
+    try {
+      const row = backupDb.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      const settings = { ...JSON.parse(row.data_json), translatorPresetId: 1 }
+      backupDb.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+      backupDb.exec('UPDATE schema_version SET version = 36 WHERE id = 1')
+    } finally {
+      backupDb.close()
+    }
+    await importDb(harness.app, assertion, { tag: 'after-translator-backup' })
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.resourceDatabase).toMatchObject({
+      translatorPresetId: 'translator-b',
+      translatorPrompt: 'Second prompt',
+      translatorMaxResponse: 700,
+      translatorPresets: [
+        { id: 'translator-a', prompt: 'First prompt' },
+        { id: 'translator-b', prompt: 'Second prompt' },
+      ],
+    })
+  })
+
+  it('repairs durable Hypa V3 preset identity while restoring a pre-v36 SQLite backup', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, {
+      tag: 'pre-v36-hypa',
+      hypaV3PresetId: 0,
+      selectedHypaV3PresetId: 'memory-before-backup',
+      hypaV3Presets: [{ id: 'memory-before-backup', name: 'Before backup', settings: {} }],
+    })
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'pre-v36 Hypa V3 preset identity' },
+    })
+    expect(backup.statusCode).toBe(201)
+
+    const backupDb = new DatabaseSync(path.join(harness.dataDir, 'backups', backup.json().id, 'risu.db'))
+    try {
+      const settingsRow = backupDb.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+        data_json: string
+      }
+      const settings = JSON.parse(settingsRow.data_json) as Record<string, unknown>
+      settings.hypaV3PresetId = 2
+      settings.selectedHypaV3PresetId = 'duplicate-memory'
+      backupDb.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+      backupDb.exec('DELETE FROM hypa_v3_presets')
+      const insertPreset = backupDb.prepare('INSERT INTO hypa_v3_presets (position, data_json) VALUES (?, ?)')
+      insertPreset.run(0, JSON.stringify({ id: 'duplicate-memory', name: 'First', settings: {} }))
+      insertPreset.run(1, JSON.stringify({ id: 'duplicate-memory', name: 'Second', settings: {} }))
+      insertPreset.run(2, JSON.stringify({ name: 'Selected', settings: {} }))
+      backupDb.prepare('UPDATE schema_version SET version = 35 WHERE id = 1').run()
+    } finally {
+      backupDb.close()
+    }
+
+    await importDb(harness.app, assertion, { tag: 'live-after-hypa-backup' })
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.resourceDatabase).toMatchObject({
+      hypaV3PresetId: 2,
+      selectedHypaV3PresetId: 'hypa-v3-preset-3',
+      hypaV3Presets: [
+        { id: 'duplicate-memory', name: 'First' },
+        { id: 'hypa-v3-preset-2', name: 'Second' },
+        { id: 'hypa-v3-preset-3', name: 'Selected' },
       ],
     })
   })
@@ -755,12 +2022,12 @@ describe('Phase 2D backups', () => {
       promptPresetsId: 0,
       promptPresets: [{ id: 'prompt-B', name: 'Prompt B', promptTemplate: [{ role: 'system', content: 'B' }] }],
     })
-    const beforeRestore = await harness.app.inject({
+    const beforeRestore = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(beforeRestore.json().database).toMatchObject({
+    expect(beforeRestore.resourceDatabase).toMatchObject({
       tag: 'preset-B',
       modelPresets: [{ id: 'model-B', name: 'Model B', aiModel: 'model-after-backup' }],
       promptPresets: [{ id: 'prompt-B', name: 'Prompt B' }],
@@ -773,12 +2040,12 @@ describe('Phase 2D backups', () => {
     })
     expect(restored.statusCode).toBe(200)
 
-    const afterRestore = await harness.app.inject({
+    const afterRestore = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(afterRestore.json().database).toMatchObject({
+    expect(afterRestore.resourceDatabase).toMatchObject({
       tag: 'preset-A',
       modelPresetsId: 0,
       modelPresets: [{ id: 'model-A', name: 'Model A', aiModel: 'model-before-backup' }],
@@ -810,13 +2077,13 @@ describe('Phase 2D backups', () => {
 
     expect(restored.statusCode).toBe(500)
     expect(harness.commandEvents.list()).toEqual([])
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(2)
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       tag: 'B',
       characters: [],
       botPresets: [],
@@ -877,12 +2144,12 @@ describe('Phase 2D backups', () => {
     cpSpy.mockRestore()
     await restartHarness(harness)
 
-    const afterBoot = await harness.app.inject({
+    const afterBoot = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(afterBoot.json().database).toMatchObject({ tag: 'live-B' })
+    expect(afterBoot.resourceDatabase).toMatchObject({ tag: 'live-B' })
     expect(readFileSync(liveAssetFile, 'utf8')).toBe('asset-B')
     expect(readFileSync(liveSaveFile, 'utf8')).toBe('save-B')
     expect(existsSync(path.join(harness.dataDir, `.restore-journal-${backupId}.json`))).toBe(false)
@@ -930,12 +2197,12 @@ describe('Phase 2D backups', () => {
     rmSpy.mockRestore()
     await restartHarness(harness)
 
-    const afterBoot = await harness.app.inject({
+    const afterBoot = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(afterBoot.json().database).toMatchObject({ tag: 'restore-source-A' })
+    expect(afterBoot.resourceDatabase).toMatchObject({ tag: 'restore-source-A' })
     expect(readFileSync(liveAssetFile, 'utf8')).toBe('asset-A')
     expect(readFileSync(liveSaveFile, 'utf8')).toBe('save-A')
     expect(existsSync(path.join(harness.dataDir, `.restore-journal-${backupId}.json`))).toBe(false)
@@ -987,12 +2254,12 @@ describe('Phase 2D backups', () => {
     renameSpy.mockRestore()
     await restartHarness(harness)
 
-    const afterBoot = await harness.app.inject({
+    const afterBoot = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(afterBoot.json().database).toMatchObject({ tag: 'lineage-source-A' })
+    expect(afterBoot.resourceDatabase).toMatchObject({ tag: 'lineage-source-A' })
     expect(readFileSync(liveAssetFile, 'utf8')).toBe('asset-A')
     expect(readFileSync(liveSaveFile, 'utf8')).toBe('save-A')
     expect(existsSync(journalFile)).toBe(false)
@@ -1035,12 +2302,12 @@ describe('Phase 2D backups', () => {
     consoleError.mockRestore()
 
     expect(restored.statusCode).toBe(200)
-    const after = await harness.app.inject({
+    const after = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(after.json().database).toMatchObject({ tag: 'restore-source-A' })
+    expect(after.resourceDatabase).toMatchObject({ tag: 'restore-source-A' })
     expect(readFileSync(liveAssetFile, 'utf8')).toBe('asset-A')
     expect(readFileSync(liveSaveFile, 'utf8')).toBe('save-A')
     expect(existsSync(path.join(harness.dataDir, `.restore-journal-${backupId}.json`))).toBe(false)
@@ -1102,12 +2369,12 @@ describe('Phase 2D backups', () => {
     })
     expect(restored.statusCode).toBe(200)
 
-    const afterRestore = await harness.app.inject({
+    const afterRestore = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    const chats = afterRestore.json().database.characters[0].chats
+    const chats = afterRestore.resourceDatabase.characters[0].chats
     expect(chats).toHaveLength(1)
     expect(chats[0].id).toBe('chat-1')
     expect(chats[0].message).toEqual([]) // stub — messages hydrate on open
@@ -1161,6 +2428,124 @@ describe('Phase 2D backups', () => {
     expect(Buffer.from(asset.rawPayload)).toEqual(PNG_BYTES)
   })
 
+  it('keeps every snapshotted asset reference readable when an upload lands between SQLite and file copies', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const initialUpload = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'content-type': 'image/png', 'risu-auth': assertion },
+      payload: PNG_BYTES,
+    })
+    expect(initialUpload.statusCode).toBe(201)
+
+    const concurrentBytes = Buffer.from('/* tier-4 concurrent backup asset */')
+    let concurrentAssetId = ''
+    let injected = false
+    const liveAssets = assetsDir(harness.dataDir)
+    const originalCopyBatch = BackupCopyPool.prototype.runBatch
+    const copySpy = vi.spyOn(BackupCopyPool.prototype, 'runBatch').mockImplementation(async function (
+      this: BackupCopyPool,
+      entries,
+    ) {
+      if (
+        !injected &&
+        entries.some(
+          (entry) =>
+            entry.from.startsWith(`${liveAssets}${path.sep}`) && entry.to.includes(`${path.sep}backups${path.sep}`),
+        )
+      ) {
+        injected = true
+        const concurrentDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+        try {
+          concurrentAssetId = addAsset(concurrentDb, harness.dataDir, {
+            bytes: concurrentBytes,
+            contentType: 'text/css',
+          }).entry.id
+        } finally {
+          concurrentDb.close()
+        }
+      }
+      return originalCopyBatch.call(this, entries)
+    })
+
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'concurrent asset boundary' },
+    })
+    copySpy.mockRestore()
+    expect(backup.statusCode).toBe(201)
+    expect(injected).toBe(true)
+    expect(backup.json().assetCount).toBe(1)
+
+    const backupRoot = path.join(harness.dataDir, 'backups', backup.json().id)
+    const backupDb = new DatabaseSync(path.join(backupRoot, 'risu.db'), { readOnly: true })
+    try {
+      const snapshottedAssets = getAllAssetMetadata(backupDb)
+      expect(snapshottedAssets.map((asset) => asset.id)).toEqual([PNG_SHA])
+      for (const asset of snapshottedAssets) {
+        expect(existsSync(path.join(backupRoot, 'assets', `${asset.id}.${asset.ext}`))).toBe(true)
+      }
+    } finally {
+      backupDb.close()
+    }
+
+    // The directory copy can include a T2 upload that the T1 SQLite snapshot
+    // does not index. It is a harmless extra on restore: authoritative metadata
+    // never points at missing bytes, and the later file remains unreachable.
+    expect(readFileSync(path.join(backupRoot, 'assets', `${concurrentAssetId}.css`))).toEqual(concurrentBytes)
+    rmSync(liveAssets, { recursive: true, force: true })
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const snapshottedAsset = await harness.app.inject({ method: 'GET', url: `/api/v1/assets/${PNG_SHA}` })
+    expect(snapshottedAsset.statusCode).toBe(200)
+    expect(Buffer.from(snapshottedAsset.rawPayload)).toEqual(PNG_BYTES)
+    const unindexedExtra = await harness.app.inject({
+      method: 'GET',
+      url: `/api/v1/assets/${concurrentAssetId}`,
+    })
+    expect(unindexedExtra.statusCode).toBe(404)
+  })
+
+  it('clears device-local request history when restoring a legacy JSON backup', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const liveDbPath = path.join(harness.dataDir, 'risu.db')
+    const liveDb = new DatabaseSync(liveDbPath)
+    try {
+      insertRequestHistory(liveDb, 'live-legacy-history', 'legacy live prompt', 'legacy live response')
+    } finally {
+      liveDb.close()
+    }
+
+    const backupId = '2026-06-03-00-00-00-aabbcc'
+    const backupRoot = path.join(harness.dataDir, 'backups', backupId)
+    mkdirSync(backupRoot, { recursive: true })
+    writeFileSync(
+      path.join(backupRoot, 'db.json'),
+      JSON.stringify({ _version: 1, database: { characters: [] }, assets: [] }),
+    )
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backupId}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const verify = new DatabaseSync(liveDbPath, { readOnly: true })
+    try {
+      expect(verify.prepare('SELECT id FROM request_history').all()).toEqual([])
+    } finally {
+      verify.close()
+    }
+  })
+
   it('restores a legacy db.json backup into SQLite tables', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDb(harness.app, assertion, { tag: 'live-before-legacy-restore' })
@@ -1178,6 +2563,13 @@ describe('Phase 2D backups', () => {
     }
     const legacyDatabase = {
       tag: 'legacy-db-json',
+      selectedPersona: 2,
+      selectedPersonaId: 'duplicate-persona',
+      personas: [
+        { id: 'duplicate-persona', name: 'First legacy persona' },
+        { id: 'duplicate-persona', name: 'Second legacy persona' },
+        { name: 'Selected legacy persona' },
+      ],
       modules: [{ id: 'module-a', name: 'Legacy module', assets: [['icon.png', PNG_SHA, 'png']] }],
       pluginCustomStorage: { 'plugin-a': { enabled: true } },
       characters: [
@@ -1214,14 +2606,21 @@ describe('Phase 2D backups', () => {
       copyFileSpy.mock.calls.some(([, destination]) => String(destination) === path.join(harness.dataDir, 'db.json')),
     ).toBe(false)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.statusCode).toBe(200)
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       tag: 'legacy-db-json',
+      selectedPersona: 2,
+      selectedPersonaId: 'persona-3',
+      personas: [
+        { id: 'duplicate-persona', name: 'First legacy persona' },
+        { id: 'persona-2', name: 'Second legacy persona' },
+        { id: 'persona-3', name: 'Selected legacy persona' },
+      ],
       modules: [{ id: 'module-a', name: 'Legacy module' }],
       pluginCustomStorage: { 'plugin-a': { enabled: true } },
       characters: [{ chaId: 'legacy-char', chats: [{ id: 'legacy-chat', message: [] }] }],
@@ -1297,12 +2696,12 @@ describe('Phase 2D backups', () => {
     expect(existsSync(path.join(harness.dataDir, 'db.json.migrated'))).toBe(false)
     expect(existsSync(legacySnapshotPath)).toBe(true)
 
-    const afterFailure = await harness.app.inject({
+    const afterFailure = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(afterFailure.json().database).toMatchObject({ tag: 'live-before-failed-legacy-restore' })
+    expect(afterFailure.resourceDatabase).toMatchObject({ tag: 'live-before-failed-legacy-restore' })
 
     const removeFailure = new DatabaseSync(liveDbPath)
     try {
@@ -1313,17 +2712,17 @@ describe('Phase 2D backups', () => {
     await importDb(harness.app, assertion, { tag: 'newer-write-after-failed-restore' })
 
     await restartHarness(harness)
-    const afterRestart = await harness.app.inject({
+    const afterRestart = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(afterRestart.statusCode).toBe(200)
-    expect(afterRestart.json().database).toMatchObject({ tag: 'newer-write-after-failed-restore' })
+    expect(afterRestart.resourceDatabase).toMatchObject({ tag: 'newer-write-after-failed-restore' })
     expect(existsSync(path.join(harness.dataDir, 'db.json'))).toBe(false)
   })
 
-  it('skips a corrupt manifest instead of failing the whole backups list (L27)', async () => {
+  it('skips a corrupt manifest instead of failing the whole backups list', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const a = await harness.app.inject({
       method: 'POST',
@@ -1353,10 +2752,10 @@ describe('Phase 2D backups', () => {
     expect(list.json().backups.map((m: { id: string }) => m.id)).toEqual([a.json().id])
   })
 
-  it('rejects an unreadable legacy db.json before restore staging, with no restore event (L28)', async () => {
+  it('rejects an unreadable legacy db.json before restore staging, with no restore event', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDb(harness.app, assertion, { tag: 'live-before-broken-legacy' })
-    const before = await harness.app.inject({
+    const before = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -1381,13 +2780,13 @@ describe('Phase 2D backups', () => {
     // Validation happens before the table clear and no restore event is emitted
     // or persisted.
     expect(harness.commandEvents.list()).toEqual([])
-    const after = await harness.app.inject({
+    const after = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(after.json().revision).toBe(revisionBefore)
-    expect(after.json().database).toMatchObject({ tag: 'live-before-broken-legacy' })
+    expect(after.resourceDatabase).toMatchObject({ tag: 'live-before-broken-legacy' })
   })
 
   it('restore of an unknown id returns 404', async () => {
@@ -1457,7 +2856,7 @@ describe('Phase 2D backups', () => {
     }
   })
 
-  it('A4EC4/B4: round-trips SQLite memory tables across backup and restore', async () => {
+  it('round-trips SQLite memory tables across backup and restore', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDb(harness.app, assertion, { tag: 'pre-mem' })
 
@@ -1516,7 +2915,7 @@ describe('Phase 2D backups', () => {
     }
   })
 
-  it('A4EC4/B5: round-trips data/save directory across backup and restore', async () => {
+  it('round-trips data/save directory across backup and restore', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDb(harness.app, assertion, { tag: 'pre-save' })
 

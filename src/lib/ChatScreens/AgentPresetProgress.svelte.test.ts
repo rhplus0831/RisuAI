@@ -1,12 +1,7 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const databaseMocks = vi.hoisted(() => ({
-  getDatabase: vi.fn(),
-}))
-
 vi.mock('src/ts/storage/database.svelte', () => ({
-  getDatabase: databaseMocks.getDatabase,
   reapplyPendingPresetProjections: () => {},
 }))
 
@@ -31,10 +26,8 @@ import {
   type AgentPresetProgressSession,
 } from 'src/ts/process/agentPresetProgress'
 import { selectedCharID } from 'src/ts/stores.svelte'
-import { testDatabaseState } from 'src/ts/__tests__/resourceDatabaseState'
+import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
 import AgentPresetProgress from './AgentPresetProgress.svelte'
-
-databaseMocks.getDatabase.mockImplementation(() => testDatabaseState.db)
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -45,9 +38,10 @@ let progressSession: AgentPresetProgressSession
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
-  testDatabaseState.db = {
-    characters: [{ chatPage: 0, chats: [{ id: 'chat-1' }] }],
-  } as never
+  charactersResourceState.characters = [{ chaId: 'character-1', chatPage: 0, chats: [{ id: 'chat-1' }] } as never]
+  charactersResourceState.currentChar = 0
+  charactersResourceState.status = 'ready'
+  charactersResourceState.rowStatuses = { 'character-1': 'ready' }
   selectedCharID.set(0)
   progressSession = beginAgentPresetProgress('chat-1')
 })
@@ -59,7 +53,10 @@ afterEach(() => {
   }
   clearAgentPresetProgress()
   selectedCharID.set(-1)
-  testDatabaseState.db = {}
+  charactersResourceState.characters = []
+  charactersResourceState.currentChar = -1
+  charactersResourceState.status = 'idle'
+  charactersResourceState.rowStatuses = {}
   target.remove()
 })
 
@@ -87,6 +84,74 @@ describe('AgentPresetProgress', () => {
     expect(target.textContent).toContain('Critique, Fact Check')
     expect(target.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('50')
     expect(target.querySelectorAll('.risu-ongoing-pulse')).toHaveLength(2)
+  })
+
+  it('fails closed when the ready character projection has no unique owner', async () => {
+    charactersResourceState.currentChar = 99
+    component = mount(AgentPresetProgress, { target })
+    updateAgentPresetProgress(progressSession, {
+      type: 'agent_preset_progress',
+      chatId: 'chat-1',
+      presetId: 'preset-1',
+      presetName: 'Aggregate-only progress',
+      phase: 'beforeMain',
+      status: 'running',
+      totalSteps: 1,
+      completedSteps: 0,
+      activeSteps: [],
+    })
+    await tick()
+
+    expect(target.querySelector('[role="status"]')).toBeNull()
+  })
+
+  it('retains the selected resource-row fallback before character readiness', async () => {
+    charactersResourceState.currentChar = 99
+    charactersResourceState.status = 'loading'
+    component = mount(AgentPresetProgress, { target })
+    updateAgentPresetProgress(progressSession, {
+      type: 'agent_preset_progress',
+      chatId: 'chat-1',
+      presetId: 'preset-1',
+      presetName: 'Bootstrap progress',
+      phase: 'beforeMain',
+      status: 'running',
+      totalSteps: 1,
+      completedSteps: 0,
+      activeSteps: [],
+    })
+    await tick()
+
+    expect(target.querySelector('[role="status"]')).toBeTruthy()
+  })
+
+  it('fails closed on errored or duplicate ready chat ownership', async () => {
+    charactersResourceState.status = 'error'
+    component = mount(AgentPresetProgress, { target })
+    updateAgentPresetProgress(progressSession, {
+      type: 'agent_preset_progress',
+      chatId: 'chat-1',
+      presetId: 'preset-1',
+      presetName: 'Errored owner progress',
+      phase: 'beforeMain',
+      status: 'running',
+      totalSteps: 1,
+      completedSteps: 0,
+      activeSteps: [],
+    })
+    await tick()
+    expect(target.querySelector('[role="status"]')).toBeNull()
+
+    unmount(component)
+    component = undefined
+    charactersResourceState.status = 'ready'
+    charactersResourceState.characters = [
+      { chaId: 'character-1', chatPage: 0, chats: [{ id: 'chat-1' }] } as never,
+      { chaId: 'character-2', chatPage: 0, chats: [{ id: 'chat-1' }] } as never,
+    ]
+    component = mount(AgentPresetProgress, { target })
+    await tick()
+    expect(target.querySelector('[role="status"]')).toBeNull()
   })
 
   it('hides progress for a different chat and after a terminal snapshot', async () => {

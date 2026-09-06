@@ -2,6 +2,7 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { selectedCharID } from 'src/ts/stores.svelte'
 import { setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
 
 const hydration = vi.hoisted(() => ({
   failed: false,
@@ -16,7 +17,7 @@ const editorActions = vi.hoisted(() => ({
   importLoreBook: vi.fn(),
 }))
 
-const bridgeActions = vi.hoisted(() => ({
+const lorebookOwnerActions = vi.hoisted(() => ({
   replaceCharacterLorebookCollectionWithOutcome: vi.fn(),
   replaceChatLorebookCollectionWithOutcome: vi.fn(),
 }))
@@ -95,16 +96,15 @@ vi.mock('src/ts/server/chatMessageHydration.svelte', async (importActual) => ({
   isCharacterLorebookHydrationPending: () => hydration.pending,
 }))
 
-vi.mock('src/ts/server/lorebookBridge.svelte', async (importActual) => ({
-  ...(await importActual<typeof import('src/ts/server/lorebookBridge.svelte')>()),
-  replaceCharacterLorebookCollectionWithOutcome: bridgeActions.replaceCharacterLorebookCollectionWithOutcome,
-  replaceChatLorebookCollectionWithOutcome: bridgeActions.replaceChatLorebookCollectionWithOutcome,
-  watchServerBackedLorebooks: () => () => {},
+vi.mock('src/ts/server/lorebookOwner.svelte', async (importActual) => ({
+  ...(await importActual<typeof import('src/ts/server/lorebookOwner.svelte')>()),
+  replaceCharacterLorebookCollectionWithOutcome: lorebookOwnerActions.replaceCharacterLorebookCollectionWithOutcome,
+  replaceChatLorebookCollectionWithOutcome: lorebookOwnerActions.replaceChatLorebookCollectionWithOutcome,
 }))
 
-vi.mock('src/ts/server/characterBridge.svelte', async (importActual) => ({
-  ...(await importActual<typeof import('src/ts/server/characterBridge.svelte')>()),
-  createServerBackedCharacterDraft: () => ({
+vi.mock('src/ts/server/characterDraft.svelte', async (importActual) => ({
+  ...(await importActual<typeof import('src/ts/server/characterDraft.svelte')>()),
+  createCharacterOwnerDraft: () => ({
     value: { lorePlus: false, loreSettings: undefined },
   }),
 }))
@@ -142,7 +142,7 @@ beforeEach(() => {
   hydration.pending = false
   hydration.retry.mockClear()
   for (const action of Object.values(editorActions)) action.mockClear()
-  for (const action of Object.values(bridgeActions)) action.mockReset()
+  for (const action of Object.values(lorebookOwnerActions)) action.mockReset()
   for (const alert of Object.values(alertSpies)) alert.mockClear()
   resetScopedLorebookMutationUiStateForTests()
   setDatabaseLite({
@@ -252,6 +252,86 @@ describe('lorebook editor action accessibility', () => {
     expect(chatToggle?.getAttribute('aria-label')).toBe('Enable: Always Active (Chat)')
     expect(chatToggle?.getAttribute('aria-pressed')).toBe('false')
   })
+
+  it('targets the authoritative selected character owner when the compatibility selection is stale', async () => {
+    setDatabaseLite({
+      bulkEnabling: true,
+      characters: [
+        {
+          chaId: 'compatibility-character',
+          chatPage: 0,
+          chats: [{ id: 'compatibility-chat', localLore: [], message: [] }],
+          globalLore: [{ alwaysActive: true }],
+          lorePlus: false,
+        },
+        {
+          chaId: 'owner-character',
+          chatPage: 0,
+          chats: [{ id: 'owner-chat', localLore: [], message: [] }],
+          globalLore: [{ alwaysActive: false }],
+          lorePlus: true,
+        },
+      ],
+    } as any)
+    selectedCharID.set(0)
+    charactersResourceState.currentChar = 1
+    charactersResourceState.selectionRevision = 9
+    component = mount(LoreBookSetting, { target })
+    await tick()
+
+    const characterToggle = [...target.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === 'CHAR',
+    )!
+    expect(characterToggle.getAttribute('aria-label')).toBe('Enable: Always Active (Character)')
+    characterToggle.click()
+    await tick()
+
+    expect(lorebookOwnerActions.replaceCharacterLorebookCollectionWithOutcome).toHaveBeenCalledWith('owner-character', [
+      { alwaysActive: true },
+    ])
+  })
+
+  it('disables chat mutations when the selected chat id has duplicate owners', async () => {
+    setDatabaseLite({
+      bulkEnabling: true,
+      characters: [
+        {
+          chaId: 'selected-character',
+          chatPage: 0,
+          chats: [{ id: 'duplicate-chat', localLore: [{ alwaysActive: false }], message: [] }],
+          globalLore: [],
+          lorePlus: false,
+        },
+        {
+          chaId: 'other-character',
+          chatPage: 0,
+          chats: [{ id: 'duplicate-chat', localLore: [], message: [] }],
+          globalLore: [],
+          lorePlus: false,
+        },
+      ],
+    } as any)
+    selectedCharID.set(0)
+    charactersResourceState.currentChar = 0
+    charactersResourceState.selectionRevision = 10
+    component = mount(LoreBookSetting, { target })
+    await tick()
+
+    const chatTab = [...target.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === 'Chat',
+    )!
+    chatTab.click()
+    await tick()
+
+    expect(target.querySelector<HTMLButtonElement>('[aria-label="Add: Lorebook"]')?.disabled).toBe(true)
+    expect(target.querySelector<HTMLButtonElement>('[aria-label="Import: Lorebook"]')?.disabled).toBe(true)
+    const chatToggle = [...target.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === 'CHAT',
+    )!
+    expect(chatToggle.disabled).toBe(true)
+    chatToggle.click()
+    expect(lorebookOwnerActions.replaceChatLorebookCollectionWithOutcome).not.toHaveBeenCalled()
+  })
 })
 
 describe('scoped lorebook persistence outcomes', () => {
@@ -267,9 +347,7 @@ describe('scoped lorebook persistence outcomes', () => {
     await tick()
 
     expect(add.disabled).toBe(true)
-    expect(target.querySelector('[data-risu-lorebook-persistence="pending"]')?.textContent).toContain(
-      'Saving lorebook changes',
-    )
+    expect(target.querySelector('[data-risu-lorebook-persistence="pending"]')).toBeNull()
 
     const chatTab = [...target.querySelectorAll<HTMLButtonElement>('button')].find(
       (button) => button.textContent?.trim() === 'Chat',
@@ -278,20 +356,14 @@ describe('scoped lorebook persistence outcomes', () => {
     await tick()
     const chatAdd = target.querySelector<HTMLButtonElement>('[aria-label="Add: Lorebook"]')!
     expect(chatAdd.disabled).toBe(false)
-    expect(
-      target
-        .querySelector('[data-risu-lorebook-scope="character:character-a"]')
-        ?.getAttribute('data-risu-lorebook-persistence'),
-    ).toBe('pending')
+    expect(target.querySelector('[data-risu-lorebook-scope="character:character-a"]')).toBeNull()
 
     editorActions.addLorebook.mockReturnValueOnce(chatDeferred.operation)
     chatAdd.click()
     await tick()
     expect(editorActions.addLorebook).toHaveBeenLastCalledWith(1)
     expect(chatAdd.disabled).toBe(true)
-    expect(
-      target.querySelector('[data-risu-lorebook-scope="chat:chat-a"]')?.getAttribute('data-risu-lorebook-persistence'),
-    ).toBe('pending')
+    expect(target.querySelector('[data-risu-lorebook-scope="chat:chat-a"]')).toBeNull()
 
     chatDeferred.resolve({ status: 'accepted' })
     await flushAsyncWork()
@@ -300,11 +372,7 @@ describe('scoped lorebook persistence outcomes', () => {
     deferred.resolve({ status: 'queued' })
     await flushAsyncWork()
     expect(alertSpies.alertNormal).toHaveBeenCalledWith('Lorebook change queued.')
-    expect(
-      target
-        .querySelector('[data-risu-lorebook-scope="character:character-a"]')
-        ?.getAttribute('data-risu-lorebook-persistence'),
-    ).toBe('queued')
+    expect(target.querySelector('[data-risu-lorebook-scope="character:character-a"]')).toBeNull()
   })
 
   it('tracks an imported collection until its exact operation is accepted', async () => {
@@ -316,7 +384,7 @@ describe('scoped lorebook persistence outcomes', () => {
     target.querySelector<HTMLButtonElement>('[aria-label="Import: Lorebook"]')!.click()
     await flushAsyncWork()
     expect(editorActions.importLoreBook).toHaveBeenCalledWith('global')
-    expect(target.querySelector('[data-risu-lorebook-persistence="pending"]')).not.toBeNull()
+    expect(target.querySelector('[data-risu-lorebook-persistence="pending"]')).toBeNull()
 
     deferred.resolve({ status: 'accepted' })
     await flushAsyncWork()
@@ -332,9 +400,7 @@ describe('scoped lorebook persistence outcomes', () => {
     target.querySelector<HTMLButtonElement>('[aria-label="Add: Lorebook"]')!.click()
     deferred.resolve({ status: 'queued' })
     await flushAsyncWork()
-    expect(target.querySelector('[data-risu-lorebook-scope="character:character-a"]')?.textContent).toContain(
-      'Lorebook change queued',
-    )
+    expect(target.querySelector('[data-risu-lorebook-scope="character:character-a"]')).toBeNull()
 
     unmount(component)
     component = undefined
@@ -343,9 +409,7 @@ describe('scoped lorebook persistence outcomes', () => {
     component = mount(LoreBookSetting, { target })
     await tick()
 
-    expect(target.querySelector('[data-risu-lorebook-scope="character:character-a"]')?.textContent).toContain(
-      'Lorebook change queued',
-    )
+    expect(target.querySelector('[data-risu-lorebook-scope="character:character-a"]')).toBeNull()
     expect(alertSpies.alertNormal).not.toHaveBeenCalled()
   })
 
@@ -363,7 +427,7 @@ describe('scoped lorebook persistence outcomes', () => {
       ],
     } as any)
     const deferred = deferredOperation('character:character-a')
-    bridgeActions.replaceCharacterLorebookCollectionWithOutcome.mockReturnValueOnce(deferred.operation)
+    lorebookOwnerActions.replaceCharacterLorebookCollectionWithOutcome.mockReturnValueOnce(deferred.operation)
     component = mount(LoreBookSetting, { target })
     await tick()
 

@@ -11,11 +11,10 @@ import {
   setServerCommandSuccessReconciler,
 } from './server/commands'
 import { isCanonicalLoadout } from './server/loadoutCanonical'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
+
 import {
   applyCollectionsResource,
   applySettingsGroupResource,
-  getResourceDatabase,
   replaceResourceDatabase,
 } from './server/resourceState.svelte'
 import type { Database } from './storage/database.svelte'
@@ -23,7 +22,7 @@ import { selectedCharID } from './stores.svelte'
 import { applyLoadout, deleteLoadout, saveCurrentLoadout, toggleLoadoutFavorite, type Loadout } from './loadout'
 import { currentPersonaStateSnapshot, isPersonaSettingsWatcherSuppressed, queueSelectedPersonaUpdate } from './persona'
 import { setGlobalModuleEnabled } from './moduleCommands'
-import { MODEL_ROLES } from './model/modelRoles'
+import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
 import {
   clearPendingMutationOutbox,
   listPendingMutations,
@@ -42,7 +41,8 @@ import { markPromptTemplateProjectionApplied, resetPromptTemplateHydration } fro
 import {
   queuePromptItemProjectionUpdate,
   resetPromptTemplateSelectionDirtyState,
-} from './server/promptTemplateBridge.svelte'
+} from './server/promptTemplateMutations.svelte'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {
@@ -152,6 +152,7 @@ function seedApplyLoadoutState(): Loadout {
         note: 'persona-b note',
       },
     ],
+    selectedPersonaId: 'persona-a',
     selectedPersona: 0,
     username: 'Live User',
     userIcon: 'live-icon',
@@ -248,6 +249,7 @@ function seedSplitPresetLoadoutState(): Loadout {
         note: 'persona-a note',
       },
     ],
+    selectedPersonaId: 'persona-a',
     selectedPersona: 0,
     username: 'Persona A',
     userIcon: 'icon-a',
@@ -612,29 +614,26 @@ async function flushCommandEffects(): Promise<void> {
 beforeEach(() => {
   clearCachedServerCommandRevision()
   setServerCommandSuccessReconciler(null)
-  setResourceWriteGuardEnabled(false)
   seedLoadouts()
 })
 
 afterEach(() => {
   setServerCommandSuccessReconciler(null)
-  setResourceWriteGuardEnabled(false)
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 
 describe('loadout projection command helpers', () => {
-  it('canonicalizes blank create fields and acknowledges the exact optimistic row', async () => {
+  it('canonicalizes blank create fields without aggregate optimistic acknowledgements', async () => {
     seedApplyLoadoutState()
     testDatabaseState.db.personas = []
-    testDatabaseState.db.selectedPersona = 0
+    testDatabaseState.db.selectedPersonaId = null
+    testDatabaseState.db.selectedPersona = -1
     const observedEffects: unknown[] = []
     setServerCommandSuccessReconciler((_event, _events, localEffects) => {
       observedEffects.push(...localEffects.values())
     })
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const creation = saveCurrentLoadout('   ')
     const created = testDatabaseState.db.loadouts.at(-1) as Loadout
     await waitForCallCount(calls, 2)
@@ -650,21 +649,12 @@ describe('loadout projection command helpers', () => {
       authHeader: 'loadout-command-token',
       body: { baseRevision: 10, loadout: created },
     })
-    expect(observedEffects).toEqual([
-      {
-        kind: 'loadoutMutation',
-        operation: 'create',
-        loadoutId: created.id,
-        loadoutsProjectionEpoch: expect.any(Number),
-      },
-    ])
+    expect(observedEffects).toEqual([])
   })
 
   it('keeps create pending with its optimistic row until the server accepts it', async () => {
     seedApplyLoadoutState()
     const command = stubDeferredCommandFailure()
-    setResourceWriteGuardEnabled(true)
-
     let settled = false
     const creation = saveCurrentLoadout('Deferred Loadout').then((result) => {
       settled = true
@@ -707,8 +697,6 @@ describe('loadout projection command helpers', () => {
     testDatabaseState.db.characters[0].chatPage = 0
     const calls = stubApplyLoadoutFetch()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setResourceWriteGuardEnabled(true)
-
     const creation = saveCurrentLoadout('Fresh Split Loadout')
     const loadout = testDatabaseState.db.loadouts.at(-1) as Loadout
 
@@ -803,8 +791,6 @@ describe('loadout projection command helpers', () => {
     } as any
     const calls = stubApplyLoadoutFetch()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setResourceWriteGuardEnabled(true)
-
     applyLoadout(loadout, ['preset'])
 
     expect(testDatabaseState.db.characters[0].chats[0].generationSettings.agentPresetId).toBe('agent-preset-target')
@@ -870,17 +856,15 @@ describe('loadout projection command helpers', () => {
     const loadout = seedApplyLoadoutState()
     const calls = stubApplyLoadoutFetch()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setResourceWriteGuardEnabled(true)
-
     const application = applyLoadout(loadout)
 
     expect(testDatabaseState.db.selectedPersona).toBe(1)
-    expect(testDatabaseState.db.username).toBe('Persona B')
+    expect(testDatabaseState.db.username).toBe('Live User')
     expect(testDatabaseState.db.personas[0]).toMatchObject({
-      name: 'Live User',
-      icon: 'live-icon',
-      personaPrompt: 'live persona prompt',
-      note: 'live user note',
+      name: 'Persona A',
+      icon: 'icon-a',
+      personaPrompt: 'persona-a prompt',
+      note: 'persona-a note',
     })
     expect(testDatabaseState.db.botPresetsId).toBe(1)
     expect(testDatabaseState.db.mainPrompt).toBe('preset-b main')
@@ -909,8 +893,8 @@ describe('loadout projection command helpers', () => {
         body: {
           baseRevision: 10,
           personaId: 'persona-b',
-          mirrorLegacyProfile: true,
-          saveCurrent: true,
+          mirrorLegacyProfile: false,
+          saveCurrent: false,
         },
       },
       {
@@ -989,8 +973,6 @@ describe('loadout projection command helpers', () => {
       const predecessor = stagePendingMutation(SETTINGS_BRIDGE_MUTATION_KEY, predecessorIntent)
       await predecessor.ready
       const calls = stubDurableApplyLoadoutFetch()
-      setResourceWriteGuardEnabled(true)
-
       await expect(applyLoadout(loadout, ['preset', 'globalVariables'])).resolves.toBe('applied')
 
       const commands = calls.filter((call) => call.url !== '/api/v1/commands/mutation-receipts/ack')
@@ -1016,7 +998,7 @@ describe('loadout projection command helpers', () => {
     }
   })
 
-  it('keeps a split prompt selection behind a transient flushed edit from the outgoing owner', async () => {
+  it('keeps a split prompt selection behind the outgoing owner durable edit', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
     await preparePendingMutationOutbox({
@@ -1060,8 +1042,6 @@ describe('loadout projection command helpers', () => {
           : null,
       )
       vi.spyOn(Date, 'now').mockReturnValue(123456)
-      setResourceWriteGuardEnabled(true)
-
       await expect(applyLoadout(loadout, ['preset'])).resolves.toBe('queued')
 
       const commands = calls.filter((call) => call.url !== '/api/v1/commands/mutation-receipts/ack')
@@ -1149,8 +1129,6 @@ describe('loadout projection command helpers', () => {
         call.url === '/api/v1/commands/modules/enable' ? jsonResponse({ error: 'forced module failure' }, 500) : null,
       )
       vi.spyOn(Date, 'now').mockReturnValue(123456)
-      setResourceWriteGuardEnabled(true)
-
       await expect(applyLoadout(loadout, ['preset', 'modules', 'globalVariables'])).resolves.toBe('queued')
 
       const commands = calls.filter((call) => call.url !== '/api/v1/commands/mutation-receipts/ack')
@@ -1226,6 +1204,27 @@ describe('loadout projection command helpers', () => {
 
     try {
       const loadout = seedApplyLoadoutState()
+      applyCollectionsResource(
+        {
+          revision: 20,
+          collections: {
+            modules: ['module-a', 'module-stay', 'module-z', 'module-b'].map((id) => ({
+              id,
+              name: id,
+              description: '',
+            })),
+          },
+        },
+        'modules',
+      )
+      applySettingsGroupResource(
+        {
+          revision: 20,
+          group: 'modules',
+          settings: { enabledModules: ['module-stay', 'module-z'] },
+        },
+        ['enabledModules'],
+      )
       const encryptionGate = deferred<void>()
       const originalEncrypt = globalThis.crypto.subtle.encrypt.bind(globalThis.crypto.subtle)
       const encryptSpy = vi
@@ -1236,8 +1235,6 @@ describe('loadout projection command helpers', () => {
         })
       setCachedServerCommandRevision(20)
       const calls = stubDurableApplyLoadoutFetch()
-      setResourceWriteGuardEnabled(true)
-
       const application = applyLoadout(loadout, ['modules'])
       await vi.waitFor(() => expect(encryptSpy).toHaveBeenCalled())
       expect(testDatabaseState.db.enabledModules).toEqual(['module-a', 'module-stay'])
@@ -1281,8 +1278,6 @@ describe('loadout projection command helpers', () => {
       const calls = stubDurableApplyLoadoutFetch((call) =>
         call.url === '/api/v1/commands/modules/enable' ? jsonResponse({ error: 'module no longer exists' }, 404) : null,
       )
-      setResourceWriteGuardEnabled(true)
-
       await expect(applyLoadout(loadout, ['preset', 'modules', 'globalVariables'])).resolves.toBe('persistence-failed')
 
       const commands = calls.filter((call) => call.url !== '/api/v1/commands/mutation-receipts/ack')
@@ -1316,8 +1311,6 @@ describe('loadout projection command helpers', () => {
           ? jsonResponse({ error: 'module temporarily unavailable' }, 500)
           : null,
       )
-      setResourceWriteGuardEnabled(true)
-
       await expect(applyLoadout(loadout, ['preset', 'modules', 'globalVariables'])).resolves.toBe('persistence-failed')
 
       const commands = calls.filter((call) => call.url !== '/api/v1/commands/mutation-receipts/ack')
@@ -1405,8 +1398,6 @@ describe('loadout projection command helpers', () => {
       const predecessor = stagePendingMutation(chatResourceOwnerMutationKey('chat-a', 'char-a'), predecessorIntent)
       await predecessor.ready
       const calls = stubDurableApplyLoadoutFetch()
-      setResourceWriteGuardEnabled(true)
-
       await expect(applyLoadout(loadout, ['preset'])).resolves.toBe('applied')
 
       const commands = calls.filter((call) => call.url !== '/api/v1/commands/mutation-receipts/ack')
@@ -1457,8 +1448,6 @@ describe('loadout projection command helpers', () => {
       const predecessor = stagePendingMutation(moduleOwnerMutationKey('module-a'), predecessorIntent)
       await predecessor.ready
       const calls = stubDurableApplyLoadoutFetch()
-      setResourceWriteGuardEnabled(true)
-
       await expect(applyLoadout(loadout, ['modules'])).resolves.toBe('applied')
 
       const commands = calls.filter((call) => call.url !== '/api/v1/commands/mutation-receipts/ack')
@@ -1487,8 +1476,6 @@ describe('loadout projection command helpers', () => {
     const loadout = seedConcurrentApplyState()
     const command = stubFirstDeferredApplyCommand()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setResourceWriteGuardEnabled(true)
-
     const first = applyLoadout(loadout, ['modules'])
     await waitForCallCount(command.calls, 2)
     const second = applyLoadout(loadout, ['modules'])
@@ -1522,8 +1509,6 @@ describe('loadout projection command helpers', () => {
     const loadout = seedConcurrentApplyState()
     const command = stubFirstDeferredApplyCommand()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setResourceWriteGuardEnabled(true)
-
     const first = applyLoadout(loadout, ['globalVariables'])
     await waitForCallCount(command.calls, 2)
     const second = applyLoadout(loadout, ['globalVariables'])
@@ -1557,8 +1542,6 @@ describe('loadout projection command helpers', () => {
     const loadout = seedConcurrentApplyState()
     const command = stubFirstDeferredApplyCommand()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setResourceWriteGuardEnabled(true)
-
     const first = applyLoadout(loadout, ['preset'])
     await waitForCallCount(command.calls, 2)
     const second = applyLoadout(loadout, ['preset'])
@@ -1608,8 +1591,6 @@ describe('loadout projection command helpers', () => {
     const loadout = seedConcurrentApplyState()
     const command = stubFirstDeferredApplyCommand()
     const now = vi.spyOn(Date, 'now').mockReturnValue(1000)
-    setResourceWriteGuardEnabled(true)
-
     const first = applyLoadout(loadout, [])
     await waitForCallCount(command.calls, 2)
     now.mockReturnValue(2000)
@@ -1643,8 +1624,6 @@ describe('loadout projection command helpers', () => {
     const loadout = seedApplyLoadoutState()
     const command = stubDeferredCommandFailure()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setResourceWriteGuardEnabled(true)
-
     let settled = false
     const application = applyLoadout(loadout, []).then((status) => {
       settled = true
@@ -1665,8 +1644,6 @@ describe('loadout projection command helpers', () => {
     const loadout = seedApplyLoadoutState()
     const command = stubDeferredCommandFailure()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setResourceWriteGuardEnabled(true)
-
     let settled = false
     const application = applyLoadout(loadout, []).then((status) => {
       settled = true
@@ -1685,13 +1662,29 @@ describe('loadout projection command helpers', () => {
     expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Before Loadout')
   })
 
+  it('keeps a newer last-touch name when an older touch fails', async () => {
+    const loadout = seedApplyLoadoutState()
+    const command = stubDeferredCommandFailure()
+    vi.spyOn(Date, 'now').mockReturnValue(123456)
+    const application = applyLoadout(loadout, [])
+    await waitForCallCount(command.calls, 2)
+    expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Battle Loadout')
+
+    withTestDatabaseWrite(() => {
+      testDatabaseState.db.lastLoadedLoadoutName = 'Newer loaded name'
+    })
+    command.reject()
+
+    await expect(application).resolves.toBe('persistence-failed')
+    expect(testDatabaseState.db.loadouts[0]).toMatchObject({ lastUsed: 100, characterIds: [] })
+    expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Newer loaded name')
+  })
+
   it('omits the current character from a touch when the loadout already contains it', async () => {
     const loadout = seedApplyLoadoutState()
     loadout.characterIds.push('char-a')
     const calls = stubApplyLoadoutFetch()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setResourceWriteGuardEnabled(true)
-
     applyLoadout(loadout, [])
 
     await waitForCallCount(calls, 2)
@@ -1716,8 +1709,6 @@ describe('loadout projection command helpers', () => {
     const staleArgument = { ...cloneJsonValue(liveLoadout), name: 'Stale caller name' }
     const calls = stubApplyLoadoutFetch()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setResourceWriteGuardEnabled(true)
-
     applyLoadout(staleArgument, [])
 
     expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Battle Loadout')
@@ -1728,8 +1719,6 @@ describe('loadout projection command helpers', () => {
     const loadout = seedSplitPresetLoadoutState()
     const calls = stubApplyLoadoutFetch()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setResourceWriteGuardEnabled(true)
-
     applyLoadout(loadout, ['preset'])
 
     expect(testDatabaseState.db.botPresetsId).toBe(-1)
@@ -1801,8 +1790,6 @@ describe('loadout projection command helpers', () => {
     const loadout = seedSplitPresetLoadoutState()
     const calls = stubApplyLoadoutFetch({ failCommandNumber: 2 })
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setResourceWriteGuardEnabled(true)
-
     applyLoadout(loadout, ['preset'])
 
     expect(testDatabaseState.db.modelPresetsId).toBe(1)
@@ -1862,8 +1849,6 @@ describe('loadout projection command helpers', () => {
     const previousGlobalVariables = cloneJsonValue(testDatabaseState.db.globalChatVariables)
     const calls = stubApplyLoadoutFetch({ failCommandNumber: 5 })
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setResourceWriteGuardEnabled(true)
-
     const application = applyLoadout(loadout)
     expect(testDatabaseState.db.selectedPersona).toBe(1)
     expect(testDatabaseState.db.botPresetsId).toBe(1)
@@ -1888,15 +1873,15 @@ describe('loadout projection command helpers', () => {
     })
     expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Before Loadout')
     expect(testDatabaseState.db.selectedPersona).toBe(1)
-    expect(testDatabaseState.db.username).toBe('Persona B')
-    expect(testDatabaseState.db.userIcon).toBe('icon-b')
-    expect(testDatabaseState.db.personaPrompt).toBe('persona-b prompt')
-    expect(testDatabaseState.db.userNote).toBe('persona-b note')
+    expect(testDatabaseState.db.username).toBe('Live User')
+    expect(testDatabaseState.db.userIcon).toBe('live-icon')
+    expect(testDatabaseState.db.personaPrompt).toBe('live persona prompt')
+    expect(testDatabaseState.db.userNote).toBe('live user note')
     expect(testDatabaseState.db.personas[0]).toMatchObject({
-      name: 'Live User',
-      icon: 'live-icon',
-      personaPrompt: 'live persona prompt',
-      note: 'live user note',
+      name: 'Persona A',
+      icon: 'icon-a',
+      personaPrompt: 'persona-a prompt',
+      note: 'persona-a note',
     })
     expect(testDatabaseState.db.botPresets[0]).toMatchObject({
       id: 'preset-a',
@@ -1915,77 +1900,27 @@ describe('loadout projection command helpers', () => {
     expect(testDatabaseState.db.globalChatVariables).toEqual(previousGlobalVariables)
   })
 
-  it('restores the previously selected legacy preset row after normalizing missing ids on failed preset select', async () => {
+  it('rejects malformed legacy preset owners without repairing their ids', async () => {
     const loadout = seedApplyLoadoutState()
     delete testDatabaseState.db.botPresets[0].id
     delete testDatabaseState.db.botPresets[1].id
-    const calls = stubApplyLoadoutFetch({ failCommandNumber: 1 })
+    const previousPresets = cloneJsonValue(testDatabaseState.db.botPresets)
+    const calls = stubApplyLoadoutFetch()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setResourceWriteGuardEnabled(true)
+    await expect(applyLoadout(loadout, ['preset'])).resolves.toBe('preset-hydration-failed')
 
-    applyLoadout(loadout, ['preset'])
-
-    const previousPresetId = testDatabaseState.db.botPresets[0].id
-    const attemptedPresetId = testDatabaseState.db.botPresets[1].id
-    expect(previousPresetId).toEqual(expect.any(String))
-    expect(attemptedPresetId).toEqual(expect.any(String))
-    expect(previousPresetId).not.toBe(attemptedPresetId)
-    expect(testDatabaseState.db.botPresetsId).toBe(1)
-    expect(testDatabaseState.db.mainPrompt).toBe('preset-b main')
-    expect(testDatabaseState.db.promptTemplate).toEqual([{ id: 'live-prompt', type: 'plain', text: 'live prompt row' }])
-
-    withTrustedResourceWrite(() => {
-      testDatabaseState.db.botPresets.push({
-        id: 'preset-later',
-        name: 'Later Preset',
-        mainPrompt: 'later main',
-        jailbreak: 'later jailbreak',
-        globalNote: 'later global',
-        temperature: 1,
-        maxContext: 2,
-        maxResponse: 3,
-        frequencyPenalty: 4,
-        PresensePenalty: 5,
-        formatingOrder: [],
-        promptPreprocess: false,
-        bias: [],
-        ooba: {} as never,
-        ainconfig: {} as never,
-        promptTemplate: [],
-      })
-      testDatabaseState.db.enabledModules = ['module-later']
-    })
-
-    await waitForCallCount(calls, 2)
-    await flushCommandEffects()
-
-    expect(calls.map((call) => call.url)).toEqual(['/api/v1/bootstrap', '/api/v1/commands/presets/select'])
-    expect(calls[1]).toMatchObject({
-      method: 'POST',
-      body: {
-        baseRevision: 10,
-        presetId: attemptedPresetId,
-        apply: true,
-        saveCurrent: true,
-      },
-    })
+    expect(calls).toEqual([])
+    expect(testDatabaseState.db.botPresets).toEqual(previousPresets)
     expect(testDatabaseState.db.botPresetsId).toBe(0)
-    expect(testDatabaseState.db.botPresets[0]).toMatchObject({
-      id: previousPresetId,
-      name: 'Preset A',
-      mainPrompt: 'preset-a main',
-    })
     expect(testDatabaseState.db.mainPrompt).toBe('live main')
-    expect(testDatabaseState.db.enabledModules).toEqual(['module-later'])
-    expect(testDatabaseState.db.botPresets.map((preset) => preset.name)).toContain('Later Preset')
+    expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Before Loadout')
+    expect(testDatabaseState.db.loadouts[0]).toMatchObject({ lastUsed: 100, characterIds: [] })
   })
 
   it('applies a subset of facets without mutating or commanding skipped facets', async () => {
     const loadout = seedApplyLoadoutState()
     const calls = stubApplyLoadoutFetch()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setResourceWriteGuardEnabled(true)
-
     applyLoadout(loadout, ['modules'])
 
     expect(testDatabaseState.db.selectedPersona).toBe(0)
@@ -2047,8 +1982,6 @@ describe('loadout projection command helpers', () => {
     const hydration = deferred<Response>()
     const calls = stubApplyLoadoutFetch({ projectionResponse: hydration.promise })
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setResourceWriteGuardEnabled(true)
-
     applyLoadout(loadout, ['preset'])
 
     expect(testDatabaseState.db.botPresetsId).toBe(0)
@@ -2057,7 +1990,7 @@ describe('loadout projection command helpers', () => {
     expect(calls.map((call) => call.url)).not.toContain('/api/v1/commands/loadouts/loadout-a/touch')
 
     await waitForUrl(calls, '/api/v1/legacy-presets/preset-b')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.botPresets = [testDatabaseState.db.botPresets[1], testDatabaseState.db.botPresets[0]]
       testDatabaseState.db.botPresetsId = 1
     })
@@ -2129,8 +2062,6 @@ describe('loadout projection command helpers', () => {
     } as never
     const hydration = deferred<Response>()
     const calls = stubApplyLoadoutFetch({ projectionResponse: hydration.promise })
-    setResourceWriteGuardEnabled(true)
-
     const application = applyLoadout(loadout, ['preset'])
     await waitForUrl(calls, '/api/v1/legacy-presets/preset-b')
 
@@ -2150,8 +2081,9 @@ describe('loadout projection command helpers', () => {
     await expect(application).resolves.toBe('applied')
     expect(testDatabaseState.db.characters[0].chats[0].generationSettings?.agentPresetId).toBe('agent-preset-target')
     expect(testDatabaseState.db.characters[1].chats[0].generationSettings?.agentPresetId).toBe('agent-preset-old-b')
-    expect(loadout.characterIds).toContain('char-a')
-    expect(loadout.characterIds).not.toContain('char-b')
+    const appliedLoadout = testDatabaseState.db.loadouts.find((candidate) => candidate.id === loadout.id)!
+    expect(appliedLoadout.characterIds).toContain('char-a')
+    expect(appliedLoadout.characterIds).not.toContain('char-b')
     await waitForUrl(calls, '/api/v1/commands/chats/chat-a/generation-settings')
     expect(calls.map((call) => call.url)).not.toContain('/api/v1/commands/chats/chat-b/generation-settings')
   })
@@ -2164,8 +2096,6 @@ describe('loadout projection command helpers', () => {
     } as never
     const hydration = deferred<Response>()
     const calls = stubApplyLoadoutFetch({ projectionResponse: hydration.promise })
-    setResourceWriteGuardEnabled(true)
-
     const application = applyLoadout(loadout, ['preset'])
     await waitForUrl(calls, '/api/v1/legacy-presets/preset-b')
     hydration.resolve(jsonResponse({ error: 'forced hydration failure' }, 500))
@@ -2179,8 +2109,6 @@ describe('loadout projection command helpers', () => {
     const loadout = seedApplyLoadoutState()
     const calls = stubApplyLoadoutFetch()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setResourceWriteGuardEnabled(true)
-
     const previousPersona = currentPersonaStateSnapshot()
     applyLoadout(loadout, ['persona'])
     const attemptedPersona = currentPersonaStateSnapshot()
@@ -2201,15 +2129,13 @@ describe('loadout projection command helpers', () => {
   it('flushes a pending persona PATCH ahead of a loadout persona selection', async () => {
     const loadout = seedApplyLoadoutState()
     const previousPersona = currentPersonaStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.username = 'Pending User'
       testDatabaseState.db.personas[0].name = 'Pending User'
     })
     queueSelectedPersonaUpdate(previousPersona, currentPersonaStateSnapshot())
     const calls = stubApplyLoadoutFetch()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setResourceWriteGuardEnabled(true)
-
     applyLoadout(loadout, ['persona'])
 
     await waitForCallCount(calls, 4)
@@ -2226,22 +2152,16 @@ describe('loadout projection command helpers', () => {
     expect(calls[2].body).toMatchObject({
       baseRevision: 11,
       personaId: 'persona-b',
-      saveCurrent: true,
+      saveCurrent: false,
     })
     await flushCommandEffects()
   })
 
   it('failed favorite preserves newer sibling edits/appends and newer same-row changes', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      testDatabaseState.db.loadouts[0].favorite = true
-    }).toThrow()
-
     const favoriteMutation = toggleLoadoutFavorite('loadout-a')
     expect(testDatabaseState.db.loadouts[0].favorite).toBe(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.loadouts[0].name = 'Newer Loadout A'
       testDatabaseState.db.loadouts[0].favorite = false
       testDatabaseState.db.loadouts[1].name = 'Edited Loadout B'
@@ -2289,8 +2209,6 @@ describe('loadout projection command helpers', () => {
 
   it('does not roll back a failed favorite across an authoritative loadout replacement', async () => {
     const failure = stubDeferredCommandFailure()
-    setResourceWriteGuardEnabled(true)
-
     const favoriteMutation = toggleLoadoutFavorite('loadout-a')
     await waitForCallCount(failure.calls, 2)
     applyCollectionsResource(
@@ -2319,8 +2237,6 @@ describe('loadout projection command helpers', () => {
   it('does not roll back a failed create across an authoritative loadout replacement', async () => {
     seedApplyLoadoutState()
     const failure = stubDeferredCommandFailure()
-    setResourceWriteGuardEnabled(true)
-
     const creation = saveCurrentLoadout('Created Loadout')
     await waitForCallCount(failure.calls, 2)
     const created = testDatabaseState.db.loadouts.at(-1) as Loadout
@@ -2341,8 +2257,6 @@ describe('loadout projection command helpers', () => {
 
   it('does not roll back a failed delete across an authoritative loadout replacement', async () => {
     const failure = stubDeferredCommandFailure()
-    setResourceWriteGuardEnabled(true)
-
     const deleteMutation = deleteLoadout('loadout-b')
     await waitForCallCount(failure.calls, 2)
     const authoritativeLoadouts = [
@@ -2375,8 +2289,6 @@ describe('loadout projection command helpers', () => {
     try {
       seedApplyLoadoutState()
       const failure = stubDeferredCommandFailure()
-      setResourceWriteGuardEnabled(true)
-
       const creation = saveCurrentLoadout('Retained Create')
       const created = cloneJsonValue(testDatabaseState.db.loadouts.at(-1) as Loadout)
       await waitForCallCount(failure.calls, 2)
@@ -2411,8 +2323,6 @@ describe('loadout projection command helpers', () => {
     })
     try {
       const failure = stubDeferredCommandFailure()
-      setResourceWriteGuardEnabled(true)
-
       const favoriteMutation = toggleLoadoutFavorite('loadout-a')
       await waitForCallCount(failure.calls, 2)
       applyCollectionsResource(
@@ -2449,8 +2359,6 @@ describe('loadout projection command helpers', () => {
     })
     try {
       const failure = stubDeferredCommandFailure()
-      setResourceWriteGuardEnabled(true)
-
       const deleteMutation = deleteLoadout('loadout-b')
       await waitForCallCount(failure.calls, 2)
       applyCollectionsResource(
@@ -2493,8 +2401,6 @@ describe('loadout projection command helpers', () => {
         if (commandNumber === 1) return jsonResponse({ error: 'create response lost' }, 500)
         return replayFailure.promise
       })
-      setResourceWriteGuardEnabled(true)
-
       const creation = saveCurrentLoadout('Composed Create')
       const created = cloneJsonValue(testDatabaseState.db.loadouts.at(-1) as Loadout)
       await expect(creation).resolves.toEqual({ status: 'queued', loadout: created })
@@ -2527,8 +2433,6 @@ describe('loadout projection command helpers', () => {
     const loadout = seedApplyLoadoutState()
     const failure = stubDeferredCommandFailure()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setResourceWriteGuardEnabled(true)
-
     applyLoadout(loadout, [])
     await waitForCallCount(failure.calls, 2)
     applyCollectionsResource(
@@ -2561,8 +2465,6 @@ describe('loadout projection command helpers', () => {
     const loadout = seedApplyLoadoutState()
     const failure = stubDeferredCommandFailure()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setResourceWriteGuardEnabled(true)
-
     applyLoadout(loadout, [])
     await waitForCallCount(failure.calls, 2)
     applySettingsGroupResource(
@@ -2586,12 +2488,10 @@ describe('loadout projection command helpers', () => {
   it('failed create removes only the unchanged attempted loadout and preserves later rows', async () => {
     seedApplyLoadoutState()
     const calls = stubCommandFetch({ failCommands: true })
-    setResourceWriteGuardEnabled(true)
-
     const creation = saveCurrentLoadout('Created Loadout')
     const created = testDatabaseState.db.loadouts.at(-1) as Loadout
     expect(testDatabaseState.db.loadouts.map((item) => item.id)).toEqual(['loadout-a', created.id])
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.loadouts[0].name = 'Edited Existing Loadout'
       testDatabaseState.db.loadouts.push(makeLoadout({ id: 'loadout-later', name: 'Later Loadout' }))
     })
@@ -2619,11 +2519,9 @@ describe('loadout projection command helpers', () => {
   it('failed delete reinserts only a still-missing loadout and preserves sibling edits/appends', async () => {
     const calls = stubCommandFetch({ failCommands: true })
     const deletedLoadout = cloneJsonValue(testDatabaseState.db.loadouts[1])
-    setResourceWriteGuardEnabled(true)
-
     const deleteMutation = deleteLoadout('loadout-b')
     expect(testDatabaseState.db.loadouts.map((loadout) => loadout.id)).toEqual(['loadout-a'])
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.loadouts[0].name = 'Edited Loadout A'
       testDatabaseState.db.loadouts.push(makeLoadout({ id: 'loadout-c', name: 'Later Loadout' }))
     })
@@ -2658,37 +2556,28 @@ describe('loadout projection command helpers', () => {
     expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Loadout A')
   })
 
-  it('does not acknowledge delete when the pre-mutation collection is malformed', async () => {
+  it('rejects delete when the pre-mutation collection is malformed', async () => {
     const observedEffects: unknown[] = []
     setServerCommandSuccessReconciler((_event, _events, localEffects) => {
       observedEffects.push(...localEffects.values())
     })
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       ;(testDatabaseState.db.loadouts[0] as Loadout & { legacyMetadata?: string }).legacyMetadata = 'discarded'
     })
 
     const deleteMutation = deleteLoadout('loadout-b')
-    await waitForCallCount(calls, 2)
-    await flushCommandEffects()
-    await expect(deleteMutation).resolves.toBe('accepted')
+    await expect(deleteMutation).resolves.toBe('failed')
 
-    expect(calls[1]).toEqual({
-      url: '/api/v1/commands/loadouts/loadout-b',
-      method: 'DELETE',
-      authHeader: 'loadout-command-token',
-      body: { baseRevision: 10 },
-    })
+    expect(calls).toEqual([])
+    expect(testDatabaseState.db.loadouts.map((loadout) => loadout.id)).toEqual(['loadout-a', 'loadout-b'])
     expect(observedEffects).toEqual([])
   })
 
   it('failed delete skips rollback when the same loadout id was recreated', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    setResourceWriteGuardEnabled(true)
-
     const deleteMutation = deleteLoadout('loadout-b')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.loadouts[0].name = 'Edited Loadout A'
       testDatabaseState.db.loadouts.push(makeLoadout({ id: 'loadout-b', name: 'Recreated Loadout B', lastUsed: 999 }))
     })
@@ -2710,8 +2599,6 @@ describe('loadout projection command helpers', () => {
   it('returns not-found for missing ids without dispatching commands or mutating loadouts', async () => {
     const calls = stubCommandFetch()
     const previousLoadouts = cloneJsonValue(testDatabaseState.db.loadouts)
-    setResourceWriteGuardEnabled(true)
-
     await expect(toggleLoadoutFavorite('missing-loadout')).resolves.toBe('not-found')
     await expect(deleteLoadout('missing-loadout')).resolves.toBe('not-found')
 

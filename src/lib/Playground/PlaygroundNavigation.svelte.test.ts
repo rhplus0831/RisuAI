@@ -2,12 +2,19 @@ import { get, type Writable } from 'svelte/store'
 import { mount, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const routeIntentMocks = vi.hoisted(() => ({ prefetch: vi.fn() }))
+
+vi.mock('src/ts/routeIntentPrefetch', () => ({ prefetchRouteIntent: routeIntentMocks.prefetch }))
+
 const navigationMocks = vi.hoisted(() => ({
   navigate: vi.fn(),
 }))
 
 vi.mock('src/ts/router', () => ({
+  characterRoutePath: (characterId: string, chatId?: string) =>
+    chatId ? `/character/${characterId}/${chatId}` : `/character/${characterId}`,
   navigate: navigationMocks.navigate,
+  openGridRoute: vi.fn(),
 }))
 
 vi.mock('src/ts/stores.svelte', async () => {
@@ -19,9 +26,35 @@ vi.mock('src/ts/stores.svelte', async () => {
   }
 })
 
-vi.mock('src/ts/server/resourceState.svelte', () => ({
+vi.mock('src/ts/server/resourceState.svelte', async (importActual) => ({
+  ...(await importActual<typeof import('src/ts/server/resourceState.svelte')>()),
   getResourceDatabase: () => ({ doNotWarnExternalServers: true }),
 }))
+
+vi.mock('src/ts/characterImage', () => ({
+  getCharImage: vi.fn(async () => '/none.webp'),
+}))
+
+vi.mock('src/ts/process/generationActivity.svelte', async () => {
+  const { writable } = await import('svelte/store')
+  return { activeChatGenerations: writable([]) }
+})
+
+vi.mock('src/ts/process/reattach', async () => {
+  const { writable } = await import('svelte/store')
+  return {
+    activeGenerationJobs: writable([]),
+    generationJobLifecycles: writable({}),
+  }
+})
+
+vi.mock('src/ts/process/chatUnread.svelte', async () => {
+  const { writable } = await import('svelte/store')
+  return {
+    unreadChatIds: writable(new Set()),
+    markChatRead: vi.fn(),
+  }
+})
 
 vi.mock('src/ts/globalApi.svelte', () => ({
   getVersionString: () => 'test-version',
@@ -62,6 +95,7 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.append(target)
   navigationMocks.navigate.mockReset()
+  routeIntentMocks.prefetch.mockReset()
   ;(PlaygroundStore as Writable<number>).set(4)
   ;(OpenRealmStore as Writable<boolean>).set(true)
 })
@@ -85,6 +119,22 @@ describe('Playground and main-menu navigation', () => {
     expect(navigationMocks.navigate).toHaveBeenCalledWith('/playground')
   })
 
+  it('warms the exact Playground tool on pointer and keyboard intent', async () => {
+    ;(PlaygroundStore as Writable<number>).set(1)
+    component = mount(PlaygroundMenu, { target })
+
+    const embedding = target.querySelector<HTMLElement>('[data-risu-route-intent="/playground/embedding"]')
+    const inlay = target.querySelector<HTMLElement>('[data-risu-route-intent="/inlay"]')
+    expect(embedding).toBeTruthy()
+    expect(inlay).toBeTruthy()
+
+    embedding?.dispatchEvent(new Event('pointerover', { bubbles: true }))
+    inlay?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+
+    expect(routeIntentMocks.prefetch).toHaveBeenNthCalledWith(1, '/playground/embedding')
+    expect(routeIntentMocks.prefetch).toHaveBeenNthCalledWith(2, '/inlay')
+  })
+
   it('names the Realm icon-only back control and preserves its store transition', () => {
     component = mount(MainMenu, { target })
 
@@ -93,5 +143,14 @@ describe('Playground and main-menu navigation', () => {
     expect(back?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
     back!.click()
     expect(get(OpenRealmStore)).toBe(false)
+  })
+
+  it('keeps repository links off the main menu', () => {
+    ;(OpenRealmStore as Writable<boolean>).set(false)
+    component = mount(MainMenu, { target })
+
+    expect(target.textContent).toContain(language.openRisuRealm)
+    expect(target.querySelector('a[href*="github.com"]')).toBeNull()
+    expect(target.textContent).not.toContain('Upstream project this variant is derived from.')
   })
 })

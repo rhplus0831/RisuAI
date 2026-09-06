@@ -52,12 +52,43 @@ const GRAPH_MEMORY_TOOLS: MCPTool[] = [
         search_depth: {
           type: 'number',
           description: 'The depth of connections to explore in the graph. default is 2.',
+          minimum: 1,
+          maximum: 8,
         },
       },
       required: ['query'],
     },
   },
 ]
+
+export const GRAPH_MEMORY_MAX_SEARCH_DEPTH = 8
+
+function isGraphIndex(value: unknown): value is GraphIndex {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const candidate = value as Partial<GraphIndex>
+  return (
+    typeof candidate.name === 'string' &&
+    candidate.name.trim().length > 0 &&
+    typeof candidate.summary === 'string' &&
+    Array.isArray(candidate.connections) &&
+    candidate.connections.every((connection) => typeof connection === 'string')
+  )
+}
+
+function readGraphMemory(): GraphIndex[] {
+  const raw = getChatVar('graphmem_graph')
+  if (!raw) return []
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error('Stored graph memory is malformed; no changes were applied.')
+  }
+  if (!Array.isArray(parsed) || !parsed.every(isGraphIndex)) {
+    throw new Error('Stored graph memory has an invalid shape; no changes were applied.')
+  }
+  return parsed
+}
 
 export class GraphMemClient extends MCPClientLike {
   constructor() {
@@ -90,21 +121,17 @@ export class GraphMemClient extends MCPClientLike {
   }
 
   private async handleWriteMemory(args: any): Promise<RPCToolCallContent[]> {
-    const {
-      name,
-      summary,
-      connections = [],
-    }: {
-      name: string
-      summary: string
-      connections: string[]
-    } = args
+    const name = typeof args?.name === 'string' ? args.name.trim() : ''
+    const summary = typeof args?.summary === 'string' ? args.summary : ''
+    const connections = args?.connections ?? []
+    if (!name || typeof args?.summary !== 'string') {
+      throw new Error('Memory name and summary must be strings, and name must not be empty.')
+    }
+    if (!Array.isArray(connections) || !connections.every((connection) => typeof connection === 'string')) {
+      throw new Error('Memory connections must be an array of strings.')
+    }
 
-    let graph: GraphIndex[] = []
-
-    try {
-      graph = JSON.parse(getChatVar('graphmem_graph')) as GraphIndex[]
-    } catch (error) {}
+    const graph = readGraphMemory()
 
     graph.push({ name, summary, connections })
 
@@ -122,15 +149,19 @@ export class GraphMemClient extends MCPClientLike {
       threshold?: number
     } = args
 
-    let graph: GraphIndex[] = []
-
-    try {
-      graph = JSON.parse(getChatVar('graphmem_graph')) as GraphIndex[]
-    } catch (error) {}
-
-    if (!Array.isArray(query) || query.length === 0) {
+    if (!Array.isArray(query) || query.length === 0 || !query.every((term) => typeof term === 'string' && term)) {
       return [{ type: 'text', text: `Query must be a non-empty array of strings.` }]
     }
+    if (!Number.isInteger(search_depth) || search_depth < 1 || search_depth > GRAPH_MEMORY_MAX_SEARCH_DEPTH) {
+      return [
+        {
+          type: 'text',
+          text: `Search depth must be an integer between 1 and ${GRAPH_MEMORY_MAX_SEARCH_DEPTH}.`,
+        },
+      ]
+    }
+
+    const graph = readGraphMemory()
 
     if (!Array.isArray(graph) || graph.length === 0) {
       return [{ type: 'text', text: `No memory entries found in the graph database.` }]

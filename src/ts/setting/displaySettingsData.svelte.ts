@@ -9,13 +9,13 @@ import { updateAnimationSpeed } from '../gui/animation'
 import { guiSizeText, updateGuisize } from '../gui/guisize'
 import { updateTextThemeAndCSS } from '../gui/colorscheme'
 import { CustomGUISettingMenuStore } from '../stores.svelte'
-import { MAX_CHAT_DISPLAY_TAIL_COUNT, MIN_CHAT_DISPLAY_TAIL_COUNT } from '../chatDisplayTailCount'
 import { reloadRegexDisplay } from '../process/regexDisplayReload'
 
 /** Display fields edited by custom controls rather than SettingRenderer wrappers. */
 export const displayNonRendererServerSettingKeys = [
   'colorScheme',
   'colorSchemeName',
+  'customColorScheme',
   'customBackground',
   'customTextTheme',
 ] as const
@@ -252,19 +252,6 @@ export const displaySizeSettingsItems: SettingItem[] = [
     onChange: () => updateAnimationSpeed(),
     options: { min: 0, max: 1, step: 0.05, fixed: 2 },
     keywords: ['animation', 'speed'],
-  },
-  {
-    id: 'display.chatDisplayTailCount',
-    type: 'number',
-    labelKey: 'chatDisplayTailCount',
-    helpKey: 'chatDisplayTailCount',
-    bindKey: 'chatDisplayTailCount',
-    options: {
-      min: MIN_CHAT_DISPLAY_TAIL_COUNT,
-      max: MAX_CHAT_DISPLAY_TAIL_COUNT,
-      step: 1,
-    },
-    keywords: ['chat', 'message', 'tail', 'load', 'render', 'performance'],
   },
   {
     id: 'display.memoryLimitThickness',

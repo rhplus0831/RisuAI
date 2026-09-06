@@ -1,24 +1,25 @@
-import {
-  getDatabase,
-  type Chat,
-  type MessageGenerationInfo,
-  type MessagePresetInfo,
-  type character,
-} from '../../storage/database.svelte'
+import { type MessageGenerationInfo, type MessagePresetInfo, type character } from '../../storage/database.svelte'
 import { trimUntilPunctuation } from '../../util'
-import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
+import { settingsResourceState } from '../../server/resourceState.svelte'
 import { runInlayScreen } from '../inlayScreen'
 import type { requestDataResponse } from '../request/request'
 import { processScriptFull } from '../scripts'
 import { sayTTS } from '../tts'
+import {
+  mutateStablePostGenerationChat,
+  mutateStablePostGenerationMessage,
+  resolveStablePostGenerationChat,
+  resolveStablePostGenerationMessage,
+  stablePostGenerationMessageTarget,
+  type StablePostGenerationChatTarget,
+} from './stableTarget'
 
 export interface ApplyNonStreamResponseOptions {
   req: requestDataResponse
   arg: { continue?: boolean }
   nowChatroom: character
   currentChar: character
-  selectedChar: number
-  selectedChat: number
+  target: StablePostGenerationChatTarget | null
   generationId: string
   generationInfo: MessageGenerationInfo
   promptInfo: MessagePresetInfo
@@ -34,6 +35,7 @@ export interface ApplyNonStreamResponseResult {
   result: string
   emoChanged: boolean
   mrerolls: string[]
+  messageId?: string
 }
 
 export async function applyNonStreamResponse(
@@ -44,8 +46,7 @@ export async function applyNonStreamResponse(
     arg,
     nowChatroom,
     currentChar,
-    selectedChar,
-    selectedChat,
+    target,
     generationId,
     generationInfo,
     promptInfo,
@@ -65,20 +66,36 @@ export async function applyNonStreamResponse(
   let result = ''
   let emoChanged = false
   const mrerolls: string[] = []
-
-  const messagesAt = (): Chat['message'] => getDatabase().characters[selectedChar].chats[selectedChat].message
+  let outputMessageId: string | undefined
+  const removeIncompleteResponse =
+    settingsResourceState.status !== 'error' &&
+    settingsResourceState.groupStatuses.runtime === 'ready' &&
+    settingsResourceState.value.removeIncompleteResponse === true
+  const ttsAutoSpeech =
+    settingsResourceState.status !== 'error' &&
+    settingsResourceState.groupStatuses.media === 'ready' &&
+    settingsResourceState.value.ttsAutoSpeech === true
 
   for (let i = 0; i < msgs.length; i++) {
     const msg = msgs[i]
     const mess = msg[1]
-    let msgIndex = messagesAt().length
+    const beforeResolution = resolveStablePostGenerationChat(target)
+    if (!beforeResolution) break
+    let msgIndex = beforeResolution.chat.message.length
+    let targetMessageId = generationId
+    if (i === 0 && arg.continue) {
+      targetMessageId = beforeResolution.chat.message[msgIndex - 1]?.chatId ?? ''
+      if (!targetMessageId) break
+    }
     let result2 = await runEditOutput(mess, msgIndex)
     if (i === 0 && arg.continue) {
       msgIndex -= 1
-      const beforeChat = messagesAt()[msgIndex]
-      result2 = await runEditOutput(beforeChat.data + mess, msgIndex)
+      const messageTarget = stablePostGenerationMessageTarget(target?.characterId, target?.chatId, targetMessageId)
+      const liveMessage = resolveStablePostGenerationMessage(messageTarget)?.message
+      if (!liveMessage) break
+      result2 = await runEditOutput(liveMessage.data + mess, msgIndex)
     }
-    if (getDatabase().removeIncompleteResponse) {
+    if (removeIncompleteResponse) {
       result2.data = trimUntilPunctuation(result2.data)
     }
     result = result2.data
@@ -86,26 +103,31 @@ export async function applyNonStreamResponse(
     result = inlayResult.text
     emoChanged = result2.emoChanged
     if (i === 0 && arg.continue) {
-      withTrustedResourceWrite(() => {
-        messagesAt()[msgIndex] = {
+      const messageTarget = stablePostGenerationMessageTarget(target?.characterId, target?.chatId, targetMessageId)
+      const applied = mutateStablePostGenerationMessage(messageTarget, (message, chat) => {
+        const messageIndex = chat.message.indexOf(message)
+        if (messageIndex < 0) return
+        chat.message[messageIndex] = {
           role: 'char',
           data: result,
           saying: currentChar.chaId,
           time: Date.now(),
           generationInfo,
           promptInfo,
-          chatId: generationId,
+          chatId: targetMessageId,
         }
       })
+      if (applied) outputMessageId = targetMessageId
       if (inlayResult.promise) {
         const p = await inlayResult.promise
-        withTrustedResourceWrite(() => {
-          messagesAt()[msgIndex].data = p
+        mutateStablePostGenerationMessage(messageTarget, (message) => {
+          message.data = p
         })
       }
     } else if (i === 0) {
-      withTrustedResourceWrite(() => {
-        messagesAt().push({
+      const applied = mutateStablePostGenerationChat(target, (chat) => {
+        if (!generationId || chat.message.some((message) => message.chatId === generationId)) return false
+        chat.message.push({
           role: msg[0],
           data: result,
           saying: currentChar.chaId,
@@ -114,25 +136,27 @@ export async function applyNonStreamResponse(
           promptInfo,
           chatId: generationId,
         })
+        return true
       })
-      const ind = messagesAt().length - 1
+      if (applied) outputMessageId = generationId
       if (inlayResult.promise) {
         const p = await inlayResult.promise
-        withTrustedResourceWrite(() => {
-          messagesAt()[ind].data = p
+        const messageTarget = stablePostGenerationMessageTarget(target?.characterId, target?.chatId, generationId)
+        mutateStablePostGenerationMessage(messageTarget, (message) => {
+          message.data = p
         })
       }
       mrerolls.push(result)
     } else {
       mrerolls.push(result)
     }
-    withTrustedResourceWrite(() => {
-      getDatabase().characters[selectedChar].reloadKeys += 1
+    mutateStablePostGenerationChat(target, (_chat, character) => {
+      character.reloadKeys += 1
     })
-    if (getDatabase().ttsAutoSpeech) {
+    if (ttsAutoSpeech) {
       await sayTTS(currentChar, result)
     }
   }
 
-  return { result, emoChanged, mrerolls }
+  return { result, emoChanged, mrerolls, ...(outputMessageId ? { messageId: outputMessageId } : {}) }
 }

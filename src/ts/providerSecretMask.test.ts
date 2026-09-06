@@ -13,8 +13,9 @@ const ARRAY_WILDCARD_ROOTS = new Set([
   'botPresets',
   'characters',
   'customModels',
-  'modelPresets',
   'modelProfiles',
+  'modelPresets',
+  'providerCredentials',
 ])
 
 function record(value: unknown): Record<string, unknown> {

@@ -1,36 +1,44 @@
 # Generated Files And Legacy Caveats
 
-Last audited: 2026-07-20.
+Last audited: 2026-08-27.
 
 These notes help avoid spending time in files that look important but are
 generated, local-only, historical, vendored, or intentionally no-port.
 
-## Do Not Hand-Edit As Source
+## Generated And Local Paths
 
-| Path                                             | Why                                                                                                                                                                                                                                                                                                         |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dist/`                                          | Vite build output plus client-lib declarations under `dist/client-types`. Regenerate with `pnpm build`/`pnpm build:site` or the client-lib `tsc` step.                                                                                                                                                      |
-| `node_modules/`, `server/fastify/node_modules/`  | Installed dependencies.                                                                                                                                                                                                                                                                                     |
-| `coverage/`                                      | Local coverage reports from frontend/backend/UI coverage scripts.                                                                                                                                                                                                                                           |
-| `test-results/`                                  | Playwright/test output.                                                                                                                                                                                                                                                                                     |
-| `blobs-for-test/`                                | Ignored local binary/test scratch payloads.                                                                                                                                                                                                                                                                 |
-| `*.tsbuildinfo`                                  | TypeScript incremental build artifacts. `tsconfig.client-lib.json` directs its generated artifact under `dist/client-types/`.                                                                                                                                                                               |
-| `data/`                                          | Local runtime state: `risu.db`/WAL/SHM, assets, backups, auth files, optional Web Push VAPID keys, `data/save/`, request/generation body sidecars and optional tsserver logs under `data/trace/`, optional `data/dev`, legacy import artifacts. Useful for debugging, not source; see `data-and-events.md`. |
-| `scripts/` when present                          | Ignored local scratch/tooling directory.                                                                                                                                                                                                                                                                    |
-| `public/token/`                                  | Vendor/tokenizer data. Only touch when intentionally updating those assets.                                                                                                                                                                                                                                 |
-| `public/plugin_start.7z`                         | Packaged starter plugin archive.                                                                                                                                                                                                                                                                            |
-| `src/etc/docs/`, `src/etc/o200k_base.json`       | Bundled/static documentation and tokenizer payloads; treat as static payloads unless intentionally updating them.                                                                                                                                                                                           |
-| `src/ts/rpack/`                                  | Vendored rpack implementation; excluded from Prettier.                                                                                                                                                                                                                                                      |
-| `src/ts/process/__fixtures__/expected/`          | Prompt/generation golden fixtures; regenerate with `UPDATE_FIXTURES=1`.                                                                                                                                                                                                                                     |
-| `src/ts/process/__fixtures__/upstream/`          | Upstream fixture corpus for request/provider tests.                                                                                                                                                                                                                                                         |
-| `*.snap` under test fixtures                     | Vitest snapshots; update through the relevant test workflow.                                                                                                                                                                                                                                                |
-| `server/fastify/browser-smoke/*-snapshots/*.png` | Tracked Playwright visual baselines, not scratch output. Update only for an intentional visible change through the smoke workflow.                                                                                                                                                                          |
+| Path | Why |
+| --- | --- |
+| `dist/` | Generated Vite build output created by `pnpm build` and related measurement commands. |
+| `node_modules/` | Installed root dependencies. The project has no separate `server/fastify/package.json`. |
+| `coverage/` | Local reports from the frontend, backend, and UI coverage scripts. |
+| `test-results/` | Playwright/test output. |
+| `fast-bootstrap-results/` | Generated startup/bundle measurement and integration reports. Commands and interpretation live in `development-and-observability.md`. |
+| `blobs-for-test/` | Ignored local binary/test scratch payloads. |
+| `*.tsbuildinfo` | Local TypeScript incremental build artifacts when an ad hoc tool enables incremental compilation; they are not runtime source. |
+| `data/` | Local runtime state: `risu.db`/WAL/SHM, assets, backups, auth files, optional Web Push VAPID keys, `data/save/`, request/generation body sidecars and optional tsserver logs under `data/trace/`, and legacy import artifacts. Useful for debugging, not source; see `data-and-events.md`. |
+| `data-agent/` | Disposable `pnpm dev:agent` runtime state. Default clone mode snapshots SQLite and links/copies assets/save while excluding auth, VAPID, backups, and traces; see `development-and-observability.md`. |
+| `scripts/` when present | Ignored local scratch/tooling directory. |
 
-`.archived-docs/` files are historical documentation. They may contain
-present-tense statements, commands, and gate references that were true at
-closeout and are now stale. Prefer `STRUCTURE.md`, `docs/structure/`, code, and
-the current behavioral tests. None of the archived audit Markdown is a live
-test fixture.
+## Tracked Payloads With Special Handling
+
+| Path | Why |
+| --- | --- |
+| `public/token/` | Vendored tokenizer data. Only touch when intentionally updating those assets. |
+| `public/plugin_start.7z` | Packaged starter plugin archive downloaded by `src/lib/Setting/Pages/PluginSettings.svelte`. |
+| `src/etc/o200k_base.json` | Live bundled tokenizer payload. Update only with its tokenizer consumers/tests. |
+| `src/etc/Airisu.webp`, `src/etc/bg.jpg`, `src/etc/send.mp3` | Live bundled image/audio assets imported by the current UI/runtime. |
+| `src/etc/docs/`, `src/etc/airisu.cbs`, `src/etc/patchNote.ts` | Retained unreferenced legacy documentation/script/update payloads; do not infer a live consumer from their location. |
+| `src/ts/rpack/` | Vendored rpack implementation; excluded from Prettier. |
+| `src/ts/process/__fixtures__/expected/` | Prompt/generation golden fixtures; regenerate with `UPDATE_FIXTURES=1`. |
+| `src/ts/process/__fixtures__/upstream/` | Upstream fixture corpus for request/provider tests. |
+| `*.snap` under test fixtures | Tracked Vitest snapshots; update through the relevant test workflow. |
+| `server/fastify/browser-smoke/*-snapshots/*.png` | Tracked Playwright visual baselines, not scratch output. Update only for an intentional visible change through the smoke workflow. |
+
+`.archived-docs/` contains historical documentation, not current implementation
+guidance. Prefer `STRUCTURE.md`, `docs/structure/`, code, and current behavioral
+tests. Archived Markdown is not a live test fixture; archived JSON is live only
+when current tooling imports it explicitly.
 
 `docs/structure/frontend.md` is source documentation only as a compatibility
 pointer for older links. Add current frontend guidance to
@@ -38,9 +46,9 @@ pointer for older links. Add current frontend guidance to
 
 Other ignored paths fall into four groups: retired build/runtime trees, local
 environment and editor state, logs/caches, and agent scratch files. Treat them
-as non-source unless a new plan explicitly reopens one. `.gitignore` is the
-source of truth for the exact list; `.ignore` is the source of truth for broad
-search exclusions.
+as non-source unless a new plan explicitly reopens one. Project-maintained Git
+ignore rules live in `.gitignore`; `.ignore` adds search-only exclusions for
+tracked payloads. Workspace-local excludes can add more.
 
 Prettier also skips Markdown/docs/handoff docs, `pnpm-lock.yaml`,
 tracked static/vendor payloads, media/binary assets, and generated/local
@@ -54,12 +62,14 @@ not tidy structure docs, so preserve table wrapping manually.
 `public/` is source for static assets copied by Vite. `dist/` is the generated
 copy. Edit `public/` when changing a static source asset, then rebuild.
 
-`resources/` contains app icon/splash source images such as `icon-*.png` and
-`splash*.png`. It is not copied by Vite unless a packaging step consumes it.
+`resources/` retains app icon/splash artwork such as `icon-*.png` and
+`splash*.png`. No current package script, Vite/Fastify source, or packaging
+configuration consumes it.
 
-`src/etc/` contains bundled imported media/docs/tokenizer seed data. Keep these
-static app assets separate from Fastify runtime assets, which are addressed by
-server asset ids and stored under `data/assets/`.
+`src/etc/` mixes live imported image/audio/tokenizer data with unreferenced
+legacy CBS/docs/update payloads, as classified above. Keep both separate from
+Fastify runtime assets, which are addressed by server asset ids and stored under
+`data/assets/`.
 
 No tracked files live under `public/functions/`; in some workspaces the empty
 directory may exist. Do not reintroduce old public worker/OAuth surfaces without
@@ -78,25 +88,9 @@ wrappers, browser-local persistence as primary runtime, peer sync, Drive sync,
 Risu Account Sync, and legacy `public/sw.js` share/file-handler/offline
 service-worker behavior are archival unless a new plan reopens them.
 
-Closed records under `.archived-docs/` explain how the current runtime landed:
-Fastify migration, client thinning, durable generation, the former lazy
-projection architecture and its replacement by concrete REST resources,
-db-json-to-SQLite
-(`.archived-docs/protocol-and-persistence/sqlite-migration.md`), and the v1-v4
-stability/performance audits under
-`.archived-docs/performance-and-stability/stability-audits/`. They are design
-history, not current guidance.
-
-Current core systems that came from those workstreams:
-
-- Server prompt assembly: `resolveServerPromptAssembly()` plus
-  `server/fastify/src/prompt/`.
-- Durable generation: `server/fastify/src/generationJobs.ts`.
-- SQLite-backed domain repository: `server/fastify/src/repository.ts` and
-  `server/fastify/src/db.ts`.
-- API-backed browser resources: `server/fastify/src/routes/resourceReads.ts`
-  plus `src/ts/server/resourceState.svelte.ts` and
-  `src/ts/server/resourceInvalidation.ts`.
+Historical migration and audit records explain how the current runtime landed,
+but current ownership belongs in the focused guides linked from
+[`README.md`](README.md).
 
 ## Legacy Names Still Active
 
@@ -109,12 +103,20 @@ Do not remove these just because the name sounds old:
 - Browser plugin runtime remains in `src/ts/plugins/`; server command routes
   store plugin records and plugin storage but do not execute plugin code.
 - Server Lua scripting executes during prompt assembly in
-  `server/fastify/src/prompt/luaRuntime.ts`. Plugin V2 code execution remains
-  unsupported on the server.
+  `server/fastify/src/prompt/luaRuntime.ts`. Plugin V2-series import,
+  persistence, and browser execution are unsupported. The active V3 host still
+  uses deprecated `pluginV2`-named compatibility maps/shims internally; those
+  names do not imply API-2.x record execution.
 
 `data/db.json` is also a legacy name now. If present, `ensureDbJsonImported()`
-imports it into SQLite and renames it to `db.json.migrated`; current runtime
-state is not written back to live `db.json`.
+imports a valid snapshot in one transaction, checkpoints SQLite, then renames
+it to `db.json.migrated`; current runtime state is not written back to live
+`db.json`. An invalid object envelope is quarantined as `db.json.invalid*`.
+Malformed JSON remains untouched and fails startup so it can be repaired. If
+`risu.db` later disappears while a migration/quarantine marker, a non-empty
+`backups/`, `assets/`, or `save/` directory, or the password file proves prior
+use, startup refuses to create a fresh database unless
+`RISU_API_ALLOW_MISSING_DATABASE=1` is explicit.
 
 Old UI strings may still mention `save/__password` or `save/__password.txt`.
 Fastify auth state actually lives under `data/__password`,
@@ -126,7 +128,7 @@ Fastify auth state actually lives under `data/__password`,
 The settings UI intentionally omits these imported/legacy keys:
 
 - `coldstorage`, `enableRemoteSaving`, `presetChain`, and `realmDirectOpen`;
-- `showPromptComparison` and `showSavingIcon`;
+- `showPromptComparison`;
 - `claudeBatching`, `claudeRetrivalCaching`, `forceProxyAsOpenAI`,
   `googleClaudeTokenizing`, `removePunctuationHypa`, and `antiServerOverloads`;
 - browser-only `localNetworkMode` and `localNetworkTimeoutSec`.
@@ -140,18 +142,24 @@ also intentionally omit the old UI-translation template download, guarded by
 `src/ts/setting/languageSettingsData.test.ts`; translation-cache import/export
 remains current.
 
-The automatic cold-storage setting is retired, but recovery of imported legacy
-character/chat archives is live through `src/ts/process/coldstorage.svelte.ts`
-and the Fastify recovery commands. The frozen Advanced Settings usage-statistics
-dialog is also absent, guarded by
+`showSavingIcon` is the exception to that no-control rule: it has no current
+settings UI, but it remains a live persisted opt-out. It defaults to `true` and
+gates `src/lib/Others/SavePopupIcon.svelte`, whose activity comes from the
+browser command queue and current-writer pending mutation outbox.
+
+The automatic cold-storage setting and archive-creation path are retired.
+Recovery/read compatibility for imported legacy character/chat archives remains
+live through `src/ts/process/coldstorage.svelte.ts` and Fastify recovery
+commands; several creation/cleanup helpers are intentional no-ops. The frozen
+Advanced Settings usage-statistics dialog is also absent, guarded by
 `src/lib/Setting/Pages/Advanced/SettingsExportButtons.svelte.test.ts`.
 
 - `src/LiteMain.svelte` is unwired. Live lite mode is `VITE_RISU_LITE` driving
   `src/ts/lite.ts` plus consumers such as settings, color scheme, and legacy
-  mobile component branches; it does not re-enable `LiteMain.svelte`.
+  mobile component branches; it does not re-enable `src/LiteMain.svelte`.
 - `src/lib/Mobile/MobileCharacters.svelte` is active through `GridCatalog`.
-  `MobileHeader.svelte`, `MobileBody.svelte`, and `MobileFooter.svelte` are the
-  unmounted legacy mobile shell.
+  `src/lib/Mobile/MobileHeader.svelte`, `src/lib/Mobile/MobileBody.svelte`, and
+  `src/lib/Mobile/MobileFooter.svelte` are the unmounted legacy mobile shell.
 - `src/lib/UI/3DLoader.svelte` and `src/ts/3d/threeload.ts` are legacy and not
   imported by the current app shell.
 - Picture-in-picture session keepalive is retired. Current settings support
@@ -161,6 +169,12 @@ dialog is also absent, guarded by
   surfaces without a new plan.
 - `src/lib/Others/WelcomeRisu.svelte` is retained and tested onboarding/setup
   UI, but the current shell no longer imports it.
+- The former application-wide Terms of Service component and gate are retired;
+  `src/lib/Others/Legal.svelte` is absent. Do not confuse that removed flow with
+  the live `realmTerms` workflow in `src/ts/alert.ts` and
+  `src/lib/Others/AlertComp.svelte`: it is a scoped confirmation before a
+  RisuRealm character download invoked by `downloadRisuHub()` in
+  `src/ts/characterCards.ts`, and its recorded acceptance remains active.
 
 Removed or intentionally no-port concepts: group chat, peer sync, Google Drive
 sync, Risu Account Sync, browser-local durable persistence as the primary
@@ -168,4 +182,7 @@ runtime, native/mobile wrapper runtime modes, legacy `public/sw.js`
 share/file-handler/offline service-worker behavior, and standalone
 SupaMemory/Hypa V2/Hanurai engines. `HypaProcessorV2` remains an active helper
 inside maintained Hypa V3 logic, and `supaMemory` field/key/memo names remain
-active compatibility names for that maintained path.
+active compatibility names for that maintained path. A persisted, dismissible
+once-per-database notice names any selected retired SupaMemory, legacy
+HypaMemory, Hypa V2, Hanurai, or experimental Hypa V3 mode and directs the user
+to maintained Hypa V3.

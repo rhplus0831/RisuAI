@@ -12,6 +12,7 @@
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
   import { v4 } from 'uuid'
   import { onDestroy } from 'svelte'
+  import { serverUnsupportedRegexEffectType } from 'src/ts/process/triggerServerSupport'
 
   interface Props {
     value: customscript
@@ -144,6 +145,11 @@
       <TextInput size="sm" bind:value={value.in} />
       <span class="text-textcolor mt-6">OUT:</span>
       <TextAreaInput highlight autocomplete="off" size="sm" bind:value={value.out} />
+      {#if serverUnsupportedRegexEffectType(value.out)}
+        <p class="text-warning text-sm mt-2" data-risu-server-unsupported-regex-effect="@@emo">
+          {language.regexEmotionEffectUnsupportedOnServer}
+        </p>
+      {/if}
       {#if value.ableFlag}
         <Accordion styled name="FLAGS">
           <span class="text-textcolor mt-3">Normal Flag</span>

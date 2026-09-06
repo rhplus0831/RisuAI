@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
+  import { getContext, onDestroy, untrack } from 'svelte'
   import { sleep } from 'src/ts/util'
   import { alertError } from '../../ts/alert'
   import {
     addMetadataToElement,
+    chatHtmlRenderPolicyKey,
     getDistance,
     postTranslationParse,
     trimMarkdown,
@@ -12,24 +13,38 @@
   } from '../../ts/parser/parser.svelte'
   import { translateHTML } from '../../ts/translator/translator'
   import { pruneEmptyBilingualPairs } from '../../ts/translator/bilingualInterleave'
+  import { createChatBodyRenderMemo } from './ChatBodyRenderMemo'
+  import { CHAT_DISPLAY_SCHEDULER, type ChatDisplayScheduler } from './chatDisplayScheduler'
   import { getModuleAssets } from 'src/ts/process/modules'
-  import { getCurrentCharacter, getCurrentChat, getDatabase } from 'src/ts/storage/database.svelte'
   import { getFileSrc } from 'src/ts/globalApi.svelte'
-  import { RegexDisplayReloadPointer } from 'src/ts/process/regexDisplayReload'
+  import {
+    RegexDisplayReloadPointer,
+    RegexDisplayReloadScope,
+    regexDisplayReloadTokenForContext,
+  } from 'src/ts/process/regexDisplayReload'
   import {
     getChatBodyCachedOnlyLlmDecision,
     getChatBodyCachedOnlyLlmDetectionMode,
     getChatBodyCachedOnlyLlmDetectionKey,
     getChatBodyParseMemoKey,
     memoizedChatBodyParse,
+    createChatBodyParseOwnerReaders,
   } from './ChatBodyParseMemo'
+  import type { DisplaySourceLayer } from '@risuai/protocol/display-source'
+  import type { DisplaySourcePriority } from 'src/ts/server/displaySources'
 
   interface Props {
     character?: simpleCharacterArgument | string | null
     firstMessage?: boolean
     idx?: number
+    chatId?: string
     msgDisplay?: string
     name?: string
+    messageId?: string
+    displayLayer?: DisplaySourceLayer
+    streaming?: boolean
+    displayPriority?: DisplaySourcePriority
+    parseRevision?: string
     role: string | null
     translated: boolean
     translating: boolean
@@ -37,13 +52,22 @@
     allowClientTranslation?: boolean
     bodyRoot?: HTMLElement | null
     modelShortName: string
+    onInitialDisplayParseStart?: (registration: symbol) => void
+    onInitialDisplayParseSettled?: (registration: symbol) => void
   }
 
   let {
     character = null,
     idx = 0,
     firstMessage = false,
+    chatId,
     msgDisplay,
+    name,
+    messageId,
+    displayLayer = 'original',
+    streaming = false,
+    displayPriority = 'normal',
+    parseRevision = '',
     role,
     translated = $bindable(false),
     translating = $bindable(false),
@@ -51,12 +75,42 @@
     allowClientTranslation = true,
     bodyRoot,
     modelShortName = '',
+    onInitialDisplayParseStart = () => {},
+    onInitialDisplayParseSettled = () => {},
   }: Props = $props()
+  const parseOwners = createChatBodyParseOwnerReaders()
+  const displayScheduler = getContext<ChatDisplayScheduler | undefined>(CHAT_DISPLAY_SCHEDULER)
+  let queuedDisplay: AbortController | undefined
 
-  // svelte-ignore non_reactive_update
-  let lastParsed = ''
+  let lastParsed = $state('')
   let lastTranslationDetectionKey = ''
   let markParsingRun = 0
+  const initialDisplayParseRegistration = Symbol('initial-display-parse')
+  let initialDisplayParseStarted = false
+  let initialDisplayParseSettled = false
+  let regexDisplayReloadToken = $derived(
+    regexDisplayReloadTokenForContext($RegexDisplayReloadPointer, $RegexDisplayReloadScope, {
+      characterId: typeof character === 'string' ? character : character?.chaId,
+    }),
+  )
+
+  function beginInitialDisplayParse() {
+    if (initialDisplayParseStarted) return
+    initialDisplayParseStarted = true
+    onInitialDisplayParseStart(initialDisplayParseRegistration)
+  }
+
+  function settleInitialDisplayParse() {
+    if (!initialDisplayParseStarted || initialDisplayParseSettled) return
+    initialDisplayParseSettled = true
+    onInitialDisplayParseSettled(initialDisplayParseRegistration)
+  }
+
+  onDestroy(() => {
+    queuedDisplay?.abort()
+    markParsingRun += 1
+    settleInitialDisplayParse()
+  })
 
   function getCbsCondition() {
     try {
@@ -78,12 +132,17 @@
     alertError(`Error while parsing chat message: ${translated}, ${parsingError.message}, ${parsingError.stack}`)
   }
 
+  const finalizeBody = createChatBodyRenderMemo((html, model) =>
+    addMetadataToElement(pruneEmptyBilingualPairs(trimMarkdown(html)), model),
+  )
   function renderParsedChatBody(html: string): string {
-    return addMetadataToElement(pruneEmptyBilingualPairs(trimMarkdown(html)), modelShortName)
+    const policy = chatHtmlRenderPolicyKey()
+    const model = modelShortName
+    return untrack(() => finalizeBody(html ?? '', model, policy))
   }
 
   function automaticClientTranslationEnabled(): boolean {
-    const chat = getCurrentChat()
+    const chat = parseOwners.activeChatOwner()
     return chat?.autoTranslate === true && !(chat.autoTranslateBotOnly === true && role === 'user')
   }
 
@@ -138,45 +197,64 @@
     // track 'translated' and 'retranslate' state
     translated
     retranslate
-    let lastParsedQueue = ''
     let mode = 'notrim' as const
     const cbsConditions = getCbsCondition()
 
     try {
-      const cachedOnlyDetectionMode = getChatBodyCachedOnlyLlmDetectionMode({
-        fallbackMode: mode,
-      })
+      const detectTranslation = allowClientTranslation && !retranslate
+      const automaticTranslation = detectTranslation && automaticClientTranslationEnabled()
+      const settings = parseOwners.settingsOwner()
+      const detectCachedLlm =
+        automaticTranslation && settings.autoTranslateCachedOnly && settings.translatorType === 'llm'
+      const cachedOnlyDetectionMode = getChatBodyCachedOnlyLlmDetectionMode({ fallbackMode: mode, owners: parseOwners })
       const cachedOnlyParseKey =
-        cachedOnlyDetectionMode === 'raw'
-          ? undefined
-          : getChatBodyParseMemoKey({
+        detectCachedLlm && cachedOnlyDetectionMode !== 'raw'
+          ? getChatBodyParseMemoKey({
               data,
               charArg,
+              owners: parseOwners,
               mode: cachedOnlyDetectionMode,
               chatID,
               cbsConditions,
+              chatId,
+              displayLayer,
+              messageId,
+              name,
+              streaming,
+              displayPriority,
             })
-      const detectionKey = getChatBodyCachedOnlyLlmDetectionKey({
-        data,
-        charArg,
-        chatID,
-        cbsConditions,
-        fallbackMode: mode,
-        cachedOnlyParseKey,
-      })
-      if (allowClientTranslation && !retranslate && detectionKey !== lastTranslationDetectionKey) {
-        lastParsedQueue = ''
+          : undefined
+      const detectionKey = detectCachedLlm
+        ? getChatBodyCachedOnlyLlmDetectionKey({
+            data,
+            charArg,
+            owners: parseOwners,
+            chatID,
+            cbsConditions,
+            chatId,
+            fallbackMode: mode,
+            cachedOnlyParseKey,
+          })
+        : `automatic:${automaticTranslation}`
+      if (detectTranslation && detectionKey !== lastTranslationDetectionKey) {
         lastTranslationDetectionKey = detectionKey
         let translateText = false
         try {
-          const database = getDatabase()
+          const settings = parseOwners.settingsOwner()
           if (automaticClientTranslationEnabled()) {
-            if (database.autoTranslateCachedOnly && database.translatorType === 'llm') {
+            if (settings.autoTranslateCachedOnly && settings.translatorType === 'llm') {
               translateText = await getChatBodyCachedOnlyLlmDecision({
                 data,
                 charArg,
+                owners: parseOwners,
                 chatID,
                 cbsConditions,
+                chatId,
+                displayLayer,
+                messageId,
+                name,
+                streaming,
+                displayPriority,
                 fallbackMode: mode,
                 cachedOnlyParseKey,
                 detectionKey,
@@ -205,12 +283,12 @@
       }
 
       if (allowClientTranslation && (retranslate || translated)) {
-        const database = getDatabase()
-        if (database.showTranslationLoading) {
+        const settings = parseOwners.settingsOwner()
+        if (settings.showTranslationLoading) {
           lastParsed = `<div style="display:flex;justify-content:center;align-items:center;height:48px;"><div style="animation: spin 1s linear infinite; border-radius: 50%; height: 32px; width: 32px; border: 2px solid #3b82f6; border-top: 2px solid transparent;"></div></div><style>@keyframes spin { to { transform: rotate(360deg); } }</style>`
         }
 
-        if (database.translatorType === 'llm' && database.translateBeforeHTMLFormatting) {
+        if (settings.translatorType === 'llm' && settings.translateBeforeHTMLFormatting) {
           await sleep(100)
           const translatedHtml = await translateHTMLOnce(data, charArg, chatID, retranslate, data, setTranslatingForRun)
           if (!translatedHtml.ok) {
@@ -221,31 +299,45 @@
               memoizedChatBodyParse({
                 data: translatedHtml.value,
                 charArg,
+                owners: parseOwners,
                 mode,
                 chatID,
                 cbsConditions,
+                chatId,
+                displayLayer,
+                messageId,
+                name,
+                streaming,
+                displayPriority,
               }),
             data,
           )
           if (!marked.ok) {
             return marked.value
           }
-          lastParsedQueue = marked.value
           setTimeout(() => {
             if (runId === markParsingRun) {
               retranslate = false
             }
           }, 10)
           return marked.value
-        } else if (!database.legacyTranslation) {
+        } else if (!settings.legacyTranslation) {
           const marked = await parseWithRetry(
             () =>
               memoizedChatBodyParse({
                 data,
                 charArg,
+                owners: parseOwners,
                 mode: 'pretranslate',
+                memoKey: cachedOnlyDetectionMode === 'pretranslate' ? cachedOnlyParseKey : undefined,
                 chatID,
                 cbsConditions,
+                chatId,
+                displayLayer,
+                messageId,
+                name,
+                streaming,
+                displayPriority,
               }),
             data,
           )
@@ -270,7 +362,6 @@
           if (!translated.ok) {
             return translated.value
           }
-          lastParsedQueue = translated.value
           setTimeout(() => {
             if (runId === markParsingRun) {
               retranslate = false
@@ -283,9 +374,17 @@
               memoizedChatBodyParse({
                 data,
                 charArg,
+                owners: parseOwners,
                 mode,
+                memoKey: cachedOnlyDetectionMode === mode ? cachedOnlyParseKey : undefined,
                 chatID,
                 cbsConditions,
+                chatId,
+                displayLayer,
+                messageId,
+                name,
+                streaming,
+                displayPriority,
               }),
             data,
           )
@@ -303,7 +402,6 @@
           if (!translated.ok) {
             return translated.value
           }
-          lastParsedQueue = translated.value
           setTimeout(() => {
             if (runId === markParsingRun) {
               retranslate = false
@@ -317,38 +415,48 @@
             memoizedChatBodyParse({
               data,
               charArg,
+              owners: parseOwners,
               mode,
+              memoKey: cachedOnlyDetectionMode === mode ? cachedOnlyParseKey : undefined,
               chatID,
               cbsConditions,
+              chatId,
+              displayLayer,
+              messageId,
+              name,
+              streaming,
+              displayPriority,
             }),
           data,
         )
         if (!marked.ok) {
           return marked.value
         }
-        lastParsedQueue = marked.value
         return marked.value
       }
-    } finally {
-      // Since trimMarkdown is fast, we don't need to cache it.
+    } catch (error) {
       if (runId === markParsingRun) {
-        lastParsed = lastParsedQueue
+        settleInitialDisplayParse()
       }
+      throw error
     }
   }
 
   const checkImg = () => {
-    if (!getDatabase().newImageHandlingBeta || !bodyRoot) {
+    if (!parseOwners.settingsOwner().newImageHandlingBeta || !bodyRoot) {
       return
     }
     const imgs = bodyRoot.querySelectorAll(
-      'img:not([src^="data:"]):not([src^="http:"]):not([src^="https:"]):not([src^="blob:"]):not([src^="file:"]):not([noimage])',
+      'img:not([src^="/api/v1/assets/"]):not([src^="data:"]):not([src^="http:"]):not([src^="https:"]):not([src^="blob:"]):not([src^="file:"]):not([noimage])',
     ) as NodeListOf<HTMLImageElement>
 
     if (imgs.length > 0) {
-      const currentCharacter = getCurrentCharacter()
+      const currentCharacter = parseOwners.activeCharacterOwner()
+      if (!currentCharacter) return
       const styl = currentCharacter.prebuiltAssetStyle
-      const assets = getModuleAssets().concat(currentCharacter.additionalAssets ?? [])
+      const assets = getModuleAssets({ character: currentCharacter, chat: parseOwners.activeChatOwner() }).concat(
+        currentCharacter.additionalAssets ?? [],
+      )
       const normalizedAssets = assets.map((asset) => {
         return {
           name: asset[0].toLocaleLowerCase(),
@@ -410,33 +518,80 @@
     }
   }
 
+  let previousParseInputs: unknown[] = []
+  let previousParse: Promise<string> | undefined
   let markParsingResult = $derived.by(() => {
-    void $RegexDisplayReloadPointer
+    void regexDisplayReloadToken
     const parseData = msgDisplay
     const parseCharacter = character
     const parseIndex = idx
+    const parseChatId = chatId
+    const parseMessageId = messageId
+    const parseDisplayLayer = displayLayer
+    const parseStreaming = streaming
+    const parseDisplayPriority = displayPriority
+    const parseName = name
 
     // These local inputs intentionally restart parsing. Database reads made by
     // the parser are snapshots; their UI activation is controlled by the
     // explicit reload pointers instead of deep subscriptions per chat row.
-    void translated
-    void retranslate
-    void allowClientTranslation
-    void firstMessage
-    void role
+    const inputs = [
+      parseRevision,
+      regexDisplayReloadToken,
+      parseData,
+      parseCharacter,
+      parseIndex,
+      parseChatId,
+      parseMessageId,
+      parseDisplayLayer,
+      parseStreaming,
+      parseDisplayPriority,
+      parseName,
+      translated,
+      retranslate,
+      allowClientTranslation,
+      firstMessage,
+      role,
+    ]
+    if (previousParse && inputs.every((input, index) => input === previousParseInputs[index])) return previousParse
+    previousParseInputs = inputs
 
-    return untrack(() => markParsing(parseData, parseCharacter, parseIndex))
+    previousParse = untrack(() => {
+      queuedDisplay?.abort()
+      // Register before background scheduling so the transcript can retain a
+      // returning row's measured height while its first body is still queued.
+      beginInitialDisplayParse()
+      // Invalidate a previous in-flight parse even when its replacement queues.
+      markParsingRun += 1
+      const controller = new AbortController()
+      queuedDisplay = controller
+      if (!displayScheduler || parseDisplayPriority !== 'background') {
+        return markParsing(parseData, parseCharacter, parseIndex)
+      }
+      return displayScheduler.run(() => markParsing(parseData, parseCharacter, parseIndex), controller.signal)
+    })
+    return previousParse
   })
 
   $effect(() => {
-    markParsingResult
+    const result = markParsingResult
+    let cancelled = false
+    void result.then((html) => {
+      if (cancelled || html === undefined) return
+      lastParsed = html
+      // Translation detection can queue another parse without producing HTML.
+      // Keep the initial registration until a body is actually committed.
+      settleInitialDisplayParse()
+    })
+    return () => {
+      cancelled = true
+    }
+  })
+
+  $effect(() => {
+    lastParsed
     checkImg()
-    markParsingResult.then(checkImg)
   })
 </script>
 
-{#await markParsingResult}
-  {@html renderParsedChatBody(lastParsed)}
-{:then md}
-  {@html renderParsedChatBody(md)}
-{/await}
+{@html renderParsedChatBody(lastParsed)}

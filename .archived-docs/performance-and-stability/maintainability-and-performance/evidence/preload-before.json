@@ -1,0 +1,267 @@
+{
+  "source": "491cc1820",
+  "command": "pnpm build:initial-preload",
+  "node": "v24.19.0",
+  "initialHtml": {
+    "schemaVersion": 1,
+    "sourceHtml": "index.html",
+    "fileCount": 14,
+    "rawBytes": 1216085,
+    "gzipBytes": 389721,
+    "largestInitialChunk": {
+      "path": "assets/lang-BTGSkrSZ.js",
+      "role": "modulepreload",
+      "rawBytes": 904254,
+      "gzipBytes": 291801
+    },
+    "files": [
+      {
+        "path": "assets/index-C26-xnGm.js",
+        "role": "entry",
+        "rawBytes": 6337,
+        "gzipBytes": 2984
+      },
+      {
+        "path": "assets/chunk-BneVvdWh.js",
+        "role": "modulepreload",
+        "rawBytes": 1113,
+        "gzipBytes": 631
+      },
+      {
+        "path": "assets/preload-helper-BqZ_R5ZR.js",
+        "role": "modulepreload",
+        "rawBytes": 1261,
+        "gzipBytes": 731
+      },
+      {
+        "path": "assets/lang-BTGSkrSZ.js",
+        "role": "modulepreload",
+        "rawBytes": 904254,
+        "gzipBytes": 291801
+      },
+      {
+        "path": "assets/polyfill-BtoTs0ao.js",
+        "role": "modulepreload",
+        "rawBytes": 9087,
+        "gzipBytes": 3146
+      },
+      {
+        "path": "assets/effects-C53AlNcS.js",
+        "role": "modulepreload",
+        "rawBytes": 31336,
+        "gzipBytes": 12011
+      },
+      {
+        "path": "assets/client-BE7hO-r3.js",
+        "role": "modulepreload",
+        "rawBytes": 28276,
+        "gzipBytes": 11790
+      },
+      {
+        "path": "assets/index-client-RLx41PMj.js",
+        "role": "modulepreload",
+        "rawBytes": 30,
+        "gzipBytes": 50
+      },
+      {
+        "path": "assets/moduleRenderRevision-BOMQYBbg.js",
+        "role": "modulepreload",
+        "rawBytes": 259,
+        "gzipBytes": 219
+      },
+      {
+        "path": "assets/resourceState.svelte-DWtiQi8O.js",
+        "role": "modulepreload",
+        "rawBytes": 193487,
+        "gzipBytes": 56089
+      },
+      {
+        "path": "assets/routeOperation-D3_2FUT6.js",
+        "role": "modulepreload",
+        "rawBytes": 27060,
+        "gzipBytes": 4819
+      },
+      {
+        "path": "assets/diagnostics-Bi0w8Ozp.js",
+        "role": "modulepreload",
+        "rawBytes": 6321,
+        "gzipBytes": 2676
+      },
+      {
+        "path": "assets/coreStores.svelte-CNiHh1E9.js",
+        "role": "modulepreload",
+        "rawBytes": 303,
+        "gzipBytes": 251
+      },
+      {
+        "path": "assets/alert-DMfRcCTl.js",
+        "role": "modulepreload",
+        "rawBytes": 6961,
+        "gzipBytes": 2523
+      }
+    ],
+    "budgets": {
+      "regressionCeilings": {
+        "totalGzipBytes": 1650000,
+        "largestChunkGzipBytes": 675000,
+        "passes": true
+      },
+      "milestoneTargets": {
+        "totalGzipBytes": 921600,
+        "largestChunkGzipBytes": 512000,
+        "passes": true
+      }
+    }
+  },
+  "boundaryClosures": {
+    "initial": {
+      "chunkFiles": [
+        "assets/alert-DMfRcCTl.js",
+        "assets/chunk-BneVvdWh.js",
+        "assets/client-BE7hO-r3.js",
+        "assets/coreStores.svelte-CNiHh1E9.js",
+        "assets/diagnostics-Bi0w8Ozp.js",
+        "assets/effects-C53AlNcS.js",
+        "assets/index-C26-xnGm.js",
+        "assets/index-client-RLx41PMj.js",
+        "assets/lang-BTGSkrSZ.js",
+        "assets/moduleRenderRevision-BOMQYBbg.js",
+        "assets/polyfill-BtoTs0ao.js",
+        "assets/preload-helper-BqZ_R5ZR.js",
+        "assets/resourceState.svelte-DWtiQi8O.js",
+        "assets/routeOperation-D3_2FUT6.js"
+      ],
+      "rawBytes": 1209058,
+      "gzipBytes": 386614,
+      "moduleCount": 359,
+      "passes": true,
+      "violations": []
+    },
+    "immediateStartup": {
+      "chunkFiles": [
+        "assets/Accordion-DMRiBQYY.js",
+        "assets/BarIcon-8OvhNRC2.js",
+        "assets/BaseRoundedButton-bueIScil.js",
+        "assets/Button-5CVtb-ec.js",
+        "assets/Chat-dxwqKIP8.js",
+        "assets/CheckInput-Dm9Tybf-.js",
+        "assets/CustomModelsSettings-ExpeZHSA.js",
+        "assets/Help-DHWJvSYY.js",
+        "assets/Icon-BhqSP8Ws.js",
+        "assets/NumberInput-BrcPZN3M.js",
+        "assets/OptionInput-tZlE9P-5.js",
+        "assets/PluginDefinedIcon-C5TPUWEs.js",
+        "assets/PushNotificationWarning-STYjysiU.js",
+        "assets/RealmPopUp-CMZfHnML.js",
+        "assets/SecretInput-DrpGnH1U.js",
+        "assets/SelectInput-Di2yZ_nj.js",
+        "assets/SettingRenderer-Js92UTxA.js",
+        "assets/SliderInput-BGoUh0Xn.js",
+        "assets/TextAreaInput-CtO1XQC3.js",
+        "assets/TextInput-COxhjRWF.js",
+        "assets/Toggles-8ZV0BL3Y.js",
+        "assets/__vite-browser-external-B4XnkN8Y.js",
+        "assets/alert-DMfRcCTl.js",
+        "assets/appStartup-DlRGp0XU.js",
+        "assets/arrow-left-BGA27X-i.js",
+        "assets/arrow-up-PfCXzmD_.js",
+        "assets/assetList-CijAuDz0.js",
+        "assets/bardWikiJobEvents-DA1L6ew2.js",
+        "assets/bardWikiResource-n6BdHtq0.js",
+        "assets/book-open-D4IKAk4a.js",
+        "assets/bootstrap-CfluXF2q.js",
+        "assets/bootstrap-i5qqgJJZ.js",
+        "assets/bot-sjeyn-oD.js",
+        "assets/buffer-DCVZ7vEA.js",
+        "assets/cbsRegistry-CZFCIg6n.js",
+        "assets/characterAdditionalAssetUpload-BN4XIzQR.js",
+        "assets/characterCommands-CV2Mf3-S.js",
+        "assets/characterDisplayName-CxHxBIPi.js",
+        "assets/chatGenerationTogglePresets-CiqZGptk.js",
+        "assets/chatTranscriptOwner-D4qTuNh_.js",
+        "assets/check-CRkA2a97.js",
+        "assets/chevron-right-lPJDY1_X.js",
+        "assets/chunk-BneVvdWh.js",
+        "assets/client-BE7hO-r3.js",
+        "assets/commands-BN2bm6_F.js",
+        "assets/confirmSettingsItemRemoval-BSxVkz0o.js",
+        "assets/copy-Bhmbhng2.js",
+        "assets/coreStores.svelte-CNiHh1E9.js",
+        "assets/customBackgroundSetting-BSHxsjsI.js",
+        "assets/database.svelte-Bb7AsFe1.js",
+        "assets/diagnostics-Bi0w8Ozp.js",
+        "assets/disclose-version-V8pQYR0f.js",
+        "assets/download-Cf7IQgj6.js",
+        "assets/effects-C53AlNcS.js",
+        "assets/folder-BrmAAIOo.js",
+        "assets/generationPersistenceState-DDHp6W0F.js",
+        "assets/generationRuntimeBridge-Dg3ZCemz.js",
+        "assets/globe-CejyTfwd.js",
+        "assets/hard-drive-upload-C4cXQPK0.js",
+        "assets/heightMode-DWcDvcZQ.js",
+        "assets/index-client-CzjUA2Mx.js",
+        "assets/index-client-RLx41PMj.js",
+        "assets/internalmcp-Bip5VcIT.js",
+        "assets/lang-BTGSkrSZ.js",
+        "assets/languages-W0vSEhAP.js",
+        "assets/legacy-BtwS3S0g.js",
+        "assets/list-U0je-ho3.js",
+        "assets/maximize-2-CieR17BX.js",
+        "assets/memoryJobEvents-BKxf-tDt.js",
+        "assets/messageTranslationJobs-BhDBwu5R.js",
+        "assets/mobileCharacterRows-8_ZO4Zue.js",
+        "assets/modalBackdropDismiss-CbtZ-prI.js",
+        "assets/modalFocusTrap-DCFYVtz8.js",
+        "assets/moduleRenderRevision-BOMQYBbg.js",
+        "assets/observerRouteIntent-CSoigSFl.js",
+        "assets/package-DBfLYHmg.js",
+        "assets/pencil-hWUNT3UL.js",
+        "assets/plus-DZ6O540g.js",
+        "assets/polyfill-BtoTs0ao.js",
+        "assets/power-off-CpRTJb1k.js",
+        "assets/preload-helper-BqZ_R5ZR.js",
+        "assets/promptPresetModelOverrides.svelte-uz2taACG.js",
+        "assets/pushNotificationSetting-DidR0oba.js",
+        "assets/refresh-ccw-D90mfh9x.js",
+        "assets/resourceReads-Cs-cJQdx.js",
+        "assets/resourceState.svelte-DWtiQi8O.js",
+        "assets/rotate-ccw-B9zrJXNh.js",
+        "assets/routeIntentPrefetch-QWPP-qLH.js",
+        "assets/routeOperation-D3_2FUT6.js",
+        "assets/routerRoute-CWhuexxC.js",
+        "assets/save-uOoAMCPU.js",
+        "assets/settings-Cws-loa1.js",
+        "assets/smile-C19gc2bL.js",
+        "assets/sortable.core.esm-D1Nn_c6a.js",
+        "assets/stores.svelte-BwJUnvp8.js",
+        "assets/tooltip-B8urS1wH.js",
+        "assets/trash-B2zuwiHk.js",
+        "assets/user-ClBhAJN0.js",
+        "assets/util-CNIz7t7d.js",
+        "assets/utils-1S0JwI4Y.js",
+        "assets/volume-2-DrXZHRst.js",
+        "assets/x-Dk9uaWG4.js"
+      ],
+      "rawBytes": 4584087,
+      "gzipBytes": 1377316,
+      "moduleCount": 1203
+    }
+  },
+  "localeChunks": [
+    {
+      "file": "assets/lang-BTGSkrSZ.js",
+      "rawBytes": 904254,
+      "gzipBytes": 291801,
+      "locales": [
+        "src/lang/cn.ts",
+        "src/lang/de.ts",
+        "src/lang/en.ts",
+        "src/lang/es.ts",
+        "src/lang/index.ts",
+        "src/lang/ko.ts",
+        "src/lang/vi.ts",
+        "src/lang/zh-Hant.ts"
+      ]
+    }
+  ]
+}

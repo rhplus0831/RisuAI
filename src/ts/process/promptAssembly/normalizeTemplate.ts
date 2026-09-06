@@ -1,6 +1,9 @@
-import { getDatabase, type Database, type character } from '../../storage/database.svelte'
+import { type Database, type character } from '../../storage/database.svelte'
 import type { PromptItem } from '../prompt'
-import { resolveEffectivePromptTemplate, type EffectivePromptTemplateOptions } from './effectivePromptTemplate'
+import {
+  resolveEffectivePromptTemplate,
+  type EffectivePromptTemplateOptions,
+} from '@risuai/shared-core/effective-prompt-template'
 
 export interface NormalizedTemplate {
   promptTemplate: PromptItem[] | null
@@ -8,11 +11,11 @@ export interface NormalizedTemplate {
 }
 
 export interface NormalizeTemplateOptions extends EffectivePromptTemplateOptions {
-  db?: Database
+  db: Database
 }
 
-export function normalizeTemplate(currentChar: character, options: NormalizeTemplateOptions = {}): NormalizedTemplate {
-  const db = options.db ?? getDatabase()
+export function normalizeTemplate(currentChar: character, options: NormalizeTemplateOptions): NormalizedTemplate {
+  const db = options.db
   const resolved = resolveEffectivePromptTemplate(db, options)
   let promptTemplate = safeStructuredClone(resolved.promptTemplate) ?? null
   const usingPromptTemplate = !!promptTemplate

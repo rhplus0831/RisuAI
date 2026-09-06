@@ -1,4 +1,6 @@
-import type { CbsCallbackMemo, CbsCallbackMemoName } from '../../../../src/ts/cbs'
+import type { CbsCallbackMemo, CbsCallbackMemoName } from '@risuai/shared-core/cbs-contracts'
+
+export type { CbsCallbackMemo, CbsCallbackMemoName } from '@risuai/shared-core/cbs-contracts'
 
 export interface AssemblyCbsCallbackMemoInstrumentation {
   callbackMisses: Record<CbsCallbackMemoName, number>

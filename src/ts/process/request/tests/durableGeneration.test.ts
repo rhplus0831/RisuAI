@@ -1,10 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mirrors serverPromptAssembly.test.ts: the platform gate is a hoisted getter so
-// a case can flip Fastify mode, and `../../modules` is mocked so getModuleTriggers
-// is hermetic (no enabled-module state leaks into the content detector). The
-// durable gate delegates to `resolveServerPromptAssembly`, so it needs the same
-// hermetic environment.
+// Mirrors serverPromptAssembly.test.ts: the platform gate is a hoisted getter.
+// The plugin/store import graph still initializes `../../modules`, so its eager
+// effects are neutralized even though preflight resolves active modules from the
+// explicit database snapshot.
 vi.mock('../../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../../platform')>()
   return {
@@ -13,22 +12,21 @@ vi.mock('../../../platform', async (importActual) => {
   }
 })
 
-const moduleState = vi.hoisted(() => ({ triggers: [] as unknown[] }))
-
 vi.mock('../../modules', async (importActual) => {
   const actual = await importActual<typeof import('../../modules')>()
   return {
     ...actual,
     moduleUpdate: () => {},
     getModuleToggles: () => '',
-    getModuleTriggers: () => moduleState.triggers,
+    getModuleTriggers: () => [],
   }
 })
 
 import { setDatabase, type character, type Chat, type Database } from '../../../storage/database.svelte'
-import { pluginV2 } from '../../../plugins/plugins.svelte'
+import { _setPluginRuntimePhaseForTesting, pluginV2 } from '../../../plugins/plugins.svelte'
 import { resolveDurableGeneration, type DurableGenerationRoute } from '../durableGeneration'
 import type { ServerPromptAssemblyInput } from '../serverPromptAssembly'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 function seedDb(overrides: Partial<Database> = {}): void {
   setDatabase({
@@ -62,7 +60,7 @@ function makeChat(
 }
 
 function makeInput(overrides: Partial<ServerPromptAssemblyInput> = {}): ServerPromptAssemblyInput {
-  return { currentChar: makeChar(), currentChat: makeChat(), ...overrides }
+  return { database: getDatabase(), currentChar: makeChar(), currentChat: makeChat(), ...overrides }
 }
 
 function expectNonDurable(route: DurableGenerationRoute): string {
@@ -73,11 +71,12 @@ function expectNonDurable(route: DurableGenerationRoute): string {
 }
 
 beforeEach(() => {
-  moduleState.triggers = []
+  _setPluginRuntimePhaseForTesting('ready')
   seedDb()
 })
 
 afterEach(() => {
+  _setPluginRuntimePhaseForTesting('idle')
   pluginV2.editinput.clear()
   pluginV2.editoutput.clear()
   pluginV2.editprocess.clear()
@@ -114,7 +113,10 @@ describe('resolveDurableGeneration', () => {
     })
 
     it('routes a send to durable when a module carries an output trigger (decision #2)', () => {
-      moduleState.triggers = outputTriggerScript()
+      seedDb({
+        enabledModules: ['module-output'],
+        modules: [{ id: 'module-output', name: 'Output module', trigger: outputTriggerScript() }] as never,
+      })
       expect(resolveDurableGeneration(makeInput())).toEqual({ type: 'durable' })
     })
 
@@ -137,7 +139,7 @@ describe('resolveDurableGeneration', () => {
     // Discriminating positive: a non-interactive Lua char is in-subset (the server
     // VM runs the editRequest hook); the interactive-dialog case is non-durable
     // (negative test below). The split is inherited from the assembly gate.
-    it('routes a non-interactive Lua trigger char to durable (inherited slice 3b)', () => {
+    it('routes a non-interactive Lua trigger character to durable generation', () => {
       const input = makeInput({
         currentChar: makeChar({
           triggerscript: [
@@ -158,7 +160,7 @@ describe('resolveDurableGeneration', () => {
     // continue / regenerate are durable-eligible: the server finalizes them
     // mode-correctly (extend-in-place / replace-target). Both are in the
     // server-assembled subset, so they route durable like a send.
-    it('routes a continue to durable (Phase 6b)', () => {
+    it('routes a continue to durable', () => {
       const input = makeInput({
         continue: true,
         currentChat: makeChat([{ role: 'char', data: 'previous reply' }]),
@@ -166,7 +168,7 @@ describe('resolveDurableGeneration', () => {
       expect(resolveDurableGeneration(input)).toEqual({ type: 'durable' })
     })
 
-    it('routes a regenerate to durable (Phase 6b)', () => {
+    it('routes a regenerate to durable', () => {
       const input = makeInput({
         regenerateMessageId: 'msg-char-1',
         currentChat: makeChat([{ role: 'char', data: 'previous reply' }]),
@@ -191,7 +193,11 @@ describe('resolveDurableGeneration', () => {
 
   describe('non-durable — inherited from the assembly gate (never a hard fail)', () => {
     it('is non-durable for a non-text send and carries the assembly reason', () => {
-      const input = makeInput({ currentChat: makeChat([{ role: 'char', data: 'bot turn' }]) })
+      // A text char tail is a valid durable empty send since the NEW-H1 parity
+      // restoration; only a genuinely non-text tail inherits the assembly gate.
+      const input = makeInput({
+        currentChat: makeChat([{ role: 'char', data: 42 as never }]),
+      })
       expectNonDurable(resolveDurableGeneration(input))
     })
 

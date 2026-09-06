@@ -5,9 +5,10 @@
   interface Props {
     initialValue: triggerscript[]
     initialOwnerKey?: string
+    lowLevelAble?: boolean
   }
 
-  let { initialValue, initialOwnerKey = 'owner-a' }: Props = $props()
+  let { initialValue, initialOwnerKey = 'owner-a', lowLevelAble = false }: Props = $props()
   // svelte-ignore state_referenced_locally
   let value = $state(initialValue)
   // svelte-ignore state_referenced_locally
@@ -55,4 +56,4 @@
   }
 </script>
 
-<TriggerV2List bind:value {ownerKey} />
+<TriggerV2List bind:value {ownerKey} {lowLevelAble} />

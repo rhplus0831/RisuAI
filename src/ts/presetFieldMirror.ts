@@ -1,6 +1,6 @@
 import { MODEL_PRESET_FIELDS, PROMPT_PRESET_FIELDS } from './presetSplit'
+import { collectionsResourceState, settingsResourceState } from './server/resourceState.svelte'
 import {
-  getDatabase,
   updateModelPreset,
   updatePromptPreset,
   type ModelPreset,
@@ -34,6 +34,13 @@ export type TopLevelPresetFieldMirrorTarget =
       presetId: string
     }
 
+type SplitPresetKind = TopLevelPresetFieldMirrorTarget['kind']
+
+interface SplitPresetOwnerSnapshot {
+  presets: ReadonlyArray<Record<string, unknown>>
+  selectedIndex: number
+}
+
 export function mirrorTopLevelPresetField(key: string, value: unknown): boolean {
   return mirrorTopLevelPresetFieldWithOutcome(key, value) !== null
 }
@@ -53,26 +60,30 @@ export function mirrorTopLevelPresetFieldWithOutcome(
 export function resolveTopLevelPresetFieldMirrorTarget(key: string): TopLevelPresetFieldMirrorTarget | null {
   const modelPresetKey = modelPresetKeyForDatabaseKey(key)
   if (modelPresetKey) {
-    const index = getDatabase().modelPresetsId
-    const presetId = Number.isInteger(index) && index >= 0 ? getDatabase().modelPresets?.[index]?.id : undefined
-    if (!presetId) return null
+    const owner = currentSplitPresetOwnerSnapshot('model')
+    if (!owner) return null
+    const presetId = owner.presets[owner.selectedIndex]?.id
+    if (typeof presetId !== 'string' || uniquePresetIndex(owner.presets, presetId) < 0) return null
     return { kind: 'model', databaseKey: key, presetKey: modelPresetKey, presetId }
   }
 
   const promptPresetKey = promptPresetKeyForDatabaseKey(key)
   if (promptPresetKey) {
-    const index = getDatabase().promptPresetsId
-    const presetId = Number.isInteger(index) && index >= 0 ? getDatabase().promptPresets?.[index]?.id : undefined
-    if (!presetId) return null
+    const owner = currentSplitPresetOwnerSnapshot('prompt')
+    if (!owner) return null
+    const presetId = owner.presets[owner.selectedIndex]?.id
+    if (typeof presetId !== 'string' || uniquePresetIndex(owner.presets, presetId) < 0) return null
     return { kind: 'prompt', databaseKey: key, presetKey: promptPresetKey, presetId }
   }
   return null
 }
 
 export function currentTopLevelPresetFieldMirrorValue(target: TopLevelPresetFieldMirrorTarget): unknown {
-  const presets = target.kind === 'model' ? getDatabase().modelPresets : getDatabase().promptPresets
-  const preset = presets?.find((candidate) => candidate?.id === target.presetId) as Record<string, unknown> | undefined
-  if (!preset) return undefined
+  const presets = currentSplitPresetCollectionOwner(target.kind)
+  if (!presets) return undefined
+  const index = uniquePresetIndex(presets, target.presetId)
+  if (index < 0) return undefined
+  const preset = presets[index]
   return cloneJsonValue(preset[target.presetKey])
 }
 
@@ -84,19 +95,48 @@ export function mirrorTopLevelPresetFieldToTargetWithOutcome(
   target: TopLevelPresetFieldMirrorTarget,
   value: unknown,
 ): Promise<PresetMutationOutcome> | null {
+  const presets = currentSplitPresetCollectionOwner(target.kind)
+  if (!presets) return null
+  const index = uniquePresetIndex(presets, target.presetId)
+  if (index < 0) return null
+  const preset = presets[index]
+  if (snapshotJson(preset[target.presetKey]) === snapshotJson(value)) return null
+
+  // Narrow compatibility mutation seam: these storage commands still own the
+  // durable stable-id queue, optimistic selected-settings projection, and
+  // field-scoped terminal rollback. The owner snapshot above prevents this
+  // index adapter from resolving or retargeting against the aggregate facade.
   if (target.kind === 'model') {
-    const index = getDatabase().modelPresets?.findIndex((preset) => preset?.id === target.presetId) ?? -1
-    if (index < 0) return null
-    const preset = getDatabase().modelPresets[index] as Record<string, unknown>
-    if (snapshotJson(preset[target.presetKey]) === snapshotJson(value)) return null
     return updateModelPreset(index, { [target.presetKey]: cloneJsonValue(value) } as Partial<ModelPreset>)
   }
 
-  const index = getDatabase().promptPresets?.findIndex((preset) => preset?.id === target.presetId) ?? -1
-  if (index < 0) return null
-  const preset = getDatabase().promptPresets[index] as Record<string, unknown>
-  if (snapshotJson(preset[target.presetKey]) === snapshotJson(value)) return null
   return updatePromptPreset(index, { [target.presetKey]: cloneJsonValue(value) } as Partial<PromptPreset>)
+}
+
+function currentSplitPresetOwnerSnapshot(kind: SplitPresetKind): SplitPresetOwnerSnapshot | null {
+  const presets = currentSplitPresetCollectionOwner(kind)
+  const selectedIndex = currentSplitPresetSelectionOwner(kind)
+  if (!presets || selectedIndex === null || selectedIndex < 0 || selectedIndex >= presets.length) return null
+  return { presets, selectedIndex }
+}
+
+function currentSplitPresetCollectionOwner(kind: SplitPresetKind): SplitPresetOwnerSnapshot['presets'] | null {
+  const collectionName = kind === 'model' ? 'modelPresets' : 'promptPresets'
+  const status = collectionsResourceState.statuses[collectionName]
+  if (collectionsResourceState.status === 'error' || status !== 'ready') return null
+
+  const value = collectionsResourceState.values[collectionName]
+  if (!Array.isArray(value)) return null
+  return value as ReadonlyArray<Record<string, unknown>>
+}
+
+function currentSplitPresetSelectionOwner(kind: SplitPresetKind): number | null {
+  const selectionKey = kind === 'model' ? 'modelPresetsId' : 'promptPresetsId'
+  const status = settingsResourceState.standaloneStatuses[selectionKey]
+  if (settingsResourceState.status === 'error' || status !== 'ready') return null
+
+  const value = settingsResourceState.value[selectionKey]
+  return Number.isInteger(value) ? (value as number) : null
 }
 
 function modelPresetKeyForDatabaseKey(key: string): string | null {
@@ -113,6 +153,12 @@ function promptPresetKeyForDatabaseKey(key: string): string | null {
 function snapshotJson(value: unknown): string {
   const snapshot = JSON.stringify(value)
   return snapshot === undefined ? '__undefined__' : snapshot
+}
+
+function uniquePresetIndex(presets: ReadonlyArray<{ id?: unknown }> | undefined, presetId: unknown): number {
+  if (!Array.isArray(presets) || typeof presetId !== 'string' || presetId.trim() === '') return -1
+  const matches = presets.map((preset, index) => ({ preset, index })).filter(({ preset }) => preset?.id === presetId)
+  return matches.length === 1 ? matches[0].index : -1
 }
 
 function cloneJsonValue<T>(value: T): T {

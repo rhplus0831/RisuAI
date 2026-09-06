@@ -1,0 +1,37 @@
+{
+  "finding": "F03-organization",
+  "evidenceKind": "structural-work-counters",
+  "node": "v24.19.0",
+  "samples": [
+    {
+      "name": "small",
+      "unrelatedCharacters": 1,
+      "otherHistory": 2,
+      "kind": "legacy-full",
+      "snapshotBytes": 10524,
+      "messageCount": 6,
+      "clones": 1,
+      "largestCloneBytes": 10490
+    },
+    {
+      "name": "intermediate",
+      "unrelatedCharacters": 8,
+      "otherHistory": 100,
+      "kind": "legacy-full",
+      "snapshotBytes": 291740,
+      "messageCount": 902,
+      "clones": 1,
+      "largestCloneBytes": 291706
+    },
+    {
+      "name": "large",
+      "unrelatedCharacters": 32,
+      "otherHistory": 1000,
+      "kind": "legacy-full",
+      "snapshotBytes": 10365561,
+      "messageCount": 33002,
+      "clones": 1,
+      "largestCloneBytes": 10365527
+    }
+  ]
+}

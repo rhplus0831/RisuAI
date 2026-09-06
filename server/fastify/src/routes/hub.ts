@@ -146,7 +146,7 @@ function resolveUpstreamUrl(req: FastifyRequest, hubUrl: string): string {
   }
   const realmQuerySuffix = resolveRealmQuerySuffix(req.url)
   if (realmQuerySuffix) {
-    return hubUrl + realmQuerySuffix
+    return hubUrl + realmQuerySuffix + '?cache=30'
   }
   const suffix = req.url.startsWith(PREFIX) ? req.url.slice(PREFIX.length) : req.url
   return hubUrl + (suffix.length > 0 ? suffix : '/')

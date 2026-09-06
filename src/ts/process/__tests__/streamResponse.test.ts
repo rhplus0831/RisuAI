@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'svelte/store'
 
 const { processScriptFullSpy } = vi.hoisted(() => ({
   processScriptFullSpy: vi.fn(),
@@ -27,16 +28,24 @@ vi.mock('../modules', async (importActual) => {
 import {
   setDatabase,
   type Database,
+  type Message,
   type MessageGenerationInfo,
   type MessagePresetInfo,
   type character,
 } from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
+import { replaceResourceDatabase } from '../../server/resourceState.svelte'
 import type { StreamResponseChunk, requestDataResponse } from '../request/request'
 import { consumeStreamResponse } from '../postGeneration/streamResponse'
 import { markChatMessageMutationIntent } from '../../server/chatMessageMutationIntent'
 import { markChatBodyProjectionApplied } from '../../server/resourceState.svelte'
+import { applyServerChatMessagesResource, getChatMessageOwnerState } from '../../server/chatMessageHydration.svelte'
+import { halfStreamingProgress, resetHalfStreamingProgressForTests } from '../halfStreamingProgress'
+import {
+  generationDisplayProjections,
+  resetGenerationDisplayProjectionsForTests,
+} from '../generationDisplayProjection.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {
@@ -78,8 +87,13 @@ function makeChar(): character {
 
 function seed(): character {
   setDatabase({ characters: [makeChar()] } as Database)
+  applyServerChatMessagesResource('chat-1', [{ role: 'user', data: 'hi' }], undefined, [])
   selectedCharID.set(0)
   return testDatabaseState.db.characters[0]
+}
+
+function ownerMessages(): Message[] {
+  return getChatMessageOwnerState('chat-1')?.messages ?? []
 }
 
 interface StreamHandle {
@@ -122,8 +136,17 @@ function makeControlledStream(): StreamHandle {
   }
 }
 
-function streamingReq(stream: ReadableStream<StreamResponseChunk>): requestDataResponse & { type: 'streaming' } {
-  return { type: 'streaming', result: stream } as requestDataResponse & { type: 'streaming' }
+function streamingReq(
+  stream: ReadableStream<StreamResponseChunk>,
+  options: {
+    halfStreaming?: boolean
+    halfStreamingProgressManaged?: boolean
+    replayGapTruncated?: boolean
+    continueBase?: string
+    generationDisplayProjection?: Extract<requestDataResponse, { type: 'streaming' }>['generationDisplayProjection']
+  } = {},
+): requestDataResponse & { type: 'streaming' } {
+  return { type: 'streaming', result: stream, ...options } as requestDataResponse & { type: 'streaming' }
 }
 
 function callArgs(
@@ -157,13 +180,155 @@ describe('consumeStreamResponse', () => {
       data,
       emoChanged: false,
     }))
+    resetHalfStreamingProgressForTests()
+    resetGenerationDisplayProjectionsForTests()
+  })
+
+  it('streams negotiated regenerate text into a transient target projection', async () => {
+    const currentChar = seed()
+    applyServerChatMessagesResource(
+      'chat-1',
+      [
+        { role: 'user', data: 'try again', chatId: 'user-1' },
+        { role: 'char', data: 'old reply', chatId: 'assistant-old' },
+      ],
+      undefined,
+      [],
+    )
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const displayProjection = {
+      operationId: 'operation-1',
+      attemptNo: 1,
+      characterId: 'cha-1',
+      chatId: 'chat-1',
+      mode: 'regenerate' as const,
+      targetMessageId: 'assistant-old',
+      generationId: 'gen-1',
+      projectionEpoch: 3,
+    }
+    const promise = consumeStreamResponse(
+      callArgs(streamingReq(stream, { generationDisplayProjection: displayProjection }), currentChar, ctrl.signal, {
+        skipEditOutput: true,
+      }),
+    )
+
+    push({ 'gen-1': 'new partial reply' })
+    close()
+    const result = await promise
+
+    expect(ownerMessages()).toEqual([
+      { role: 'user', data: 'try again', chatId: 'user-1' },
+      { role: 'char', data: 'old reply', chatId: 'assistant-old' },
+    ])
+    expect(get(generationDisplayProjections)).toEqual([
+      expect.objectContaining({
+        operationId: 'operation-1',
+        targetMessageId: 'assistant-old',
+        generationId: 'gen-1',
+        status: 'streaming',
+        text: 'new partial reply',
+      }),
+    ])
+    expect(result.projection).toMatchObject({
+      messageId: 'assistant-old',
+      generationId: 'gen-1',
+      appended: false,
+      displayProjection,
+    })
+  })
+
+  it('half-streaming keeps partial text hidden, reports throughput, and applies the final response once', async () => {
+    const currentChar = seed()
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(
+      callArgs(streamingReq(stream, { halfStreaming: true }), currentChar, ctrl.signal),
+    )
+
+    push({ msgKey: 'a' })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(ownerMessages()[1]?.data).toBe('')
+    expect(get(halfStreamingProgress)).toContainEqual(
+      expect.objectContaining({ generatedTokens: 1, tokensPerSecond: 0 }),
+    )
+    expect(processScriptFullSpy).not.toHaveBeenCalled()
+
+    vi.setSystemTime(new Date(1100))
+    push({ msgKey: 'ab' })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(ownerMessages()[1]?.data).toBe('')
+    expect(get(halfStreamingProgress)).toContainEqual(
+      expect.objectContaining({ generatedTokens: 2, tokensPerSecond: 10 }),
+    )
+
+    close()
+    const out = await promise
+    expect(out.result).toBe('ab')
+    expect(ownerMessages()[1]?.data).toBe('ab')
+    expect(processScriptFullSpy).toHaveBeenCalledOnce()
+    expect(processScriptFullSpy).toHaveBeenCalledWith(currentChar, 'ab', 'editoutput', 1)
+    expect(get(halfStreamingProgress)).toEqual([])
+  })
+
+  it('half-streaming continue mode preserves the existing response until the continuation completes', async () => {
+    const currentChar = seed()
+    getChatMessageOwnerState('chat-1')!.messages.push({ role: 'char', data: 'existing' })
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(
+      callArgs(streamingReq(stream, { halfStreaming: true }), currentChar, ctrl.signal, {
+        arg: { continue: true },
+      }),
+    )
+
+    push({ msgKey: ' continuation' })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(ownerMessages()[1]?.data).toBe('existing')
+    expect(processScriptFullSpy).not.toHaveBeenCalled()
+
+    close()
+    await promise
+    expect(ownerMessages()[1]?.data).toBe('existing continuation')
+    expect(processScriptFullSpy).toHaveBeenCalledOnce()
+  })
+
+  it('half-streaming keeps a local-provider partial when Stop aborts before closure', async () => {
+    const currentChar = seed()
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(
+      callArgs(streamingReq(stream, { halfStreaming: true }), currentChar, ctrl.signal),
+    )
+
+    push({ msgKey: 'buffered local partial' })
+    await vi.waitFor(() => expect(get(halfStreamingProgress)[0]?.generatedTokens).toBe(1))
+    expect(ownerMessages()[1]?.data).toBe('')
+
+    ctrl.abort()
+    close()
+
+    const out = await promise
+    expect(out.streamAborted).toBe(true)
+    expect(ownerMessages()[1]).toMatchObject({
+      role: 'char',
+      data: 'buffered local partial',
+      chatId: 'gen-1',
+    })
+    expect(processScriptFullSpy).toHaveBeenCalledWith(currentChar, 'buffered local partial', 'editoutput', 1)
   })
 
   it('single chunk: pushes initial message, writes processed data, returns lastResponseChunk', async () => {
     const currentChar = seed()
     const { stream, push, close } = makeControlledStream()
     const ctrl = new AbortController()
-    const promise = consumeStreamResponse(callArgs(streamingReq(stream), currentChar, ctrl.signal))
+    const onGenerationText = vi.fn()
+    const promise = consumeStreamResponse(
+      callArgs(streamingReq(stream), currentChar, ctrl.signal, { onGenerationText }),
+    )
     push({ msgKey: 'hello' })
     close()
     const out = await promise
@@ -171,11 +336,27 @@ describe('consumeStreamResponse', () => {
     expect(out.lastResponseChunk).toEqual({ msgKey: 'hello' })
     expect(out.streamAborted).toBe(false)
     expect(out.msgIndex).toBe(1)
-    const messages = testDatabaseState.db.characters[0].chats[0].message
+    const messages = getChatMessageOwnerState('chat-1')?.messages ?? []
     expect(messages).toHaveLength(2)
     expect(messages[1].data).toBe('hello')
     expect(messages[1].role).toBe('char')
     expect(messages[1].chatId).toBe('gen-1')
+    expect(onGenerationText).toHaveBeenCalledOnce()
+  })
+
+  it('marks the completed stream projection when its replay window was gap-truncated', async () => {
+    const currentChar = seed()
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(
+      callArgs(streamingReq(stream, { replayGapTruncated: true }), currentChar, ctrl.signal),
+    )
+    push({ msgKey: 'canonical terminal text' })
+    close()
+
+    const out = await promise
+    expect(out.projection.gapTruncated).toBe(true)
+    expect(out.result).toBe('canonical terminal text')
   })
 
   it('multiple chunks: last chunk wins for message slot and result', async () => {
@@ -189,7 +370,7 @@ describe('consumeStreamResponse', () => {
     close()
     const out = await promise
     expect(out.result).toBe('abc')
-    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('abc')
+    expect(ownerMessages()[1]?.data).toBe('abc')
     // Render coalescing: the microtask-paced chunks share one full-fidelity
     // apply at settle time instead of one editoutput parse per chunk.
     expect(processScriptFullSpy).toHaveBeenCalledTimes(1)
@@ -198,7 +379,7 @@ describe('consumeStreamResponse', () => {
 
   it('continue mode: decrements msgIndex, prepends prefix from prior message', async () => {
     const currentChar = seed()
-    testDatabaseState.db.characters[0].chats[0].message.push({ role: 'char', data: 'partial' })
+    getChatMessageOwnerState('chat-1')!.messages.push({ role: 'char', data: 'partial' })
     const { stream, push, close } = makeControlledStream()
     const ctrl = new AbortController()
     const promise = consumeStreamResponse(
@@ -209,7 +390,59 @@ describe('consumeStreamResponse', () => {
     const out = await promise
     expect(out.msgIndex).toBe(1)
     expect(processScriptFullSpy).toHaveBeenCalledWith(currentChar, 'partialextra', 'editoutput', 1)
-    expect(testDatabaseState.db.characters[0].chats[0].message).toHaveLength(2)
+    expect(ownerMessages()).toHaveLength(2)
+  })
+
+  it('uses the immutable continue base when a retried reattach already displays the partial', async () => {
+    const currentChar = seed()
+    getChatMessageOwnerState('chat-1')!.messages.push({
+      role: 'char',
+      data: 'Seed answer. Continued reply.',
+      chatId: 'continue-target',
+    })
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(
+      callArgs(streamingReq(stream, { continueBase: 'Seed answer.' }), currentChar, ctrl.signal, {
+        arg: { continue: true },
+        skipEditOutput: true,
+      }),
+    )
+
+    push({ msgKey: ' Continued reply.' })
+    close()
+    const out = await promise
+
+    expect(ownerMessages()[1]?.data).toBe('Seed answer. Continued reply.')
+    expect(out.projection.detached).toBe(false)
+  })
+
+  it('append-style continue creates a generation-owned row behind the prior assistant', async () => {
+    const currentChar = seed()
+    getChatMessageOwnerState('chat-1')!.messages.push({
+      role: 'char',
+      data: 'previous chapter',
+      chatId: 'previous-assistant',
+    })
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const req = streamingReq(stream)
+    req.continueDisposition = 'append'
+    const promise = consumeStreamResponse(
+      callArgs(req, currentChar, ctrl.signal, {
+        arg: { continue: true },
+        skipEditOutput: true,
+      }),
+    )
+    push({ msgKey: '\n### Chapter 2\nnew chapter' })
+    close()
+
+    const out = await promise
+    const messages = ownerMessages()
+    expect(messages).toHaveLength(3)
+    expect(messages[1]).toMatchObject({ chatId: 'previous-assistant', data: 'previous chapter' })
+    expect(messages[2]).toMatchObject({ chatId: 'gen-1', data: '### Chapter 2\nnew chapter' })
+    expect(out.projection).toMatchObject({ messageId: 'gen-1', appended: true, previousData: '' })
   })
 
   it('empty/falsy chunk value: coerces to empty string instead of throwing', async () => {
@@ -262,7 +495,7 @@ describe('consumeStreamResponse', () => {
     close()
     const out = await promise
     expect(out.streamAborted).toBe(true)
-    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('first')
+    expect(ownerMessages()[1]?.data).toBe('first')
   })
 
   it('mid-stream abort before tokens removes the empty generated message', async () => {
@@ -270,8 +503,9 @@ describe('consumeStreamResponse', () => {
     const { stream, close } = makeControlledStream()
     const ctrl = new AbortController()
     const promise = consumeStreamResponse(callArgs(streamingReq(stream), currentChar, ctrl.signal))
-    expect(testDatabaseState.db.characters[0].chats[0].message).toHaveLength(2)
-    expect(testDatabaseState.db.characters[0].chats[0].message[1]).toMatchObject({
+    const messages = getChatMessageOwnerState('chat-1')?.messages ?? []
+    expect(messages).toHaveLength(2)
+    expect(messages[1]).toMatchObject({
       role: 'char',
       data: '',
       chatId: 'gen-1',
@@ -282,7 +516,7 @@ describe('consumeStreamResponse', () => {
 
     const out = await promise
     expect(out.streamAborted).toBe(true)
-    expect(testDatabaseState.db.characters[0].chats[0].message).toEqual([{ role: 'user', data: 'hi' }])
+    expect(ownerMessages()).toEqual([{ role: 'user', data: 'hi' }])
     expect(testDatabaseState.db.characters[0].chats[0].isStreaming).toBe(false)
   })
 
@@ -296,12 +530,59 @@ describe('consumeStreamResponse', () => {
 
     const out = await promise
     expect(out.streamAborted).toBe(false)
-    expect(testDatabaseState.db.characters[0].chats[0].message).toEqual([{ role: 'user', data: 'hi' }])
+    expect(ownerMessages()).toEqual([{ role: 'user', data: 'hi' }])
+  })
+
+  it('retains the active assistant row across an assembly transcript hydration', async () => {
+    const currentChar = seed()
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(callArgs(streamingReq(stream), currentChar, ctrl.signal))
+
+    expect(getChatMessageOwnerState('chat-1')?.messages.at(-1)).toMatchObject({
+      role: 'char',
+      data: '',
+      chatId: 'gen-1',
+    })
+    expect(applyServerChatMessagesResource('chat-1', [{ role: 'user', data: 'hi' }], undefined, [])).toBe(true)
+    expect(ownerMessages().at(-1)).toMatchObject({
+      role: 'char',
+      data: '',
+      chatId: 'gen-1',
+    })
+
+    push({ msgKey: 'survives hydration' })
+    close()
+
+    const out = await promise
+    expect(out.projection.detached).toBe(false)
+    expect(getChatMessageOwnerState('chat-1')?.messages.at(-1)).toMatchObject({
+      role: 'char',
+      data: 'survives hydration',
+      chatId: 'gen-1',
+    })
+  })
+
+  it('does not retain the active assistant row over a changed authoritative transcript', async () => {
+    const currentChar = seed()
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(callArgs(streamingReq(stream), currentChar, ctrl.signal))
+
+    expect(
+      applyServerChatMessagesResource('chat-1', [{ role: 'user', data: 'newer authoritative edit' }], undefined, []),
+    ).toBe(true)
+    push({ msgKey: 'must not return' })
+    close()
+
+    const out = await promise
+    expect(out.projection.detached).toBe(true)
+    expect(ownerMessages()).toEqual([{ role: 'user', data: 'newer authoritative edit' }])
   })
 
   it('durable replay reuses an existing partial generation row', async () => {
     const currentChar = seed()
-    testDatabaseState.db.characters[0].chats[0].message.push({
+    getChatMessageOwnerState('chat-1')!.messages.push({
       role: 'char',
       data: 'partial',
       chatId: 'gen-1',
@@ -315,7 +596,7 @@ describe('consumeStreamResponse', () => {
     close()
 
     await promise
-    const messages = testDatabaseState.db.characters[0].chats[0].message
+    const messages = getChatMessageOwnerState('chat-1')?.messages ?? []
     expect(messages).toHaveLength(2)
     expect(messages[1]).toMatchObject({
       role: 'char',
@@ -338,8 +619,9 @@ describe('consumeStreamResponse', () => {
 
     const out = await promise
     expect(out.streamAborted).toBe(true)
-    expect(testDatabaseState.db.characters[0].chats[0].message).toHaveLength(2)
-    expect(testDatabaseState.db.characters[0].chats[0].message[1]).toMatchObject({
+    const messages = getChatMessageOwnerState('chat-1')?.messages ?? []
+    expect(messages).toHaveLength(2)
+    expect(messages[1]).toMatchObject({
       role: 'char',
       data: 'partial',
       chatId: 'gen-1',
@@ -405,7 +687,7 @@ describe('consumeStreamResponse', () => {
     close()
     await promise
 
-    expect(testDatabaseState.db.characters[0].chats[0].message).toEqual([
+    expect(getChatMessageOwnerState('chat-b')?.messages).toEqual([
       { role: 'char', data: 'belongs to B', chatId: 'msg-b' },
     ])
     expect(testDatabaseState.db.characters[1].chats[0].message.at(-1)?.data).toBe('A response')
@@ -437,7 +719,7 @@ describe('consumeStreamResponse', () => {
     close()
     await promise
 
-    expect(testDatabaseState.db.characters[0].chats[0].message).toEqual([
+    expect(getChatMessageOwnerState('chat-b')?.messages).toEqual([
       { role: 'char', data: 'belongs to B', chatId: 'msg-b' },
     ])
     expect(testDatabaseState.db.characters[0].chats[0].isStreaming).not.toBe(true)
@@ -455,12 +737,12 @@ describe('consumeStreamResponse', () => {
     expect(out.streamAborted).toBe(false)
     ctrl.abort()
     // No throw, no late mutation: the listener was removed in finally.
-    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('done')
+    expect(ownerMessages()[1]?.data).toBe('done')
   })
 })
 
 // Streaming display writes are frame-coalesced instead of parsed per token.
-describe('H3 streaming render coalescing', () => {
+describe('streaming render coalescing', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date(1000))
@@ -489,7 +771,7 @@ describe('H3 streaming render coalescing', () => {
     // Final text identical to the per-chunk behavior: newest payload, reformat
     // (trim) + editoutput applied once at full fidelity.
     expect(out.result).toBe(accumulated)
-    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe(accumulated.trim())
+    expect(getChatMessageOwnerState('chat-1')?.messages[1]?.data).toBe(accumulated.trim())
     // Old behavior: 200 editoutput parses + 200 display writes. Coalesced: the
     // microtask-paced chunks drain before any animation frame elapses, so the
     // settle apply is the only one (bound generously to tolerate one frame).
@@ -517,7 +799,7 @@ describe('H3 streaming render coalescing', () => {
     push({ msgKey: 'Hello' })
     await vi.waitFor(() => expect(frames.length).toBe(1))
     frames.shift()!()
-    await vi.waitFor(() => expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('Hello'))
+    await vi.waitFor(() => expect(getChatMessageOwnerState('chat-1')?.messages[1]?.data).toBe('Hello'))
 
     // Later chunks re-arm at most one further frame; without running it, the
     // terminal settle still applies the newest payload at full fidelity.
@@ -526,7 +808,7 @@ describe('H3 streaming render coalescing', () => {
     close()
     const out = await promise
     expect(out.result).toBe('Hello world')
-    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('Hello world')
+    expect(getChatMessageOwnerState('chat-1')?.messages[1]?.data).toBe('Hello world')
     // One frame apply + one settle apply.
     expect(processScriptFullSpy).toHaveBeenCalledTimes(2)
   })
@@ -547,20 +829,28 @@ describe('H3 streaming render coalescing', () => {
     push({ msgKey: 'server stream' })
     await vi.waitFor(() => expect(frames.length).toBe(1))
 
-    testDatabaseState.db.characters[0].chats[0].message = [
-      {
-        role: 'char',
-        data: 'projection final',
-        chatId: 'gen-1',
-        generationInfo: { generationId: 'gen-1' },
-      },
-    ]
+    expect(
+      applyServerChatMessagesResource(
+        'chat-1',
+        [
+          {
+            role: 'char',
+            data: 'projection final',
+            chatId: 'gen-1',
+            generationInfo: { generationId: 'gen-1' },
+          },
+        ],
+        undefined,
+        [],
+      ),
+    ).toBe(true)
     close()
 
     const out = await promise
     expect(out.msgIndex).toBe(1)
-    expect(testDatabaseState.db.characters[0].chats[0].message).toHaveLength(1)
-    expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('projection final')
+    const messages = getChatMessageOwnerState('chat-1')?.messages ?? []
+    expect(messages).toHaveLength(1)
+    expect(messages[0].data).toBe('projection final')
     expect(processScriptFullSpy).not.toHaveBeenCalled()
   })
 
@@ -579,19 +869,22 @@ describe('H3 streaming render coalescing', () => {
 
     push({ msgKey: 'server stream' })
     await vi.waitFor(() => expect(frames.length).toBe(1))
-    testDatabaseState.db.characters[0].chats[0].message = [
-      {
-        role: 'char',
-        data: '',
-        chatId: 'gen-1',
-        generationInfo: { generationId: 'gen-1' },
-      },
-    ]
+    const ownerBeforeMove = getChatMessageOwnerState('chat-1')
+    const messages = ownerBeforeMove?.messages
+    expect(messages).toBeDefined()
+    messages!.splice(0, messages!.length, {
+      role: 'char',
+      data: '',
+      chatId: 'gen-1',
+      generationInfo: { generationId: 'gen-1' },
+    })
+    expect(getChatMessageOwnerState('chat-1')?.projectionEpoch).toBe(ownerBeforeMove?.projectionEpoch)
     close()
 
     const out = await promise
     expect(out.msgIndex).toBe(0)
-    expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('server stream')
+    expect(out.projection.detached).toBe(false)
+    expect(messages?.[0]?.data).toBe('server stream')
   })
 
   it('stops applying frames after a message mutation intent advances', async () => {
@@ -605,7 +898,7 @@ describe('H3 streaming render coalescing', () => {
         renderFlushScheduler: (flush) => frames.push(flush),
       }),
     )
-    const target = testDatabaseState.db.characters[0].chats[0].message[0]
+    const target = getChatMessageOwnerState('chat-1')!.messages[0]
     target.role = 'char'
     target.chatId = 'continue-target'
     target.data = 'user edit'
@@ -622,7 +915,7 @@ describe('H3 streaming render coalescing', () => {
     const { stream, push, close } = makeControlledStream()
     const ctrl = new AbortController()
     const promise = consumeStreamResponse(callArgs(streamingReq(stream), currentChar, ctrl.signal))
-    const target = testDatabaseState.db.characters[0].chats[0].message[1]
+    const target = getChatMessageOwnerState('chat-1')!.messages[1]
     target.data = 'authoritative final'
     markChatBodyProjectionApplied('chat-1')
     push({ msgKey: 'server stream' })
@@ -643,6 +936,6 @@ describe('H3 streaming render coalescing', () => {
     await expect(promise).rejects.toThrow('script-broke')
     expect(testDatabaseState.db.characters[0].chats[0].isStreaming).toBe(false)
     // The apply never succeeded, so the message slot keeps its initial value.
-    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('')
+    expect(getChatMessageOwnerState('chat-1')?.messages[1]?.data).toBe('')
   })
 })

@@ -1,4 +1,4 @@
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
+import type { PromptMessage } from './prompt/promptMessage.js'
 
 const LOG_PREFIX = '[HypaV3]'
 const MEMORY_PROMPT_TAG = 'Past Events Summary'
@@ -82,14 +82,14 @@ export interface HypaV3TokenDelta {
 }
 
 export interface PlanHypaV3MemoryInput {
-  chats: readonly OpenAIChat[]
+  chats: readonly PromptMessage[]
   currentTokens: number
   maxContextTokens: number
   maxResponseTokens: number
   settings?: Partial<HypaV3Settings> | null
   summaries?: readonly HypaV3SummaryRef[]
-  tokenizeChat: (chat: OpenAIChat) => number
-  tokenizeSummarizedPrefixChat?: (chat: OpenAIChat) => number
+  tokenizeChat: (chat: PromptMessage) => number
+  tokenizeSummarizedPrefixChat?: (chat: PromptMessage) => number
 }
 
 export interface HypaV3MemoryPlan {
@@ -211,7 +211,7 @@ export function planStandardHypaV3Memory(input: PlanHypaV3MemoryInput): HypaV3Me
   const tokenDeltas: HypaV3TokenDelta[] = []
   const plannedWindows: HypaV3PlannedWindow[] = []
   const skippedMessages: HypaV3SkippedMessage[] = []
-  let startIndex = determineStartIndex(input.chats, input.summaries ?? [])
+  let startIndex = determineHypaV3SummarizedPrefixStartIndex(input.chats, input.summaries ?? [])
 
   currentTokens -= input.maxResponseTokens
   tokenDeltas.push({
@@ -312,11 +312,11 @@ export function planStandardHypaV3Memory(input: PlanHypaV3MemoryInput): HypaV3Me
 }
 
 function planWindow(
-  chats: readonly OpenAIChat[],
+  chats: readonly PromptMessage[],
   startIndex: number,
   endIndexExclusive: number,
   settings: HypaV3Settings,
-  tokenizeChat: (chat: OpenAIChat) => number,
+  tokenizeChat: (chat: PromptMessage) => number,
 ): HypaV3PlannedWindow {
   const messageIndexes: number[] = []
   const chatMemos: string[] = []
@@ -350,7 +350,10 @@ function planWindow(
   }
 }
 
-function determineStartIndex(chats: readonly OpenAIChat[], summaries: readonly HypaV3SummaryRef[]): number {
+export function determineHypaV3SummarizedPrefixStartIndex(
+  chats: readonly PromptMessage[],
+  summaries: readonly HypaV3SummaryRef[],
+): number {
   const lastSummary = summaries.at(-1)
   const lastMemo = lastSummary?.chatMemos.at(-1)
   if (!lastMemo) return 0
@@ -358,7 +361,7 @@ function determineStartIndex(chats: readonly OpenAIChat[], summaries: readonly H
   return lastChatIndex === -1 ? 0 : lastChatIndex + 1
 }
 
-function skipReasonForChat(chat: OpenAIChat, settings: HypaV3Settings): HypaV3SkippedMessageReason | null {
+function skipReasonForChat(chat: PromptMessage, settings: HypaV3Settings): HypaV3SkippedMessageReason | null {
   if (chat.name === 'example_user' || chat.name === 'example_assistant' || chat.memo === 'NewChatExample') {
     return 'example'
   }
@@ -370,7 +373,7 @@ function skipReasonForChat(chat: OpenAIChat, settings: HypaV3Settings): HypaV3Sk
   return null
 }
 
-function sumChatTokens(chats: readonly OpenAIChat[], tokenizeChat: (chat: OpenAIChat) => number): number {
+function sumChatTokens(chats: readonly PromptMessage[], tokenizeChat: (chat: PromptMessage) => number): number {
   let total = 0
   for (const chat of chats) {
     total += tokenizeChat(chat)

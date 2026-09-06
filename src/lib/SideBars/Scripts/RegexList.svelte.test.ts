@@ -16,6 +16,7 @@ vi.mock('src/ts/process/scripts', () => ({
 }))
 
 vi.mock('src/ts/process/regexDisplayReload', () => ({
+  normalizeRegexDisplayOwnerKey: (ownerKey?: string) => ownerKey?.trim() || '*',
   reloadRegexDisplay: regexListMocks.reloadRegexDisplay,
 }))
 
@@ -37,7 +38,10 @@ vi.mock('sortablejs', () => ({
 
 import type { customscript } from 'src/ts/storage/database.svelte'
 import { language } from 'src/lang'
-import { REGEX_DISPLAY_ACTIVATION_DELAY_MS } from 'src/ts/process/regexDisplayActivation'
+import {
+  REGEX_DISPLAY_ACTIVATION_DELAY_MS,
+  resetRegexDisplayActivationForTests,
+} from 'src/ts/process/regexDisplayActivation'
 import RegexListHarness from './RegexList.testHarness.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0] & {
@@ -65,6 +69,7 @@ async function settle(): Promise<void> {
 }
 
 beforeEach(() => {
+  resetRegexDisplayActivationForTests()
   target = document.createElement('div')
   document.body.appendChild(target)
   regexListMocks.importRegexRows.mockReset()
@@ -76,6 +81,7 @@ afterEach(() => {
     unmount(component)
     component = undefined
   }
+  resetRegexDisplayActivationForTests()
   vi.useRealTimers()
   target.remove()
 })
@@ -133,6 +139,60 @@ describe('RegexList display activation', () => {
 
     expect(regexListMocks.reloadRegexDisplay).toHaveBeenCalledOnce()
     expect(target.querySelector('[data-risu-regex-display-pending]')).toBeNull()
+    vi.useRealTimers()
+  })
+
+  it('keeps display activation pending until the owner save gate settles successfully', async () => {
+    vi.useFakeTimers()
+    const save = deferred<boolean>()
+    const beforeDisplayActivation = vi.fn(() => save.promise)
+    component = mount(RegexListHarness, {
+      target,
+      props: {
+        initialOwnerKey: 'char-a',
+        initialValue: [{ id: 'display-script', comment: 'Display', in: 'before', out: 'after', type: 'editdisplay' }],
+        beforeDisplayActivation,
+      },
+    }) as MountedComponent
+    await settle()
+
+    component.patchScript(0, { out: 'saved before display' })
+    await settle()
+    await vi.advanceTimersByTimeAsync(REGEX_DISPLAY_ACTIVATION_DELAY_MS)
+
+    expect(beforeDisplayActivation).toHaveBeenCalledOnce()
+    expect(beforeDisplayActivation).toHaveBeenCalledWith('char-a')
+    expect(regexListMocks.reloadRegexDisplay).not.toHaveBeenCalled()
+    expect(target.querySelector('[data-risu-regex-display-pending]')).not.toBeNull()
+
+    save.resolve(true)
+    await settle()
+
+    expect(regexListMocks.reloadRegexDisplay).toHaveBeenCalledOnce()
+    expect(regexListMocks.reloadRegexDisplay).toHaveBeenCalledWith('char-a')
+    expect(target.querySelector('[data-risu-regex-display-pending]')).toBeNull()
+    vi.useRealTimers()
+  })
+
+  it('does not activate display output when the owner save gate fails', async () => {
+    vi.useFakeTimers()
+    component = mount(RegexListHarness, {
+      target,
+      props: {
+        initialOwnerKey: 'char-a',
+        initialValue: [{ id: 'display-script', comment: 'Display', in: 'before', out: 'after', type: 'editdisplay' }],
+        beforeDisplayActivation: vi.fn(async () => false),
+      },
+    }) as MountedComponent
+    await settle()
+
+    component.patchScript(0, { out: 'rejected display edit' })
+    await settle()
+    await vi.advanceTimersByTimeAsync(REGEX_DISPLAY_ACTIVATION_DELAY_MS)
+    await settle()
+
+    expect(regexListMocks.reloadRegexDisplay).not.toHaveBeenCalled()
+    expect(target.querySelector('[data-risu-regex-display-pending]')).not.toBeNull()
     vi.useRealTimers()
   })
 
@@ -203,6 +263,30 @@ describe('RegexList display activation', () => {
 
     expect(target.querySelector('[data-risu-regex-display-pending]')).toBeNull()
     expect(regexListMocks.reloadRegexDisplay).not.toHaveBeenCalled()
+    vi.useRealTimers()
+  })
+
+  it('keeps the owner-scoped delay when the editor unmounts', async () => {
+    vi.useFakeTimers()
+    component = mount(RegexListHarness, {
+      target,
+      props: {
+        initialOwnerKey: 'character:char-a',
+        initialValue: [{ id: 'display-script', comment: 'Display', in: 'before', out: 'after', type: 'editdisplay' }],
+      },
+    }) as MountedComponent
+    await settle()
+
+    component.patchScript(0, { out: 'updated after unmount' })
+    await settle()
+    await unmount(component)
+    component = undefined
+
+    expect(regexListMocks.reloadRegexDisplay).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(REGEX_DISPLAY_ACTIVATION_DELAY_MS)
+
+    expect(regexListMocks.reloadRegexDisplay).toHaveBeenCalledOnce()
+    expect(regexListMocks.reloadRegexDisplay).toHaveBeenCalledWith('character:char-a')
     vi.useRealTimers()
   })
 })

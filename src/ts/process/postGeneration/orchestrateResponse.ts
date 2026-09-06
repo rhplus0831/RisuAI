@@ -6,15 +6,22 @@ import { applyOutputTrigger } from './outputTrigger'
 import { applyNonStreamResponse } from './nonStreamResponse'
 import { consumeStreamResponse } from './streamResponse'
 import type { StreamMessageProjection } from './streamResponse'
-import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 import {
-  getDatabase,
   type Chat,
   type MessageGenerationInfo,
   type MessagePresetInfo,
   type character,
 } from '../../storage/database.svelte'
+import { settingsResourceState } from '../../server/resourceState.svelte'
 import type { DispatchSuccessReq } from '../dispatch/dispatchRequest'
+import {
+  mutateStablePostGenerationChat,
+  mutateStablePostGenerationMessage,
+  resolveStablePostGenerationChat,
+  resolveStablePostGenerationMessage,
+  stablePostGenerationChatTarget,
+  stablePostGenerationMessageTarget,
+} from './stableTarget'
 
 export type OrchestrateResponseResult =
   | { status: 'aborted' }
@@ -24,6 +31,7 @@ export type OrchestrateResponseResult =
       result: string
       emoChanged: boolean
       resendChat: boolean
+      messageId?: string
       streamProjection?: StreamMessageProjection
     }
 
@@ -40,9 +48,7 @@ export interface OrchestrateResponseArgs {
   arg: OrchestrateResponseArg
   nowChatroom: character
   currentChar: character
-  /** Mutated on the streaming branch (reassigned from triggerChat); the
-   * non-streaming branch writes `triggerChat` directly to DB without
-   * touching this local. Preserved verbatim. */
+  /** Captured chat value used for non-mutating result/side-effect context. */
   currentChat: Chat
   selectedChar: number
   selectedChat: number
@@ -55,6 +61,8 @@ export interface OrchestrateResponseArgs {
   reformatContent: (data: string) => string
   runCurrentChatFunction: (chat: Chat) => Chat
   suppressStreamingTts?: boolean
+  /** Advances the owning chat activity once provider text begins arriving. */
+  onGenerationText?: () => void
   /**
    * The server owns post-generation derivation (`editoutput`, the pre-trigger
    * run-var pass, and the `'output'` trigger). When set, this orchestrator relays
@@ -97,7 +105,9 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
   let result = ''
   let emoChanged = false
   let resendChat = false
+  let outputMessageId: string | undefined
   let streamProjection: StreamMessageProjection | undefined
+  const stableChatTarget = stablePostGenerationChatTarget(targetCharacterId, targetChatId)
 
   if (req.type === 'streaming') {
     const stream = await consumeStreamResponse({
@@ -115,64 +125,80 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
       abortSignal,
       reformatContent,
       skipEditOutput: serverOwnsPostGeneration,
+      onGenerationText: args.onGenerationText,
     })
     result = stream.result
     streamProjection = stream.projection
+    outputMessageId = stream.projection?.messageId
     emoChanged = stream.emoChanged
 
     if (stream.streamAborted || abortSignal.aborted) {
       return { status: 'aborted' }
     }
 
-    addRerolls(generationId, Object.values(stream.lastResponseChunk))
+    if (!serverOwnsPostGeneration) {
+      addRerolls(generationId, Object.values(stream.lastResponseChunk))
+    }
 
     if (serverOwnsPostGeneration) {
       // The server already ran the run-var pass, `'output'` trigger, and
       // `editoutput`. The browser keeps streamed text for display; final text,
       // inlay rendering, scriptstate patch, and resend arrive on the terminal.
-      const stableCharacter = targetCharacterId
-        ? getDatabase().characters.find((candidate) => candidate?.chaId === targetCharacterId)
-        : getDatabase().characters[selectedChar]
-      currentChat =
-        (targetChatId ? stableCharacter?.chats?.find((candidate) => candidate?.id === targetChatId) : undefined) ??
-        currentChat
+      currentChat = resolveStablePostGenerationChat(stableChatTarget)?.chat ?? currentChat
     } else {
       const streamTrigger = await applyOutputTrigger({
         currentChar,
-        selectedChar,
-        selectedChat,
+        currentChat,
+        target: stableChatTarget,
         runCurrentChatFunction,
       })
       currentChat = streamTrigger.triggerChat ?? streamTrigger.chat
       if (streamTrigger.resendChat) {
         resendChat = true
       }
-      const inlayr = runInlayScreen(currentChar, currentChat.message[stream.msgIndex].data)
-      withTrustedResourceWrite(() => {
-        currentChat = streamTrigger.triggerChat ?? getDatabase().characters[selectedChar].chats[selectedChat]
-        currentChat.message[stream.msgIndex].data = inlayr.text
-        getDatabase().characters[selectedChar].chats[selectedChat] = currentChat
+      let inlayr: ReturnType<typeof runInlayScreen> | undefined
+      mutateStablePostGenerationChat(stableChatTarget, (chat, character) => {
+        if (streamTrigger.triggerChat) {
+          const chatIndex = character.chats.indexOf(chat)
+          if (chatIndex < 0 || streamTrigger.triggerChat.id !== chat.id) return false
+          character.chats[chatIndex] = streamTrigger.triggerChat
+        }
+        return true
       })
-      if (inlayr.promise) {
+      const messageTarget = stablePostGenerationMessageTarget(
+        stableChatTarget?.characterId,
+        stableChatTarget?.chatId,
+        outputMessageId,
+      )
+      mutateStablePostGenerationMessage(messageTarget, (message, chat) => {
+        currentChat = chat
+        inlayr = runInlayScreen(currentChar, message.data)
+        message.data = inlayr.text
+      })
+      if (inlayr?.promise) {
         const t = await inlayr.promise
-        withTrustedResourceWrite(() => {
-          currentChat = getDatabase().characters[selectedChar].chats[selectedChat]
-          currentChat.message[stream.msgIndex].data = t
-          getDatabase().characters[selectedChar].chats[selectedChat] = currentChat
+        mutateStablePostGenerationMessage(messageTarget, (message, chat) => {
+          currentChat = chat
+          message.data = t
         })
       }
-      if (getDatabase().ttsAutoSpeech && !suppressStreamingTts) {
+      if (
+        settingsResourceState.status !== 'error' &&
+        settingsResourceState.groupStatuses.media === 'ready' &&
+        settingsResourceState.value.ttsAutoSpeech === true &&
+        !suppressStreamingTts
+      ) {
         await sayTTS(currentChar, result)
       }
     }
   } else {
+    args.onGenerationText?.()
     const nonStream = await applyNonStreamResponse({
       req,
       arg,
       nowChatroom,
       currentChar,
-      selectedChar,
-      selectedChat,
+      target: stableChatTarget,
       generationId,
       generationInfo,
       promptInfo,
@@ -181,6 +207,7 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
     })
     result = nonStream.result
     emoChanged = nonStream.emoChanged
+    outputMessageId = nonStream.messageId
     if (nonStream.mrerolls.length > 1) {
       addRerolls(generationId, nonStream.mrerolls)
     }
@@ -191,14 +218,20 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
     if (!serverOwnsPostGeneration) {
       const nonStreamTrigger = await applyOutputTrigger({
         currentChar,
-        selectedChar,
-        selectedChat,
+        currentChat,
+        target: stableChatTarget,
         runCurrentChatFunction,
       })
       if (nonStreamTrigger.triggerChat) {
-        withTrustedResourceWrite(() => {
-          getDatabase().characters[selectedChar].chats[selectedChat] = nonStreamTrigger.triggerChat!
+        mutateStablePostGenerationChat(stableChatTarget, (chat, character) => {
+          const chatIndex = character.chats.indexOf(chat)
+          if (chatIndex < 0 || nonStreamTrigger.triggerChat!.id !== chat.id) return false
+          character.chats[chatIndex] = nonStreamTrigger.triggerChat!
+          currentChat = nonStreamTrigger.triggerChat!
+          return true
         })
+      } else {
+        currentChat = nonStreamTrigger.chat
       }
       if (nonStreamTrigger.resendChat) {
         resendChat = true
@@ -206,12 +239,36 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
     }
   }
 
-  await evaluateIgp({
-    promptTemplate: getDatabase().igpPrompt ?? '',
-    abortSignal,
-    selectedChar,
-    selectedChat,
-  })
+  if (!serverOwnsPostGeneration) {
+    const messageTarget = stablePostGenerationMessageTarget(
+      stableChatTarget?.characterId,
+      stableChatTarget?.chatId,
+      outputMessageId,
+    )
+    const messageResolution = resolveStablePostGenerationMessage(messageTarget)
+    if (messageResolution && messageTarget) {
+      await evaluateIgp({
+        promptTemplate:
+          settingsResourceState.status === 'ready' ? String(settingsResourceState.value.igpPrompt ?? '') : '',
+        abortSignal,
+        target: {
+          ...messageTarget,
+          expectedData: messageResolution.message.data,
+          ...(messageResolution.message.generationInfo?.generationId
+            ? { expectedGenerationId: messageResolution.message.generationInfo.generationId }
+            : {}),
+        },
+      })
+    }
+  }
 
-  return { status: 'done', currentChat, result, emoChanged, resendChat, streamProjection }
+  return {
+    status: 'done',
+    currentChat,
+    result,
+    emoChanged,
+    resendChat,
+    ...(outputMessageId ? { messageId: outputMessageId } : {}),
+    streamProjection,
+  }
 }

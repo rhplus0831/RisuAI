@@ -25,13 +25,21 @@ export const MEMORY_WORKER_RETENTION_SWEEP_INTERVAL_MS = 60 * 60 * 1000
  */
 export const MEMORY_JOB_BATCH_MAX_JOBS = 32
 
-export type MemoryJobHandler = (job: MemoryJob) => void | Promise<void>
+export interface MemoryJobHandlerContext {
+  signal: AbortSignal
+}
+
+export type MemoryJobHandler = (job: MemoryJob, context: MemoryJobHandlerContext) => void | Promise<void>
 
 export type MemoryJobHandlers = {
   [K in MemoryJobKind]: MemoryJobHandler
 }
 
 export interface MemoryJobBatchHandlerContext {
+  /** The first job's signal, retained for compatibility with existing handlers. */
+  signal: AbortSignal
+  /** Cancellation authority is scoped to the addressed claimed job. */
+  signalFor: (jobId: string) => AbortSignal
   claimNext: (filter: { chatId?: string; kind?: MemoryJobKind }) => MemoryJob | null
   complete: (jobId: string) => MemoryJob | null
   retryOrFail: (jobId: string, error: string) => MemoryJob | null
@@ -64,9 +72,11 @@ export class MemoryWorker {
   private timer: NodeJS.Timeout | null = null
   private inFlight: Promise<boolean> | null = null
   private active = false
+  private wakeRequested = false
   private lastRetentionSweepAtMs = 0
   /** Per-chat serve recency for the round-robin claim. */
   private readonly chatLastServedAt = new Map<string, number>()
+  private readonly runningJobAbortControllers = new Map<string, AbortController>()
   private serveSequence = 0
 
   constructor(opts: MemoryWorkerOptions) {
@@ -100,6 +110,27 @@ export class MemoryWorker {
     return this.inFlight !== null
   }
 
+  abortRunningJob(jobId: string): boolean {
+    const controller = this.runningJobAbortControllers.get(jobId)
+    if (!controller) return false
+    controller.abort(new Error('memory job cancelled'))
+    return true
+  }
+
+  /** Schedule newly enqueued work without waiting for the next idle poll. */
+  wake(): void {
+    if (!this.active) return
+    if (this.inFlight) {
+      this.wakeRequested = true
+      return
+    }
+    if (this.timer) {
+      clearTimeout(this.timer)
+      this.timer = null
+    }
+    this.schedule(0)
+  }
+
   start(): void {
     if (this.active) return
     for (const job of recoverRunningMemoryJobs(this.db, this.retry)) {
@@ -113,6 +144,7 @@ export class MemoryWorker {
   async stop(): Promise<void> {
     if (!this.active && this.timer === null && this.inFlight === null) return
     this.active = false
+    this.wakeRequested = false
     if (this.timer) {
       clearTimeout(this.timer)
       this.timer = null
@@ -131,6 +163,14 @@ export class MemoryWorker {
       return await task
     } finally {
       this.inFlight = null
+      if (this.active && this.wakeRequested) {
+        this.wakeRequested = false
+        if (this.timer) {
+          clearTimeout(this.timer)
+          this.timer = null
+        }
+        this.schedule(0)
+      }
     }
   }
 
@@ -193,18 +233,31 @@ export class MemoryWorker {
   private async processOne(): Promise<boolean> {
     const job = this.claimNextJobFairly()
     if (!job) return false
+    const registeredJobs = new Map<string, AbortController>()
+    const registerRunningJob = (runningJob: MemoryJob): AbortController => {
+      const controller = new AbortController()
+      registeredJobs.set(runningJob.id, controller)
+      this.runningJobAbortControllers.set(runningJob.id, controller)
+      return controller
+    }
+    const jobAbortController = registerRunningJob(job)
     this.emitJob(job)
 
     try {
       const batchHandler = this.batchHandlers[job.kind]
       if (batchHandler) {
         await batchHandler(job, {
+          signal: jobAbortController.signal,
+          signalFor: (jobId) => registeredJobs.get(jobId)?.signal ?? AbortSignal.abort('memory job is not running'),
           claimNext: (filter) => {
             const claimed =
               this.retry.now === undefined
                 ? claimNextMemoryJob(this.db, filter)
                 : claimNextMemoryJob(this.db, { ...filter, now: this.retry.now })
-            if (claimed) this.emitJob(claimed)
+            if (claimed) {
+              registerRunningJob(claimed)
+              this.emitJob(claimed)
+            }
             return claimed
           },
           complete: (jobId) => {
@@ -221,19 +274,26 @@ export class MemoryWorker {
         return true
       }
 
-      await this.handlers[job.kind](job)
+      await this.handlers[job.kind](job, { signal: jobAbortController.signal })
       const completed = completeMemoryJob(this.db, job.id)
       if (completed) {
         this.emitJob(completed)
       }
+      return true
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : String(error)
       const failedOrRetried = retryOrFailMemoryJob(this.db, job.id, message || 'memory job handler failed', this.retry)
       if (failedOrRetried) {
         this.emitJob(failedOrRetried)
       }
+      return true
+    } finally {
+      for (const [jobId, controller] of registeredJobs) {
+        if (this.runningJobAbortControllers.get(jobId) === controller) {
+          this.runningJobAbortControllers.delete(jobId)
+        }
+      }
     }
-    return true
   }
 
   private maybeRunRetentionSweep(): void {
@@ -255,7 +315,7 @@ export class MemoryWorker {
 
   private emitJob(job: MemoryJob): void {
     if (!this.onEvent) return
-    emitMemoryEventSafely(this.onEvent, buildMemoryJobEvent(job, { includeHypaV3Progress: true }))
+    emitMemoryEventSafely(this.onEvent, buildMemoryJobEvent(job))
   }
 }
 

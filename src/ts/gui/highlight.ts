@@ -52,21 +52,10 @@ export const highlighter = (highlightDom: HTMLElement, id: number) => {
 
         const startNode = nodes[startNodeIndex]
         const endNode = nodes[endNodeIndex]
-
-        if (startNode === endNode) {
-          const range = new Range()
-          range.setStart(startNode, start - (startNodeIndex > 0 ? nodePointers[startNodeIndex - 1] : 0))
-          range.setEnd(endNode, end - (endNodeIndex > 0 ? nodePointers[endNodeIndex - 1] : 0))
-          return [range]
-        } else {
-          const startNodeRange = new Range()
-          const endNodeRange = new Range()
-          startNodeRange.setStart(startNode, start - (startNodeIndex > 0 ? nodePointers[startNodeIndex - 1] : 0))
-          startNodeRange.setEnd(startNode, startNode.textContent.length)
-          endNodeRange.setStart(endNode, 0)
-          endNodeRange.setEnd(endNode, end - (endNodeIndex > 0 ? nodePointers[endNodeIndex - 1] : 0))
-          return [startNodeRange, endNodeRange]
-        }
+        const range = new Range()
+        range.setStart(startNode, start - (startNodeIndex > 0 ? nodePointers[startNodeIndex - 1] : 0))
+        range.setEnd(endNode, end - (endNodeIndex > 0 ? nodePointers[endNodeIndex - 1] : 0))
+        return [range]
       }
 
       for (let i = 0; i < parsed.length; i++) {

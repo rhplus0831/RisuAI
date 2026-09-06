@@ -1,12 +1,11 @@
-import type { Database } from '../../../src/ts/storage/database.svelte.js'
 import type {
   CustomEmbeddingConfiguration,
   EmbeddingInputType,
   EmbeddingOperationCredential,
   EmbeddingOperationRequest,
   EmbeddingOperationSuccess,
-} from '../../../src/ts/server/embeddingOperationsProtocol.js'
-import { isRemoteEmbeddingModel } from '../../../src/ts/server/embeddingOperationsProtocol.js'
+} from '@risuai/protocol/embedding-operation'
+import { isContextualRemoteEmbeddingModel, isRemoteEmbeddingModel } from '@risuai/protocol/embedding-operation'
 import {
   embedTextGroups,
   embedTexts,
@@ -14,7 +13,11 @@ import {
   MEMORY_EMBEDDING_MAX_RESPONSE_BYTES,
   MEMORY_EMBEDDING_MAX_VECTOR_VALUES,
 } from './memoryEmbeddingAdapter.js'
-import { resolveMemoryEmbeddingModel, type MemoryEmbeddingModelRequest } from './memoryEmbeddingModel.js'
+import {
+  resolveMemoryEmbeddingModel,
+  type MemoryEmbeddingModelRequest,
+  type MemoryEmbeddingSettings,
+} from './memoryEmbeddingModel.js'
 import { MASKED_PROVIDER_SECRET } from './providerSecrets.js'
 import { createTimeoutController } from './proxy.js'
 
@@ -68,7 +71,7 @@ export function parseEmbeddingOperationRequest(body: unknown): EmbeddingOperatio
   const credential = parseCredential(record.credential)
 
   if (operation === 'texts') {
-    if (!isRemoteEmbeddingModel(model) || model === 'voyageContext3') throw invalidRequest()
+    if (!isRemoteEmbeddingModel(model) || isContextualRemoteEmbeddingModel(model)) throw invalidRequest()
     const input = parseStringArray(record.input, EMBEDDING_OPERATION_MAX_TEXTS)
     const custom = model === 'custom' ? parseCustomConfiguration(record.custom) : undefined
     if (model !== 'custom' && record.custom !== undefined) throw invalidRequest()
@@ -84,7 +87,9 @@ export function parseEmbeddingOperationRequest(body: unknown): EmbeddingOperatio
   }
 
   if (operation === 'groups') {
-    if (model !== 'voyageContext3' || record.input !== undefined || record.custom !== undefined) throw invalidRequest()
+    if (!isContextualRemoteEmbeddingModel(model) || record.input !== undefined || record.custom !== undefined) {
+      throw invalidRequest()
+    }
     return {
       operation,
       model,
@@ -129,13 +134,13 @@ export function resolveEmbeddingOperationModel(
 
     const key = resolveCredential(request.credential, storedKey)
     effective.hypaCustomSettings = { url, model: wireModel, key }
-  } else if (model === 'voyageContext3') {
+  } else if (isContextualRemoteEmbeddingModel(model)) {
     effective.voyageApiKey = resolveCredential(request.credential, readUsableSecret(settings.voyageApiKey))
   } else {
     effective.hypaV3Key = resolveCredential(request.credential, readUsableSecret(settings.hypaV3Key))
   }
 
-  const resolved = resolveMemoryEmbeddingModel(effective as unknown as Database, model)
+  const resolved = resolveMemoryEmbeddingModel(effective as MemoryEmbeddingSettings, model)
   if (resolved.ok === false) {
     if (resolved.error.includes('requires') && resolved.error.toLowerCase().includes('key')) {
       throw credentialUnavailable()

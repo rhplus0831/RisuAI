@@ -7,13 +7,17 @@ import {
   LLMTokenizer,
   OpenAIParameters,
   type LLMModel,
-} from '../../../src/ts/model/types'
-import { resolveModelProfile, type ResolvedModelProfile } from '../../../src/ts/model/modelProfileResolver'
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
-import type { Database } from '../../../src/ts/storage/database.svelte'
-import { MASKED_PROVIDER_SECRET } from '../../../src/ts/providerSecretMask'
+} from '@risuai/shared-core/model-types'
+import {
+  resolveModelProfile,
+  resolveModelProfileWithLegacyCompatibility,
+  type ResolvedModelProfile,
+} from '@risuai/shared-core/model-profile-resolver'
+import type { PromptMessage } from '../src/prompt/promptMessage.js'
+import type { FastifyDatabase as Database } from '../src/prompt/serverTypes.js'
+import { MASKED_PROVIDER_SECRET } from '@risuai/shared-core/provider-secret-mask'
 import { _resetVertexTokenCacheForTesting } from '../src/generation/vertexAuth.js'
-import { dispatchChatProvider } from '../src/prompt/chatDispatch.js'
+import { dispatchChatProvider, getServerGenerationModelString } from '../src/prompt/chatDispatch.js'
 import type { PromptRowSummary } from '../src/prompt/promptSummary.js'
 
 interface CapturedDispatchRequest {
@@ -48,7 +52,7 @@ interface ProtocolMetric {
 }
 
 function db(overrides: Partial<Database> = {}): Database {
-  return {
+  const database = {
     aiModel: 'gpt-5',
     subModel: 'gpt-5-mini',
     modelRoles: {},
@@ -61,6 +65,163 @@ function db(overrides: Partial<Database> = {}): Database {
     useStreaming: false,
     ...overrides,
   } as unknown as Database
+
+  if (overrides.modelProfiles === undefined && overrides.modelRoleProfiles === undefined) {
+    const raw = database as unknown as Record<string, unknown>
+    const modelId = typeof raw.aiModel === 'string' ? raw.aiModel : 'gpt-5'
+    const bedrockPrefix = modelId.startsWith('anthropic.')
+      ? Number(modelId.match(/(\d{8})/)?.[1] ?? 0) >= 20250929
+        ? 'global'
+        : 'us'
+      : undefined
+    const key =
+      modelId === 'reverse_proxy'
+        ? raw.proxyKey
+        : modelId === 'openrouter'
+          ? raw.openrouterKey
+          : modelId === 'nanogpt'
+            ? raw.nanogptKey
+            : modelId.includes('ollama')
+              ? raw.ollamaApiKey
+              : modelId.startsWith('claude-') || modelId.startsWith('anthropic.')
+                ? raw.claudeAPIKey
+                : modelId.startsWith('gemini-')
+                  ? (raw.google as { accessToken?: unknown } | undefined)?.accessToken
+                  : modelId.startsWith('deepseek-')
+                    ? (raw.OaiCompAPIKeys as Record<string, unknown> | undefined)?.deepseek
+                    : modelId.startsWith('mistral')
+                      ? raw.mistralKey
+                      : modelId.startsWith('cohere-')
+                        ? raw.cohereAPIKey
+                        : modelId.startsWith('horde:::')
+                          ? (raw.hordeConfig as { apiKey?: unknown } | undefined)?.apiKey
+                          : modelId === 'mancer'
+                            ? raw.mancerHeader
+                            : raw.openAIKey
+    const profileProviderOptions: Record<string, unknown> = {
+      ...(modelId.startsWith('xcustom:::') || modelId.startsWith('horde:::')
+        ? {}
+        : {
+            requestModel:
+              modelId === 'reverse_proxy'
+                ? raw.customProxyRequestModel
+                : modelId === 'openrouter'
+                  ? raw.openrouterRequestModel
+                  : modelId === 'nanogpt'
+                    ? raw.nanogptRequestModel
+                    : modelId === 'ollama-cloud'
+                      ? raw.ollamaCloudModel
+                      : modelId.includes('ollama')
+                        ? raw.ollamaModel
+                        : modelId.startsWith('anthropic.')
+                          ? `${bedrockPrefix}.${modelId}`
+                          : modelId.startsWith('gemini-')
+                            ? undefined
+                            : modelId,
+          }),
+    }
+    if (modelId === 'reverse_proxy') {
+      profileProviderOptions.baseUrl = raw.forceReplaceUrl
+      profileProviderOptions.additionalParams = raw.additionalParams
+      profileProviderOptions.reverseProxy = {
+        autofillRequestUrl: raw.autofillRequestUrl,
+        oobaSystemHoist: raw.reverseProxyOobaMode,
+        oobaArgs: raw.reverseProxyOobaArgs,
+      }
+    } else if (modelId === 'openrouter') {
+      profileProviderOptions.openrouter = {
+        fallback: raw.openrouterFallback,
+        middleOut: raw.openrouterMiddleOut,
+        provider: raw.openrouterProvider,
+      }
+    } else if (modelId === 'nanogpt') {
+      profileProviderOptions.nanogpt = {
+        providerHint: raw.nanogptProvider,
+        useSubscriptionEndpoint: raw.nanogptUseSubscriptionEndpoint,
+        subscriptionState: raw.nanogptSubscriptionState,
+      }
+    } else if (modelId === 'ollama-cloud') {
+      profileProviderOptions.ollama = {
+        requestFormat: raw.ollamaRequestFormat,
+        modelSource: raw.ollamaModelSource,
+        thinkingMode: raw.ollamaThinkingMode,
+      }
+    } else if (modelId.includes('ollama')) {
+      profileProviderOptions.baseUrl = raw.ollamaURL
+      profileProviderOptions.ollama = {
+        url: raw.ollamaURL,
+        requestFormat: raw.ollamaRequestFormat,
+        modelSource: raw.ollamaModelSource,
+        thinkingMode: raw.ollamaThinkingMode,
+      }
+    } else if (modelId === 'kobold') {
+      profileProviderOptions.baseUrl = raw.koboldURL
+    } else if (modelId === 'mancer') {
+      profileProviderOptions.baseUrl = raw.textgenWebUIBlockingURL
+    }
+
+    const runtimeOptions: Record<string, unknown> = {}
+    const runtimeFields: Record<string, string> = {
+      maxContext: 'maxContext',
+      maxResponse: 'maxResponse',
+      temperature: 'temperature',
+      top_p: 'topP',
+      top_k: 'topK',
+      min_p: 'minP',
+      top_a: 'topA',
+      repetition_penalty: 'repetitionPenalty',
+      frequencyPenalty: 'frequencyPenalty',
+      PresensePenalty: 'presencePenalty',
+      reasoningEffort: 'reasoningEffort',
+      thinkingTokens: 'thinkingTokens',
+      thinkingType: 'thinkingType',
+      deepseekThinkingType: 'deepseekThinkingType',
+      adaptiveThinkingEffort: 'adaptiveThinkingEffort',
+      deepseekReasoningEffort: 'deepseekReasoningEffort',
+      verbosity: 'verbosity',
+      halfStreaming: 'halfStreaming',
+      useStreaming: 'useStreaming',
+      genTime: 'genTime',
+      extractJson: 'extractJson',
+      jsonSchemaEnabled: 'jsonSchemaEnabled',
+      jsonSchema: 'jsonSchema',
+      strictJsonSchema: 'strictJsonSchema',
+      outputImageModal: 'outputImageModal',
+      stripCoT: 'stripCoT',
+      dynamicOutput: 'dynamicOutput',
+      modelTools: 'modelTools',
+      enableCustomFlags: 'enableCustomFlags',
+      customFlags: 'customFlags',
+      customTokenizer: 'customTokenizer',
+    }
+    for (const [databaseField, profileField] of Object.entries(runtimeFields)) {
+      const value = raw[databaseField]
+      if (value !== undefined) runtimeOptions[profileField] = value
+    }
+    const profileId = 'fixture-default-profile'
+    const providerCredentials = Array.isArray(raw.providerCredentials) ? [...raw.providerCredentials] : []
+    if (typeof key === 'string' && key.length > 0) {
+      providerCredentials.push({
+        id: 'fixture-default-credential',
+        name: 'Fixture credential',
+        type: 'apiKey',
+        apiKey: key,
+      })
+      profileProviderOptions.credentialId = 'fixture-default-credential'
+    }
+    raw.providerCredentials = providerCredentials
+    raw.modelProfiles = [
+      {
+        id: profileId,
+        name: 'Fixture default profile',
+        modelId,
+        providerOptions: profileProviderOptions,
+        runtimeOptions,
+      },
+    ]
+    raw.modelRoleProfiles = { chatMain: { mode: 'profile', profileId } }
+  }
+  return database
 }
 
 function geminiModelInfo(overrides: Partial<LLMModel>): LLMModel {
@@ -253,7 +414,8 @@ function generatePrivateKey(): string {
 async function dispatchWithProfile(
   profile: ResolvedModelProfile,
   database: Database,
-  formated: OpenAIChat[] = [{ role: 'user', content: 'hello' }],
+  formated: PromptMessage[] = [{ role: 'user', content: 'hello' }],
+  expectedApiMetadata?: Record<string, unknown>,
 ): Promise<void> {
   const frames = await dispatchChatProvider({
     database,
@@ -267,14 +429,18 @@ async function dispatchWithProfile(
   }
   expect(emitted).toEqual([
     { kind: 'token', content: 'profile ok' },
-    { kind: 'done', finishReason: 'stop' },
+    {
+      kind: 'done',
+      finishReason: 'stop',
+      ...(expectedApiMetadata ? { apiMetadata: expectedApiMetadata } : {}),
+    },
   ])
 }
 
 async function dispatchHordeWithProfile(
   profile: ResolvedModelProfile,
   database: Database,
-  formated: OpenAIChat[] = [{ role: 'user', content: 'hello' }],
+  formated: PromptMessage[] = [{ role: 'user', content: 'hello' }],
 ): Promise<void> {
   vi.useFakeTimers()
   const frames = await dispatchChatProvider({
@@ -294,7 +460,7 @@ async function dispatchHordeWithProfile(
   await vi.advanceTimersByTimeAsync(2000)
   await expect(emittedPromise).resolves.toEqual([
     { kind: 'token', content: 'profile ok' },
-    { kind: 'done', finishReason: 'stop' },
+    { kind: 'done', finishReason: 'stop', apiMetadata: { jobId: 'profile-horde-job' } },
   ])
 }
 
@@ -304,6 +470,107 @@ afterEach(() => {
 })
 
 describe('dispatchChatProvider final wire controls', () => {
+  it('uses upstream streaming when half-streaming is enabled and normal streaming is off', async () => {
+    const database = db({
+      aiModel: 'reverse_proxy',
+      customProxyRequestModel: 'wire-model',
+      customAPIFormat: LLMFormat.OpenAICompatible,
+      forceReplaceUrl: 'https://wire.example/v1/chat/completions',
+      proxyKey: 'sk-wire',
+      autofillRequestUrl: true,
+      useStreaming: false,
+      halfStreaming: true,
+    } as Partial<Database>)
+    const streamResponse = new Response(
+      [
+        'data: {"choices":[{"delta":{"content":"half"}}]}',
+        '',
+        'data: {"choices":[{"delta":{"content":" streamed"},"finish_reason":"stop"}]}',
+        '',
+        'data: [DONE]',
+        '',
+        '',
+      ].join('\n'),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    )
+    const captured = captureDispatchRequests(streamResponse)
+    const profile = resolveModelProfile({ database })
+
+    const frames = await dispatchChatProvider({
+      database,
+      profile,
+      formated: [{ role: 'user', content: 'hello' }],
+      signal: new AbortController().signal,
+    })
+    const emitted = []
+    for await (const frame of frames) emitted.push(frame)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].body.stream).toBe(true)
+    expect(emitted).toEqual([
+      { kind: 'token', content: 'half' },
+      { kind: 'token', content: ' streamed' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
+  it('strips known CoT blocks when the effective profile runtime option is enabled', async () => {
+    const database = db({
+      echoMessage: '<Thoughts>private reasoning</Thoughts>\nVisible answer\n<think>private tail</think>',
+      useStreaming: true,
+      modelRuntimeDefaults: { stripCoT: true },
+      modelProfiles: [{ id: 'strip-cot-profile', name: 'Strip CoT', modelId: 'echo_model' }],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'strip-cot-profile' } },
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const frames = await dispatchChatProvider({
+      database,
+      profile,
+      formated: [{ role: 'user', content: 'hello' }],
+      signal: new AbortController().signal,
+    })
+    const emitted = []
+    for await (const frame of frames) emitted.push(frame)
+
+    expect(profile.runtimeOptions.stripCoT).toBe(true)
+    expect(emitted).toEqual([
+      { kind: 'token', content: 'Visible answer' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
+  it('preserves CoT when a profile disables an enabled runtime default', async () => {
+    const response = '<Thoughts>profile-visible reasoning</Thoughts>\nVisible answer'
+    const database = db({
+      echoMessage: response,
+      modelRuntimeDefaults: { stripCoT: true },
+      modelProfiles: [
+        {
+          id: 'preserve-cot-profile',
+          name: 'Preserve CoT',
+          modelId: 'echo_model',
+          runtimeOptions: { stripCoT: false },
+        },
+      ],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'preserve-cot-profile' } },
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const frames = await dispatchChatProvider({
+      database,
+      profile,
+      formated: [{ role: 'user', content: 'hello' }],
+      signal: new AbortController().signal,
+    })
+    const emitted = []
+    for await (const frame of frames) emitted.push(frame)
+
+    expect(profile.runtimeOptions.stripCoT).toBe(false)
+    expect(emitted).toEqual([
+      { kind: 'token', content: response },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
   it('sends supported runtime controls, schema, prediction, multi-generation, and logit bias', async () => {
     const database = db({
       aiModel: 'reverse_proxy',
@@ -424,6 +691,147 @@ describe('dispatchChatProvider final wire controls', () => {
     ])
   })
 
+  it.each([
+    ['gpt-5.1', -1, 'none'],
+    ['gpt-5.4-pro', 0, 'medium'],
+    ['gpt-5.5', 3, 'xhigh'],
+    ['gpt-5', 3, 'high'],
+  ])('maps %s reasoning effort %i to %s on the live OpenAI path', async (model, value, expected) => {
+    const database = db({
+      aiModel: model,
+      openAIKey: 'sk-openai',
+      reasoningEffort: value,
+      verbosity: undefined,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureOpenAIRequests()
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].body.reasoning_effort).toBe(expected)
+    expect(captured[0].body.verbosity).toBe('medium')
+  })
+
+  it('sends Flex processing on official OpenAI Chat Completions requests', async () => {
+    const database = db({
+      aiModel: 'gpt-5',
+      openAIKey: 'sk-openai',
+      openAIFlexProcessing: true,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureOpenAIRequests()
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('https://api.openai.com/v1/chat/completions')
+    expect(captured[0].body.service_tier).toBe('flex')
+  })
+
+  it('sends Flex processing when a custom Chat Completions URL targets the official OpenAI host', async () => {
+    const database = db({
+      aiModel: 'reverse_proxy',
+      customProxyRequestModel: 'gpt-5',
+      customAPIFormat: LLMFormat.OpenAICompatible,
+      forceReplaceUrl: 'https://api.openai.com/v1/chat/completions',
+      proxyKey: 'sk-openai',
+      autofillRequestUrl: true,
+      openAIFlexProcessing: true,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureOpenAIRequests()
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('https://api.openai.com/v1/chat/completions')
+    expect(captured[0].body.service_tier).toBe('flex')
+  })
+
+  it.each([
+    {
+      label: 'the toggle is off',
+      database: db({ aiModel: 'gpt-5', openAIKey: 'sk-openai', openAIFlexProcessing: false } as Partial<Database>),
+    },
+    {
+      label: 'a custom endpoint is not OpenAI',
+      database: db({
+        aiModel: 'reverse_proxy',
+        customProxyRequestModel: 'custom-model',
+        customAPIFormat: LLMFormat.OpenAICompatible,
+        forceReplaceUrl: 'https://custom.example/v1/chat/completions',
+        proxyKey: 'sk-custom',
+        autofillRequestUrl: true,
+        openAIFlexProcessing: true,
+      } as Partial<Database>),
+    },
+    {
+      label: 'the provider is OpenRouter',
+      database: db({
+        aiModel: 'openrouter',
+        openrouterKey: 'sk-openrouter',
+        openrouterRequestModel: 'openai/gpt-5',
+        openAIFlexProcessing: true,
+      } as Partial<Database>),
+    },
+    {
+      label: 'the provider is NanoGPT',
+      database: db({
+        aiModel: 'nanogpt',
+        nanogptKey: 'sk-nano',
+        nanogptRequestModel: 'gpt-5',
+        nanogptUseSubscriptionEndpoint: false,
+        openAIFlexProcessing: true,
+      } as Partial<Database>),
+    },
+  ])('omits global Flex processing when $label', async ({ database }) => {
+    const profile = resolveModelProfile({ database })
+    const captured = captureOpenAIRequests()
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].body.service_tier).toBeUndefined()
+  })
+
+  it('omits json_schema response_format for a noStructuredOutput model on the live OpenAI path', async () => {
+    const database = db({
+      aiModel: 'gpt-5.4-pro',
+      openAIKey: 'sk-openai',
+      jsonSchemaEnabled: true,
+      jsonSchema: '{"type":"object"}',
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureOpenAIRequests()
+
+    await dispatchWithProfile(profile, database)
+
+    expect(profile.modelInfo.flags).toContain(LLMFlags.noStructuredOutput)
+    expect(captured).toHaveLength(1)
+    expect(captured[0].body.response_format).toBeUndefined()
+  })
+
+  it('honors Claude Opus 4.8 adaptive thinking with xhigh effort on the live Anthropic path', async () => {
+    const database = db({
+      aiModel: 'claude-opus-4-8',
+      claudeAPIKey: 'sk-anthropic',
+      thinkingType: 'adaptive',
+      adaptiveThinkingEffort: 'xhigh',
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureDispatchRequests(okAnthropicResponse())
+
+    await dispatchWithProfile(profile, database)
+
+    expect(profile.modelInfo.flags).toEqual(
+      expect.arrayContaining([LLMFlags.claudeAdaptiveThinking, LLMFlags.claudeXHighEffort]),
+    )
+    expect(captured).toHaveLength(1)
+    expect(captured[0].body.thinking).toEqual({ type: 'adaptive', display: 'summarized' })
+    expect(captured[0].body.output_config).toEqual({ effort: 'xhigh' })
+  })
+
   it('applies the configured JSON extraction path to buffered provider output', async () => {
     const database = db({
       aiModel: 'echo_model',
@@ -449,11 +857,47 @@ describe('dispatchChatProvider final wire controls', () => {
 })
 
 describe('dispatchChatProvider profile providerOptions', () => {
+  it.each([
+    { enabled: true, expectedApplied: true },
+    { enabled: false, expectedApplied: false },
+  ])(
+    'applies ordinary Gemini flat body/header params only when the all-model opt-in is $enabled',
+    async ({ enabled, expectedApplied }) => {
+      const database = db({
+        aiModel: 'gemini-2.5-flash',
+        google: { accessToken: 'profile-google-key', projectId: '' },
+        applyAdditionalParamsToAll: enabled,
+        additionalParams: [
+          ['globalFlag', 'true'],
+          ['header::X-Global-Trace', 'enabled'],
+        ],
+      } as Partial<Database>)
+      const profile = resolveModelProfile({
+        database,
+        lookupModelInfo: (_database, id) =>
+          geminiModelInfo({
+            id,
+            internalID: 'models/gemini-opt-in-wire-model',
+            provider: LLMProvider.GoogleCloud,
+            format: LLMFormat.GoogleCloud,
+          }),
+      })
+      const captured = captureDispatchRequests(okGeminiResponse())
+
+      await dispatchWithProfile(profile, database)
+
+      expect(captured).toHaveLength(1)
+      expect(captured[0].body.globalFlag).toBe(expectedApplied ? true : undefined)
+      expect(captured[0].headers['X-Global-Trace']).toBe(expectedApplied ? 'enabled' : undefined)
+    },
+  )
+
   it('emits metadata-only prompt reformat metrics when provider flags change rows', async () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'gemini-2.5-flash',
         google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
+        modelRoleProfiles: {},
       } as Partial<Database>),
       lookupModelInfo: (_database, id) =>
         geminiModelInfo({
@@ -466,8 +910,9 @@ describe('dispatchChatProvider profile providerOptions', () => {
     const database = db({
       aiModel: 'gemini-2.5-flash',
       google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
+      modelRoleProfiles: {},
     } as Partial<Database>)
-    const formated: OpenAIChat[] = [
+    const formated: PromptMessage[] = [
       { role: 'system', content: 'slice-2-secret-dispatch-system' },
       { role: 'user', content: 'slice-2-secret-dispatch-user-a' },
       { role: 'user', content: 'slice-2-secret-dispatch-user-b' },
@@ -511,13 +956,21 @@ describe('dispatchChatProvider profile providerOptions', () => {
         aiModel: 'gpt-5',
         openrouterKey: 'sk-flat-openrouter',
         openrouterRequestModel: 'flat/openrouter',
+        providerCredentials: [
+          {
+            id: 'credential-openrouter',
+            name: 'OpenRouter',
+            type: 'apiKey',
+            apiKey: 'sk-durable-openrouter',
+          },
+        ],
         modelProfiles: [
           {
             id: 'openrouter-profile',
             name: 'OpenRouter Profile',
             modelId: 'openrouter',
             providerOptions: {
-              apiKey: 'sk-durable-openrouter',
+              credentialId: 'credential-openrouter',
               requestModel: 'profile/openrouter',
             },
           },
@@ -550,6 +1003,22 @@ describe('dispatchChatProvider profile providerOptions', () => {
         proxyKey: 'sk-profile-proxy',
         autofillRequestUrl: true,
         reverseProxyOobaMode: true,
+        reverseProxyOobaArgs: {
+          mode: 'chat-instruct',
+          turn_template: '<|user|>{{user}}',
+          name1: 'Profile Persona',
+          name2: 'Profile Character',
+          context: 'Profile context',
+          greeting: '',
+          chat_instruct_command: 'Continue the chat',
+          preset: 'Profile preset',
+          tokenizer: 'profile-tokenizer',
+          min_p: 0.17,
+          top_k: 73,
+          do_sample: false,
+          ban_eos_token: true,
+          grammar_string: 'root ::= "ok"',
+        },
         additionalParams: [
           ['header::X-Profile', 'profile'],
           ['profileFlag', 'true'],
@@ -564,6 +1033,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
       proxyKey: 'sk-flat-proxy',
       autofillRequestUrl: true,
       reverseProxyOobaMode: false,
+      reverseProxyOobaArgs: { mode: 'chat', name1: 'Flat Persona', grammar_string: 'flat-only' },
       additionalParams: [
         ['header::X-Flat', 'flat'],
         ['flatFlag', 'true'],
@@ -586,10 +1056,125 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].body.model).toBe('profile-proxy-model')
     expect(captured[0].body.profileFlag).toBe(true)
     expect(captured[0].body.flatFlag).toBeUndefined()
+    expect(captured[0].body).toMatchObject({
+      mode: 'chat-instruct',
+      turn_template: '<|user|>{{user}}',
+      name1: 'Profile Persona',
+      name2: 'Profile Character',
+      context: 'Profile context',
+      greeting: '',
+      chat_instruct_command: 'Continue the chat',
+      preset: 'Profile preset',
+      tokenizer: 'profile-tokenizer',
+      min_p: 0.17,
+      top_k: 73,
+      do_sample: false,
+      ban_eos_token: true,
+      grammar_string: 'root ::= "ok"',
+    })
     expect(captured[0].body.messages).toEqual([
       { role: 'user', content: 'hello' },
       { role: 'system', content: 'profile system 1\nprofile system 2' },
     ])
+  })
+
+  it.each([
+    {
+      label: 'autofill off custom operation',
+      configuredUrl: 'https://proxy.example.com/custom/chat?api-version=2025-01-01',
+      autofill: false,
+      expectedUrl: 'https://proxy.example.com/custom/chat?api-version=2025-01-01',
+    },
+    {
+      label: 'autofill off Chat Completions endpoint',
+      configuredUrl: 'https://proxy.example.com/v1/chat/completions?api-version=2025-01-01',
+      autofill: false,
+      expectedUrl: 'https://proxy.example.com/v1/chat/completions?api-version=2025-01-01',
+    },
+    {
+      label: 'autofill on v1 query',
+      configuredUrl: 'https://proxy.example.com/v1?api-version=2025-01-01',
+      autofill: true,
+      expectedUrl: 'https://proxy.example.com/v1/chat/completions?api-version=2025-01-01',
+    },
+    {
+      label: 'autofill on v1 trailing slash query',
+      configuredUrl: 'https://proxy.example.com/v1/?api-version=2025-01-01',
+      autofill: true,
+      expectedUrl: 'https://proxy.example.com/v1/chat/completions?api-version=2025-01-01',
+    },
+    {
+      label: 'autofill on completed trailing slash query',
+      configuredUrl: 'https://proxy.example.com/v1/chat/completions/?api-version=2025-01-01',
+      autofill: true,
+      expectedUrl: 'https://proxy.example.com/v1/chat/completions?api-version=2025-01-01',
+    },
+  ])('preserves query placement for $label', async ({ configuredUrl, autofill, expectedUrl }) => {
+    const database = db({
+      aiModel: 'reverse_proxy',
+      customProxyRequestModel: 'query-model',
+      customAPIFormat: LLMFormat.OpenAICompatible,
+      forceReplaceUrl: configuredUrl,
+      proxyKey: 'sk-query',
+      autofillRequestUrl: autofill,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureOpenAIRequests()
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured[0].url).toBe(expectedUrl)
+  })
+
+  it('forwards persisted Gemini reverse-proxy URL, headers, key, and body overrides', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'reverse_proxy',
+        customProxyRequestModel: 'gemini-proxy-model',
+        customAPIFormat: LLMFormat.GoogleCloud,
+        forceReplaceUrl: 'risu::https://gemini-proxy.example.com/google/v1beta',
+        proxyKey: 'profile-gemini-proxy-key',
+        autofillRequestUrl: true,
+        additionalParams: [
+          ['header::X-Proxy-Auth', 'profile-header'],
+          ['generationConfig.temperature', '0.91'],
+          ['profileFlag', 'true'],
+        ],
+      } as Partial<Database>),
+      lookupModelInfo: (_database, id) =>
+        geminiModelInfo({
+          id,
+          internalID: 'gemini-proxy-model',
+          provider: LLMProvider.GoogleCloud,
+          format: LLMFormat.GoogleCloud,
+        }),
+    })
+    const flatConflict = db({
+      aiModel: 'reverse_proxy',
+      customProxyRequestModel: 'flat-gemini-model',
+      customAPIFormat: LLMFormat.GoogleCloud,
+      forceReplaceUrl: 'https://flat-gemini.example.com/v1beta',
+      proxyKey: 'flat-gemini-key',
+      autofillRequestUrl: true,
+      additionalParams: [
+        ['header::X-Flat', 'flat'],
+        ['flatFlag', 'true'],
+      ],
+    } as Partial<Database>)
+    const captured = captureDispatchRequests(okGeminiResponse())
+
+    await dispatchWithProfile(profile, flatConflict)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe(
+      'https://gemini-proxy.example.com/google/v1beta/models/gemini-proxy-model:generateContent?key=profile-gemini-proxy-key',
+    )
+    expect(captured[0].headers['X-Proxy-Risu']).toBe('RisuAI')
+    expect(captured[0].headers['X-Proxy-Auth']).toBe('profile-header')
+    expect(captured[0].headers['X-Flat']).toBeUndefined()
+    expect(captured[0].body.generationConfig).toMatchObject({ temperature: 0.91 })
+    expect(captured[0].body.profileFlag).toBe(true)
+    expect(captured[0].body.flatFlag).toBeUndefined()
   })
 
   it('preserves legacy reverse_proxy autofill for converted custom-api profile mirrors', async () => {
@@ -599,6 +1184,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
       forceReplaceUrl: 'https://util.node.mephistopheles.moe/chat/risu',
       proxyKey: 'sk-flat-proxy',
       autofillRequestUrl: true,
+      providerCredentials: [{ id: 'credential-proxy', name: 'Proxy', type: 'apiKey', apiKey: 'sk-profile-proxy' }],
       modelProfiles: [
         {
           id: 'converted-custom-api',
@@ -606,7 +1192,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
           providerId: 'custom-api',
           modelId: 'custom-api',
           providerOptions: {
-            apiKey: 'sk-profile-proxy',
+            credentialId: 'credential-proxy',
             baseUrl: 'https://util.node.mephistopheles.moe/chat/risu',
             requestModel: 'extension',
           },
@@ -639,6 +1225,17 @@ describe('dispatchChatProvider profile providerOptions', () => {
           ['profileFlag', 'true'],
         ],
       } as Partial<Database>),
+      lookupModelInfo: (_database, id) =>
+        ({
+          id,
+          name: id,
+          internalID: 'profile-legacy-model',
+          provider: LLMProvider.AsIs,
+          format: LLMFormat.OpenAILegacyInstruct,
+          flags: [LLMFlags.hasFirstSystemPrompt],
+          parameters: OpenAIParameters,
+          tokenizer: LLMTokenizer.Unknown,
+        }) as LLMModel,
     })
     const flatConflict = db({
       aiModel: 'reverse_proxy',
@@ -676,11 +1273,23 @@ describe('dispatchChatProvider profile providerOptions', () => {
         forceReplaceUrl: 'risu::https://profile-responses.example.com/v1',
         proxyKey: 'sk-profile-responses',
         autofillRequestUrl: true,
+        useStreaming: true,
         additionalParams: [
           ['header::X-Profile', 'profile'],
           ['profileFlag', 'true'],
         ],
       } as Partial<Database>),
+      lookupModelInfo: (_database, id) =>
+        ({
+          id,
+          name: id,
+          internalID: 'profile-responses-model',
+          provider: LLMProvider.AsIs,
+          format: LLMFormat.OpenAIResponseAPI,
+          flags: [LLMFlags.hasFirstSystemPrompt, LLMFlags.hasStreaming],
+          parameters: OpenAIParameters,
+          tokenizer: LLMTokenizer.tiktokenO200Base,
+        }) as LLMModel,
     })
     const flatConflict = db({
       aiModel: 'ollama-cloud',
@@ -700,6 +1309,157 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].body.model).toBe('profile-responses-model')
     expect(captured[0].body.profileFlag).toBe(true)
     expect(captured[0].body.store).toBe(false)
+    expect(captured[0].body.stream).toBeUndefined()
+  })
+
+  it('preserves an exact OpenAI Responses reverse-proxy endpoint when autofill is disabled', async () => {
+    const database = db({
+      aiModel: 'reverse_proxy',
+      customProxyRequestModel: 'exact-responses-model',
+      customAPIFormat: LLMFormat.OpenAIResponseAPI,
+      forceReplaceUrl: 'https://proxy.example.com/exact-response?api-version=2026-01-01',
+      proxyKey: 'sk-exact-responses',
+      autofillRequestUrl: false,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({
+      database,
+      lookupModelInfo: (_database, id) =>
+        ({
+          id,
+          name: id,
+          internalID: 'exact-responses-model',
+          provider: LLMProvider.AsIs,
+          format: LLMFormat.OpenAIResponseAPI,
+          flags: [LLMFlags.hasFirstSystemPrompt, LLMFlags.hasStreaming],
+          parameters: OpenAIParameters,
+          tokenizer: LLMTokenizer.tiktokenO200Base,
+        }) as LLMModel,
+    })
+    const captured = captureDispatchRequests(okOpenAIResponsesResponse())
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('https://proxy.example.com/exact-response?api-version=2026-01-01')
+  })
+
+  it.each([
+    ['gpt-5.1-response-api', -1, 'none'],
+    ['gpt-5.4-pro-response-api', 0, 'medium'],
+    ['gpt-5.5-response-api', 3, 'xhigh'],
+    ['gpt-5-response-api', 3, 'high'],
+  ])('preserves %s reasoning effort %i as %s on the Responses wire', async (model, value, expected) => {
+    const database = db({
+      aiModel: model,
+      openAIKey: 'sk-openai',
+      reasoningEffort: value,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureDispatchRequests(okOpenAIResponsesResponse())
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].body.reasoning).toEqual({ effort: expected, summary: 'auto' })
+    expect(captured[0].body.text).toEqual({ verbosity: 'medium' })
+    expect(JSON.stringify(captured[0].body)).not.toMatch(/reasoning_effort_(?:none|xhigh|min_medium)/u)
+  })
+
+  it('uses Responses-native tools and sanitized bounded tool continuation input', async () => {
+    const database = db({
+      aiModel: 'gpt-5.5-response-api',
+      openAIKey: 'sk-openai',
+      modelTools: ['search'],
+      reasoningEffort: 3,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureDispatchRequests(okOpenAIResponsesResponse())
+    const frames = await dispatchChatProvider({
+      database,
+      profile,
+      formated: [{ role: 'user', content: 'hello' }],
+      signal: new AbortController().signal,
+      tools: [{ name: 'lookup', description: 'Lookup data', inputSchema: { type: 'object' } }],
+      toolRounds: [
+        {
+          assistantContent: '',
+          calls: [{ id: 'call-1', name: 'lookup', arguments: { query: 'weather' } }],
+          results: [{ callId: 'call-1', name: 'lookup', content: 'sunny' }],
+        },
+      ],
+    })
+    for await (const _frame of frames) {
+      // Consume the buffered adapter frames so the request completes.
+    }
+
+    expect(captured[0].body.tools).toEqual([
+      { type: 'function', name: 'lookup', description: 'Lookup data', parameters: { type: 'object' } },
+      { type: 'web_search_preview' },
+    ])
+    expect(captured[0].body.input).toEqual([
+      { role: 'user', content: [{ type: 'input_text', text: 'hello' }] },
+      {
+        type: 'function_call',
+        call_id: 'call-1',
+        name: 'lookup',
+        arguments: '{"query":"weather"}',
+        status: 'completed',
+      },
+      { type: 'function_call_output', call_id: 'call-1', output: 'sunny' },
+    ])
+    expect(captured[0].body.reasoning).toEqual({ effort: 'xhigh', summary: 'auto' })
+  })
+
+  it('preserves reasoning effort on the NanoGPT Responses remap without leaking capability markers', async () => {
+    const nanoResponsesInfo: LLMModel = {
+      id: 'nanogpt-responses-test',
+      name: 'NanoGPT Responses Test',
+      internalID: 'nanogpt',
+      provider: LLMProvider.NanoGPT,
+      format: LLMFormat.NanoGPTResponses,
+      flags: [LLMFlags.hasFullSystemPrompt],
+      parameters: ['temperature', 'top_p', 'reasoning_effort', 'reasoning_effort_none', 'reasoning_effort_xhigh'],
+      tokenizer: LLMTokenizer.Unknown,
+    }
+    const database = db({
+      aiModel: 'flat-main-model',
+      nanogptKey: 'sk-nano',
+      nanogptProvider: 'flat-provider-must-not-win',
+      nanogptUseSubscriptionEndpoint: false,
+      reasoningEffort: 3,
+      providerCredentials: [
+        { id: 'nanogpt-responses-credential', name: 'NanoGPT', type: 'apiKey', apiKey: 'sk-profile-nano' },
+      ],
+      modelProfiles: [
+        {
+          id: 'nanogpt-responses-profile',
+          name: 'NanoGPT Responses Profile',
+          modelId: nanoResponsesInfo.id,
+          providerOptions: {
+            credentialId: 'nanogpt-responses-credential',
+            requestModel: 'provider/nano-model',
+            nanogpt: {
+              providerHint: 'must-not-be-sent-on-subscription',
+              useSubscriptionEndpoint: true,
+            },
+          },
+        },
+      ],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'nanogpt-responses-profile' } },
+    } as Partial<Database>)
+    const profile = resolveModelProfile({
+      database,
+      lookupModelInfo: (_database, id) => (id === nanoResponsesInfo.id ? nanoResponsesInfo : undefined),
+    })
+    const captured = captureDispatchRequests(okOpenAIResponsesResponse())
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured[0].url).toBe('https://nano-gpt.com/api/subscription/v1/responses')
+    expect(captured[0].headers['X-Provider']).toBeUndefined()
+    expect(captured[0].body.model).toBe('provider/nano-model')
+    expect(captured[0].body.reasoning).toEqual({ effort: 'xhigh', summary: 'auto' })
+    expect(JSON.stringify(captured[0].body)).not.toContain('reasoning_effort_xhigh')
   })
 
   it('uses the profile model id for OpenAI Responses Ollama Cloud store ownership', async () => {
@@ -730,10 +1490,12 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].headers['X-Flat']).toBeUndefined()
     expect(captured[0].body.model).toBe('profile-ollama-responses')
     expect(captured[0].body.store).toBeUndefined()
+    expect(captured[0].body.reasoning).toBeUndefined()
+    expect(JSON.stringify(captured[0].body)).not.toMatch(/reasoning_effort_(?:none|xhigh|min_medium)/u)
   })
 
   it('uses Anthropic xcustom profile options over conflicting flat database fields', async () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'xcustom:::profile-anthropic',
         customModels: [
@@ -795,6 +1557,17 @@ describe('dispatchChatProvider profile providerOptions', () => {
           ['profileFlag', 'true'],
         ],
       } as Partial<Database>),
+      lookupModelInfo: (_database, id) =>
+        ({
+          id,
+          name: id,
+          internalID: 'profile-mistral-model',
+          provider: LLMProvider.AsIs,
+          format: LLMFormat.Mistral,
+          flags: [LLMFlags.hasFirstSystemPrompt],
+          parameters: OpenAIParameters,
+          tokenizer: LLMTokenizer.Mistral,
+        }) as LLMModel,
     })
     const flatConflict = db({
       aiModel: 'reverse_proxy',
@@ -837,6 +1610,17 @@ describe('dispatchChatProvider profile providerOptions', () => {
           ['profileFlag', 'true'],
         ],
       } as Partial<Database>),
+      lookupModelInfo: (_database, id) =>
+        ({
+          id,
+          name: id,
+          internalID: 'profile-cohere-model',
+          provider: LLMProvider.AsIs,
+          format: LLMFormat.Cohere,
+          flags: [LLMFlags.hasFirstSystemPrompt],
+          parameters: OpenAIParameters,
+          tokenizer: LLMTokenizer.Cohere,
+        }) as LLMModel,
     })
     const flatConflict = db({
       aiModel: 'reverse_proxy',
@@ -865,18 +1649,20 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].body.flatFlag).toBeUndefined()
   })
 
-  it('uses native Ollama profile URL and model over conflicting flat database fields', async () => {
+  it('uses native Ollama profile URL, model, and thinking mode over conflicting flat database fields', async () => {
     const profile = resolveModelProfile({
       database: db({
         aiModel: 'ollama-hosted',
         ollamaURL: 'http://profile-ollama.example.com',
         ollamaModel: 'profile-llama',
+        ollamaThinkingMode: 'medium',
       } as Partial<Database>),
     })
     const flatConflict = db({
       aiModel: 'ollama-hosted',
       ollamaURL: 'http://flat-ollama.example.com',
       ollamaModel: 'flat-llama',
+      ollamaThinkingMode: 'off',
     } as Partial<Database>)
     const captured = captureDispatchRequests(okOllamaResponse())
 
@@ -885,6 +1671,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured).toHaveLength(1)
     expect(captured[0].url).toBe('http://profile-ollama.example.com/api/chat')
     expect(captured[0].body.model).toBe('profile-llama')
+    expect(captured[0].body.think).toBe('medium')
   })
 
   it('uses Kobold profile URL over conflicting flat database fields', async () => {
@@ -904,6 +1691,23 @@ describe('dispatchChatProvider profile providerOptions', () => {
 
     expect(captured).toHaveLength(1)
     expect(captured[0].url).toBe('http://profile-kobold.example.com/api/v1/generate')
+  })
+
+  it('preserves Kobold HTTP non-retryability on the provider failure frame', async () => {
+    const database = db({ aiModel: 'kobold', koboldURL: 'http://kobold.example.com' } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    vi.stubGlobal('fetch', async () => new Response('kobold denied', { status: 401 }))
+
+    const source = await dispatchChatProvider({
+      database,
+      profile,
+      formated: [{ role: 'user', content: 'hello' }],
+      signal: new AbortController().signal,
+    })
+    const emitted = []
+    for await (const frame of source) emitted.push(frame)
+
+    expect(emitted).toEqual([{ kind: 'error', error: 'kobold denied', nonRetryable: true }])
   })
 
   it('uses OobaLegacy profile URL and API key over conflicting flat database fields', async () => {
@@ -948,11 +1752,122 @@ describe('dispatchChatProvider profile providerOptions', () => {
     })
   })
 
+  it('sends baseline Ooba stops and truncation budget, then cleans the effective character turn', async () => {
+    const database = db({
+      aiModel: 'mancer',
+      textgenWebUIBlockingURL: 'http://ooba.example.com/api/v1/blocking',
+      mancerHeader: 'mancer-key',
+      username: 'Active Persona',
+      maxContext: 8_192,
+      maxResponse: 64,
+      currentChar: 0,
+      characters: [{ name: 'Wrong First Character' }, { name: 'Active Character' }],
+      ooba: {
+        formating: { userPrefix: '### Persona Input:' },
+      } as Database['ooba'],
+    } as unknown as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureDispatchRequests(okOobaLegacyResponse('clean answer\nActive Character: trailing turn'))
+
+    const source = await dispatchChatProvider({
+      database,
+      profile,
+      formated: [
+        { role: 'system', content: 'rules' },
+        { role: 'user', content: 'hello' },
+      ],
+      outputTokens: 123,
+      currentCharacterName: 'Active Character',
+      signal: new AbortController().signal,
+    })
+    const emitted = []
+    for await (const frame of source) emitted.push(frame)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].body.truncation_length).toBe(123)
+    expect(captured[0].body.stopping_strings).toEqual([
+      'GPT4 User',
+      '</s>',
+      '<|end',
+      '<|im_end',
+      '### Persona Input:',
+      'Active Persona:',
+      'user:',
+      '<<user>>',
+      '### user',
+      'USER:',
+      '<<USER>>',
+      '### USER',
+      'User:',
+      '<<User>>',
+      '### User',
+      'human:',
+      '<<human>>',
+      '### human',
+      'HUMAN:',
+      '<<HUMAN>>',
+      '### HUMAN',
+      'Human:',
+      '<<Human>>',
+      '### Human',
+      'input:',
+      '<<input>>',
+      '### input',
+      'INPUT:',
+      '<<INPUT>>',
+      '### INPUT',
+      'Input:',
+      '<<Input>>',
+      '### Input',
+      'inst:',
+      '<<inst>>',
+      '### inst',
+      'INST:',
+      '<<INST>>',
+      '### INST',
+      'Inst:',
+      '<<Inst>>',
+      '### Inst',
+      'instruction:',
+      '<<instruction>>',
+      '### instruction',
+      'INSTRUCTION:',
+      '<<INSTRUCTION>>',
+      '### INSTRUCTION',
+      'Instruction:',
+      '<<Instruction>>',
+      '### Instruction',
+    ])
+    expect(emitted).toEqual([
+      { kind: 'token', content: 'clean answer' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
   it('uses Bedrock profile credentials and request model over conflicting flat database fields', async () => {
     const profile = resolveModelProfile({
       database: db({
         aiModel: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
-        claudeAPIKey: 'PROFILEAKIA:profile-secret:ap-southeast-2',
+        providerCredentials: [
+          {
+            id: 'bedrock-profile-credential',
+            name: 'Bedrock profile',
+            type: 'apiKey',
+            apiKey: 'PROFILEAKIA:profile-secret:ap-southeast-2',
+          },
+        ],
+        modelProfiles: [
+          {
+            id: 'bedrock-profile',
+            name: 'Bedrock profile',
+            modelId: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+            providerOptions: {
+              credentialId: 'bedrock-profile-credential',
+              requestModel: 'us.anthropic.claude-3-5-sonnet-20241022-v2:0',
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'bedrock-profile' } },
       } as Partial<Database>),
     })
     const flatConflict = db({
@@ -961,11 +1876,16 @@ describe('dispatchChatProvider profile providerOptions', () => {
     } as Partial<Database>)
     const captured = captureDispatchRequests(okBedrockResponse())
 
-    await dispatchWithProfile(profile, flatConflict, [
-      { role: 'system', content: 'profile system 1' },
-      { role: 'system', content: 'profile system 2' },
-      { role: 'user', content: 'hello' },
-    ])
+    await dispatchWithProfile(
+      profile,
+      flatConflict,
+      [
+        { role: 'system', content: 'profile system 1' },
+        { role: 'system', content: 'profile system 2' },
+        { role: 'user', content: 'hello' },
+      ],
+      { stop_reason: 'end_turn' },
+    )
 
     expect(captured).toHaveLength(1)
     expect(captured[0].url).toBe(
@@ -994,7 +1914,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
     } as Partial<Database>)
     const captured = captureDispatchRequests(okBedrockResponse())
 
-    await dispatchWithProfile(profile, flatConflict)
+    await dispatchWithProfile(profile, flatConflict, undefined, { stop_reason: 'end_turn' })
 
     expect(captured).toHaveLength(1)
     expect(captured[0].url).toBe(
@@ -1004,11 +1924,49 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].body.messages).toEqual([{ role: 'user', content: [{ type: 'text', text: 'hello' }] }])
   })
 
+  it('maps Bedrock thinking budget and restores the Bedrock sampler constraints', async () => {
+    const database = db({
+      aiModel: 'anthropic.claude-3-7-sonnet-20250219-v1:0',
+      claudeAPIKey: 'PROFILEAKIA:profile-secret:us-east-1',
+      thinkingType: 'budget',
+      thinkingTokens: 4096,
+      temperature: 25,
+      top_p: 0.8,
+      top_k: 20,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureDispatchRequests(okBedrockResponse())
+
+    await dispatchWithProfile(profile, database, undefined, { stop_reason: 'end_turn' })
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].body.thinking).toEqual({
+      type: 'enabled',
+      budget_tokens: 4096,
+      display: 'summarized',
+    })
+    expect(captured[0].body.temperature).toBe(1)
+    expect(captured[0].body.top_p).toBeUndefined()
+    expect(captured[0].body.top_k).toBeUndefined()
+  })
+
   it('uses Google AI Studio profile API key and request model over conflicting flat database fields', async () => {
     const profile = resolveModelProfile({
       database: db({
         aiModel: 'gemini-2.5-flash',
         google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
+        providerCredentials: [
+          { id: 'google-profile-credential', name: 'Google profile', type: 'apiKey', apiKey: 'profile-google-key' },
+        ],
+        modelProfiles: [
+          {
+            id: 'google-profile',
+            name: 'Google profile',
+            modelId: 'gemini-2.5-flash',
+            providerOptions: { credentialId: 'google-profile-credential', requestModel: 'gemini-profile-wire-model' },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'google-profile' } },
       } as Partial<Database>),
       lookupModelInfo: (_database, id) =>
         geminiModelInfo({
@@ -1035,10 +1993,171 @@ describe('dispatchChatProvider profile providerOptions', () => {
   })
 
   it.each([
+    { flag: LLMFlags.hasImageOutput, modalities: ['TEXT', 'IMAGE'] },
+    { flag: LLMFlags.hasAudioOutput, modalities: ['TEXT', 'AUDIO'] },
+  ])('forces buffered Gemini dispatch and requests $modalities output for flag $flag', async ({ flag, modalities }) => {
+    const database = db({
+      aiModel: 'gemini-2.5-flash',
+      google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
+      useStreaming: true,
+      providerCredentials: [
+        { id: 'gemini-media-credential', name: 'Gemini profile', type: 'apiKey', apiKey: 'profile-google-key' },
+      ],
+      modelProfiles: [
+        {
+          id: 'gemini-media-profile',
+          name: 'Gemini media profile',
+          modelId: 'gemini-2.5-flash',
+          providerOptions: {
+            credentialId: 'gemini-media-credential',
+            requestModel: 'gemini-media-output',
+            customApi: { flags: [flag] },
+          },
+          runtimeOptions: { useStreaming: false, enableCustomFlags: true, customFlags: [flag] },
+        },
+      ],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'gemini-media-profile' } },
+    } as Partial<Database>)
+    const profile = resolveModelProfile({
+      database,
+      lookupModelInfo: (_database, id) =>
+        geminiModelInfo({
+          id,
+          internalID: 'gemini-media-output',
+          flags: [flag],
+        }),
+    })
+    const captured = captureDispatchRequests(okGeminiResponse())
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toContain(':generateContent?key=')
+    expect(captured[0].url).not.toContain(':streamGenerateContent')
+    expect((captured[0].body.generationConfig as Record<string, unknown>).responseModalities).toEqual(modalities)
+  })
+
+  it('leaves buffered non-output-capable Gemini requests without responseModalities', async () => {
+    const database = db({
+      aiModel: 'gemini-2.5-flash',
+      google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
+      useStreaming: false,
+      providerCredentials: [
+        { id: 'gemini-text-credential', name: 'Gemini profile', type: 'apiKey', apiKey: 'profile-google-key' },
+      ],
+      modelProfiles: [
+        {
+          id: 'gemini-text-profile',
+          name: 'Gemini text profile',
+          modelId: 'gemini-2.5-flash',
+          providerOptions: { credentialId: 'gemini-text-credential', requestModel: 'gemini-text-only' },
+        },
+      ],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'gemini-text-profile' } },
+    } as Partial<Database>)
+    const profile = resolveModelProfile({
+      database,
+      lookupModelInfo: (_database, id) => geminiModelInfo({ id, internalID: 'gemini-text-only' }),
+    })
+    const captured = captureDispatchRequests(okGeminiResponse())
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured).toHaveLength(1)
+    expect((captured[0].body.generationConfig as Record<string, unknown>).responseModalities).toBeUndefined()
+  })
+
+  it('forwards Gemini model safety flags and the translated effective JSON schema', async () => {
+    const database = db({
+      aiModel: 'gemini-2.5-flash-lite-preview-09-2025',
+      google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
+      jsonSchemaEnabled: true,
+      jsonSchema: JSON.stringify({
+        $schema: 'https://json-schema.org/draft/2020-12/schema',
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          answer: { type: 'string' },
+          details: {
+            type: 'object',
+            additionalProperties: false,
+            properties: { score: { type: 'number' } },
+          },
+        },
+        required: ['answer'],
+      }),
+    } as Partial<Database>)
+    const profile = resolveModelProfile({
+      database,
+      lookupModelInfo: (_database, id) =>
+        geminiModelInfo({
+          id,
+          internalID: 'gemini-2.5-flash-lite-preview-09-2025',
+          flags: [
+            LLMFlags.geminiBlockOff,
+            LLMFlags.hasFirstSystemPrompt,
+            LLMFlags.requiresAlternateRole,
+            LLMFlags.mustStartWithUserInput,
+          ],
+        }),
+    })
+    const captured = captureDispatchRequests(okGeminiResponse())
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].body.safetySettings).toEqual([
+      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'OFF' },
+      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'OFF' },
+      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'OFF' },
+      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'OFF' },
+      { category: 'HARM_CATEGORY_CIVIC_INTEGRITY', threshold: 'OFF' },
+    ])
+    expect(captured[0].body.generationConfig).toMatchObject({
+      response_mime_type: 'application/json',
+      response_schema: {
+        type: 'object',
+        properties: {
+          answer: { type: 'string' },
+          details: {
+            type: 'object',
+            properties: { score: { type: 'number' } },
+          },
+        },
+        required: ['answer'],
+      },
+    })
+    expect(JSON.stringify(captured[0].body.generationConfig)).not.toContain('$schema')
+    expect(JSON.stringify(captured[0].body.generationConfig)).not.toContain('additionalProperties')
+  })
+
+  it.each([
+    { model: 'gemini-3.6-flash', reasoningEffort: -1, expectedLevel: 'minimal' },
+    { model: 'gemini-3.1-pro-preview', reasoningEffort: -1, expectedLevel: 'low' },
+    { model: 'gemini-3-flash-preview', reasoningEffort: 1, expectedLevel: 'medium' },
+  ])('maps $model reasoning effort to $expectedLevel on the live Gemini path', async (testCase) => {
+    const database = db({
+      aiModel: testCase.model,
+      google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
+      reasoningEffort: testCase.reasoningEffort,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured = captureDispatchRequests(okGeminiResponse())
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured).toHaveLength(1)
+    expect((captured[0].body.generationConfig as Record<string, unknown>).thinkingConfig).toEqual({
+      thinkingLevel: testCase.expectedLevel,
+      includeThoughts: true,
+    })
+  })
+
+  it.each([
     { label: 'missing', google: undefined },
     { label: 'blank', google: { accessToken: '   ', projectId: 'profile-project' } },
   ])('does not fall back to flat DB Google key when the profile key is $label', async (testCase) => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'gemini-2.5-flash',
         ...(testCase.google === undefined ? {} : { google: testCase.google }),
@@ -1052,7 +2171,9 @@ describe('dispatchChatProvider profile providerOptions', () => {
     vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
 
     await expect(dispatchWithProfile(profile, flatConflict)).rejects.toThrow(
-      'options.gemini.apiKey or options.gemini.vertex is required',
+      testCase.google === undefined
+        ? 'options.gemini.apiKey or options.gemini.vertex is required'
+        : 'credential-missing',
     )
     expect(fetchSpy).not.toHaveBeenCalled()
   })
@@ -1068,6 +2189,27 @@ describe('dispatchChatProvider profile providerOptions', () => {
         vertexClientEmail: 'svc@profile-project.iam.gserviceaccount.com',
         vertexPrivateKey: profilePrivateKey,
         vertexAccessToken: 'cached-profile-token',
+        providerCredentials: [
+          {
+            id: 'vertex-profile-credential',
+            name: 'Vertex profile',
+            type: 'vertexServiceAccount',
+            vertex: { clientEmail: 'svc@profile-project.iam.gserviceaccount.com', privateKey: profilePrivateKey },
+          },
+        ],
+        modelProfiles: [
+          {
+            id: 'vertex-profile',
+            name: 'Vertex profile',
+            modelId: 'gemini-2.5-pro-vertex',
+            providerOptions: {
+              credentialId: 'vertex-profile-credential',
+              requestModel: 'gemini-profile-vertex-wire-model',
+              vertex: { projectId: 'profile-project', region: 'us-central1' },
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'vertex-profile' } },
       } as Partial<Database>),
       lookupModelInfo: (_database, id) =>
         geminiModelInfo({
@@ -1124,7 +2266,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
     },
   ])('does not fall back to flat DB Vertex auth when profile auth is $label', async (testCase) => {
     _resetVertexTokenCacheForTesting()
-    const profile = resolveModelProfile({ database: db(testCase.profileDatabase) })
+    const profile = resolveModelProfileWithLegacyCompatibility({ database: db(testCase.profileDatabase) })
     const flatConflict = db({
       aiModel: 'gemini-2.5-pro-vertex',
       google: { accessToken: 'flat-studio-key', projectId: 'flat-project' },
@@ -1136,12 +2278,14 @@ describe('dispatchChatProvider profile providerOptions', () => {
     const fetchSpy = vi.fn()
     vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
 
-    await expect(dispatchWithProfile(profile, flatConflict)).rejects.toThrow('configuration is incomplete')
+    await expect(dispatchWithProfile(profile, flatConflict)).rejects.toThrow(
+      /(?:configuration is incomplete|vertex-(?:project-id|region|client-email|private-key)-missing)/u,
+    )
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
   it('uses Horde profile API key and request model over conflicting flat database fields', async () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'horde:::profile-horde-model',
         hordeConfig: { apiKey: 'profile-horde-key', model: '', softPrompt: '' },
@@ -1169,12 +2313,118 @@ describe('dispatchChatProvider profile providerOptions', () => {
     ])
   })
 
+  it.each([
+    {
+      template: 'chatml',
+      expected:
+        '<|im_start|>system\nrules<|im_end|>\n<|im_start|>user\nhello<|im_end|>\n<|im_start|>assistant\nprior<|im_end|>\n<|im_start|>assistant\n',
+    },
+    {
+      template: 'llama3',
+      expected: 'system: rules\n\nuser: hello\n\nassistant: prior\n\nassistant:',
+    },
+  ])('pins Horde $template legacy-template output', async ({ template, expected }) => {
+    // Accepted divergence (PR-18/PR-7 sunset): do not port baseline
+    // `src/ts/process/templates/chatTemplate.ts`; pin ChatML and the generic fallback.
+    const database = db({
+      aiModel: 'horde:::profile-horde-model',
+      hordeConfig: { apiKey: 'profile-horde-key', model: '', softPrompt: '' },
+      instructChatTemplate: template,
+    } as Partial<Database>)
+    const profile = resolveModelProfileWithLegacyCompatibility({ database })
+    const captured = captureHordeRequests()
+
+    await dispatchHordeWithProfile(profile, database, [
+      { role: 'system', content: 'rules' },
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: 'prior' },
+    ])
+
+    expect(captured[0].body.prompt).toBe(expected)
+  })
+
+  it('cleans Horde output with the effective character instead of characters[0]', async () => {
+    vi.useFakeTimers()
+    const database = db({
+      aiModel: 'horde:::profile-horde-model',
+      hordeConfig: { apiKey: 'profile-horde-key', model: '', softPrompt: '' },
+      instructChatTemplate: 'chatml',
+      currentChar: 0,
+      characters: [{ name: 'Wrong First Character' }, { name: 'Active Character' }],
+    } as unknown as Partial<Database>)
+    const profile = resolveModelProfileWithLegacyCompatibility({ database })
+    captureHordeRequests('clean result\nActive Character: trailing role text')
+    const source = await dispatchChatProvider({
+      database,
+      profile,
+      formated: [{ role: 'user', content: 'hello' }],
+      currentCharacterName: 'Active Character',
+      signal: new AbortController().signal,
+    })
+    const emittedPromise = (async () => {
+      const emitted = []
+      for await (const frame of source) emitted.push(frame)
+      return emitted
+    })()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(2_000)
+
+    await expect(emittedPromise).resolves.toEqual([
+      { kind: 'token', content: 'clean result' },
+      { kind: 'done', finishReason: 'stop', apiMetadata: { jobId: 'profile-horde-job' } },
+    ])
+  })
+
+  it('preserves impossible Horde job non-retryability on the provider failure frame', async () => {
+    vi.useFakeTimers()
+    const database = db({
+      aiModel: 'horde:::profile-horde-model',
+      hordeConfig: { apiKey: 'profile-horde-key', model: '', softPrompt: '' },
+      instructChatTemplate: 'chatml',
+    } as Partial<Database>)
+    const profile = resolveModelProfileWithLegacyCompatibility({ database })
+    vi.stubGlobal('fetch', async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).endsWith('/generate/text/async')) {
+        return new Response(JSON.stringify({ id: 'impossible-job' }), {
+          status: 202,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (String(url).endsWith('/generate/text/status/impossible-job') && init?.method !== 'DELETE') {
+        return new Response(JSON.stringify({ is_possible: false, done: false }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (init?.method === 'DELETE') return new Response('{}', { status: 200 })
+      throw new Error(`unexpected Horde URL: ${String(url)}`)
+    })
+
+    const source = await dispatchChatProvider({
+      database,
+      profile,
+      formated: [{ role: 'user', content: 'hello' }],
+      signal: new AbortController().signal,
+    })
+    const emittedPromise = (async () => {
+      const emitted = []
+      for await (const frame of source) emitted.push(frame)
+      return emitted
+    })()
+    await vi.advanceTimersByTimeAsync(2_000)
+
+    await expect(emittedPromise).resolves.toEqual([
+      { kind: 'error', error: 'horde reports the job is not possible', nonRetryable: true },
+    ])
+  })
+
   it('uses the anonymous Horde key when the profile key is blank despite a flat DB key', async () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'horde:::profile-horde-model',
         hordeConfig: { apiKey: '   ', model: '', softPrompt: '' },
         instructChatTemplate: 'chatml',
+        modelRoleProfiles: {},
       } as Partial<Database>),
     })
     const flatConflict = db({
@@ -1198,11 +2448,12 @@ describe('dispatchChatProvider profile providerOptions', () => {
   })
 
   it('omits the OobaLegacy API key when the profile key is blank despite a flat DB key', async () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'mancer',
         textgenWebUIBlockingURL: 'http://profile-ooba.example.com/api/v1/blocking',
         mancerHeader: '   ',
+        modelRoleProfiles: {},
       } as Partial<Database>),
     })
     const flatConflict = db({
@@ -1237,7 +2488,9 @@ describe('dispatchChatProvider profile providerOptions', () => {
     const fetchSpy = vi.fn()
     vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
 
-    await expect(dispatchWithProfile(profile, flatConflict)).rejects.toThrow('configuration is incomplete')
+    await expect(dispatchWithProfile(profile, flatConflict)).rejects.toThrow(
+      /(?:configuration is incomplete|credential-missing)/u,
+    )
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
@@ -1481,7 +2734,10 @@ describe('dispatchChatProvider profile providerOptions', () => {
       expectedModel: 'profile-ollama-cloud-model',
     },
   ])('uses $label profile options on the OpenAI branch', async (testCase) => {
-    const profile = resolveModelProfile({ database: testCase.profileDatabase })
+    const profile =
+      testCase.label === 'xcustom OpenAI-compatible'
+        ? resolveModelProfileWithLegacyCompatibility({ database: testCase.profileDatabase })
+        : resolveModelProfile({ database: testCase.profileDatabase })
     const captured = captureOpenAIRequests()
 
     await dispatchWithProfile(profile, testCase.flatConflict)
@@ -1502,6 +2758,30 @@ describe('dispatchChatProvider profile providerOptions', () => {
     if (testCase.absentBodyField) {
       expect(captured[0].body[testCase.absentBodyField]).toBeUndefined()
     }
+  })
+
+  it('carries the DeepSeek embedded-thinking output flag into the OpenAI parser', async () => {
+    const database = db({
+      aiModel: 'deepseek-reasoner',
+      OaiCompAPIKeys: { deepseek: 'sk-deepseek' },
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    captureDispatchRequests(okOpenAIResponse('<think>private reasoning</think>visible answer'))
+
+    const frames = await dispatchChatProvider({
+      database,
+      profile,
+      formated: [{ role: 'user', content: 'hello' }],
+      signal: new AbortController().signal,
+    })
+    const emitted = []
+    for await (const frame of frames) emitted.push(frame)
+
+    expect(profile.modelInfo.flags).toContain(LLMFlags.deepSeekThinkingOutput)
+    expect(emitted).toEqual([
+      { kind: 'token', content: '<Thoughts>\nprivate reasoning\n</Thoughts>\nvisible answer' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
   })
 
   it('allows first-class Custom API profiles without an API key', async () => {
@@ -1540,6 +2820,79 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].headers.authorization).toBeUndefined()
     expect(captured[0].headers['X-Profile']).toBe('custom')
     expect(captured[0].body.model).toBe('profile-custom-model')
+  })
+
+  it('dispatches first-class LLM Gateway profiles through its fixed OpenAI-compatible endpoint', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        providerCredentials: [{ id: 'credential-gateway', name: 'LLM Gateway', type: 'apiKey', apiKey: 'sk-gateway' }],
+        modelProfiles: [
+          {
+            id: 'llmgateway-profile',
+            name: 'LLM Gateway',
+            providerId: 'llmgateway',
+            modelId: 'gpt-4o-mini',
+            providerOptions: {
+              credentialId: 'credential-gateway',
+              baseUrl: 'https://attacker.example/v1',
+              llmGateway: {
+                reasoningEffort: 'max',
+                verbosity: 'high',
+                serviceTier: 'priority',
+                routing: 'throughput',
+              },
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'llmgateway-profile' } },
+      } as unknown as Partial<Database>),
+    })
+    const captured = captureOpenAIRequests()
+
+    await dispatchWithProfile(
+      profile,
+      db({ openAIKey: 'flat-openai-key', openAIFlexProcessing: true } as Partial<Database>),
+    )
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('https://api.llmgateway.io/v1/chat/completions')
+    expect(captured[0].headers.authorization).toBe('Bearer sk-gateway')
+    expect(captured[0].body.model).toBe('gpt-4o-mini')
+    expect(captured[0].body.reasoning_effort).toBe('max')
+    expect(captured[0].body.verbosity).toBe('high')
+    expect(captured[0].body.service_tier).toBe('priority')
+    expect(captured[0].body.routing).toBe('throughput')
+  })
+
+  it('dispatches first-class Neuralwatt profiles through its fixed OpenAI-compatible endpoint', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        providerCredentials: [
+          { id: 'credential-neuralwatt', name: 'Neuralwatt', type: 'apiKey', apiKey: 'sk-neuralwatt' },
+        ],
+        modelProfiles: [
+          {
+            id: 'neuralwatt-profile',
+            name: 'Neuralwatt',
+            providerId: 'neuralwatt',
+            modelId: 'gemma-4-31b',
+            providerOptions: {
+              credentialId: 'credential-neuralwatt',
+              baseUrl: 'https://attacker.example/v1',
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'neuralwatt-profile' } },
+      } as unknown as Partial<Database>),
+    })
+    const captured = captureOpenAIRequests()
+
+    await dispatchWithProfile(profile, db({ openAIKey: 'flat-openai-key' } as Partial<Database>))
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('https://api.neuralwatt.com/v1/chat/completions')
+    expect(captured[0].headers.authorization).toBe('Bearer sk-neuralwatt')
+    expect(captured[0].body.model).toBe('gemma-4-31b')
   })
 
   it('uses first-class Debug Echo provider options as the echo payload', async () => {
@@ -1703,5 +3056,64 @@ describe('dispatchChatProvider profile providerOptions', () => {
 
     await expect(dispatchWithProfile(profile, testCase.flatConflict)).rejects.toThrow(testCase.error)
     expect(fetchSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('getServerGenerationModelString', () => {
+  it.each([
+    {
+      database: db({
+        aiModel: 'reverse_proxy',
+        reverseProxyOobaMode: false,
+        customProxyRequestModel: 'reverse/model',
+      } as Partial<Database>),
+      expected: 'custom-reverse/model',
+    },
+    {
+      database: db({ aiModel: 'openrouter', openrouterRequestModel: 'openrouter/model' } as Partial<Database>),
+      expected: 'openrouter-openrouter/model',
+    },
+    {
+      database: db({
+        aiModel: 'nanogpt',
+        nanogptRequestModel: 'nano/model',
+        nanogptRequestModelName: 'Nano Label',
+        nanogptUseSubscriptionEndpoint: true,
+      } as Partial<Database>),
+      expected: 'NanoGPT Nano Label [SUB]',
+    },
+    {
+      database: db({
+        aiModel: 'ollama-hosted',
+        ollamaModel: 'ollama/model',
+        ollamaModelName: 'Ollama Label',
+      } as Partial<Database>),
+      expected: 'Ollama Local Ollama Label',
+    },
+    {
+      database: db({
+        aiModel: 'ollama-cloud',
+        ollamaCloudModel: 'cloud/model',
+        ollamaCloudModelName: 'Cloud Label',
+      } as Partial<Database>),
+      expected: 'Ollama Cloud Cloud Label',
+    },
+  ])('ports the baseline provider label for $expected', ({ database, expected }) => {
+    const legacyDatabase = { ...database, modelProfiles: [], modelRoleProfiles: {} } as Database
+    expect(
+      getServerGenerationModelString(
+        legacyDatabase,
+        resolveModelProfileWithLegacyCompatibility({ database: legacyDatabase }),
+      ),
+    ).toBe(expected)
+  })
+
+  it('uses a durable selected profile request model without dropping the provider prefix', () => {
+    const database = db({ aiModel: 'openrouter', openrouterRequestModel: 'flat/model' } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    profile.source = { ...profile.source, kind: 'durable-profile' }
+    profile.requestModel = 'profile/model'
+
+    expect(getServerGenerationModelString(database, profile)).toBe('openrouter-profile/model')
   })
 })

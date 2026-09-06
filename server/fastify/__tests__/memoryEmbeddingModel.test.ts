@@ -1,21 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import type { Database } from '../../../src/ts/storage/database.svelte'
 import {
   MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
   MEMORY_EMBEDDING_FALLBACK_MAX_INPUT_BYTES,
   OPENAI_EMBEDDING_MAX_INPUT_TOKENS,
   OPENAI_EMBEDDING_MAX_REQUEST_TOKENS,
-  VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS,
+  VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS,
   VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS,
   VOYAGE_CONTEXTUAL_MAX_CHUNKS,
   VOYAGE_CONTEXTUAL_MAX_REQUEST_TOKENS,
   findMemoryEmbeddingLimitViolation,
   formatMemoryEmbeddingLimitViolation,
   resolveMemoryEmbeddingModel,
+  type MemoryEmbeddingSettings,
 } from '../src/memoryEmbeddingModel.js'
 
-function db(overrides: Partial<Database>): Database {
-  return overrides as Database
+function db(overrides: MemoryEmbeddingSettings & Record<string, unknown>): MemoryEmbeddingSettings {
+  return overrides
 }
 
 describe('memory embedding model resolver', () => {
@@ -46,9 +46,9 @@ describe('memory embedding model resolver', () => {
         hypaModel: 'openai3small',
         hypaV3Key: ' embed-key ',
         subModel: 'conflicting-submodel',
-        modelRoles: { memory: 'gpt41-mini' } as Database['modelRoles'],
+        modelRoles: { memory: 'gpt41-mini' },
         seperateModelsForAxModels: true,
-        seperateModels: { memory: 'claude-3-5-sonnet-latest' } as Database['seperateModels'],
+        seperateModels: { memory: 'claude-3-5-sonnet-latest' },
       }),
     )
 
@@ -160,8 +160,8 @@ describe('memory embedding model resolver', () => {
         apiKey: 'voyage-key',
         limits: {
           source: 'provider',
-          maxInputTokens: VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS,
-          maxInputBytes: VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
+          maxInputTokens: VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS,
+          maxInputBytes: VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
           maxRequestTokens: VOYAGE_CONTEXTUAL_MAX_REQUEST_TOKENS,
           maxRequestChunks: VOYAGE_CONTEXTUAL_MAX_CHUNKS,
           contextualWindowTokens: VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS,
@@ -170,7 +170,22 @@ describe('memory embedding model resolver', () => {
     })
   })
 
-  it('L21: formats per-input size violations with the offending bound', () => {
+  it('resolves Voyage Context 4 through the contextualized embeddings endpoint', () => {
+    expect(
+      resolveMemoryEmbeddingModel(db({ hypaModel: 'voyageContext4', voyageApiKey: ' voyage-key ' })),
+    ).toMatchObject({
+      ok: true,
+      request: {
+        provider: 'voyage-contextual',
+        model: 'voyage-context-4',
+        wireModel: 'voyage-context-4',
+        endpoint: 'https://api.voyageai.com/v1/contextualizedembeddings',
+        apiKey: 'voyage-key',
+      },
+    })
+  })
+
+  it('formats per-input size violations with the offending bound', () => {
     const result = resolveMemoryEmbeddingModel(
       db({
         hypaModel: 'custom',
@@ -209,6 +224,10 @@ describe('memory embedding model resolver', () => {
     expect(resolveMemoryEmbeddingModel(db({ hypaModel: 'voyageContext3' }))).toEqual({
       ok: false,
       error: 'voyage-context-3 requires a Voyage API key',
+    })
+    expect(resolveMemoryEmbeddingModel(db({ hypaModel: 'voyageContext4' }))).toEqual({
+      ok: false,
+      error: 'voyage-context-4 requires a Voyage API key',
     })
   })
 })

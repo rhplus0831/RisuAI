@@ -12,7 +12,7 @@ import type {
   ServerChatPostGeneration,
   ServerChatRestoration,
   ServerChatSideEffect,
-} from '../../request/serverChatEvents'
+} from '@risuai/protocol/generation-sse'
 
 export interface ServerChatCall {
   url: string
@@ -24,8 +24,11 @@ export interface ServerChatCall {
   characterId: string
   mode: string
   userMessage: string
+  emptySend: boolean
+  syntheticSayNothing: boolean
   regenerateMessageId: string
   clientCapabilities: Record<string, unknown> | null
+  clientContext: Record<string, unknown> | null
 }
 
 interface ChatPayload {
@@ -33,8 +36,11 @@ interface ChatPayload {
   characterId?: unknown
   mode?: unknown
   userMessage?: unknown
+  emptySend?: unknown
+  syntheticSayNothing?: unknown
   regenerateMessageId?: unknown
   clientCapabilities?: unknown
+  clientContext?: unknown
 }
 
 interface State {
@@ -54,7 +60,9 @@ interface State {
   messagePatch: ServerChatMessagePatch | null
   /** Optional provider result returned as `/chat` token + enriched done events. */
   dispatchResult: string | null
+  dispatchStreamResult: string | null
   dispatchAlternates: string[]
+  dispatchOutcome: 'completed' | 'cancelled' | null
   dispatchError: string | null
   emitTtsSideEffect: boolean
   sideEffects: ServerChatSideEffect[]
@@ -83,7 +91,9 @@ function defaultState(): Omit<State, 'calls'> {
     responseBudget: 50,
     messagePatch: null,
     dispatchResult: null,
+    dispatchStreamResult: null,
     dispatchAlternates: [],
+    dispatchOutcome: null,
     dispatchError: null,
     emitTtsSideEffect: false,
     sideEffects: [],
@@ -166,10 +176,14 @@ export function setServerChatDispatchResult(
     emitTtsSideEffect?: boolean
     postGeneration?: ServerChatPostGeneration
     alternates?: string[]
+    streamedResult?: string
+    outcome?: 'completed' | 'cancelled'
   } = {},
 ): void {
   state.dispatchResult = result
+  state.dispatchStreamResult = opts.streamedResult ?? result
   state.dispatchAlternates = opts.alternates ? [...opts.alternates] : []
+  state.dispatchOutcome = opts.outcome ?? null
   state.dispatchError = null
   state.generationId = generationId
   state.generationInfo = { ...generationInfo, generationId }
@@ -249,7 +263,7 @@ function sseChatResponse(): Response {
           state.dispatchResult !== null || state.dispatchError !== null ? state.generationInfo : undefined,
       })
       if (state.dispatchResult !== null) {
-        push('token', { content: state.dispatchResult })
+        push('token', { content: state.dispatchStreamResult ?? state.dispatchResult })
         if (state.emitTtsSideEffect) {
           push('side_effect', {
             kind: 'tts',
@@ -259,7 +273,21 @@ function sseChatResponse(): Response {
         for (const sideEffect of state.sideEffects) {
           push('side_effect', sideEffect)
         }
+        if (postGeneration?.messageId && postGeneration.translation?.jobId) {
+          push('post_generation_progress', {
+            phase: 'translation',
+            status: 'translating',
+            runSeq: 0,
+            messageId: postGeneration.messageId,
+            jobId: postGeneration.translation.jobId,
+            llmCallCount: 0,
+            pendingLlmCount: 0,
+            llmCallCounts: { LLM: 0, axLLM: 0 },
+            pendingLlmCounts: { LLM: 0, axLLM: 0 },
+          })
+        }
         push('done', {
+          outcome: state.dispatchOutcome ?? undefined,
           result: state.dispatchResult,
           alternates: state.dispatchAlternates.length > 0 ? state.dispatchAlternates : undefined,
           generationId: state.generationId,
@@ -335,16 +363,23 @@ export async function serverChatFetch(input: RequestInfo | URL, init?: RequestIn
     characterId: typeof body.characterId === 'string' ? body.characterId : '',
     mode: typeof body.mode === 'string' ? body.mode : '',
     userMessage: typeof body.userMessage === 'string' ? body.userMessage : '',
+    emptySend: body.emptySend === true,
+    syntheticSayNothing: body.syntheticSayNothing === true,
     regenerateMessageId: typeof body.regenerateMessageId === 'string' ? body.regenerateMessageId : '',
     clientCapabilities:
       body.clientCapabilities && typeof body.clientCapabilities === 'object' && !Array.isArray(body.clientCapabilities)
         ? (body.clientCapabilities as Record<string, unknown>)
         : null,
+    clientContext:
+      body.clientContext && typeof body.clientContext === 'object' && !Array.isArray(body.clientContext)
+        ? (body.clientContext as Record<string, unknown>)
+        : null,
   })
 
   if (method === 'DELETE') {
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
+    const jobId = decodeURIComponent(url.split('/').at(-1) ?? '')
+    return new Response(JSON.stringify({ disposition: 'cancelling', jobId }), {
+      status: 202,
       headers: { 'content-type': 'application/json', 'X-Request-UID': 'fixture-cancel-request-uid' },
     })
   }

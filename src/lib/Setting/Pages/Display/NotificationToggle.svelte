@@ -1,51 +1,37 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { language } from 'src/lang'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import {
+    pushNotificationWarningDismissed,
+    setPushNotificationWarningDismissed,
+  } from 'src/ts/gui/pushNotificationWarningPreference'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
-  import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
+  import { applyServerBackedSetting } from 'src/ts/server/settingsOwner.svelte'
   import {
     initializePushNotificationCoordinator,
     pushNotificationCoordinatorState,
     reconcileChatCompletionPushNotificationSetting,
     retryChatCompletionPushNotificationCleanup,
-    retryChatCompletionPushNotificationCompensation,
+    retryChatCompletionPushNotificationSetup,
     retryChatCompletionPushNotificationStorage,
     type PushNotificationCoordinatorPhase,
-    type PushNotificationEnableFailure,
   } from 'src/ts/server/pushNotificationSetting'
+  import PushNotificationWarning from 'src/lib/Others/PushNotificationWarning.svelte'
   import type { DisablePushNotificationCleanupStep } from 'src/ts/server/pushNotifications'
 
-  let notificationChecked = $state(getDatabase().notification)
+  let displaySettings = $derived(
+    settingsResourceState.groupStatuses.display === 'ready' ? settingsResourceState.value : undefined,
+  )
+  let notificationChecked = $state(false)
 
   onMount(() => {
     void initializePushNotificationCoordinator()
   })
 
   $effect(() => {
-    notificationChecked = getDatabase().notification
+    notificationChecked = displaySettings?.notification === true
   })
-
-  function enableFailureMessage(result: PushNotificationEnableFailure): string {
-    if (result.status === 'permission-denied') return language.permissionDenied
-
-    switch (result.reason) {
-      case 'notification-unavailable':
-        return language.pushNotifications.setupFailures.notificationUnavailable
-      case 'permission-default':
-        return language.pushNotifications.setupFailures.permissionDefault
-      case 'service-worker-unavailable':
-        return language.pushNotifications.setupFailures.serviceWorkerUnavailable
-      case 'push-unavailable':
-        return language.pushNotifications.setupFailures.pushUnavailable
-      case 'vapid-unavailable':
-        return language.pushNotifications.setupFailures.vapidUnavailable
-      case 'subscription-failed':
-        return language.pushNotifications.setupFailures.subscriptionFailed
-      case 'server-registration-failed':
-        return language.pushNotifications.setupFailures.serverRegistrationFailed
-    }
-  }
 
   function cleanupFailureMessage(step: DisablePushNotificationCleanupStep): string {
     switch (step) {
@@ -68,10 +54,6 @@
         return language.pushNotifications.startupCleanup
       case 'enabling':
         return language.pushNotifications.enabling
-      case 'compensating':
-        return language.pushNotifications.compensating
-      case 'retrying-compensation':
-        return language.pushNotifications.retryingCompensation
       case 'retrying-storage':
         return language.pushNotifications.retryingStorage
       case 'retrying-cleanup':
@@ -99,19 +81,21 @@
 <div class="mt-2">
   <Check
     bind:check={notificationChecked}
+    disabled={!displaySettings}
     name={language.notification}
     onChange={(nextValue) => {
-      if (
-        !nextValue &&
-        $pushNotificationCoordinatorState.setupFailure &&
-        $pushNotificationCoordinatorState.compensation === 'failed'
-      ) {
-        void retryChatCompletionPushNotificationCompensation()
-        return
-      }
       applyServerBackedSetting('notification', nextValue)
-      void reconcileChatCompletionPushNotificationSetting(nextValue)
+      void reconcileChatCompletionPushNotificationSetting(nextValue, { requestPermission: nextValue })
     }} />
+
+  {#if notificationChecked || $pushNotificationWarningDismissed}
+    <div class="mt-2">
+      <Check
+        check={!$pushNotificationWarningDismissed}
+        name={language.pushNotifications.showBannerOnBrowser}
+        onChange={(show) => setPushNotificationWarningDismissed(!show)} />
+    </div>
+  {/if}
 
   {#if $pushNotificationCoordinatorState.phase !== 'idle'}
     <p class="mt-1 text-sm text-textcolor2" role="status" aria-live="polite">
@@ -119,25 +103,7 @@
     </p>
   {/if}
 
-  {#if $pushNotificationCoordinatorState.setupFailure}
-    <div class="mt-2 text-sm text-red-400" role="alert">
-      <p>{enableFailureMessage($pushNotificationCoordinatorState.setupFailure)}</p>
-      {#if $pushNotificationCoordinatorState.compensation === 'accepted'}
-        <p>{language.pushNotifications.compensationAccepted}</p>
-      {:else if $pushNotificationCoordinatorState.compensation === 'queued'}
-        <p>{language.pushNotifications.compensationQueued}</p>
-      {:else if $pushNotificationCoordinatorState.compensation === 'failed'}
-        <p>{language.pushNotifications.compensationFailed}</p>
-        <button
-          type="button"
-          class="mt-1 rounded-md border border-darkborderc bg-darkbutton px-2 py-1 text-textcolor disabled:opacity-60"
-          disabled={$pushNotificationCoordinatorState.phase !== 'idle'}
-          onclick={() => void retryChatCompletionPushNotificationCompensation()}>
-          {language.pushNotifications.retryCompensation}
-        </button>
-      {/if}
-    </div>
-  {/if}
+  <PushNotificationWarning />
 
   {#if $pushNotificationCoordinatorState.cleanup?.status === 'partial' || $pushNotificationCoordinatorState.pendingEndpoints.length > 0 || $pushNotificationCoordinatorState.localInspectionPending || $pushNotificationCoordinatorState.retryStorageError}
     <div class="mt-2 text-sm text-red-400" role="alert">
@@ -172,7 +138,7 @@
     </div>
   {/if}
 
-  {#if $pushNotificationCoordinatorState.operationError}
+  {#if $pushNotificationCoordinatorState.operationError && !$pushNotificationCoordinatorState.desiredEnabled}
     <div class="mt-2 text-sm text-red-400" role="alert">
       <p>{language.pushNotifications.operationFailed}</p>
       <button
@@ -181,7 +147,7 @@
         disabled={$pushNotificationCoordinatorState.phase !== 'idle'}
         onclick={() =>
           void (notificationChecked
-            ? reconcileChatCompletionPushNotificationSetting(true)
+            ? retryChatCompletionPushNotificationSetup()
             : retryChatCompletionPushNotificationCleanup())}>
         {language.pushNotifications.retryOperation}
       </button>

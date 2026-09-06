@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { PromptItem, PromptItemChat } from 'src/ts/process/prompt'
+  import type { PromptItem, PromptItemChat, PromptRole } from 'src/ts/process/prompt'
   import OptionInput from './GUI/OptionInput.svelte'
   import TextAreaInput from './GUI/TextAreaInput.svelte'
   import SelectInput from './GUI/SelectInput.svelte'
@@ -8,7 +8,9 @@
   import CheckInput from './GUI/CheckInput.svelte'
   import { ArrowDown, ArrowUp, XIcon } from '@lucide/svelte'
   import TextInput from './GUI/TextInput.svelte'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
+  import { normalizePromptBlockRoleForType } from 'src/ts/process/promptTemplateNormalization'
+  import { hasDragType, RISU_PROMPT_DRAG_TYPE } from 'src/ts/dragTypes'
 
   interface Props {
     promptItem: PromptItem
@@ -49,6 +51,16 @@
   }: Props = $props()
 
   let interactionsDisabled = $derived(structuralDisabled || readOnly)
+  let promptSettingsOwner = $derived.by(() => {
+    if (
+      settingsResourceState.groupStatuses.prompt !== 'ready' ||
+      settingsResourceState.groupErrors.prompt !== undefined
+    ) {
+      return null
+    }
+    const value = settingsResourceState.value.promptSettings
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null
+  })
 
   let initializedPromptSnapshot = false
   let previousPromptSnapshot = ''
@@ -82,6 +94,12 @@
       currentprompt.rangeEnd = 'end'
     }
     promptItem = currentprompt
+  }
+
+  const hasPromptBlockRole = (item: PromptItem): item is PromptItem & { role2?: PromptRole } => {
+    return (
+      item.type === 'persona' || item.type === 'description' || item.type === 'authornote' || item.type === 'memory'
+    )
   }
 
   function getName(promptItem: PromptItem) {
@@ -148,6 +166,7 @@
   class:opacity-50={isDragging}
   class:scale-95={isDragging}
   ondragover={(e) => {
+    if (!hasDragType(e.dataTransfer.types, RISU_PROMPT_DRAG_TYPE)) return
     e.preventDefault()
     if (isDragging || interactionsDisabled) return
 
@@ -162,6 +181,7 @@
     }
   }}
   ondrop={(e) => {
+    if (!hasDragType(e.dataTransfer.types, RISU_PROMPT_DRAG_TYPE)) return
     e.preventDefault()
     e.stopPropagation()
     if (interactionsDisabled) return
@@ -182,6 +202,7 @@
       onDragStart(promptItem)
       e.dataTransfer.setData('text', 'prompt')
       e.dataTransfer.setData('prompt', JSON.stringify(promptItem))
+      e.dataTransfer.setData(RISU_PROMPT_DRAG_TYPE, 'true')
 
       const dragElement = document.createElement('div')
       dragElement.textContent = getName(promptItem)
@@ -252,6 +273,7 @@
             promptItem.rangeStart = -1000
             promptItem.rangeEnd = 'end'
           }
+          normalizePromptBlockRoleForType(promptItem)
         }}>
         <OptionInput value="plain">{language.formating.plain}</OptionInput>
         <OptionInput value="jailbreak">{language.formating.jailbreak}</OptionInput>
@@ -265,7 +287,7 @@
         <OptionInput value="chatML">{'chatML'}</OptionInput>
         <OptionInput value="cache">{language.cachePoint}</OptionInput>
 
-        {#if getDatabase().promptSettings.customChainOfThought}
+        {#if promptSettingsOwner?.customChainOfThought === true}
           <OptionInput value="cot">{language.cot}</OptionInput>
         {/if}
       </SelectInput>
@@ -297,7 +319,7 @@
         <SelectInput bind:value={promptItem.role} ariaLabel={language.role}>
           <OptionInput value="all">{language.all}</OptionInput>
           <OptionInput value="user">{language.user}</OptionInput>
-          <OptionInput value="bot">{language.character}</OptionInput>
+          <OptionInput value="assistant">{language.character}</OptionInput>
           <OptionInput value="system">{language.systemPrompt}</OptionInput>
         </SelectInput>
       {/if}
@@ -327,7 +349,7 @@
                 }
               }} />
           {/if}
-          {#if getDatabase().promptSettings.sendChatAsSystem}
+          {#if promptSettingsOwner?.sendChatAsSystem === true}
             <CheckInput name={language.chatAsOriginalOnSystem} bind:check={promptItem.chatAsOriginalOnSystem} />
           {/if}
         {/if}
@@ -375,6 +397,21 @@
               }
             }} />
         {/if}
+      {/if}
+      {#if hasPromptBlockRole(promptItem)}
+        <span>{language.role}</span>
+        <SelectInput
+          value={promptItem.role2 ?? 'system'}
+          ariaLabel={language.role}
+          onchange={(event) => {
+            if (hasPromptBlockRole(promptItem)) {
+              promptItem.role2 = event.currentTarget.value as PromptRole
+            }
+          }}>
+          <OptionInput value="user">{language.user}</OptionInput>
+          <OptionInput value="bot">{language.character}</OptionInput>
+          <OptionInput value="system">{language.systemPrompt}</OptionInput>
+        </SelectInput>
       {/if}
     </fieldset>
   {/if}

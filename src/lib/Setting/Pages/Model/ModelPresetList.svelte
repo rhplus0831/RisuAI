@@ -1,16 +1,26 @@
 <script lang="ts">
-  import { ArrowDownIcon, ArrowUpIcon, CopyIcon, FilePlusIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
+  import {
+    ArrowDownIcon,
+    ArrowUpIcon,
+    CheckIcon,
+    CopyIcon,
+    FilePlusIcon,
+    InfoIcon,
+    PencilIcon,
+    PlusIcon,
+    TrashIcon,
+  } from '@lucide/svelte'
+  import { tick } from 'svelte'
   import { language } from 'src/lang'
   import { alertError, alertNormal } from 'src/ts/alert'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import { createModelRoleBindingPresetSnapshot } from 'src/ts/model/modelPresetSnapshots'
   import { normalizeModelRoleProfiles, type ModelRoleProfileBinding } from 'src/ts/model/modelProfileRecords'
-  import { MODEL_ROLES, modelRoleProfileInheritSource, type ModelRole } from 'src/ts/model/modelRoles'
+  import { MODEL_ROLES, modelRoleProfileInheritSource, type ModelRole } from '@risuai/shared-core/model-roles'
   import {
     createModelPreset,
     deleteModelPreset,
-    getDatabase,
     reorderModelPresets,
     selectModelPreset,
     updateModelPreset,
@@ -18,6 +28,9 @@
     type PresetMutationOutcome,
     type PromptPreset,
   } from 'src/ts/storage/database.svelte'
+  import { collectionsResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
+  import type { ModelProfileRecord } from 'src/ts/model/modelProfileRecords'
+  import ModelItemActions from './ModelItemActions.svelte'
 
   interface Props {
     embedded?: boolean
@@ -25,27 +38,44 @@
   }
 
   let { embedded = false, afterApply = () => {} }: Props = $props()
+  const id = $props.id()
+  const actionClass =
+    'flex min-h-11 items-center gap-2 rounded-md px-3 py-2 text-left hover:bg-darkbg disabled:cursor-not-allowed disabled:opacity-50'
 
   let newPresetName = $state('')
+  let createMode = $state<'current' | 'empty' | null>(null)
+  let createNameInput = $state<HTMLInputElement>()
+  let createTrigger: HTMLButtonElement | undefined
+  let renameKey = $state<string | null>(null)
+  let renameDraft = $state('')
+  let renameInput = $state<HTMLInputElement>()
+  let restoreRenameFocus = () => {}
+  let detailsKey = $state<string | null>(null)
   let selectionOperation = 0
   let selectionPendingIndex = $state<number | null>(null)
   let selectionError = $state('')
   let rowMutationOperation = 0
   let rowMutationStates = $state<Record<string, { operation: number; status: 'saving' | 'queued' }>>({})
   let rowMutationErrors = $state<Record<string, string>>({})
-  let latestRowMutationState = $derived(Object.values(rowMutationStates).at(-1))
   let latestRowMutationError = $derived(Object.values(rowMutationErrors).at(-1) ?? '')
+  let createMutation = $derived(rowMutationStates['model:create-current'] ?? rowMutationStates['model:create-empty'])
 
-  let presets = $derived(getDatabase().modelPresets ?? [])
-  let selectedIndex = $derived(getDatabase().modelPresetsId ?? -1)
+  let presets = $derived(readModelPresetOwners(collectionsResourceState.values.modelPresets))
+  let selectedIndex = $derived(selectedOwnerIndex(settingsResourceState.value.modelPresetsId))
+  let profiles = $derived(readModelProfileOwners(settingsResourceState.value.modelProfiles))
   let selectedPromptPreset = $derived.by(() => {
-    const database = getDatabase()
-    return database.promptPresets?.[database.promptPresetsId]
+    const index = selectedOwnerIndex(settingsResourceState.value.promptPresetsId)
+    const promptPresets = collectionsResourceState.values.promptPresets
+    return Array.isArray(promptPresets) ? promptPresets[index] : undefined
   })
   let selectedPromptPresetOverridesRoles = $derived(hasPresetField(selectedPromptPreset, 'modelRoleProfiles'))
 
   function cloneJsonValue<T>(value: T): T {
     return JSON.parse(JSON.stringify(value)) as T
+  }
+
+  function selectedOwnerIndex(value: unknown): number {
+    return Number.isInteger(value) ? (value as number) : -1
   }
 
   function presetName(preset: ModelPreset | undefined, index: number): string {
@@ -56,31 +86,35 @@
     return language.modelProfiles.defaultPresetName(presets.length + 1)
   }
 
-  function consumeNewPresetName(): string {
-    const name = newPresetName.trim() || newPresetFallbackName()
-    newPresetName = ''
-    return name
-  }
-
   function presetMutationKey(preset: ModelPreset | undefined, index: number): string {
     return `model:${preset?.id ?? `index:${index}`}`
   }
 
-  function observePresetRowMutation(key: string, outcome: Promise<PresetMutationOutcome> | undefined): void {
+  function observePresetRowMutation(
+    key: string,
+    outcome: Promise<PresetMutationOutcome> | undefined,
+    onAccepted = () => {},
+  ): void {
     if (!outcome) return
     const operation = ++rowMutationOperation
     rowMutationStates[key] = { operation, status: 'saving' }
     delete rowMutationErrors[key]
     void outcome.then(
-      (result) => settlePresetRowMutation(key, operation, result),
+      (result) => settlePresetRowMutation(key, operation, result, onAccepted),
       () => showPresetRowMutationFailure(key, operation),
     )
   }
 
-  function settlePresetRowMutation(key: string, operation: number, outcome: PresetMutationOutcome): void {
+  function settlePresetRowMutation(
+    key: string,
+    operation: number,
+    outcome: PresetMutationOutcome,
+    onAccepted: () => void,
+  ): void {
     if (rowMutationStates[key]?.operation !== operation) return
     if (outcome.status === 'accepted') {
       delete rowMutationStates[key]
+      onAccepted()
       return
     }
     if (outcome.status === 'failed') {
@@ -93,8 +127,10 @@
     void outcome.settlement.then(
       (status) => {
         if (rowMutationStates[key]?.operation !== operation) return
-        if (status === 'accepted') delete rowMutationStates[key]
-        else showPresetRowMutationFailure(key, operation)
+        if (status === 'accepted') {
+          delete rowMutationStates[key]
+          onAccepted()
+        } else showPresetRowMutationFailure(key, operation)
       },
       () => showPresetRowMutationFailure(key, operation),
     )
@@ -107,23 +143,28 @@
     alertError(language.presetMutationFailed)
   }
 
-  function createPresetFromCurrent(): void {
-    const name = consumeNewPresetName()
-    observePresetRowMutation(
-      'model:create-current',
-      createModelPreset(createModelRoleBindingPresetSnapshot(getDatabase(), name)),
-    )
+  async function beginCreate(mode: 'current' | 'empty', trigger: HTMLButtonElement): Promise<void> {
+    createMode = mode
+    createTrigger = trigger
+    await tick()
+    createNameInput?.focus()
   }
 
-  function createEmptyPreset(): void {
-    const name = consumeNewPresetName()
-    observePresetRowMutation(
-      'model:create-empty',
-      createModelPreset({
-        name,
-        modelRoleProfiles: cloneJsonValue(createEmptyPresetRoleProfiles()),
-      }),
-    )
+  async function cancelCreate(): Promise<void> {
+    createMode = null
+    newPresetName = ''
+    await tick()
+    createTrigger?.focus()
+  }
+
+  function saveNewPreset(): void {
+    if (!createMode || createMutation) return
+    const name = newPresetName.trim() || newPresetFallbackName()
+    const preset =
+      createMode === 'current'
+        ? createModelRoleBindingPresetSnapshot(settingsResourceState.value, name)
+        : { name, modelRoleProfiles: cloneJsonValue(createEmptyPresetRoleProfiles()) }
+    observePresetRowMutation(`model:create-${createMode}`, createModelPreset(preset), cancelCreate)
   }
 
   function createEmptyPresetRoleProfiles() {
@@ -136,12 +177,35 @@
     return bindings
   }
 
-  function renamePreset(index: number, name: string): void {
+  async function beginRename(index: number, close: () => void): Promise<void> {
+    close()
+    renameKey = presetMutationKey(presets[index], index)
+    renameDraft = presetName(presets[index], index)
+    restoreRenameFocus = close
+    await tick()
+    renameInput?.focus()
+    renameInput?.select()
+  }
+
+  async function cancelRename(): Promise<void> {
+    renameKey = null
+    await tick()
+    restoreRenameFocus()
+  }
+
+  function renamePreset(index: number): void {
     const preset = presets[index]
     if (!preset) return
-    const nextName = name.trim() || presetName(preset, index)
-    if ((preset.name ?? '') === nextName) return
-    observePresetRowMutation(presetMutationKey(preset, index), updateModelPreset(index, { name: nextName }))
+    const key = presetMutationKey(preset, index)
+    if (rowMutationStates[key]) return
+    const nextName = renameDraft.trim() || presetName(preset, index)
+    if ((preset.name ?? '') === nextName) {
+      cancelRename()
+      return
+    }
+    observePresetRowMutation(key, updateModelPreset(index, { name: nextName }), () => {
+      if (renameKey === key) cancelRename()
+    })
   }
 
   function duplicatePreset(index: number): void {
@@ -170,7 +234,16 @@
     const operation = ++selectionOperation
     selectionPendingIndex = index
     selectionError = ''
-    const outcome = await selectModelPreset(index)
+    let outcome: PresetMutationOutcome
+    try {
+      outcome = await selectModelPreset(index)
+    } catch {
+      if (operation !== selectionOperation) return
+      selectionPendingIndex = null
+      selectionError = language.presetSelectionFailed
+      alertError(selectionError)
+      return
+    }
     if (operation !== selectionOperation) return
     selectionPendingIndex = null
 
@@ -181,21 +254,6 @@
     }
     if (outcome.status === 'queued') alertNormal(language.presetSelectionQueued)
     afterApply()
-  }
-
-  function isInteractiveKeyboardTarget(target: EventTarget | null): boolean {
-    if (!(target instanceof Element)) return false
-    const interactive = target.closest('input, textarea, select, button, [contenteditable]')
-    if (!interactive) return false
-    if (interactive.matches('input, textarea, select, button')) return true
-    return interactive.getAttribute('contenteditable')?.toLowerCase() !== 'false'
-  }
-
-  function applyPresetFromKeyboard(event: KeyboardEvent, index: number): void {
-    if (event.key !== 'Enter' && event.key !== ' ') return
-    if (isInteractiveKeyboardTarget(event.target)) return
-    event.preventDefault()
-    applyPreset(index)
   }
 
   function movePresetUp(index: number): void {
@@ -216,12 +274,17 @@
     return selectedPromptPreset?.name?.trim() || language.promptPresets
   }
 
-  function profileName(profileId: string): string {
-    return getDatabase().modelProfiles.find((profile) => profile.id === profileId)?.name ?? profileId
+  function presetProfiles(preset: ModelPreset): ModelProfileRecord[] {
+    return hasPresetField(preset, 'modelProfiles') ? readModelProfileOwners(preset.modelProfiles) : profiles
   }
 
-  function bindingLabel(binding: ModelRoleProfileBinding): string {
-    if (binding.mode === 'profile') return profileName(binding.profileId)
+  function bindingLabel(binding: ModelRoleProfileBinding, preset: ModelPreset): string {
+    if (binding.mode === 'profile') {
+      return (
+        presetProfiles(preset).find((profile) => profile.id === binding.profileId)?.name ??
+        language.modelProfiles.modelPresetMissingModel
+      )
+    }
     if (binding.mode === 'inherit') return language.modelProfiles.bindingModes.inherit
     return language.modelProfiles.bindingModes.legacy
   }
@@ -230,7 +293,9 @@
     if (!hasPresetField(preset, 'modelRoleProfiles')) return language.modelProfiles.modelPresetLegacySummary
     const bindings = normalizeModelRoleProfiles(preset.modelRoleProfiles)
     const roles: ModelRole[] = ['chatMain', 'chatAux']
-    return roles.map((role) => `${language.modelRoles.roles[role]}: ${bindingLabel(bindings[role])}`).join(' / ')
+    return roles
+      .map((role) => `${language.modelRoles.roles[role]}: ${bindingLabel(bindings[role], preset)}`)
+      .join(' · ')
   }
 
   function roleBindingSummary(preset: ModelPreset): string {
@@ -245,7 +310,7 @@
     let inheritCount = 0
     let legacyCount = 0
     let missingCount = 0
-    const profileIds = new Set(getDatabase().modelProfiles.map((profile) => profile.id))
+    const profileIds = new Set(presetProfiles(preset).map((profile) => profile.id))
 
     for (const role of MODEL_ROLES) {
       const binding = bindings[role]
@@ -260,6 +325,20 @@
     }
 
     return language.modelProfiles.modelPresetRoleBindingSummary(profileCount, inheritCount, legacyCount, missingCount)
+  }
+
+  function missingProfileIds(preset: ModelPreset): string[] {
+    if (!hasPresetField(preset, 'modelRoleProfiles')) return []
+    const bindings = normalizeModelRoleProfiles(preset.modelRoleProfiles)
+    const profileIds = new Set(presetProfiles(preset).map((profile) => profile.id))
+    return [
+      ...new Set(
+        MODEL_ROLES.flatMap((role) => {
+          const binding = bindings[role]
+          return binding.mode === 'profile' && !profileIds.has(binding.profileId) ? [binding.profileId] : []
+        }),
+      ),
+    ]
   }
 
   function legacyModelFieldCount(preset: ModelPreset): number {
@@ -277,6 +356,22 @@
     if (badges.length === 0) badges.push(language.modelProfiles.modelPresetEmptyBadge)
     return badges
   }
+
+  function readModelPresetOwners(value: unknown): ModelPreset[] {
+    return Array.isArray(value) ? (value as ModelPreset[]) : []
+  }
+
+  function readModelProfileOwners(value: unknown): ModelProfileRecord[] {
+    if (!Array.isArray(value)) return []
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return []
+      const id = (candidate as { id?: unknown }).id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return []
+      ids.add(id)
+    }
+    return value as ModelProfileRecord[]
+  }
 </script>
 
 <section class="flex flex-col gap-4">
@@ -287,24 +382,61 @@
     </div>
   {/if}
 
-  <div class="flex flex-col gap-2 rounded-md border border-darkborderc p-3 md:flex-row md:items-center">
-    <TextInput
-      size="sm"
-      fullwidth
-      bind:value={newPresetName}
-      placeholder={newPresetFallbackName()}
-      className="md:max-w-72" />
-    <Button size="sm" onclick={createPresetFromCurrent}>
+  <div class="flex flex-wrap gap-2">
+    <Button size="sm" disabled={!!createMutation} onclick={(event) => beginCreate('current', event.currentTarget)}>
       <span class="inline-flex items-center gap-2">
         <PlusIcon size={16} />{language.modelProfiles.saveCurrentRolesAsPreset}
       </span>
     </Button>
-    <Button size="sm" styled="outlined" onclick={createEmptyPreset}>
+    <Button
+      size="sm"
+      styled="outlined"
+      disabled={!!createMutation}
+      onclick={(event) => beginCreate('empty', event.currentTarget)}>
       <span class="inline-flex items-center gap-2">
         <FilePlusIcon size={16} />{language.modelProfiles.createEmptyModelPreset}
       </span>
     </Button>
   </div>
+
+  {#if createMode}
+    <form
+      class="flex flex-col gap-2 rounded-md border border-darkborderc p-3"
+      aria-label={createMode === 'current'
+        ? language.modelProfiles.saveCurrentRolesAsPreset
+        : language.modelProfiles.createEmptyModelPreset}
+      onsubmit={(event) => {
+        event.preventDefault()
+        saveNewPreset()
+      }}>
+      <label for={`${id}-create-name`} class="text-sm text-textcolor2">{language.modelProfiles.modelPresetName}</label>
+      <div class="flex flex-wrap items-center gap-2">
+        <TextInput
+          id={`${id}-create-name`}
+          size="sm"
+          bind:inputRef={createNameInput}
+          bind:value={newPresetName}
+          placeholder={newPresetFallbackName()}
+          disabled={!!createMutation}
+          className="min-w-0 flex-1"
+          onkeydown={(event) => {
+            if (event.key === 'Escape' && !createMutation) {
+              event.preventDefault()
+              event.stopPropagation()
+              cancelCreate()
+            }
+          }} />
+        <Button size="sm" disabled={!!createMutation} onclick={saveNewPreset}>{language.save}</Button>
+        <Button size="sm" styled="outlined" disabled={!!createMutation} onclick={cancelCreate}
+          >{language.cancel}</Button>
+      </div>
+      {#if createMutation}
+        <span role="status" class="text-xs text-textcolor2">
+          {createMutation.status === 'queued' ? language.presetMutationQueued : language.presetMutationSaving}
+        </span>
+      {/if}
+    </form>
+  {/if}
 
   {#if selectedPromptPresetOverridesRoles}
     <div class="rounded-md border border-darkborderc p-3 text-sm text-textcolor2">
@@ -317,127 +449,162 @@
       {language.modelProfiles.noModelPresets}
     </div>
   {:else}
-    <div class="overflow-x-auto rounded-md border border-darkborderc">
-      <table class="w-full min-w-[58rem] text-sm">
-        <thead class="bg-darkbg text-left text-xs uppercase text-textcolor2">
-          <tr>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.profileNameColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.chatRolesColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.roleBindingsColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.storedDataColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.actionsColumn}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each presets as preset, index (preset.id ?? index)}
-            <tr
-              class="cursor-pointer border-t border-darkborderc align-top hover:bg-darkbg"
-              class:bg-selected={index === selectedIndex}
-              role="button"
-              tabindex="0"
+    <div class="flex flex-col gap-1.5" role="list">
+      {#each presets as preset, index (preset.id ?? index)}
+        {@const key = presetMutationKey(preset, index)}
+        {@const mutation = rowMutationStates[key]}
+        {@const missingIds = missingProfileIds(preset)}
+        <article
+          role="listitem"
+          data-model-preset-row
+          class="rounded-md border text-sm text-textcolor {index === selectedIndex
+            ? 'border-selected bg-selected/20'
+            : 'border-darkborderc bg-bgcolor'}">
+          <div class="flex min-h-20 items-center gap-1 pr-2">
+            <button
+              type="button"
+              data-model-preset-select
+              class="flex min-h-20 min-w-0 flex-1 items-center gap-3 rounded-md px-3 py-3 text-left hover:bg-selected/10 focus-visible:ring-2 focus-visible:ring-borderc"
+              aria-label={language.modelProfiles.selectModelPreset(presetName(preset, index))}
+              aria-pressed={index === selectedIndex}
               aria-busy={selectionPendingIndex === index ? 'true' : 'false'}
-              aria-disabled={selectionPendingIndex !== null ? 'true' : undefined}
-              onclick={() => applyPreset(index)}
-              onkeydown={(event) => applyPresetFromKeyboard(event, index)}>
-              <td class="px-3 py-3" onclick={(event) => event.stopPropagation()}>
-                <TextInput
-                  size="sm"
-                  value={presetName(preset, index)}
-                  ariaLabel={`${language.modelProfiles.profileNameColumn}: ${presetName(preset, index)}`}
-                  onchange={(event) => renamePreset(index, event.currentTarget.value)}
-                  fullwidth />
-                <span class="mt-1 block text-xs text-textcolor2">{preset.id ?? language.none}</span>
-                {#if rowMutationStates[presetMutationKey(preset, index)]}
-                  <span data-risu-preset-row-mutation-status role="status" class="mt-1 block text-xs text-textcolor2">
-                    {rowMutationStates[presetMutationKey(preset, index)].status === 'queued'
-                      ? language.presetMutationQueued
-                      : language.presetMutationSaving}
-                  </span>
-                {:else if rowMutationErrors[presetMutationKey(preset, index)]}
-                  <span data-risu-preset-row-mutation-status role="alert" class="mt-1 block text-xs text-draculared">
-                    {rowMutationErrors[presetMutationKey(preset, index)]}
-                  </span>
+              disabled={selectionPendingIndex !== null || !!mutation}
+              onclick={() => applyPreset(index)}>
+              <span class="flex min-w-0 flex-1 flex-col gap-1">
+                <span class="font-medium break-words">{presetName(preset, index)}</span>
+                <span class="break-words text-xs text-textcolor2">{chatRoleSummary(preset)}</span>
+                {#if hasPresetField(preset, 'modelProfiles') || hasPresetField(preset, 'modelRuntimeDefaults')}
+                  <span class="text-xs text-textcolor2">{language.modelProfiles.modelPresetSettingsNotice}</span>
                 {/if}
-              </td>
-              <td class="px-3 py-3">{chatRoleSummary(preset)}</td>
-              <td class="px-3 py-3 text-textcolor2">{roleBindingSummary(preset)}</td>
-              <td class="px-3 py-3">
-                <div class="flex flex-wrap gap-1">
-                  {#each presetBadges(preset) as badge}
-                    <span class="rounded-sm border border-darkborderc px-2 py-1 text-xs text-textcolor2">{badge}</span>
-                  {/each}
-                </div>
-              </td>
-              <td class="px-3 py-3">
-                <div class="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    styled="outlined"
-                    onclick={(event) => {
+                {#if missingIds.length > 0}
+                  <span class="text-xs text-draculared"
+                    >{language.modelProfiles.modelPresetMissingModels(missingIds.length)}</span>
+                {/if}
+              </span>
+              {#if index === selectedIndex}
+                <span class="inline-flex shrink-0 items-center gap-1 text-xs">
+                  <CheckIcon size={16} aria-hidden="true" />
+                  <span class="hidden sm:inline">{language.modelProfiles.modelPresetSelected}</span>
+                </span>
+              {/if}
+            </button>
+            <ModelItemActions
+              fixed
+              label={language.modelProfiles.itemActions(presetName(preset, index))}
+              disabled={selectionPendingIndex !== null || !!mutation}>
+              {#snippet children(close)}
+                <button type="button" class={actionClass} onclick={() => beginRename(index, close)}>
+                  <PencilIcon size={14} />{language.modelProfiles.renameModelPreset}
+                </button>
+                <button
+                  type="button"
+                  class={actionClass}
+                  onclick={() => {
+                    close()
+                    duplicatePreset(index)
+                  }}><CopyIcon size={14} />{language.modelProfiles.duplicate}</button>
+                <button
+                  type="button"
+                  class={actionClass}
+                  disabled={index === 0}
+                  onclick={() => {
+                    close()
+                    movePresetUp(index)
+                  }}><ArrowUpIcon size={14} />{language.modelProfiles.moveUp}</button>
+                <button
+                  type="button"
+                  class={actionClass}
+                  disabled={index >= presets.length - 1}
+                  onclick={() => {
+                    close()
+                    movePresetDown(index)
+                  }}><ArrowDownIcon size={14} />{language.modelProfiles.moveDown}</button>
+                <button
+                  type="button"
+                  class={actionClass}
+                  aria-expanded={detailsKey === key}
+                  aria-controls={`${id}-details-${index}`}
+                  onclick={() => {
+                    close()
+                    detailsKey = detailsKey === key ? null : key
+                  }}><InfoIcon size={14} />{language.modelProfiles.modelPresetDetails}</button>
+                <button
+                  type="button"
+                  class={`${actionClass} border-t border-darkborderc text-draculared`}
+                  disabled={presets.length <= 1}
+                  onclick={() => {
+                    close()
+                    removePreset(index)
+                  }}><TrashIcon size={14} />{language.modelProfiles.delete}</button>
+              {/snippet}
+            </ModelItemActions>
+          </div>
+          {#if mutation}
+            <span data-risu-preset-row-mutation-status role="status" class="block px-3 pb-3 text-xs text-textcolor2">
+              {mutation.status === 'queued' ? language.presetMutationQueued : language.presetMutationSaving}
+            </span>
+          {/if}
+          {#if rowMutationErrors[key]}
+            <span data-risu-preset-row-mutation-status role="alert" class="block px-3 pb-3 text-xs text-draculared">
+              {rowMutationErrors[key]}
+            </span>
+          {/if}
+          {#if renameKey === key}
+            <form
+              class="flex flex-col gap-2 border-t border-darkborderc p-3"
+              aria-label={language.modelProfiles.renameModelPreset}
+              onsubmit={(event) => {
+                event.preventDefault()
+                renamePreset(index)
+              }}>
+              <label for={`${id}-rename-name`} class="text-xs text-textcolor2"
+                >{language.modelProfiles.modelPresetName}</label>
+              <div class="flex flex-wrap items-center gap-2">
+                <TextInput
+                  id={`${id}-rename-name`}
+                  size="sm"
+                  bind:inputRef={renameInput}
+                  bind:value={renameDraft}
+                  disabled={!!mutation}
+                  className="min-w-0 flex-1"
+                  onkeydown={(event) => {
+                    if (event.key === 'Escape' && !mutation) {
+                      event.preventDefault()
                       event.stopPropagation()
-                      duplicatePreset(index)
-                    }}>
-                    <span class="inline-flex items-center gap-1">
-                      <CopyIcon size={14} />{language.modelProfiles.duplicate}
-                    </span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    styled="outlined"
-                    disabled={index === 0}
-                    onclick={(event) => {
-                      event.stopPropagation()
-                      movePresetUp(index)
-                    }}>
-                    <span class="inline-flex items-center gap-1">
-                      <ArrowUpIcon size={14} />{language.modelProfiles.moveUp}
-                    </span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    styled="outlined"
-                    disabled={index >= presets.length - 1}
-                    onclick={(event) => {
-                      event.stopPropagation()
-                      movePresetDown(index)
-                    }}>
-                    <span class="inline-flex items-center gap-1">
-                      <ArrowDownIcon size={14} />{language.modelProfiles.moveDown}
-                    </span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    styled="danger"
-                    disabled={presets.length <= 1}
-                    onclick={(event) => {
-                      event.stopPropagation()
-                      removePreset(index)
-                    }}>
-                    <span class="inline-flex items-center gap-1">
-                      <TrashIcon size={14} />{language.modelProfiles.delete}
-                    </span>
-                  </Button>
-                </div>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+                      cancelRename()
+                    }
+                  }} />
+                <Button size="sm" disabled={!!mutation} onclick={() => renamePreset(index)}>{language.save}</Button>
+                <Button size="sm" styled="outlined" disabled={!!mutation} onclick={cancelRename}
+                  >{language.cancel}</Button>
+              </div>
+            </form>
+          {/if}
+          {#if detailsKey === key}
+            <dl
+              id={`${id}-details-${index}`}
+              class="grid gap-1 border-t border-darkborderc p-3 text-xs sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-x-4 sm:gap-y-2">
+              <dt class="text-textcolor2">{language.modelProfiles.modelPresetId}</dt>
+              <dd class="break-all">{preset.id ?? language.none}</dd>
+              <dt class="text-textcolor2">{language.modelProfiles.roleBindingsColumn}</dt>
+              <dd class="break-words">{roleBindingSummary(preset)}</dd>
+              <dt class="text-textcolor2">{language.modelProfiles.storedDataColumn}</dt>
+              <dd class="break-words">{presetBadges(preset).join(' · ')}</dd>
+              {#if missingIds.length > 0}
+                <dt class="text-textcolor2">{language.modelProfiles.modelPresetMissingModel}</dt>
+                <dd class="break-all">{missingIds.join(', ')}</dd>
+              {/if}
+            </dl>
+          {/if}
+        </article>
+      {/each}
     </div>
   {/if}
 
-  {#if selectionPendingIndex !== null}
-    <span data-risu-preset-selection-status role="status" class="text-sm text-textcolor2">
-      {language.presetSelectionSaving}
-    </span>
-  {:else if selectionError}
+  {#if selectionError}
     <span data-risu-preset-selection-status role="alert" class="text-sm text-draculared">{selectionError}</span>
   {/if}
-  {#if latestRowMutationState}
-    <span data-risu-preset-mutation-status role="status" class="text-sm text-textcolor2">
-      {latestRowMutationState.status === 'queued' ? language.presetMutationQueued : language.presetMutationSaving}
-    </span>
-  {:else if latestRowMutationError}
+  {#if latestRowMutationError}
     <span data-risu-preset-mutation-status role="alert" class="text-sm text-draculared">
       {latestRowMutationError}
     </span>

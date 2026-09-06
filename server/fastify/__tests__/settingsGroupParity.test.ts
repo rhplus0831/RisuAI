@@ -1,11 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
-import { SERVER_SETTINGS_KEYS_BY_GROUP } from '../../../src/ts/server/settingsGroups.js'
+import { SERVER_SETTINGS_KEYS_BY_GROUP } from '@risuai/shared-core/settings-groups'
 import { READABLE_SETTINGS_GROUPS, SETTINGS_GROUP_KEYS, SETTINGS_GROUPS } from '../src/routes/commands.js'
-import { SERVER_RAW_TRANSLATOR_TYPES } from '../src/translation/serverAutoTranslationEligibility.js'
 
 describe('settings group parity', () => {
+  it('lets the client accept every key returned by a readable settings group', () => {
+    for (const group of READABLE_SETTINGS_GROUPS) {
+      const endpointKeys = [
+        ...SETTINGS_GROUP_KEYS[group].filter((key) => key !== 'hypaV3Presets'),
+        ...(group === 'language' ? ['translatorPresetId'] : []),
+      ]
+
+      for (const key of endpointKeys) {
+        expect(SERVER_SETTINGS_KEYS_BY_GROUP[group], `${group} response key ${key}`).toContain(key)
+      }
+    }
+  })
+
   it('assigns every generically writable setting to exactly one canonical group', () => {
     const owners = new Map<string, string[]>()
     for (const group of SETTINGS_GROUPS) {
@@ -22,16 +32,22 @@ describe('settings group parity', () => {
     ).toEqual([])
   })
 
-  it('keeps the dedicated Agent Preset projection readable but not generically writable', () => {
+  it('keeps the dedicated Agent and Agent Preset projection readable but not generically writable', () => {
     expect(READABLE_SETTINGS_GROUPS).toContain('agents')
     expect(SETTINGS_GROUPS).not.toContain('agents')
-    expect(SETTINGS_GROUP_KEYS.agents).toEqual(['agentPresets', 'agentPresetDefaultId'])
+    expect(SETTINGS_GROUP_KEYS.agents).toEqual(['agents', 'agentPresets', 'agentPresetDefaultId'])
     const clientGroups = SERVER_SETTINGS_KEYS_BY_GROUP as Record<string, string[]>
     expect(clientGroups.agents).toEqual([...SETTINGS_GROUP_KEYS.agents])
   })
 
   it('keeps the model profile projection exact, read-only, and provider-write compatible', () => {
-    const modelProfileSettingsKeys = ['modelProfiles', 'modelRoleProfiles', 'modelRuntimeDefaults']
+    const modelProfileSettingsKeys = [
+      'providerCredentials',
+      'modelProfiles',
+      'modelProfileOrder',
+      'modelRoleProfiles',
+      'modelRuntimeDefaults',
+    ]
     expect(READABLE_SETTINGS_GROUPS).toContain('models')
     expect(SETTINGS_GROUPS).not.toContain('models')
     expect(SETTINGS_GROUP_KEYS.models).toEqual(modelProfileSettingsKeys)
@@ -44,79 +60,42 @@ describe('settings group parity', () => {
     }
   })
 
-  it('keeps Input Hooks in the advanced settings projection', () => {
-    expect(SETTINGS_GROUP_KEYS.advanced).toContain('inputHooks')
-    expect(SERVER_SETTINGS_KEYS_BY_GROUP.advanced).toContain('inputHooks')
-  })
+  it('keeps named settings in their canonical server and client projections', () => {
+    const expectedSettings = [
+      ['advanced', 'inputHooks'],
+      ['providers', 'openAIFlexProcessing'],
+      ['display', 'chatScreenWidth'],
+      ['display', 'customColorScheme'],
+      ['display', 'chatLoadInitialPages'],
+      ['display', 'chatLoadAdditionalPages'],
+      ['display', 'autoTranslateNotificationDeferCapSeconds'],
+      ['display', 'paragraphBreakBySentences'],
+      ['display', 'paragraphBreakSentenceCount'],
+      ['memory', 'bardWiki'],
+    ] as const
 
-  it('keeps chat screen width in the display settings projection', () => {
-    expect(SETTINGS_GROUP_KEYS.display).toContain('chatScreenWidth')
-    expect(SERVER_SETTINGS_KEYS_BY_GROUP.display).toContain('chatScreenWidth')
-  })
-
-  it('keeps the translation-notification defer cap in the display settings projection', () => {
-    expect(SETTINGS_GROUP_KEYS.display).toContain('autoTranslateNotificationDeferCapSeconds')
-    expect(SERVER_SETTINGS_KEYS_BY_GROUP.display).toContain('autoTranslateNotificationDeferCapSeconds')
-  })
-
-  it('keeps sentence paragraph preferences in the display settings projection', () => {
-    for (const key of ['paragraphBreakBySentences', 'paragraphBreakSentenceCount']) {
-      expect(SETTINGS_GROUP_KEYS.display).toContain(key)
-      expect(SERVER_SETTINGS_KEYS_BY_GROUP.display).toContain(key)
+    for (const [group, key] of expectedSettings) {
+      expect(SETTINGS_GROUP_KEYS[group], `server projection for ${key}`).toContain(key)
+      expect(SERVER_SETTINGS_KEYS_BY_GROUP[group], `client projection for ${key}`).toContain(key)
     }
   })
 
-  it('documents server automatic-translation parity with the Chat.svelte guards', () => {
-    const chatSource = readFileSync(path.join(process.cwd(), 'src/lib/ChatScreens/Chat.svelte'), 'utf8')
+  it('keeps retired settings out of both canonical projections', () => {
+    const retiredSettings = [
+      ['providers', 'claudeBatching'],
+      ['providers', 'claudeRetrivalCaching'],
+      ['advanced', 'forceProxyAsOpenAI'],
+      ['memory', 'removePunctuationHypa'],
+      ['runtime', 'antiServerOverloads'],
+      ['runtime', 'localNetworkMode'],
+      ['runtime', 'localNetworkTimeoutSec'],
+      ['runtime', 'googleClaudeTokenizing'],
+      ['language', 'autoTranslate'],
+    ] as const
 
-    expect(chatSource).toContain('chat?.autoTranslate === true')
-    expect(chatSource).toContain('message.trim().length === 0')
-    expect(chatSource).toContain("getDatabase().translator !== ''")
-    for (const translatorType of SERVER_RAW_TRANSLATOR_TYPES) {
-      expect(chatSource).toContain(`getDatabase().translatorType === '${translatorType}'`)
+    for (const [group, key] of retiredSettings) {
+      expect(SETTINGS_GROUP_KEYS[group], `server projection for retired ${key}`).not.toContain(key)
+      expect(SERVER_SETTINGS_KEYS_BY_GROUP[group], `client projection for retired ${key}`).not.toContain(key)
     }
-    expect(chatSource).toContain("getDatabase().autoTranslateCachedOnly && getDatabase().translatorType === 'llm'")
-  })
-
-  it('does not accept the retired Claude batching setting', () => {
-    expect(SETTINGS_GROUP_KEYS.providers).not.toContain('claudeBatching')
-    expect(SERVER_SETTINGS_KEYS_BY_GROUP.providers).not.toContain('claudeBatching')
-  })
-
-  it('does not accept the retired Claude cache-retrieval setting', () => {
-    expect(SETTINGS_GROUP_KEYS.providers).not.toContain('claudeRetrivalCaching')
-    expect(SERVER_SETTINGS_KEYS_BY_GROUP.providers).not.toContain('claudeRetrivalCaching')
-  })
-
-  it('does not accept the retired force-proxy-format setting', () => {
-    expect(SETTINGS_GROUP_KEYS.advanced).not.toContain('forceProxyAsOpenAI')
-    expect(SERVER_SETTINGS_KEYS_BY_GROUP.advanced).not.toContain('forceProxyAsOpenAI')
-  })
-
-  it('does not accept the retired Hypa punctuation setting', () => {
-    expect(SETTINGS_GROUP_KEYS.memory).not.toContain('removePunctuationHypa')
-    expect(SERVER_SETTINGS_KEYS_BY_GROUP.memory).not.toContain('removePunctuationHypa')
-  })
-
-  it('does not accept the retired overload retry setting', () => {
-    expect(SETTINGS_GROUP_KEYS.runtime).not.toContain('antiServerOverloads')
-    expect(SERVER_SETTINGS_KEYS_BY_GROUP.runtime).not.toContain('antiServerOverloads')
-  })
-
-  it('does not accept the retired local-network routing settings', () => {
-    expect(SETTINGS_GROUP_KEYS.runtime).not.toContain('localNetworkMode')
-    expect(SETTINGS_GROUP_KEYS.runtime).not.toContain('localNetworkTimeoutSec')
-    expect(SERVER_SETTINGS_KEYS_BY_GROUP.runtime).not.toContain('localNetworkMode')
-    expect(SERVER_SETTINGS_KEYS_BY_GROUP.runtime).not.toContain('localNetworkTimeoutSec')
-  })
-
-  it('does not accept the retired Google Cloud tokenizer setting', () => {
-    expect(SETTINGS_GROUP_KEYS.runtime).not.toContain('googleClaudeTokenizing')
-    expect(SERVER_SETTINGS_KEYS_BY_GROUP.runtime).not.toContain('googleClaudeTokenizing')
-  })
-
-  it('does not expose the retired global auto-translate setting', () => {
-    expect(SETTINGS_GROUP_KEYS.language).not.toContain('autoTranslate')
-    expect(SERVER_SETTINGS_KEYS_BY_GROUP.language).not.toContain('autoTranslate')
   })
 })

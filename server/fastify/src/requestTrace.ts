@@ -16,7 +16,22 @@ const INLINE_BODY_MAX_BYTES = 4 * 1024
 const GZIP_BODY_PREVIEW_MAX_BYTES = 4 * 1024
 const TRACE_BODY_MAX_GZIP_BYTES = 10 * 1024 * 1024
 const TRACE_ENTRY_LIMIT = 5_000
+const STARTUP_TELEMETRY_ROUTE = '/api/v1/telemetry/startup'
 const gzipAsync = promisify(gzip)
+const requestTraceUids = new WeakMap<FastifyRequest, string>()
+
+export function readRequestTraceUid(request: FastifyRequest): string | undefined {
+  return requestTraceUids.get(request)
+}
+
+export function ensureRequestTraceUid(request: FastifyRequest, reply: FastifyReply): string {
+  const uid = requestTraceUids.get(request) ?? generateRequestUid()
+  requestTraceUids.set(request, uid)
+  request.headers[REQUEST_UID_HEADER.toLowerCase()] = uid
+  reply.header(REQUEST_UID_HEADER, uid)
+  reply.raw.setHeader(REQUEST_UID_HEADER, uid)
+  return uid
+}
 
 interface RegisterRequestTraceOptions {
   dataDir: string
@@ -170,15 +185,11 @@ export function registerRequestTrace(app: FastifyInstance, opts: RegisterRequest
 
   app.addHook('onRequest', async (request, reply) => {
     const state: RequestTraceState = {
-      uid: generateRequestUid(),
+      uid: ensureRequestTraceUid(request, reply),
       startedAtMs: performance.now(),
       logApiRequest: isApiRequest(request.raw.url ?? request.url),
     }
     traceStates.set(request, state)
-
-    request.headers[REQUEST_UID_HEADER.toLowerCase()] = state.uid
-    reply.header(REQUEST_UID_HEADER, state.uid)
-    reply.raw.setHeader(REQUEST_UID_HEADER, state.uid)
     installWriteHeadProbe(reply.raw, () => markSendStarted(state))
   })
 
@@ -323,6 +334,14 @@ function serializeHeaders(headers: HeaderRecord): string {
 function captureRequestBodySource(request: FastifyRequest): PendingTraceBody | undefined {
   const contentType = normalizeContentType(readHeaderString(request.headers['content-type']))
   const contentLength = readContentLength(request.headers['content-length'])
+
+  if (request.routeOptions.url === STARTUP_TELEMETRY_ROUTE) {
+    return {
+      contentType,
+      contentLength,
+      omittedReason: 'telemetry-metadata',
+    }
+  }
 
   if (isMultipartContentType(contentType)) {
     return {

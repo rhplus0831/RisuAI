@@ -1,10 +1,8 @@
 import { createHash } from 'node:crypto'
-import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
-import type { RisuModule } from '../../../../src/ts/process/modules'
-import type { additonalSysPrompt, triggerCondition, triggerscript } from '../../../../src/ts/process/triggers'
-import { parseKeyValue } from '../../../../src/ts/util/parseKeyValue'
+import type { FastifyChat as Chat, FastifyCharacter as character, FastifyDatabase as Database } from './serverTypes.js'
 import { emitProtocolMetric } from '../protocolMetrics.js'
 import { getActiveModules, getModuleTriggers } from './modules.js'
+import type { ServerModule as RisuModule } from './moduleDescriptors.js'
 import {
   compileBoundedRegex,
   compileBoundedRegexWithCompatibility,
@@ -12,11 +10,15 @@ import {
   testBoundedRegex,
   testBoundedRegexWithCompatibility,
 } from './boundedRegex.js'
-import { encodingForModel, tokenize } from './tokens.js'
+import { tokenize } from './tokens.js'
+import { ensureTokenizerLoadedForDb, tokenizerEncodingFromDb } from './tokenizerConfig.js'
 import { createTriggerVarEngine, type TriggerVarEngine } from './triggerVars.js'
+import { getChatDefaultVariables } from './chatVarDefaults.js'
 import { applyV2DataEffectAsync } from './triggerDataEffects.js'
+import { isServerUnsupportedTriggerEffectType } from './triggerCompatibility.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { runServerLua, throwServerLuaFailure } from './luaRuntime.js'
+import { resolvePromptModelId } from './promptScope.js'
 import {
   attachTriggerSource,
   getTriggerSource,
@@ -33,6 +35,11 @@ import {
   invalidateTriggerTranscriptCache,
   type TriggerRunCache,
 } from './triggerRunCache.js'
+import type {
+  ServerAdditionalSystemPrompt as additonalSysPrompt,
+  ServerTriggerCondition as triggerCondition,
+  ServerTriggerScript as triggerscript,
+} from './triggerDescriptors.js'
 
 /**
  * Trigger model + runner shell, ported from the Svelte-bound `runTrigger` in
@@ -47,7 +54,7 @@ import {
  * The V2 effect loop is index-based so control flow can advance / rewind
  * `index`. Ported arms: `v2Header` / `v2Comment` /
  * `v2ConsoleLog` (no-ops), `v2SetVar` (adds `%=`), `v2DeclareLocalVar`,
- * `v2If` / `v2IfAdvanced` (incl. the `∈` / `∋` / `∌` / `≒` / `≡`
+ * `v2If` / `v2IfAdvanced` (incl. the `∈` / `∉` / `∋` / `∌` / `≒` / `≡`
  * operators with fail-skip to `v2EndIndent` / `v2Else`), `v2Else`,
  * `v2EndIndent` (loop-back when `endOfLoop`, `clearLocalVarsAtIndent`,
  * the `loopTimes > 100` lag guard), `v2Loop` / `v2LoopNTimes`,
@@ -111,7 +118,7 @@ export interface TriggerLuaRunResult {
  * seams used by condition evaluation and effect handlers.
  */
 export interface TriggerRunContext {
-  modules: RisuModule[]
+  modules: ReturnType<typeof getActiveModules>
   model?: string | null
   database: Database
   /** Index into `database.characters`; the scope `setVar` persists into. */
@@ -131,6 +138,12 @@ export interface TriggerRunContext {
    * before. See the `case 'triggerlua'` arm in {@link runTrigger}.
    */
   runLua?: (args: TriggerLuaRunArgs) => Promise<TriggerLuaRunResult>
+  /** Shared per-generation collector; a set deduplicates recursive/in-loop effects. */
+  unsupportedEffectTypes?: Set<string>
+  /** Browser values reported with the generation request for CBS in trigger fields. */
+  clientContext?: ExpandContext['clientContext']
+  /** Shared per-generation collector for unavailable CBS in trigger fields. */
+  cbsCallbackDiagnostics?: ExpandContext['cbsCallbackDiagnostics']
 }
 
 /**
@@ -170,6 +183,8 @@ export interface TriggerRunResult {
   displayData: string | undefined
   tempVars: Record<string, string> | undefined
   varChanged: boolean
+  /** Retained legacy whole-trigger guard; callers persist prior var writes but discard transient trigger output. */
+  aborted?: true
 }
 
 /**
@@ -343,6 +358,7 @@ const knownNonMessageMutatingEffectTypes = new Set<string>([
   'v2Calculate',
   'v2Tokenize',
   'v2RegexTest',
+  'v2ExtractRegex',
   'v2QuickSearchChat',
   'v2GetDisplayState',
   'v2SetDisplayState',
@@ -537,7 +553,7 @@ function chargeTriggerLoopBack(ctx: TriggerRunContext, budget: TriggerExecutionB
  * never mutated across runs. `getModuleTriggers` does the same for module
  * triggers; both server paths also attach source metadata for diagnostics.
  */
-export function collectTriggers(char: character, modules: RisuModule[]): triggerscript[] {
+export function collectTriggers(char: character, modules: ReturnType<typeof getActiveModules>): triggerscript[] {
   const characterLowLevelAccess = char.lowLevelAccess ?? false
   const own: triggerscript[] = (char.triggerscript ?? []).map((v, index) =>
     attachTriggerSource(
@@ -684,7 +700,7 @@ export function matchesTrigger(trigger: triggerscript, mode: TriggerMode, manual
  * `runTrigger`), keeping effect-free condition checks side-effect-free.
  */
 export function evaluateConditions(
-  conditions: triggerCondition[],
+  conditions: readonly triggerCondition[],
   engine: TriggerVarEngine,
   chat: Chat,
   expand: (text: string) => string,
@@ -780,7 +796,7 @@ function stageForTriggerMode(mode: TriggerMode) {
 }
 
 async function evaluateConditionsAsync(
-  conditions: triggerCondition[],
+  conditions: readonly triggerCondition[],
   engine: TriggerVarEngine,
   chat: Chat,
   expand: (text: string) => string,
@@ -910,6 +926,7 @@ export async function runTrigger(
   if (triggers.length === 0) {
     return null
   }
+  await ensureTokenizerLoadedForDb(ctx.database)
   const triggerCache = arg.triggerCache ?? createTriggerRunCache()
   const needsPrivateTranscript = !arg.displayMode && selectedTriggersMayMutateMessages(selected, mode)
   const workingChar = arg.displayMode ? char : cloneTriggerCharacterEnvelope(char)
@@ -921,9 +938,7 @@ export async function runTrigger(
     ? sourceChat
     : cloneTriggerChatForRun(sourceChat, mode, needsPrivateTranscript, selected.length > 0)
 
-  const defaultVariables = parseKeyValue(workingChar.defaultVariables ?? '').concat(
-    parseKeyValue(ctx.database.templateDefaultVariables ?? ''),
-  )
+  const defaultVariables = getChatDefaultVariables(workingChar, ctx.database)
   const engine = createTriggerVarEngine({
     chat,
     database: ctx.database,
@@ -940,6 +955,8 @@ export async function runTrigger(
       chatPage: ctx.chatPage,
       chara: workingChar,
       runVar: false,
+      clientContext: ctx.clientContext,
+      cbsCallbackDiagnostics: ctx.cbsCallbackDiagnostics,
     }).text
 
   let recursionVarChanged = false
@@ -949,11 +966,11 @@ export async function runTrigger(
   // `arg.displayData` in place. The result surfaces `displayState.data`.
   const displayState = { data: arg.displayData }
 
-  const buildResult = (): TriggerRunResult => {
+  const buildResult = (aborted = false): TriggerRunResult => {
     // Terminal additional-system-prompt token accounting
     // (`triggers.ts`). Populated by `systemprompt` effects.
     let tokens = 0
-    const encoding = encodingForModel(ctx.model)
+    const encoding = tokenizerEncodingFromDb(ctx.database)
     if (additonalSysPrompt.start) tokens += tokenize(additonalSysPrompt.start, encoding)
     if (additonalSysPrompt.historyend) tokens += tokenize(additonalSysPrompt.historyend, encoding)
     if (additonalSysPrompt.promptend) tokens += tokenize(additonalSysPrompt.promptend, encoding)
@@ -967,6 +984,7 @@ export async function runTrigger(
       displayData: displayState.data,
       tempVars: arg.tempVars,
       varChanged: engine.varChanged || recursionVarChanged,
+      ...(aborted ? { aborted: true as const } : {}),
     }
   }
 
@@ -1099,11 +1117,16 @@ export async function runTrigger(
               triggerCache,
             })
             if (r) {
-              additonalSysPrompt = r.additonalSysPrompt
-              chat = r.chat
-              engine.setChat(chat)
-              stopSending = r.stopSending
               recursionVarChanged ||= r.varChanged
+              if (r.aborted) {
+                chat.scriptstate = r.chat.scriptstate
+                engine.setChat(chat)
+              } else {
+                additonalSysPrompt = r.additonalSysPrompt
+                chat = r.chat
+                engine.setChat(chat)
+                stopSending = r.stopSending
+              }
             }
             if (shouldStopTriggerExecution(ctx, budget, 'after runtrigger')) {
               return buildResult()
@@ -1199,6 +1222,13 @@ export async function runTrigger(
                 pass = JSON.parse(targetValue).includes(sourceValue)
               } catch {
                 pass = false
+              }
+              break
+            case '∉':
+              try {
+                pass = !JSON.parse(targetValue).includes(sourceValue)
+              } catch {
+                pass = true
               }
               break
             case '∋':
@@ -1334,11 +1364,16 @@ export async function runTrigger(
               triggerCache,
             })
             if (r) {
-              additonalSysPrompt = r.additonalSysPrompt
-              chat = r.chat
-              engine.setChat(chat)
-              stopSending = r.stopSending
               recursionVarChanged ||= r.varChanged
+              if (r.aborted) {
+                chat.scriptstate = r.chat.scriptstate
+                engine.setChat(chat)
+              } else {
+                additonalSysPrompt = r.additonalSysPrompt
+                chat = r.chat
+                engine.setChat(chat)
+                stopSending = r.stopSending
+              }
             }
             if (shouldStopTriggerExecution(ctx, budget, 'after v2RunTrigger')) {
               return buildResult()
@@ -1462,22 +1497,31 @@ export async function runTrigger(
         default: {
           // Safe data helpers (message readers, string / array / dict / math,
           // random, tokenize, regex, quick chat search) plus request/display
-          // state arms. Returns false for unsupported arms (`command`; the
+          // state arms. Returns `abort-run` for retained whole-trigger guards
+          // (malformed literal-container names or state effects outside display mode),
+          // and false for unsupported arms (`command`; the
           // `lowLevelAccess`-gated alert/LLM/image/similarity/regex; the
           // persistent lorebook / character / persona / note arms;
           // `v2UpdateGUI` / `v2UpdateChatAt` / `v2Wait`; `triggercode`),
           // which fall through as no-ops.
-          await applyV2DataEffectAsync(effect, {
+          const handled = await applyV2DataEffectAsync(effect, {
             engine,
             expand,
             chat,
             char: workingChar,
             model: ctx.model,
+            tokenizerEncoding: tokenizerEncodingFromDb(ctx.database),
             displayMode: arg.displayMode,
             displayState,
             triggerCache,
             regexCompatibility: complexRegexCompatibilityOptions(ctx.database, stageForTriggerMode(mode)),
           })
+          if (handled === 'abort-run') {
+            return buildResult(true)
+          }
+          if (!handled && isServerUnsupportedTriggerEffectType(effect.type)) {
+            ctx.unsupportedEffectTypes?.add(effect.type)
+          }
           break
         }
       }
@@ -1508,13 +1552,17 @@ export async function runStartTrigger(
   const selectedCharID = ctx.selectedCharID ?? (typeof currentCharIndex === 'number' ? currentCharIndex : 0)
   const chatPage = ctx.chatPage ?? char.chatPage ?? 0
   const modules = getActiveModules(db, char, chat)
+  const model = resolvePromptModelId(db, 'chatMain')
   const runCtx: TriggerRunContext = {
     modules,
-    model: db.aiModel,
+    model,
     database: db,
     selectedCharID,
     chatPage,
     signal: ctx.signal,
+    unsupportedEffectTypes: ctx.unsupportedTriggerEffectTypes,
+    clientContext: ctx.clientContext,
+    cbsCallbackDiagnostics: ctx.cbsCallbackDiagnostics,
     runLua: async ({ code, mode, lowLevelAccess, chat: luaChat, varEngine, source }) => {
       const result = await runServerLua(
         { code, mode, lowLevelAccess, source },
@@ -1525,9 +1573,11 @@ export async function runStartTrigger(
           chatPage,
           varEngine,
           char,
-          model: db.aiModel,
+          model,
           signal: ctx.signal,
           execBudget: ctx.luaExecBudget,
+          ...(ctx.requestHistoryDb ? { requestHistoryDb: ctx.requestHistoryDb } : {}),
+          ...(ctx.assetDataDir ? { assetDataDir: ctx.assetDataDir } : {}),
         },
       )
       throwServerLuaFailure(result, `Lua ${mode} trigger failed`)

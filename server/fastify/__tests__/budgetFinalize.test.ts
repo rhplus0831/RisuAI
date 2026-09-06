@@ -1,15 +1,29 @@
 import { describe, expect, it } from 'vitest'
-import type { Database } from '../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
+import type { FastifyDatabase as Database } from '../src/prompt/serverTypes.js'
 import { finalizeRequestBudget } from '../src/prompt/budgetFinalize.js'
+import { ensureTokenizerLoadedForDb } from '../src/prompt/tokenizerConfig.js'
+import type { PromptMessage } from '../src/prompt/promptMessage.js'
 
 function makeDb(aiModel = 'gpt4'): Database {
-  return { aiModel } as unknown as Database
+  return {
+    aiModel,
+    modelProfiles: [
+      {
+        id: 'budget-test-profile',
+        name: 'Budget Test Profile',
+        providerOptions: { credentialId: 'budget-test-credential' },
+        modelId: aiModel,
+      },
+    ],
+    modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'budget-test-profile' } },
+    providerCredentials: [{ id: 'budget-test-credential', name: 'Budget Test', type: 'apiKey', apiKey: 'test-key' }],
+    modelRuntimeDefaults: {},
+  } as unknown as Database
 }
 
-describe('Phase 7-8c finalizeRequestBudget — under budget', () => {
+describe('finalizeRequestBudget — under budget', () => {
   it('passes through and returns maxResponse as outputTokens', () => {
-    const formated: OpenAIChat[] = [
+    const formated: PromptMessage[] = [
       { role: 'system', content: 'hello' },
       { role: 'user', content: 'world!' },
     ]
@@ -43,9 +57,9 @@ describe('Phase 7-8c finalizeRequestBudget — under budget', () => {
   })
 })
 
-describe('Phase 7-8c finalizeRequestBudget — outputTokens clamp', () => {
+describe('finalizeRequestBudget — outputTokens clamp', () => {
   it('clamps outputTokens to the remaining headroom', () => {
-    const formated: OpenAIChat[] = [{ role: 'user', content: 'a'.repeat(80) }]
+    const formated: PromptMessage[] = [{ role: 'user', content: 'a'.repeat(80) }]
     const result = finalizeRequestBudget({
       db: makeDb(),
       formated,
@@ -58,13 +72,37 @@ describe('Phase 7-8c finalizeRequestBudget — outputTokens clamp', () => {
     expect(result.inputTokens).toBe(15)
     expect(result.outputTokens).toBe(5)
   })
+
+  it('trims removable history to preserve maxResponse headroom', () => {
+    const formated: PromptMessage[] = [
+      { role: 'system', content: 'system-prompt' },
+      { role: 'user', content: 'aaaaaaaaaa', removable: true, memo: 'message-1' },
+      { role: 'assistant', content: 'bbbbbbbbbb', removable: true, memo: 'message-2' },
+      { role: 'user', content: 'final-question' },
+    ]
+    const result = finalizeRequestBudget({
+      db: makeDb(),
+      formated,
+      maxContextTokens: 35,
+      maxResponse: 15,
+      historyMessageIds: new Set(['message-1', 'message-2']),
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // Totals (overhead 5): 8 + 7 + 8 + 7 = 30. The response reservation
+    // leaves a 20-token input target, so both removable rows are trimmed.
+    expect(result.formated.map((c) => c.content)).toEqual(['system-prompt', 'final-question'])
+    expect(result.inputTokens).toBe(15)
+    expect(result.outputTokens).toBe(15)
+    expect(result.historyTruncated).toBe(true)
+  })
 })
 
-describe('Phase 7-8c finalizeRequestBudget — trimming', () => {
+describe('finalizeRequestBudget — trimming', () => {
   it('zeroes removable entries front-to-back then filters empties', () => {
-    const formated: OpenAIChat[] = [
+    const formated: PromptMessage[] = [
       { role: 'system', content: 'system-prompt' },
-      { role: 'user', content: 'aaaaaaaaaa', removable: true },
+      { role: 'user', content: 'aaaaaaaaaa', removable: true, memo: 'message-1' },
       { role: 'assistant', content: 'bbbbbbbbbb', removable: true },
       { role: 'user', content: 'final-question' },
     ]
@@ -73,6 +111,7 @@ describe('Phase 7-8c finalizeRequestBudget — trimming', () => {
       formated,
       maxContextTokens: 20,
       maxResponse: 50,
+      historyMessageIds: new Set(['message-1']),
     })
     expect(result.ok).toBe(true)
     if (!result.ok) return
@@ -82,10 +121,11 @@ describe('Phase 7-8c finalizeRequestBudget — trimming', () => {
     expect(result.inputTokens).toBe(15)
     // 15 + 50 > 20 → 20 - 15 = 5.
     expect(result.outputTokens).toBe(5)
+    expect(result.historyTruncated).toBe(true)
   })
 
   it('keeps multimodal-only rows during the empty-content filter', () => {
-    const formated: OpenAIChat[] = [
+    const formated: PromptMessage[] = [
       {
         role: 'user',
         content: 'caption',
@@ -97,22 +137,52 @@ describe('Phase 7-8c finalizeRequestBudget — trimming', () => {
     const result = finalizeRequestBudget({
       db: makeDb(),
       formated,
-      maxContextTokens: 10,
+      maxContextTokens: 17,
       maxResponse: 50,
     })
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    // 'caption' (1+5) + 'final-question' (2+5) = 13 > 10.
-    // Trim row0 (-6 → 7 ≤ 10); its content blanks but multimodals keep it.
+    // GPT-4 has no image input, so the attachment adds one row-overhead charge:
+    // 'caption' (1+5+5) + 'final-question' (2+5) = 18 > 17.
+    // Blanking only the caption removes one token; row overhead and the image
+    // remain, so the returned rows retokenize to 17.
     expect(result.formated).toHaveLength(2)
     expect(result.formated[0].content).toBe('')
     expect(result.formated[0].multimodals?.length).toBe(1)
     expect(result.formated[1].content).toBe('final-question')
-    expect(result.inputTokens).toBe(7)
+    expect(result.inputTokens).toBe(17)
+    expect(result.outputTokens).toBe(0)
+  })
+
+  it('uses low-quality image charges when deciding whether to trim history', () => {
+    const formated: PromptMessage[] = [
+      {
+        role: 'user',
+        content: 'caption',
+        removable: true,
+        multimodals: [{ type: 'image', base64: 'x' }],
+      },
+      { role: 'user', content: 'final-question' },
+    ]
+    const result = finalizeRequestBudget({
+      db: { ...makeDb('gpt4o'), gptVisionQuality: 'low' },
+      formated,
+      maxContextTokens: 99,
+      maxResponse: 50,
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // caption (1) + overhead (5) + image (87) + final row (7) = 100.
+    // The image charge tips the request over the 99-token window.
+    expect(result.inputTokens).toBe(99)
+    expect(result.outputTokens).toBe(0)
+    expect(result.formated[0]).toMatchObject({ content: '', removable: true })
+    expect(result.formated[0].multimodals).toHaveLength(1)
   })
 
   it('returns ok=false overflow when no removable row can fit the budget', () => {
-    const formated: OpenAIChat[] = [
+    const formated: PromptMessage[] = [
       { role: 'system', content: 'pinned-system-prompt' },
       { role: 'user', content: 'pinned-user-prompt' },
     ]
@@ -127,11 +197,13 @@ describe('Phase 7-8c finalizeRequestBudget — trimming', () => {
   })
 })
 
-describe('Phase 7-8c finalizeRequestBudget — tokenizer routing', () => {
-  it('uses overhead 3 + name accounting for non-gpt models', () => {
-    const formated: OpenAIChat[] = [{ role: 'system', content: 'hello', name: 'hello' }]
+describe('finalizeRequestBudget — tokenizer routing', () => {
+  it('uses overhead 3 + name accounting for non-gpt models', async () => {
+    const formated: PromptMessage[] = [{ role: 'system', content: 'hello', name: 'hello' }]
+    const db = makeDb('claude-3-5-sonnet')
+    await ensureTokenizerLoadedForDb(db)
     const result = finalizeRequestBudget({
-      db: makeDb('claude-3-5-sonnet'),
+      db,
       formated,
       maxContextTokens: 1000,
       maxResponse: 100,
@@ -144,7 +216,7 @@ describe('Phase 7-8c finalizeRequestBudget — tokenizer routing', () => {
   })
 
   it('routes through o200k_base for the gpt-4o family', () => {
-    const formated: OpenAIChat[] = [{ role: 'system', content: 'café résumé 漢字' }]
+    const formated: PromptMessage[] = [{ role: 'system', content: 'café résumé 漢字' }]
     const result = finalizeRequestBudget({
       db: makeDb('gpt-4o'),
       formated,

@@ -4,15 +4,24 @@ import { TaskRateLimiter } from './taskRateLimiter'
 import { type EmbeddingText, type EmbeddingResult, HypaProcessorV2 } from './hypamemoryv2'
 import { type DisplayMode as ModalDisplayMode } from 'src/lib/Others/HypaV3Modal/types'
 import { parseChatML } from 'src/ts/parser/chatML'
-import { type Chat, type character, getDatabase } from 'src/ts/storage/database.svelte'
+import type { Chat, character, Database } from 'src/ts/storage/database.svelte'
 import { type OpenAIChat } from '../index.svelte'
 import { requestChatData } from '../request/request'
 import { chatCompletion, unloadEngine } from '../webllm'
-import { hypaV3ProgressStore } from 'src/ts/stores.svelte'
 import { type ChatTokenizer } from 'src/ts/tokenizer'
-import { inlayTokenRegex } from 'src/ts/util/inlayTokens'
+import { inlayTokenRegex } from '@risuai/shared-core/inlay-tokens'
+import { resolveModelProfile } from 'src/ts/model/modelProfileResolver'
+import {
+  startLocalMemoryJob,
+  updateLocalMemoryJob,
+  type LocalMemoryJobHandle,
+} from 'src/ts/server/memoryJobProjection.svelte'
+import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
+import { getHypaV3PresetOwnerStateSnapshot, settingsResourceState } from 'src/ts/server/resourceState.svelte'
+import { ensureResourceSurfaces } from 'src/ts/server/routeResourceLoader'
 
 export interface HypaV3Preset {
+  id: string
   name: string
   settings: HypaV3Settings
 }
@@ -93,6 +102,34 @@ const logPrefix = '[HypaV3]'
 const memoryPromptTag = 'Past Events Summary'
 const summarySeparator = '\n\n'
 
+export function resolveHypaV3ResponseTokenReservation(database: Database): number {
+  return resolveModelProfile({ database, role: 'chatMain' }).runtimeOptions.maxResponse ?? database.maxResponse
+}
+
+function hypaV3RuntimeDatabase(): Database {
+  if (settingsResourceState.status !== 'ready') {
+    throw new Error('HypaV3 settings owner unavailable')
+  }
+  return settingsResourceState.value as Database
+}
+
+async function runLocalMemoryOperation<T>(
+  room: Chat,
+  kind: LocalMemoryJobHandle['kind'],
+  operation: () => Promise<T>,
+  statusForResult: (result: T) => 'completed' | 'failed' = () => 'completed',
+): Promise<T> {
+  const job = startLocalMemoryJob({ chatId: room.id, kind })
+  try {
+    const result = await operation()
+    updateLocalMemoryJob(job, statusForResult(result))
+    return result
+  } catch (error) {
+    updateLocalMemoryJob(job, 'failed', error instanceof Error ? error.message : String(error))
+    throw error
+  }
+}
+
 function splitBySeparator(text: string, separator: string): string[] {
   try {
     const regexMatch = separator.match(/^\/(.+)\/([gimuy]*)$/)
@@ -158,7 +195,7 @@ async function hypaMemoryV3MainExp(
   char: character,
   tokenizer: ChatTokenizer,
 ): Promise<HypaV3Result> {
-  const db = getDatabase()
+  const db = hypaV3RuntimeDatabase()
   const settings = getCurrentHypaV3Preset().settings
 
   // Validate settings
@@ -171,7 +208,7 @@ async function hypaMemoryV3MainExp(
   }
 
   // Initial token correction
-  currentTokens -= db.maxResponse
+  currentTokens -= resolveHypaV3ResponseTokenReservation(db)
 
   // Load existing hypa data if available
   const data: HypaV3Data = room.hypaV3Data
@@ -337,33 +374,22 @@ async function hypaMemoryV3MainExp(
       maxConcurrentTasks: settings.summarizationModel === 'subModel' ? settings.summarizationMaxConcurrent : 1,
     })
 
-    rateLimiter.taskQueueChangeCallback = (queuedCount) => {
-      hypaV3ProgressStore.set({
-        open: true,
-        miniMsg: `${rateLimiter.queuedTaskCount}`,
-        msg: `${logPrefix} Summarizing...`,
-        subMsg: `${rateLimiter.queuedTaskCount} queued`,
-      })
-    }
-
     const summarizationTasks = toSummarizeArray.map((item) => () => summarize(item))
 
     // Start of performance measurement: summarize
     console.log(logPrefix, `Starting ${toSummarizeArray.length} summarization.`)
     const summarizeStartTime = performance.now()
 
-    const batchResult = await rateLimiter.executeBatch<string>(summarizationTasks)
+    const batchResult = await runLocalMemoryOperation(
+      room,
+      'summarize',
+      () => rateLimiter.executeBatch<string>(summarizationTasks),
+      (result) => (result.results.every((item) => item.success && item.data) ? 'completed' : 'failed'),
+    )
 
     const summarizeEndTime = performance.now()
     console.debug(`${logPrefix} summarization completed in ${summarizeEndTime - summarizeStartTime}ms`)
     // End of performance measurement: summarize
-
-    hypaV3ProgressStore.set({
-      open: false,
-      miniMsg: '',
-      msg: '',
-      subMsg: '',
-    })
 
     // Apply results in input order and stop at the first failure. The returned
     // memory keeps the consecutive successful prefix accumulated before it.
@@ -548,22 +574,13 @@ async function hypaMemoryV3MainExp(
       }),
     })
 
-    processor.progressCallback = (queuedCount) => {
-      hypaV3ProgressStore.set({
-        open: true,
-        miniMsg: `${queuedCount}`,
-        msg: `${logPrefix} Similarity searching...`,
-        subMsg: `${queuedCount} queued`,
-      })
-    }
-
     try {
       // Start of performance measurement: addTexts
       console.log(`${logPrefix} Starting addTexts with ${ebdTexts.length} chunks`)
       const addStartTime = performance.now()
 
       // Add EmbeddingTexts to processor for similarity search
-      await processor.addTexts(ebdTexts)
+      await runLocalMemoryOperation(room, 'embed', () => processor.addTexts(ebdTexts))
 
       const addEndTime = performance.now()
       console.debug(`${logPrefix} addTexts completed in ${addEndTime - addStartTime}ms`)
@@ -575,13 +592,6 @@ async function hypaMemoryV3MainExp(
         error: `${logPrefix} Similarity search failed: ${error}`,
         memory: toSerializableHypaV3Data(data),
       }
-    } finally {
-      hypaV3ProgressStore.set({
-        open: false,
-        miniMsg: '',
-        msg: '',
-        subMsg: '',
-      })
     }
 
     const recentChats = chats.slice(-settings.queryChatCount).filter((chat) => chat.content.trim().length > 0)
@@ -604,7 +614,9 @@ async function hypaMemoryV3MainExp(
         console.log(`${logPrefix} Starting similarity search with ${recentChats.length} queries`)
         const searchStartTime = performance.now()
 
-        const batchScoredResults = await processor.similaritySearchScoredBatch(queries.map((query) => query.content))
+        const batchScoredResults = await runLocalMemoryOperation(room, 'embed', () =>
+          processor.similaritySearchScoredBatch(queries.map((query) => query.content)),
+        )
 
         /*
                 // Hybrid search hook.
@@ -673,13 +685,6 @@ async function hypaMemoryV3MainExp(
           error: `${logPrefix} Similarity search failed: ${error}`,
           memory: toSerializableHypaV3Data(data),
         }
-      } finally {
-        hypaV3ProgressStore.set({
-          open: false,
-          miniMsg: '',
-          msg: '',
-          subMsg: '',
-        })
       }
     }
 
@@ -836,7 +841,7 @@ async function hypaMemoryV3Main(
   char: character,
   tokenizer: ChatTokenizer,
 ): Promise<HypaV3Result> {
-  const db = getDatabase()
+  const db = hypaV3RuntimeDatabase()
   const settings = getCurrentHypaV3Preset().settings
 
   // Validate settings
@@ -849,7 +854,7 @@ async function hypaMemoryV3Main(
   }
 
   // Initial token correction
-  currentTokens -= db.maxResponse
+  currentTokens -= resolveHypaV3ResponseTokenReservation(db)
 
   // Load existing hypa data if available
   const data: HypaV3Data = room.hypaV3Data
@@ -1481,8 +1486,15 @@ function sanitizeSummaryContent(content: string): string {
   return content.replace(inlayTokenRegex, '[Image]')
 }
 
+/** Summary tools can open before the settings pages that own their inputs. */
+export async function ensureHypaV3SummaryResources(): Promise<void> {
+  hypaV3RuntimeDatabase()
+  await ensureResourceSurfaces(['overlay:hypa-memory'])
+}
+
 export async function summarize(oaiMessages: OpenAIChat[], isResummarize: boolean = false): Promise<string> {
-  const db = getDatabase()
+  await ensureHypaV3SummaryResources()
+  const db = hypaV3RuntimeDatabase()
   const settings = getCurrentHypaV3Preset().settings
 
   const strMessages = oaiMessages.map((chat) => `${chat.role}: ${sanitizeSummaryContent(chat.content)}`).join('\n')
@@ -1507,11 +1519,12 @@ export async function summarize(oaiMessages: OpenAIChat[], isResummarize: boolea
   ]
 
   // API
-  if (settings.summarizationModel === 'subModel') {
+  if (settings.summarizationModel === 'subModel' || settings.summarizationModel === 'memory') {
     console.log(logPrefix, `Using ax model ${db.subModel} for summarization.`)
 
     const response = await requestChatData(
       {
+        database: safeStructuredClone(db),
         formated,
         bias: {},
         useStreaming: false,
@@ -1574,8 +1587,8 @@ export async function summarize(oaiMessages: OpenAIChat[], isResummarize: boolea
 }
 
 export function getCurrentHypaV3Preset(): HypaV3Preset {
-  const db = getDatabase()
-  const preset = db.hypaV3Presets?.[db.hypaV3PresetId]
+  const owner = getHypaV3PresetOwnerStateSnapshot()
+  const preset = owner?.hypaV3Presets[owner.hypaV3PresetId]
 
   if (!preset) {
     throw new Error('Preset not found. Please select a valid preset.')
@@ -1584,7 +1597,11 @@ export function getCurrentHypaV3Preset(): HypaV3Preset {
   return preset
 }
 
-export function createHypaV3Preset(name = 'New Preset', existingSettings = {}): HypaV3Preset {
+export function createHypaV3Preset(
+  name = 'New Preset',
+  existingSettings = {},
+  id = createNonSecurityUuid(),
+): HypaV3Preset {
   const settings: HypaV3Settings = {
     summarizationModel: 'subModel',
     summarizationPrompt: '',
@@ -1618,6 +1635,7 @@ export function createHypaV3Preset(name = 'New Preset', existingSettings = {}): 
   }
 
   return {
+    id,
     name,
     settings,
   }

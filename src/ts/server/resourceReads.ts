@@ -1,6 +1,21 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
+import { peekCachedServerCommandRevision } from './commands'
+import type { Chat, character } from '../storage/database.svelte'
+import {
+  SERVER_CHARACTER_SUMMARY_VERSION,
+  isServerCharactersSummaryPayload,
+  type ServerCharacterSummary,
+  type ServerCharactersSummaryPayload,
+} from '@risuai/protocol/character-summary-resource'
+import {
+  isServerCharacterDetailResource,
+  isServerCharacterOrderResource,
+  isServerCharacterSelectionResource,
+} from '@risuai/protocol/character-resource'
+import { isServerChatMetadataResource } from '@risuai/protocol/chat-metadata'
 import { SERVER_SETTINGS_KEYS_BY_GROUP, isSettingsGroup, type SettingsGroup } from './settingsGroups'
 import {
+  captureResourceCacheGeneration,
   isResourceCacheMetadata,
   persistResourceCache,
   prepareResourceCacheRequest,
@@ -24,14 +39,36 @@ import {
   type ServerSettingsValues,
 } from './resourceState.svelte'
 import { isServerInlayCatalogPayload, type ServerInlayCatalogResourcePayload } from './inlayCatalog'
+import {
+  SERVER_SHELL_PROTOCOL_VERSION,
+  isServerShellPayload,
+  type ServerShellSettings,
+} from '@risuai/protocol/shell-resource'
+import {
+  isServerStandaloneSettingName,
+  isServerStandaloneSettingPayload,
+  type ServerStandaloneSettingName,
+  type ServerStandaloneSettingPayload,
+} from '@risuai/protocol/standalone-settings'
+import {
+  isBardWikiChatResource,
+  isBardWikiDocumentResource,
+  isBardWikiVersionsResource,
+  type BardWikiChatResource,
+  type BardWikiDocumentResource,
+  type BardWikiVersionsResource,
+} from '@risuai/protocol'
 
 const SETTINGS_ENDPOINT = '/api/v1/settings'
 const COLLECTIONS_ENDPOINT = '/api/v1/collections'
 const CHARACTERS_ENDPOINT = '/api/v1/characters'
 const INLAY_CATALOG_ENDPOINT = '/api/v1/inlay-assets'
+const SHELL_ENDPOINT = '/api/v1/resources/shell'
+const STANDALONE_SETTINGS_ENDPOINT = '/api/v1/resources/settings'
 const CHARACTER_ORDER_ENDPOINT = `${CHARACTERS_ENDPOINT}/order`
+const BARDWIKI_ENDPOINT = '/api/v1/bardwiki/chats'
 const SETTINGS_CACHE_KEY = 'settings:all'
-const CHARACTERS_CACHE_KEY = 'characters'
+const CHARACTERS_CACHE_KEY = `characters:summary:v${SERVER_CHARACTER_SUMMARY_VERSION}`
 
 type ServerResourceJsonRequestResult =
   | { status: 'ok'; body: unknown }
@@ -43,8 +80,126 @@ export type ServerResourceReadResult<T extends { revision: number }> =
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
 
+export interface ServerShellResourcePayload {
+  protocolVersion: typeof SERVER_SHELL_PROTOCOL_VERSION
+  revision: number
+  settings: ServerShellSettings
+  characters: ServerCharactersResourcePayload
+}
+
 export function canUseServerResourceReads(): boolean {
   return true
+}
+
+export async function fetchServerShell(
+  signal?: AbortSignal | null,
+): Promise<ServerResourceReadResult<ServerShellResourcePayload>> {
+  const result = await requestServerResourceJson(SHELL_ENDPOINT, signal)
+  if (result.status !== 'ok') return resourceReadFailure(result)
+  if (!isServerShellPayload(result.body)) {
+    return { status: 'error', error: 'Invalid shell response' }
+  }
+
+  return {
+    status: 'ok',
+    protocolVersion: result.body.protocolVersion,
+    revision: result.body.revision,
+    settings: result.body.settings,
+    characters: {
+      version: result.body.characters.version,
+      revision: result.body.characters.revision,
+      characters: result.body.characters.characters.map(characterSummaryToShell),
+      characterOrder: result.body.characters.characterOrder as ServerCharactersResourcePayload['characterOrder'],
+      currentChar: result.body.characters.currentChar,
+    },
+  }
+}
+
+export async function fetchServerStandaloneSetting(
+  setting: ServerStandaloneSettingName,
+  signal?: AbortSignal | null,
+): Promise<ServerResourceReadResult<ServerStandaloneSettingPayload>> {
+  if (!isServerStandaloneSettingName(setting)) return { status: 'error', error: 'Unknown standalone setting' }
+  const result = await requestServerResourceJson(
+    `${STANDALONE_SETTINGS_ENDPOINT}/${encodeURIComponent(setting)}`,
+    signal,
+  )
+  if (result.status !== 'ok') return resourceReadFailure(result)
+  if (!isServerStandaloneSettingPayload(result.body) || result.body.setting !== setting) {
+    return { status: 'error', error: 'Invalid standalone setting response' }
+  }
+  return {
+    status: 'ok',
+    revision: result.body.revision,
+    setting,
+    state: result.body.state.present
+      ? { present: true, value: structuredClone(result.body.state.value) }
+      : { present: false },
+  }
+}
+
+export async function fetchServerBardWikiChat(
+  chatId: string,
+  signal?: AbortSignal | null,
+): Promise<ServerResourceReadResult<BardWikiChatResource>> {
+  if (!nonEmptyString(chatId)) return { status: 'error', error: 'Chat id is required' }
+  const result = await requestServerResourceJson(`${BARDWIKI_ENDPOINT}/${encodeURIComponent(chatId)}`, signal)
+  if (result.status !== 'ok') return resourceReadFailure(result)
+  if (!isBardWikiChatResource(result.body) || result.body.chatId !== chatId) {
+    return { status: 'error', error: 'Invalid BardWiki chat response' }
+  }
+  return { status: 'ok', ...structuredClone(result.body) }
+}
+
+export async function fetchServerBardWikiDocument(
+  chatId: string,
+  documentId: string,
+  signal?: AbortSignal | null,
+): Promise<ServerResourceReadResult<BardWikiDocumentResource>> {
+  if (!nonEmptyString(chatId) || !nonEmptyString(documentId)) {
+    return { status: 'error', error: 'Chat and document ids are required' }
+  }
+  const result = await requestServerResourceJson(
+    `${BARDWIKI_ENDPOINT}/${encodeURIComponent(chatId)}/documents/${encodeURIComponent(documentId)}`,
+    signal,
+  )
+  if (result.status !== 'ok') return resourceReadFailure(result)
+  if (
+    !isBardWikiDocumentResource(result.body) ||
+    result.body.chatId !== chatId ||
+    result.body.document.id !== documentId ||
+    result.body.document.chatId !== chatId
+  ) {
+    return { status: 'error', error: 'Invalid BardWiki document response' }
+  }
+  return { status: 'ok', ...structuredClone(result.body) }
+}
+
+export async function fetchServerBardWikiVersions(
+  chatId: string,
+  documentId: string,
+  options: { limit?: number; beforeVersion?: number; signal?: AbortSignal | null } = {},
+): Promise<ServerResourceReadResult<BardWikiVersionsResource>> {
+  if (!nonEmptyString(chatId) || !nonEmptyString(documentId)) {
+    return { status: 'error', error: 'Chat and document ids are required' }
+  }
+  const query = new URLSearchParams()
+  if (options.limit !== undefined) query.set('limit', String(options.limit))
+  if (options.beforeVersion !== undefined) query.set('beforeVersion', String(options.beforeVersion))
+  const suffix = query.size === 0 ? '' : `?${query.toString()}`
+  const result = await requestServerResourceJson(
+    `${BARDWIKI_ENDPOINT}/${encodeURIComponent(chatId)}/documents/${encodeURIComponent(documentId)}/versions${suffix}`,
+    options.signal,
+  )
+  if (result.status !== 'ok') return resourceReadFailure(result)
+  if (
+    !isBardWikiVersionsResource(result.body) ||
+    result.body.chatId !== chatId ||
+    result.body.documentId !== documentId
+  ) {
+    return { status: 'error', error: 'Invalid BardWiki versions response' }
+  }
+  return { status: 'ok', ...structuredClone(result.body) }
 }
 
 export async function fetchServerInlayCatalog(
@@ -147,37 +302,97 @@ export async function fetchServerCharacters(
   const result = await requestCachedCharacters(signal)
   if (result.status !== 'ok') return resourceReadFailure(result)
 
-  const record = readRevisionEnvelope(result.body)
-  if (
-    !record ||
-    !Array.isArray(record.characters) ||
-    !record.characters.every(isMessageFreeCharacter) ||
-    !Array.isArray(record.characterOrder) ||
-    !Number.isInteger(record.currentChar)
-  ) {
+  const payload = readCharactersSummaryEnvelope(result.body)
+  if (!payload) {
     return { status: 'error', error: 'Invalid characters response' }
   }
   return {
     status: 'ok',
-    revision: record.revision,
-    characters: record.characters as unknown as ServerCharactersResourcePayload['characters'],
-    characterOrder: record.characterOrder as ServerCharactersResourcePayload['characterOrder'],
-    currentChar: record.currentChar as number,
+    version: payload.version,
+    revision: payload.revision,
+    characters: payload.characters.map(characterSummaryToShell),
+    characterOrder: payload.characterOrder as ServerCharactersResourcePayload['characterOrder'],
+    currentChar: payload.currentChar,
   }
 }
 
-export async function fetchServerCharacter(
-  characterId: string,
-  signal?: AbortSignal | null,
-): Promise<ServerResourceReadResult<ServerCharacterResourcePayload>> {
+type CharacterRead = ServerResourceReadResult<ServerCharacterResourcePayload>
+interface SharedCharacterRead {
+  controller: AbortController
+  promise: Promise<CharacterRead>
+  subscribers: number
+  settled: boolean
+}
+const characterReads = new Map<string, SharedCharacterRead>()
+
+/** Share transport only; each hydration/route owner retains its own apply fences. */
+export async function fetchServerCharacter(characterId: string, signal?: AbortSignal | null): Promise<CharacterRead> {
   if (!nonEmptyString(characterId)) {
     return { status: 'error', error: 'Character id is required' }
   }
-  const result = await requestServerResourceJson(`${CHARACTERS_ENDPOINT}/${encodeURIComponent(characterId)}`, signal)
+  const cancelled = (): CharacterRead => ({ status: 'error', error: 'Character request was cancelled' })
+  if (signal?.aborted) return cancelled()
+  const revision = peekCachedServerCommandRevision()
+  const auth = await getNodeServerProxyAuth()
+  if (signal?.aborted) return cancelled()
+  // A newer revision or authentication scope needs a fresh read.
+  const key = JSON.stringify([characterId, revision, auth])
+  let request = characterReads.get(key)
+  if (!request || request.controller.signal.aborted) {
+    const controller = new AbortController()
+    const created: SharedCharacterRead = {
+      controller,
+      subscribers: 0,
+      settled: false,
+      promise: fetchServerCharacterOnce(characterId, controller.signal, auth).finally(() => {
+        created.settled = true
+        if (characterReads.get(key) === created) characterReads.delete(key)
+      }),
+    }
+    characterReads.set(key, created)
+    request = created
+  }
+  const shared = request
+  shared.subscribers += 1
+  return new Promise<CharacterRead>((resolve, reject) => {
+    let finished = false
+    const finish = (complete: () => void) => {
+      if (finished) return
+      finished = true
+      signal?.removeEventListener('abort', abort)
+      shared.subscribers -= 1
+      if (shared.subscribers === 0 && !shared.settled) {
+        if (characterReads.get(key) === shared) characterReads.delete(key)
+        shared.controller.abort()
+      }
+      complete()
+    }
+    const abort = () => finish(() => resolve(cancelled()))
+    signal?.addEventListener('abort', abort, { once: true })
+    shared.promise.then(
+      (result) => finish(() => resolve(result)),
+      (error) => finish(() => reject(error)),
+    )
+  })
+}
+
+async function fetchServerCharacterOnce(
+  characterId: string,
+  signal: AbortSignal,
+  auth: string,
+): Promise<CharacterRead> {
+  const result = await requestServerResourceJson(`${CHARACTERS_ENDPOINT}/${encodeURIComponent(characterId)}`, signal, {
+    auth,
+  })
   if (result.status !== 'ok') return resourceReadFailure(result)
 
   const record = readRevisionEnvelope(result.body)
-  if (!record || !isMessageFreeCharacter(record.character) || record.character.chaId !== characterId) {
+  if (
+    !isServerCharacterDetailResource(result.body) ||
+    !isServerChatMetadataResource(result.body) ||
+    !isMessageFreeCharacter(record.character) ||
+    record.character.chaId !== characterId
+  ) {
     return { status: 'error', error: 'Invalid character response' }
   }
   return {
@@ -194,7 +409,7 @@ export async function fetchServerCharacterOrder(
   if (result.status !== 'ok') return resourceReadFailure(result)
 
   const record = readRevisionEnvelope(result.body)
-  if (!record || !Array.isArray(record.characterOrder)) {
+  if (!isServerCharacterOrderResource(result.body)) {
     return { status: 'error', error: 'Invalid character order response' }
   }
   return {
@@ -219,7 +434,7 @@ export async function fetchServerCharacterSelection(
 
   const record = readRevisionEnvelope(result.body)
   if (
-    !record ||
+    !isServerCharacterSelectionResource(result.body) ||
     record.characterId !== characterId ||
     !Number.isInteger(record.currentChar) ||
     (record.currentChar as number) < 0 ||
@@ -280,6 +495,7 @@ async function requestCachedSingularResource(
   signal: AbortSignal | null | undefined,
   validate: (value: unknown, record: Record<string, unknown>) => boolean,
 ): Promise<ServerResourceJsonRequestResult> {
+  const cacheGeneration = captureResourceCacheGeneration()
   const prepared = await prepareResourceCacheRequest([{ name: resourceName, key: cacheKey }])
   if (!prepared) return requestServerResourceJson(endpoint, signal)
 
@@ -312,13 +528,16 @@ async function requestCachedSingularResource(
     if (!validate(resolved.value, record)) {
       return requestServerResourceJson(endpoint, signal)
     }
-    await persistResourceCache([
-      {
-        key: cacheKey,
-        hashes: resolved.hashes,
-        values: [resolved.value],
-      },
-    ])
+    void persistResourceCache(
+      [
+        {
+          key: cacheKey,
+          hashes: resolved.hashes,
+          values: [resolved.value],
+        },
+      ],
+      cacheGeneration,
+    )
     return {
       status: 'ok',
       body: { ...record, [resourceName]: resolved.value },
@@ -333,6 +552,7 @@ async function requestCachedCollections(
   requestedName: ServerCollectionName | undefined,
   signal: AbortSignal | null | undefined,
 ): Promise<ServerResourceJsonRequestResult> {
+  const cacheGeneration = captureResourceCacheGeneration()
   const names: readonly ServerCollectionName[] = requestedName ? [requestedName] : SERVER_COLLECTION_NAMES
   const descriptors = names.map((name) => ({
     name,
@@ -387,7 +607,7 @@ async function requestCachedCollections(
     ) {
       return requestServerResourceJson(endpoint, signal)
     }
-    await persistResourceCache(updates)
+    void persistResourceCache(updates, cacheGeneration)
     return {
       status: 'ok',
       body: { ...record, collections },
@@ -400,6 +620,7 @@ async function requestCachedCollections(
 async function requestCachedCharacters(
   signal: AbortSignal | null | undefined,
 ): Promise<ServerResourceJsonRequestResult> {
+  const cacheGeneration = captureResourceCacheGeneration()
   const prepared = await prepareResourceCacheRequest([{ name: 'characters', key: CHARACTERS_CACHE_KEY }])
   if (!prepared) return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
 
@@ -421,28 +642,50 @@ async function requestCachedCharacters(
   try {
     const resolved = await resolveResourceCacheArray(record.characters, snapshot, prepared.hashes.characters ?? [])
     if (!resolved) return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
-    if (
-      readRevisionEnvelope(record) === null ||
-      !resolved.value.every(isMessageFreeCharacter) ||
-      !Array.isArray(record.characterOrder) ||
-      !Number.isInteger(record.currentChar)
-    ) {
-      return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
-    }
-    await persistResourceCache([
-      {
-        key: CHARACTERS_CACHE_KEY,
-        hashes: resolved.hashes,
-        values: resolved.value,
-      },
-    ])
+    const { cache: _cache, ...responsePayload } = record
+    const payload = readCharactersSummaryEnvelope({ ...responsePayload, characters: resolved.value })
+    if (!payload) return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
+    void persistResourceCache(
+      [
+        {
+          key: CHARACTERS_CACHE_KEY,
+          hashes: resolved.hashes,
+          values: resolved.value,
+        },
+      ],
+      cacheGeneration,
+    )
     return {
       status: 'ok',
-      body: { ...record, characters: resolved.value },
+      body: payload,
     }
   } catch {
     return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
   }
+}
+
+function readCharactersSummaryEnvelope(value: unknown): ServerCharactersSummaryPayload | null {
+  return isServerCharactersSummaryPayload(value) ? value : null
+}
+
+function characterSummaryToShell(summary: ServerCharacterSummary): character {
+  const pinnedChatsById = new Map(summary.pinnedChats.map((chat) => [chat.id, chat]))
+  const chats = summary.chatIds.map((id) => {
+    const pinned = pinnedChatsById.get(id)
+    return {
+      id,
+      name: pinned?.name ?? '',
+      ...(pinned ? { pinned: true } : {}),
+      message: [],
+    } as Chat
+  })
+  const activeChatIndex = summary.activeChatId === null ? -1 : summary.chatIds.indexOf(summary.activeChatId)
+  return {
+    ...summary,
+    chats,
+    chatPage: activeChatIndex >= 0 ? activeChatIndex : 0,
+    chatFolders: [],
+  } as unknown as character
 }
 
 function collectionCacheKey(name: ServerCollectionName, aggregate: boolean): string {
@@ -470,11 +713,11 @@ function resourceReadFailure(
 async function requestServerResourceJson(
   endpoint: string,
   signal?: AbortSignal | null,
-  options: { method?: 'GET' | 'POST'; body?: unknown } = {},
+  options: { method?: 'GET' | 'POST'; body?: unknown; auth?: string } = {},
 ): Promise<ServerResourceJsonRequestResult> {
   if (!canUseServerResourceReads()) return { status: 'unavailable' }
 
-  const auth = await getNodeServerProxyAuth()
+  const auth = options.auth ?? (await getNodeServerProxyAuth())
   const method = options.method ?? 'GET'
   let response: Response
   try {
@@ -500,6 +743,10 @@ async function requestServerResourceJson(
     // responses fail the resource-specific envelope validation.
   }
   if (!response.ok) {
+    if (response.status === 401) {
+      const { discardObserverProjectionState } = await import('../observerProjectionLifecycle')
+      await discardObserverProjectionState('auth-loss')
+    }
     return {
       status: 'error',
       error: errorMessageFromBody(body, `HTTP ${response.status}`),

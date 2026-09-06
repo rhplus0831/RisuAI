@@ -15,9 +15,6 @@
     personaListModalStore,
     chatGenerationTogglePresetListModalStore,
     CustomGUISettingMenuStore,
-    loadedStore,
-    alertStore,
-    LoadingStatusState,
     bookmarkListOpen,
     popupStore,
     easyPanelStore,
@@ -26,40 +23,29 @@
     irisStore,
     customSideBarConfigDialogStore,
     PlaygroundStore,
-    selectedCharID,
     SettingsMenuIndex,
+    closePopupEditorSession,
   } from './ts/stores.svelte'
+  import { alertStore, LoadingStatusState, selectedCharID } from './ts/stores/coreStores.svelte'
+  import { startupCoordinatorStore } from './ts/startupReadiness'
+  import { pluginRuntimeStateStore } from './ts/plugins/plugins.svelte'
   import Sidebar from './lib/SideBars/Sidebar.svelte'
   import ChatScreen from './lib/ChatScreens/ChatScreen.svelte'
-  import AlertComp from './lib/Others/AlertComp.svelte'
-  import RealmPopUp from './lib/UI/Realm/RealmPopUp.svelte'
-  import GridChars from './lib/Others/GridCatalog.svelte'
-  import BookmarkList from './lib/Others/BookmarkList.svelte'
-  import Settings from './lib/Setting/Settings.svelte'
-  import { showRealmInfoStore, importCharacterProcess } from './ts/characterCards'
-  import { importPreset } from './ts/storage/database.svelte'
-  import { getResourceDatabase as getDatabase } from './ts/server/resourceState.svelte'
+  import ObserverShell from './lib/ObserverShell.svelte'
+  import { showRealmInfoStore } from './ts/realmInfoStore'
+  import {
+    charactersResourceState,
+    getCharacterResourceOwner,
+    getPersonaOwnerStateSnapshot,
+    settingsResourceState,
+  } from './ts/server/resourceState.svelte'
   import { language } from './lang'
+  import LazyComponent from './lib/UI/LazyComponent.svelte'
   import SavePopupIconComp from './lib/Others/SavePopupIcon.svelte'
-  import Botpreset from './lib/Setting/botpreset.svelte'
-  import ListedPersona from './lib/Setting/listedPersona.svelte'
-  import ChatGenerationTogglePresetDialog from './lib/SideBars/ChatGenerationTogglePresetDialog.svelte'
-  import CustomGUISettingMenu from './lib/Setting/Pages/CustomGUISettingMenu.svelte'
-  import { checkCharOrder } from './ts/globalApi.svelte'
   import { ArrowUpIcon, GlobeIcon, PlusIcon } from '@lucide/svelte'
-  import { hypaV3ModalOpen, hypaV3ProgressStore } from './ts/stores.svelte'
-  import HypaV3Modal from './lib/Others/HypaV3Modal.svelte'
-  import HypaV3Progress from './lib/Others/HypaV3Progress.svelte'
-  import PluginAlertModal from './lib/Others/PluginAlertModal.svelte'
-  import PopupList from './lib/UI/PopupList.svelte'
-  import EasyPanel from './lib/Others/ProTools/EasyPanel.svelte'
+  import { hypaV3ModalOpen } from './ts/stores.svelte'
+  import { activeMemoryJobsStore } from './ts/server/memoryJobProjection.svelte'
   import sendSound from './etc/send.mp3'
-  import PopupEditor from './lib/Others/PopupEditor.svelte'
-  import LoadoutModal from './lib/Others/LoadoutModal.svelte'
-  import IrisModal from './lib/Others/IrisModal.svelte'
-  import Legal from './lib/Others/Legal.svelte'
-  import CustomSidebarConfig from './lib/Others/CustomSidebarConfig.svelte'
-  import { importRisuModuleData } from './ts/process/modules'
   import {
     applyRouteToStores,
     closeGridRoute,
@@ -67,15 +53,178 @@
     currentRoute,
     hasPendingRouteApplication,
     isApplyingRouteToStores,
+    navigate,
     openGridRoute,
+    retryCurrentRouteApplication,
     syncRouteFromState,
   } from './ts/router'
+  import { prefetchCharacterRouteResource, routeResourceLoadState } from './ts/server/routeResourceLoader'
+  import { prefetchRouteIntent } from './ts/routeIntentPrefetch'
   import { modalFocusTrap } from './ts/gui/modalFocusTrap'
   import { alertError } from './ts/alert'
+  import { hasDragType, RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes'
+  import { consumeObserverRouteIntent, peekObserverRouteIntent } from './ts/observerRouteIntent'
+  import { loadGrid, loadSettings } from './ts/routeComponentPreload'
+  import { pushNotificationCoordinatorState } from './ts/server/pushNotificationState'
+  import { pushNotificationWarningDismissed } from './ts/gui/pushNotificationWarningPreference'
+
+  const loadAlert = () => import('./lib/Others/AlertComp.svelte')
+  const loadPushNotificationWarning = () => import('./lib/Others/PushNotificationWarning.svelte')
+  const loadRealmPopup = () => import('./lib/UI/Realm/LazyRealmPopUp.svelte')
+  const loadBookmarkList = () => import('./lib/Others/BookmarkList.svelte')
+  const loadBotPreset = () => import('./lib/Setting/botpreset.svelte')
+  const loadPersonaList = () => import('./lib/Setting/listedPersona.svelte')
+  const loadChatGenerationTogglePresetDialog = () => import('./lib/SideBars/ChatGenerationTogglePresetDialog.svelte')
+  const loadCustomGUISettingMenu = () => import('./lib/Setting/Pages/CustomGUISettingMenu.svelte')
+  const loadHypaV3Modal = () => import('./lib/Others/HypaV3Modal.svelte')
+  const loadHypaV3Progress = () => import('./lib/Others/HypaV3Progress.svelte')
+  const loadPopupList = () => import('./lib/UI/PopupList.svelte')
+  const loadEasyPanel = () => import('./lib/Others/ProTools/EasyPanel.svelte')
+  const loadPopupEditor = () => import('./lib/Others/PopupEditor.svelte')
+  const loadLoadoutModal = () => import('./lib/Others/LoadoutModal.svelte')
+  const loadIrisModal = () => import('./lib/Others/IrisModal.svelte')
+  const loadCustomSidebarConfig = () => import('./lib/Others/CustomSidebarConfig.svelte')
+
+  const preloadSettingsRoute = () => prefetchRouteIntent('/settings', [() => import('./ts/routeHandlers/settings')])
+  const preloadGridRoute = () => prefetchRouteIntent('/grid')
+  const preloadPlaygroundRoute = () =>
+    prefetchRouteIntent('/playground', [() => import('./ts/routeHandlers/playground')])
 
   let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
   let aprilFoolsPage = $state(0)
   let keepingSessionAlive = $state(false)
+  let retryingPluginRuntime = $state(false)
+  let generationRecoveryAction = $state<'idle' | 'retrying' | 'discarding'>('idle')
+  let canApplyRoutes = $derived($startupCoordinatorStore.capabilities.canApplyRoutes)
+  let pluginStartupFailed = $derived($startupCoordinatorStore.failures.pluginsReady !== undefined)
+  let pluginRuntimeFailed = $derived($pluginRuntimeStateStore.phase === 'error')
+  let generationRecoveryStartupFailed = $derived(
+    $startupCoordinatorStore.failures.canGenerate?.failureCode === 'generation-recovery-failed',
+  )
+  let preWriterObserverMode = $derived(
+    $startupCoordinatorStore.observerShellEnabled &&
+      $startupCoordinatorStore.capabilities.canRenderShell &&
+      !$startupCoordinatorStore.capabilities.canApplyRoutes,
+  )
+  let renderedRoute = $state($currentRoute)
+  let routeLoadingVisible = $state(false)
+  let routeRetryButton = $state<HTMLButtonElement | null>(null)
+  let routeContentBlocked = $derived(
+    $routeResourceLoadState.status === 'loading' || $routeResourceLoadState.status === 'error',
+  )
+  let routeComponentLoadFailed = $derived(
+    $routeResourceLoadState.status === 'error' && $routeResourceLoadState.errorKind === 'component',
+  )
+  let routeLoadErrorMessage = $derived(
+    routeComponentLoadFailed
+      ? $routeResourceLoadState.offline
+        ? language.preloadOfflineError
+        : language.preloadStaleError
+      : ($routeResourceLoadState.error ?? 'This route could not be loaded.'),
+  )
+
+  $effect(() => {
+    if ($routeResourceLoadState.status !== 'loading') {
+      routeLoadingVisible = false
+      return
+    }
+    const timer = window.setTimeout(() => {
+      routeLoadingVisible = true
+    }, 1_000)
+    return () => window.clearTimeout(timer)
+  })
+
+  $effect(() => {
+    if ($routeResourceLoadState.status !== 'error' || !routeRetryButton) return
+    queueMicrotask(() => {
+      if ($routeResourceLoadState.status === 'error' && routeRetryButton?.isConnected) routeRetryButton.focus()
+    })
+  })
+
+  function retryRouteLoad(): void {
+    if (routeComponentLoadFailed && $routeResourceLoadState.offline && navigator.onLine !== false) {
+      window.location.reload()
+      return
+    }
+    void retryCurrentRouteApplication()
+  }
+
+  async function retryPlugins(): Promise<void> {
+    if (retryingPluginRuntime) return
+    retryingPluginRuntime = true
+    try {
+      if (pluginStartupFailed) {
+        const { retryPluginStartup } = await import('./ts/bootstrap')
+        await retryPluginStartup()
+      } else {
+        const { retryPluginRuntime } = await import('./ts/plugins/plugins.svelte')
+        await retryPluginRuntime()
+      }
+    } finally {
+      retryingPluginRuntime = false
+    }
+  }
+
+  async function retryGenerationRecovery(): Promise<void> {
+    if (generationRecoveryAction !== 'idle') return
+    generationRecoveryAction = 'retrying'
+    try {
+      const { retryGenerationRecoveryStartup } = await import('./ts/bootstrap')
+      await retryGenerationRecoveryStartup()
+    } finally {
+      generationRecoveryAction = 'idle'
+    }
+  }
+
+  async function discardGenerationRecovery(): Promise<void> {
+    if (generationRecoveryAction !== 'idle') return
+    generationRecoveryAction = 'discarding'
+    try {
+      const { discardGenerationRecoveryStartup } = await import('./ts/bootstrap')
+      await discardGenerationRecoveryStartup()
+    } finally {
+      generationRecoveryAction = 'idle'
+    }
+  }
+
+  function getMainDropEffect(event: DragEvent): DataTransfer['dropEffect'] {
+    const types = event.dataTransfer?.types
+    if (hasDragType(types, RISU_SIDEBAR_DRAG_TYPE) || hasDragType(types, RISU_APP_INTERNAL_DRAG_TYPE)) {
+      return 'none'
+    }
+    return hasDragType(types, 'Files') ? 'copy' : 'none'
+  }
+
+  function isAppInternalDrag(event: DragEvent): boolean {
+    const types = event.dataTransfer?.types
+    return hasDragType(types, RISU_APP_INTERNAL_DRAG_TYPE) || hasDragType(types, RISU_SIDEBAR_DRAG_TYPE)
+  }
+
+  function markAppInternalDrag(event: DragEvent): void {
+    event.dataTransfer?.setData(RISU_APP_INTERNAL_DRAG_TYPE, 'true')
+  }
+
+  function selectedRouteCharacter(index: number) {
+    if (charactersResourceState.status === 'error') return undefined
+    const candidate = charactersResourceState.characters[index]
+    if (!candidate?.chaId) return undefined
+    return getCharacterResourceOwner(candidate.chaId) === candidate ? candidate : undefined
+  }
+
+  function selectedRouteChatId(character: ReturnType<typeof selectedRouteCharacter>): string | undefined {
+    const candidate = character?.chats?.[character.chatPage]
+    if (!character?.chaId || typeof candidate?.id !== 'string' || candidate.id.trim().length === 0) return undefined
+
+    let owner: typeof candidate | undefined
+    for (const characterOwner of charactersResourceState.characters) {
+      for (const chatOwner of characterOwner.chats ?? []) {
+        if (chatOwner.id !== candidate.id) continue
+        if (owner) return undefined
+        owner = chatOwner
+      }
+    }
+    return owner === candidate ? candidate.id : undefined
+  }
 
   function closeResponsiveSidebar(): void {
     if ($sideBarClosing) return
@@ -92,38 +241,54 @@
   let routeChatIsOpen = $derived($currentRoute.kind === 'character' && typeof $currentRoute.chatId === 'string')
 
   $effect(() => {
-    if (!$loadedStore) return
-    const route = $currentRoute
-    if (consumeStateDrivenRouteUpdate()) return
+    if (!canApplyRoutes) return
+    const observerIntent = peekObserverRouteIntent()
+    const route = observerIntent?.route ?? $currentRoute
+    if (consumeStateDrivenRouteUpdate()) {
+      renderedRoute = route
+      return
+    }
     untrack(() => {
-      void applyRouteToStores(route)
+      void applyRouteToStores(route).then((applied) => {
+        if (!applied) return
+        renderedRoute = route
+        if (observerIntent) consumeObserverRouteIntent(observerIntent.sequence)
+      })
     })
   })
 
   $effect(() => {
-    if (!$loadedStore) return
+    if (!canApplyRoutes) return
 
     // Read every state value that can drive the URL before checking the route
     // application guard. Route application writes these stores while the guard
     // is active; retaining their subscriptions lets the next user-owned write
     // re-run this effect after the route settles.
     const currentRouteKind = $currentRoute.kind
+    const routeResourceStatus = $routeResourceLoadState.status
     const settingsAreOpen = $settingsOpen
     const settingsMenuIndex = $SettingsMenuIndex
     const selectedCharacterIndex = $selectedCharID
     const playgroundIndex = $PlaygroundStore
     const chatIsOpen = routeChatIsOpen
-    const character = getDatabase().characters?.[selectedCharacterIndex]
+    const character = selectedRouteCharacter(selectedCharacterIndex)
+    const personaId = getPersonaOwnerStateSnapshot()?.selectedPersonaId ?? undefined
 
-    if (isApplyingRouteToStores() || hasPendingRouteApplication()) return
+    if (
+      isApplyingRouteToStores() ||
+      hasPendingRouteApplication() ||
+      (currentRouteKind !== 'home' && routeResourceStatus !== 'ready')
+    )
+      return
     syncRouteFromState({
       currentRouteKind,
       settingsOpen: settingsAreOpen,
       settingsMenuIndex,
       selectedCharID: selectedCharacterIndex,
       playgroundStore: playgroundIndex,
+      personaId,
       characterId: character?.chaId,
-      chatId: chatIsOpen ? character?.chats?.[character.chatPage]?.id : undefined,
+      chatId: chatIsOpen ? selectedRouteChatId(character) : undefined,
     })
   })
 </script>
@@ -131,38 +296,55 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <main
-  class="flex bg-bg w-full h-full max-w-100vw text-textcolor"
+  data-risu-visual-viewport-shell
+  class="relative flex bg-bg w-full h-full max-w-100vw text-textcolor"
   ondragover={(e) => {
+    if (isAppInternalDrag(e)) return
+    if (!$startupCoordinatorStore.capabilities.canMutate) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'none'
+      return
+    }
     e.preventDefault()
-    e.dataTransfer.dropEffect = 'link'
+    e.dataTransfer.dropEffect = getMainDropEffect(e)
   }}
+  ondragstart={markAppInternalDrag}
   ondrop={async (e) => {
-    e.preventDefault()
-    if (e.dataTransfer.types.includes('application/x-risu-internal')) {
+    if (!$startupCoordinatorStore.capabilities.canMutate) {
+      e.preventDefault()
+      return
+    }
+    if (isAppInternalDrag(e)) {
+      e.preventDefault()
       return
     }
     const file = e.dataTransfer.files[0]
-    if (file) {
-      try {
-        const name = file.name.toLowerCase()
+    if (!file) {
+      e.preventDefault()
+      return
+    }
+    e.preventDefault()
+    try {
+      const name = file.name.toLowerCase()
 
-        if (name.endsWith('.risup')) {
-          const data = new Uint8Array(await file.arrayBuffer())
-          await importPreset({ name: file.name, data })
-        } else if (name.endsWith('.risum')) {
-          const data = new Uint8Array(await file.arrayBuffer())
-          await importRisuModuleData(data)
-          return
-        } else {
-          await importCharacterProcess({
-            name: file.name,
-            data: file,
-          })
-          checkCharOrder()
-        }
-      } catch (error) {
-        alertError(error as Error)
+      if (name.endsWith('.risup')) {
+        const data = new Uint8Array(await file.arrayBuffer())
+        const { importPreset } = await import('./ts/storage/database.svelte')
+        await importPreset({ name: file.name, data })
+      } else if (name.endsWith('.risum')) {
+        const { importModuleFile } = await import('./ts/process/modules')
+        await importModuleFile(file, file.name)
+        return
+      } else {
+        const [{ importCharacterFile }, { checkCharOrder }] = await Promise.all([
+          import('./ts/characterCards'),
+          import('./ts/globalApi.svelte'),
+        ])
+        await importCharacterFile(file, file.name)
+        checkCharOrder()
       }
+    } catch (error) {
+      alertError(error as Error)
     }
   }}
   onclick={() => {
@@ -170,7 +352,8 @@
       return
     }
 
-    const aliveMode = getDatabase().keepSessionAlive
+    const advancedStatus = settingsResourceState.groupStatuses.advanced ?? settingsResourceState.status
+    const aliveMode = advancedStatus === 'error' ? undefined : settingsResourceState.value.keepSessionAlive
     switch (aliveMode) {
       case 'sound': {
         console.log('Starting silent audio to keep session alive')
@@ -183,9 +366,70 @@
       }
     }
   }}>
-  {#if !import.meta.env.VITE_RISU_LEGAL_CONFIGURED}
-    <Legal />
-  {:else if aprilFools}
+  <div
+    class="pointer-events-none fixed top-3 left-1/2 z-50 flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col gap-3">
+    {#if $startupCoordinatorStore.capabilities.canRenderShell && (pluginStartupFailed || pluginRuntimeFailed)}
+      <div
+        class="pointer-events-auto flex items-center gap-3 rounded-md border border-yellow-600 bg-bg px-4 py-3 text-sm shadow-lg"
+        role="status"
+        aria-live="polite"
+        data-plugin-runtime-status>
+        <span>{language.pluginRuntime.failed}</span>
+        <button
+          type="button"
+          class="shrink-0 rounded bg-yellow-700 px-3 py-1.5 text-white disabled:cursor-wait disabled:opacity-60"
+          disabled={retryingPluginRuntime}
+          onclick={(event) => {
+            event.stopPropagation()
+            void retryPlugins()
+          }}>
+          {retryingPluginRuntime ? language.pluginRuntime.retrying : language.pluginRuntime.retry}
+        </button>
+      </div>
+    {:else if $startupCoordinatorStore.capabilities.canRenderShell && generationRecoveryStartupFailed}
+      <div
+        class="pointer-events-auto flex flex-wrap items-center gap-3 rounded-md border border-yellow-600 bg-bg px-4 py-3 text-sm shadow-lg"
+        role="status"
+        aria-live="polite"
+        data-generation-recovery-status>
+        <span class="min-w-0 flex-1">{language.generationRecovery.failed}</span>
+        <div class="flex max-w-full flex-wrap items-center gap-2">
+          <button
+            type="button"
+            class="shrink-0 rounded bg-yellow-700 px-3 py-1.5 text-white disabled:cursor-wait disabled:opacity-60"
+            data-generation-recovery-retry
+            disabled={generationRecoveryAction !== 'idle'}
+            onclick={(event) => {
+              event.stopPropagation()
+              void retryGenerationRecovery()
+            }}>
+            {generationRecoveryAction === 'retrying'
+              ? language.generationRecovery.retrying
+              : language.generationRecovery.retry}
+          </button>
+          <button
+            type="button"
+            class="shrink-0 rounded border border-yellow-700 px-3 py-1.5 disabled:cursor-wait disabled:opacity-60"
+            data-generation-recovery-discard
+            disabled={generationRecoveryAction !== 'idle'}
+            onclick={(event) => {
+              event.stopPropagation()
+              void discardGenerationRecovery()
+            }}>
+            {generationRecoveryAction === 'discarding'
+              ? language.generationRecovery.discarding
+              : language.generationRecovery.discard}
+          </button>
+        </div>
+      </div>
+    {/if}
+    {#if $startupCoordinatorStore.capabilities.canRenderShell && !$pushNotificationWarningDismissed && $pushNotificationCoordinatorState.desiredEnabled && ($pushNotificationCoordinatorState.setupFailure || $pushNotificationCoordinatorState.operationError)}
+      <div class="pointer-events-auto">
+        <LazyComponent loader={loadPushNotificationWarning} componentProps={{ banner: true }} />
+      </div>
+    {/if}
+  </div>
+  {#if aprilFools && $startupCoordinatorStore.capabilities.canApplyRoutes}
     <div class="bg-[#212121] w-full h-screen min-h-screen text-black flex relative">
       <div class="w-full max-w-3xl mx-auto py-8 px-4 flex justify-center items-center">
         <div class="flex flex-col w-full items-center text-[#bbbbbb]">
@@ -256,9 +500,9 @@
       </div>
       <span class="absolute top-4 left-4 font-bold text-[#bbbbbb] text-md md:text-lg">RisyGTP 9+ Mytho Ultra Free</span>
     </div>
-  {:else if !$loadedStore}
+  {:else if !$startupCoordinatorStore.capabilities.canRenderShell}
     <div
-      class="w-full h-full flex justify-center items-center text-textcolor text-xl bg-gray-900 flex-col"
+      class="w-full h-full flex justify-center items-center text-textcolor text-xl bg-bgcolor flex-col"
       role="status"
       aria-live="polite"
       aria-busy="true">
@@ -276,18 +520,50 @@
 
       <span class="text-sm mt-2 text-textcolor2">{LoadingStatusState.text}</span>
     </div>
+  {:else if preWriterObserverMode}
+    <ObserverShell />
   {:else if $CustomGUISettingMenuStore}
-    <CustomGUISettingMenu />
-  {:else if $settingsOpen}
-    <Settings />
-  {:else if $currentRoute.kind === 'grid'}
-    <GridChars endGrid={closeGridRoute} />
+    <div
+      class="flex h-full min-w-0 grow"
+      data-risu-route-content
+      inert={routeContentBlocked}
+      aria-busy={$routeResourceLoadState.status === 'loading'}>
+      <LazyComponent loader={loadCustomGUISettingMenu} fill testId="custom-gui-settings" />
+    </div>
+  {:else if renderedRoute.kind === 'settings'}
+    <div
+      class="flex h-full min-w-0 grow"
+      data-risu-route-content
+      inert={routeContentBlocked}
+      aria-busy={$routeResourceLoadState.status === 'loading'}>
+      <LazyComponent loader={loadSettings} fill label={language.settings} testId="settings" />
+    </div>
+  {:else if renderedRoute.kind === 'grid'}
+    <div
+      class="flex h-full min-w-0 grow"
+      data-risu-route-content
+      inert={routeContentBlocked}
+      aria-busy={$routeResourceLoadState.status === 'loading'}>
+      <LazyComponent
+        loader={loadGrid}
+        componentProps={{ endGrid: closeGridRoute }}
+        fill
+        label={language.grid}
+        testId="character-grid" />
+    </div>
   {:else}
     {#if !$DynamicGUI}
-      <Sidebar openGrid={openGridRoute} hidden={!$sideBarStore} />
+      <Sidebar
+        openGrid={openGridRoute}
+        hidden={!$sideBarStore}
+        prefetchCharacter={prefetchCharacterRouteResource}
+        {preloadSettingsRoute}
+        {preloadGridRoute}
+        {preloadPlaygroundRoute} />
     {:else if $sideBarStore}
       <div
         data-modal-root
+        data-risu-responsive-shell="shared-sidebar-dialog"
         use:modalFocusTrap
         role="dialog"
         aria-modal="true"
@@ -295,64 +571,143 @@
         tabindex="-1"
         class="fixed top-0 w-full h-full left-0 z-30 flex flex-row items-center"
         onkeydown={handleResponsiveSidebarKeydown}>
-        <Sidebar openGrid={openGridRoute} hidden={false} />
+        <Sidebar
+          openGrid={openGridRoute}
+          hidden={false}
+          prefetchCharacter={prefetchCharacterRouteResource}
+          {preloadSettingsRoute}
+          {preloadGridRoute}
+          {preloadPlaygroundRoute} />
       </div>
     {/if}
-    <ChatScreen />
+    <div
+      class="flex h-full min-w-0 grow"
+      data-risu-route-content
+      inert={routeContentBlocked}
+      aria-busy={$routeResourceLoadState.status === 'loading'}>
+      <ChatScreen route={renderedRoute} />
+    </div>
+  {/if}
+  {#if routeLoadingVisible}
+    <div
+      class="pointer-events-none fixed top-3 left-1/2 z-40 -translate-x-1/2 rounded-md border border-darkborderc bg-bgcolor/95 px-4 py-2 text-sm text-textcolor shadow-lg"
+      data-testid="route-resource-loading"
+      role="status"
+      aria-live="polite"
+      aria-busy="true">
+      <span>{language.loading}</span>
+    </div>
+  {:else if $routeResourceLoadState.status === 'error'}
+    <div
+      class="fixed top-3 left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-3 rounded-md border border-darkborderc bg-bgcolor px-4 py-3 text-sm text-textcolor shadow-lg"
+      data-testid="route-resource-error"
+      role="alert">
+      <span>{routeLoadErrorMessage}</span>
+      <button
+        bind:this={routeRetryButton}
+        class="shrink-0 rounded border border-textcolor2 px-3 py-1.5"
+        onclick={retryRouteLoad}>
+        {language.retry}
+      </button>
+      {#if routeComponentLoadFailed}
+        <button class="shrink-0 rounded border border-textcolor2 px-3 py-1.5" onclick={() => window.location.reload()}>
+          {language.preloadReload}
+        </button>
+      {/if}
+    </div>
   {/if}
   {#if $alertStore.type !== 'none'}
-    <AlertComp />
+    <LazyComponent loader={loadAlert} modal testId="alert" />
   {/if}
-  {#if $showRealmInfoStore}
-    <RealmPopUp bind:openedData={$showRealmInfoStore} />
-  {/if}
-  {#if $openPresetList}
-    <Botpreset
-      mode={presetListModalStore.mode}
-      kind={presetListModalStore.kind}
-      target={presetListModalStore.target}
-      close={closePresetListModal} />
-  {/if}
-  {#if $openPersonaList}
-    <ListedPersona
-      mode={personaListModalStore.mode}
-      target={personaListModalStore.target}
-      close={closePersonaListModal} />
-  {/if}
-  {#if $openChatGenerationTogglePresetList}
-    <ChatGenerationTogglePresetDialog
-      target={chatGenerationTogglePresetListModalStore.target}
-      close={closeChatGenerationTogglePresetListModal} />
-  {/if}
-  {#if $bookmarkListOpen}
-    <BookmarkList />
-  {/if}
-  {#if $hypaV3ModalOpen}
-    <HypaV3Modal />
-  {/if}
-  <SavePopupIconComp />
-  {#if $hypaV3ProgressStore.open}
-    <HypaV3Progress />
-  {/if}
-  <PluginAlertModal />
-  {#if popupStore.children}
-    <PopupList />
-  {/if}
-  {#if easyPanelStore.open}
-    <EasyPanel />
-  {/if}
-  {#if popUpEditorStore.open}
-    {#key popUpEditorStore.sessionId}
-      <PopupEditor />
-    {/key}
-  {/if}
-  {#if loadoutModalStore.open}
-    <LoadoutModal />
-  {/if}
-  {#if irisStore.open}
-    <IrisModal />
-  {/if}
-  {#if customSideBarConfigDialogStore.open}
-    <CustomSidebarConfig />
+  {#if $startupCoordinatorStore.capabilities.canApplyRoutes}
+    {#if $showRealmInfoStore}
+      <LazyComponent
+        loader={loadRealmPopup}
+        modal
+        onDismiss={() => showRealmInfoStore.set(null)}
+        testId="realm-popup" />
+    {/if}
+    {#if $openPresetList}
+      <LazyComponent
+        loader={loadBotPreset}
+        componentProps={{
+          mode: presetListModalStore.mode,
+          kind: presetListModalStore.kind,
+          target: presetListModalStore.target,
+          close: closePresetListModal,
+        }}
+        modal
+        onDismiss={closePresetListModal}
+        testId="preset-list" />
+    {/if}
+    {#if $openPersonaList}
+      <LazyComponent
+        loader={loadPersonaList}
+        componentProps={{
+          mode: personaListModalStore.mode,
+          target: personaListModalStore.target,
+          close: closePersonaListModal,
+        }}
+        modal
+        onDismiss={closePersonaListModal}
+        testId="persona-list" />
+    {/if}
+    {#if $openChatGenerationTogglePresetList}
+      <LazyComponent
+        loader={loadChatGenerationTogglePresetDialog}
+        componentProps={{
+          target: chatGenerationTogglePresetListModalStore.target,
+          close: closeChatGenerationTogglePresetListModal,
+        }}
+        modal
+        onDismiss={closeChatGenerationTogglePresetListModal}
+        testId="chat-generation-toggle-presets" />
+    {/if}
+    {#if $bookmarkListOpen}
+      <LazyComponent
+        loader={loadBookmarkList}
+        modal
+        onDismiss={() => bookmarkListOpen.set(false)}
+        testId="bookmark-list" />
+    {/if}
+    {#if $hypaV3ModalOpen}
+      <LazyComponent loader={loadHypaV3Modal} modal onDismiss={() => hypaV3ModalOpen.set(false)} testId="hypa-v3" />
+    {/if}
+    <SavePopupIconComp />
+    {#if $activeMemoryJobsStore.length > 0}
+      <LazyComponent loader={loadHypaV3Progress} testId="hypa-v3-progress" />
+    {/if}
+    {#if popupStore.children}
+      <LazyComponent loader={loadPopupList} testId="popup-list" />
+    {/if}
+    {#if easyPanelStore.open}
+      <LazyComponent loader={loadEasyPanel} modal onDismiss={() => (easyPanelStore.open = false)} testId="easy-panel" />
+    {/if}
+    {#if popUpEditorStore.open}
+      {#key popUpEditorStore.sessionId}
+        <LazyComponent
+          loader={loadPopupEditor}
+          modal
+          onDismiss={() => closePopupEditorSession(popUpEditorStore.sessionId)}
+          testId="popup-editor" />
+      {/key}
+    {/if}
+    {#if loadoutModalStore.open}
+      <LazyComponent
+        loader={loadLoadoutModal}
+        modal
+        onDismiss={() => (loadoutModalStore.open = false)}
+        testId="loadout-modal" />
+    {/if}
+    {#if irisStore.open}
+      <LazyComponent loader={loadIrisModal} modal onDismiss={() => (irisStore.open = false)} testId="iris-modal" />
+    {/if}
+    {#if customSideBarConfigDialogStore.open}
+      <LazyComponent
+        loader={loadCustomSidebarConfig}
+        modal
+        onDismiss={() => (customSideBarConfigDialogStore.open = false)}
+        testId="custom-sidebar-config" />
+    {/if}
   {/if}
 </main>

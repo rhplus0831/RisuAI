@@ -1,4 +1,5 @@
-import type { Chat, Database } from '../../../../src/ts/storage/database.svelte'
+import type { FastifyChat as Chat, FastifyDatabase as Database } from './serverTypes.js'
+import { readChatVariable } from './chatVarDefaults.js'
 
 /**
  * Trigger variable engine, ported from the closures inside
@@ -53,9 +54,9 @@ export interface TriggerVarEngineOptions {
 
 export interface TriggerVarEngine {
   getVar(key: string): string
-  setVar(key: string, value: string): void
+  setVar(key: string, value: string): boolean
   declareLocalVar(key: string, value: string, indent: number): void
-  setLocalVar(key: string, value: string, indent: number): void
+  setLocalVar(key: string, value: string, indent: number): boolean
   clearLocalVarsAtIndent(indent: number): void
   /** Sets the effect loop's current indent (drives local-scope writes). */
   setIndent(indent: number): void
@@ -94,13 +95,13 @@ export function createTriggerVarEngine(opts: TriggerVarEngineOptions): TriggerVa
     return null
   }
 
-  function setLocalVar(key: string, value: string, indent: number): void {
+  function setLocalVar(key: string, value: string, indent: number): boolean {
     if (!localVarScopes || localVarScopes.length === 0) {
       localVarScopes = [{}]
     }
     const currentScope = localVarScopes[localVarScopes.length - 1]
     if (!currentScope) {
-      return
+      return false
     }
 
     const finalValue = value === null || value === undefined ? 'null' : value
@@ -119,7 +120,12 @@ export function createTriggerVarEngine(opts: TriggerVarEngineOptions): TriggerVa
       currentScope[targetIndent] = {}
     }
 
+    if (currentScope[targetIndent][key] === finalValue) {
+      return false
+    }
+
     currentScope[targetIndent][key] = finalValue
+    return true
   }
 
   function declareLocalVar(key: string, value: string, indent: number): void {
@@ -151,39 +157,41 @@ export function createTriggerVarEngine(opts: TriggerVarEngineOptions): TriggerVa
       return localVar
     }
 
-    const state = chat.scriptstate?.['$' + key]
-    if (state === undefined || state === null) {
-      const findResult = defaultVariables.find((f) => f[0] === key)
-      if (findResult) {
-        return findResult[1]
-      }
-      if (displayMode) {
-        return tempVars[key] ?? 'null'
-      }
-      return 'null'
+    const resolved = readChatVariable(chat.scriptstate as Record<string, unknown> | undefined, key, defaultVariables)
+    if (resolved !== undefined) return resolved
+    if (displayMode) {
+      return tempVars[key] ?? 'null'
     }
-    return state.toString()
+    return 'null'
   }
 
-  function setVar(key: string, value: string): void {
+  function setVar(key: string, value: string): boolean {
     if (displayMode) {
+      if (tempVars[key] === value) {
+        return false
+      }
       tempVars[key] = value
-      return
+      return true
     }
 
     const localVar = getLocalVar(key)
     if (localVar !== null) {
-      setLocalVar(key, value, currentIndent)
-      return
+      return setLocalVar(key, value, currentIndent)
+    }
+
+    chat.scriptstate ??= {}
+    const stateKey = '$' + key
+    if (chat.scriptstate[stateKey] === value) {
+      return false
     }
 
     varChanged = true
-    chat.scriptstate ??= {}
-    chat.scriptstate['$' + key] = value
+    chat.scriptstate[stateKey] = value
     const dbChat = database.characters?.[selectedCharID]?.chats?.[chatPage]
     if (dbChat) {
       dbChat.scriptstate = chat.scriptstate
     }
+    return true
   }
 
   return {

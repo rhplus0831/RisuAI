@@ -5,11 +5,16 @@ import {
   decodeLegacyRisuSaveEnvelope,
 } from './legacyEnvelopeCodec.js'
 import type { ExpandedSizeLimitOptions } from './importLimits.js'
-import { COLLECTION_FIELDS, ValidationError } from '../repository.js'
+import {
+  COLLECTION_FIELDS,
+  repairPersistedHypaV3PresetSelectionIdentity,
+  repairPersistedPersonaSelectionIdentity,
+  ValidationError,
+} from '../repository.js'
 import { normalizePresetCollection } from '../commands/presets.js'
 import { normalizePromptTemplateCollection } from '../commands/prompts.js'
 import { normalizePersonaCollection } from '../commands/personas.js'
-import { normalizeTranslatorPresetCollection } from '../commands/translatorPresets.js'
+import { normalizeTranslatorPresetCollectionWithLegacyCompatibility } from '../commands/translatorPresets.js'
 import { normalizeLoadoutCollection } from '../commands/loadouts.js'
 import { normalizeAllChatMessages } from '../commands/messages.js'
 import { normalizeCharacterCollection } from '../commands/characters.js'
@@ -20,8 +25,22 @@ import { ensureGlobalLorebookCollection, ensureAllChildLorebooks } from '../comm
 import { normalizeScriptDefinitionCollection } from '../commands/scriptDefinitions.js'
 import { normalizeDatabaseDefaults } from '../databaseDefaults.js'
 import { normalizeStoredChatGenerationSettings } from '../chatGenerationSettingsStorage.js'
-import { CHAT_GENERATION_SETTINGS_FIELD } from '../../../../src/ts/chatGenerationSettings.js'
-import { SERVER_SETTINGS_KEYS_BY_GROUP } from '../../../../src/ts/server/settingsGroups.js'
+import { CHAT_GENERATION_SETTINGS_FIELD } from '@risuai/shared-core/chat-generation-settings'
+import { SERVER_SETTINGS_KEYS_BY_GROUP } from '@risuai/shared-core/settings-groups'
+import {
+  RISU_SERVER_DATA_KEY,
+  emptyRisuServerPortableMetadata,
+  validateRisuServerPortableMetadata,
+  type RisuServerPortableMetadata,
+} from './portableMetadata.js'
+import {
+  GREETING_TRANSLATIONS_PORTABLE_FIELD,
+  GreetingTranslationValidationError,
+  greetingSourceAtIndex,
+  parsePortableGreetingTranslation,
+  sourceHash,
+  type GreetingTranslationRow,
+} from '../translation/greetingTranslationStore.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -33,6 +52,7 @@ const ROOT_COMPONENT_RESERVED_KEYS = new Set([
   'plugins',
   'pluginCustomStorage',
   '__directory',
+  RISU_SERVER_DATA_KEY,
 ])
 
 export const RISUSAVE_EMPTY_DATABASE_ERROR = 'risusave_empty_database'
@@ -60,16 +80,34 @@ export interface RisuSaveImportUnsupportedReference {
   kind: RisuSaveUnsupportedReferenceKind
 }
 
+export interface RisuSaveImportSkippedBlock {
+  name: string
+  type: 'CHAT'
+}
+
 export interface RisuSaveImportSnapshot {
   envelope: RisuSaveEnvelopeKind
   database: JsonRecord
+  portableMetadata: RisuServerPortableMetadata
+  greetingTranslations: GreetingTranslationRow[]
   incompleteChatCount: number
   unsupportedReferences: RisuSaveImportUnsupportedReference[]
+  skippedBlocks: RisuSaveImportSkippedBlock[]
 }
 
 export interface UnsupportedGroupCharacterSummary {
   id: string | null
   name: string | null
+}
+
+export class UnsupportedStandaloneChatBlocksError extends ValidationError {
+  constructor() {
+    super(
+      'This save stores chats in standalone CHAT blocks, which this version of RisuAI cannot import. ' +
+        'Nothing was imported, and the active database was not changed.',
+    )
+    this.name = 'UnsupportedStandaloneChatBlocksError'
+  }
 }
 
 export class UnsupportedGroupCharactersError extends ValidationError {
@@ -92,8 +130,10 @@ export class UnsupportedGroupCharactersError extends ValidationError {
   }
 }
 
-interface RisuSaveImportDatabaseNormalization {
+export interface RisuSaveImportDatabaseNormalization {
   database: JsonRecord
+  portableMetadata: RisuServerPortableMetadata
+  greetingTranslations: GreetingTranslationRow[]
   incompleteChatCount: number
 }
 
@@ -107,6 +147,7 @@ export function decodeRisuSaveImportSnapshot(
       envelope,
       ...normalizeImportDatabase(decodeEnvelopeAsValidation(() => decodeLegacyRisuSaveEnvelope(data, options))),
       unsupportedReferences: [],
+      skippedBlocks: [],
     }
   }
 
@@ -118,10 +159,12 @@ export function decodeRisuSaveImportSnapshot(
   if (decoded.unsupportedReferences.some((reference) => reference.kind === 'cache-only')) {
     throw new ValidationError(RISUSAVE_INCOMPLETE_BLOCKS_ERROR)
   }
+  const assembled = assembleBlockDatabase(decoded.blocks)
   return {
     envelope,
-    ...normalizeImportDatabase(assembleBlockDatabase(decoded.blocks)),
+    ...normalizeImportDatabase(assembled.database),
     unsupportedReferences: decoded.unsupportedReferences,
+    skippedBlocks: assembled.skippedBlocks,
   }
 }
 
@@ -144,18 +187,47 @@ export function normalizeRisuSaveImportDatabase(database: unknown): JsonRecord {
   return normalizeImportDatabase(database).database
 }
 
+export function normalizeRisuSaveJsonImportSnapshot(database: unknown): RisuSaveImportDatabaseNormalization {
+  return normalizeImportDatabase(database)
+}
+
 export function normalizeRisuSaveSnapshotDatabase(database: unknown): JsonRecord {
   return normalizeImportDatabaseShape(database)
 }
 
-function assembleBlockDatabase(blocks: ReturnType<typeof decodeRisuSaveBlockEnvelope>['blocks']): JsonRecord {
+function assembleBlockDatabase(blocks: ReturnType<typeof decodeRisuSaveBlockEnvelope>['blocks']): {
+  database: JsonRecord
+  skippedBlocks: RisuSaveImportSkippedBlock[]
+} {
   const database: JsonRecord = {}
+  const skippedBlocks: RisuSaveImportSkippedBlock[] = []
   let sawRoot = false
+  const singletonTypes = new Set<RisuSaveBlockType>()
+  const singletonBlockTypes = new Set([
+    RisuSaveBlockType.ROOT,
+    RisuSaveBlockType.BOTPRESET,
+    RisuSaveBlockType.MODULES,
+    RisuSaveBlockType.PLUGINS,
+    RisuSaveBlockType.LOADOUTS,
+    RisuSaveBlockType.PLUGIN_STORAGE,
+    RisuSaveBlockType.CONFIG,
+  ])
+  const rootComponentKeys = new Set<string>()
 
   for (const block of blocks) {
     if (block.unsupportedReference) continue
+    if (block.type === RisuSaveBlockType.CHAT) {
+      skippedBlocks.push({ name: block.name, type: 'CHAT' })
+      continue
+    }
     if (block.content === null) {
       throw new ValidationError(`RISUSAVE block ${block.name} has no content`)
+    }
+    if (singletonBlockTypes.has(block.type)) {
+      if (singletonTypes.has(block.type)) {
+        throw new ValidationError(`RISUSAVE save contains duplicate singleton block type ${block.type}`)
+      }
+      singletonTypes.add(block.type)
     }
 
     const parsed = parseBlockJson(block.name, block.content)
@@ -172,8 +244,6 @@ function assembleBlockDatabase(blocks: ReturnType<typeof decodeRisuSaveBlockEnve
         }
         database.characters.push(readJsonObject(parsed, `${block.name} block`))
         break
-      case RisuSaveBlockType.CHAT:
-        throw new ValidationError(`Standalone chat blocks are not supported yet: ${block.name}`)
       case RisuSaveBlockType.BOTPRESET:
         database.botPresets = readJsonArray(parsed, `${block.name} block`)
         break
@@ -200,6 +270,10 @@ function assembleBlockDatabase(blocks: ReturnType<typeof decodeRisuSaveBlockEnve
         if (ROOT_COMPONENT_RESERVED_KEYS.has(component.key)) {
           throw new ValidationError(`${block.name} block key ${component.key} is reserved for resource blocks`)
         }
+        if (rootComponentKeys.has(component.key)) {
+          throw new ValidationError(`${block.name} block key ${component.key} duplicates another root component`)
+        }
+        rootComponentKeys.add(component.key)
         database[component.key] = cloneJson(component.data)
         break
       }
@@ -214,17 +288,108 @@ function assembleBlockDatabase(blocks: ReturnType<typeof decodeRisuSaveBlockEnve
     throw new ValidationError('RISUSAVE block save must include a root block')
   }
 
-  return database
+  return { database, skippedBlocks }
 }
 
 function normalizeImportDatabase(database: unknown): RisuSaveImportDatabaseNormalization {
-  assertRecognizedImportDatabase(database)
-  rejectUnsupportedGroupCharacters(database)
-  const target = normalizeImportDatabaseShape(database)
+  const extracted = extractPortableMetadata(database)
+  assertRecognizedImportDatabase(extracted.database)
+  rejectUnsupportedGroupCharacters(extracted.database)
+  assertPortableGreetingTranslationCharacterIds(extracted.database)
+  const target = normalizeImportDatabaseShape(extracted.database)
+  const portable = extractPortableGreetingTranslations(target)
   return {
-    database: target,
+    database: portable.database,
+    portableMetadata: extracted.portableMetadata,
+    greetingTranslations: portable.rows,
     incompleteChatCount: normalizeImportedChatGenerationSettings(target),
   }
+}
+
+function assertPortableGreetingTranslationCharacterIds(database: JsonRecord): void {
+  if (!Array.isArray(database.characters)) return
+  for (let characterIndex = 0; characterIndex < database.characters.length; characterIndex += 1) {
+    const character = database.characters[characterIndex]
+    if (!isJsonRecord(character)) continue
+    const portable = character[GREETING_TRANSLATIONS_PORTABLE_FIELD]
+    if (
+      Array.isArray(portable) &&
+      portable.length > 0 &&
+      (typeof character.chaId !== 'string' || character.chaId.trim() === '')
+    ) {
+      throw new ValidationError(
+        `database.characters[${characterIndex}].chaId must be a non-empty string when greeting translations exist`,
+      )
+    }
+  }
+}
+
+function extractPortableGreetingTranslations(database: JsonRecord): {
+  database: JsonRecord
+  rows: GreetingTranslationRow[]
+} {
+  if (!Array.isArray(database.characters)) return { database, rows: [] }
+  const rows: GreetingTranslationRow[] = []
+  const identities = new Set<string>()
+  const characters = database.characters.map((value, characterIndex) => {
+    if (!isJsonRecord(value)) return value
+    const character = { ...value }
+    const portable = character[GREETING_TRANSLATIONS_PORTABLE_FIELD]
+    delete character[GREETING_TRANSLATIONS_PORTABLE_FIELD]
+    if (portable === undefined) return character
+    if (!Array.isArray(portable)) {
+      throw new ValidationError(
+        `database.characters[${characterIndex}].${GREETING_TRANSLATIONS_PORTABLE_FIELD} must be an array`,
+      )
+    }
+    if (portable.length > 0 && (typeof character.chaId !== 'string' || character.chaId.trim() === '')) {
+      throw new ValidationError(
+        `database.characters[${characterIndex}].chaId must be a non-empty string when greeting translations exist`,
+      )
+    }
+    for (let rowIndex = 0; rowIndex < portable.length; rowIndex += 1) {
+      const label = `database.characters[${characterIndex}].${GREETING_TRANSLATIONS_PORTABLE_FIELD}[${rowIndex}]`
+      let parsed
+      try {
+        parsed = parsePortableGreetingTranslation(portable[rowIndex], label)
+      } catch (error) {
+        if (error instanceof GreetingTranslationValidationError) {
+          throw new ValidationError(error.message)
+        }
+        throw error
+      }
+      const identity = `${character.chaId}\u0000${parsed.greetingIndex}\u0000${parsed.settingsHash}`
+      if (identities.has(identity)) {
+        throw new ValidationError(`${label} duplicates another greeting translation row`)
+      }
+      identities.add(identity)
+      const source = greetingSourceAtIndex(character, parsed.greetingIndex)
+      if (source === null || sourceHash(source) !== parsed.translation.sourceHash) continue
+      rows.push({
+        characterId: character.chaId as string,
+        greetingIndex: parsed.greetingIndex,
+        settingsHash: parsed.settingsHash,
+        sourceHash: parsed.translation.sourceHash,
+        translation: parsed.translation,
+        updatedAt: parsed.translation.updatedAt,
+      })
+    }
+    return character
+  })
+  return { database: { ...database, characters }, rows }
+}
+
+function extractPortableMetadata(database: unknown): {
+  database: JsonRecord
+  portableMetadata: RisuServerPortableMetadata
+} {
+  const source = readJsonObject(database, 'database')
+  const domainDatabase = { ...source }
+  const portableMetadata = hasOwn(source, RISU_SERVER_DATA_KEY)
+    ? validateRisuServerPortableMetadata(source[RISU_SERVER_DATA_KEY])
+    : emptyRisuServerPortableMetadata()
+  delete domainDatabase[RISU_SERVER_DATA_KEY]
+  return { database: domainDatabase, portableMetadata }
 }
 
 function assertRecognizedImportDatabase(database: unknown): void {
@@ -268,11 +433,14 @@ function normalizeImportDatabaseShape(database: unknown): JsonRecord {
 
   normalizePresetCollection(target)
   normalizePromptTemplateCollection(target)
-  if (hasAnyKey(target, ['personas', 'selectedPersona', 'username', 'userIcon', 'personaPrompt'])) {
+  if (
+    hasAnyKey(target, ['personas', 'selectedPersonaId', 'selectedPersona', 'username', 'userIcon', 'personaPrompt'])
+  ) {
+    repairPersistedPersonaSelectionIdentity(target)
     normalizePersonaCollection(target)
   }
   if (hasAnyKey(target, ['translatorPresets', 'translatorPresetId', 'translatorPrompt', 'translatorMaxResponse'])) {
-    normalizeTranslatorPresetCollection(target)
+    normalizeTranslatorPresetCollectionWithLegacyCompatibility(target)
   }
   normalizeLoadoutCollection(target)
   ensureModuleRecords(target)
@@ -288,18 +456,27 @@ function normalizeImportDatabaseShape(database: unknown): JsonRecord {
   // repair passes. Run the authoritative repair after defaults so imported
   // rows always reach SQLite with stable book and entry ids.
   ensureGlobalLorebookCollection(normalized)
+  repairPersistedHypaV3PresetSelectionIdentity(normalized)
   return normalized
 }
 
 function normalizeImportedChatGenerationSettings(database: JsonRecord): number {
   if (!Array.isArray(database.characters)) return 0
 
+  const translatorPresetIds = new Set(
+    (Array.isArray(database.translatorPresets) ? database.translatorPresets : []).flatMap((preset) =>
+      isJsonRecord(preset) && typeof preset.id === 'string' && preset.id.trim() ? [preset.id] : [],
+    ),
+  )
   let chatCount = 0
   for (const character of database.characters) {
     if (!isJsonRecord(character) || !Array.isArray(character.chats)) continue
     for (const chat of character.chats) {
       if (!isJsonRecord(chat)) continue
       chatCount += 1
+      if (typeof chat.translatorPresetId !== 'string' || !translatorPresetIds.has(chat.translatorPresetId)) {
+        delete chat.translatorPresetId
+      }
       if (!hasOwn(chat, CHAT_GENERATION_SETTINGS_FIELD)) continue
 
       const normalized = normalizeStoredChatGenerationSettings(chat[CHAT_GENERATION_SETTINGS_FIELD])

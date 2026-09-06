@@ -1,0 +1,199 @@
+# Fastify multi-chat and mobile audit work-priority index
+
+Generated 2026-08-11 from the
+[consolidated audit](fastify-multichat-mobile-stability-audit-2026-08-11.md)
+and its ten reports under [`validate/`](validate/). The consolidated audit
+recorded **10 primary findings**; the validation reports added concrete
+consequences and adjacent findings, while the contextual review added seven
+contextual observations, one explicit server-restart limitation, and two
+destructive-operation concurrency questions. After de-duplicating shared root
+causes, this index contains **1 active work item**, **35 resolved items**,
+and **0 deferred items**.
+
+The consolidated audit was recorded at `9afde4658ea5b277493e9d7f6ef7aaf387544165`.
+Most validation reports checked the relevant paths again at
+`e43f5da431f8d2099da6e5fd0e5cc5a7d471a25c`; this index was assembled at
+`a2e7842dbc0929682e8bdefdfcbf563e2f9cf255`. Findings are point-in-time
+evidence and must be re-verified against current code before implementation.
+
+Status values: `Ready` — the report describes a bounded implementation and
+test plan; `Needs design` — a state machine, protocol, durable schema, or
+cross-layer contract must be designed first; `Needs decision` — product or
+compatibility policy must be selected before implementation; `Deferred` —
+valid work intentionally held outside the active order; `Resolved` — the item
+has an implemented decision and regression coverage.
+
+## Maintenance rules
+
+- Before starting an item, re-verify its source report against current code and
+  update its Status if the implementation or risk changed.
+- Treat a tactical containment and its root fix as different deliverables. Do
+  not close a root item merely because one caller or race window was contained.
+- When an item is completed, move its row to **Completed items**, set Status to
+  `Resolved`, and record the commit plus the regression tests in Resolution.
+- When an item is intentionally deferred, move its row to **Deferred items**
+  with a reason and a concrete revisit condition. Do not delete rows.
+- A `Needs decision` item resolved by retaining current behavior still needs a
+  regression pin, explicit user-facing/documentation treatment where relevant,
+  and an accepted-divergence note.
+- Shared protocol work must preserve the exact `operationId`, accepted message
+  ID, job ID, writer/lineage, and stable chat target wherever the source rows
+  require them. Chat ID alone is a concurrency scope, not operation ownership.
+- Cross-layer fixes are complete only when their report-specific unit,
+  Fastify-integration, and production-browser gates pass. Eventual hydration is
+  not a substitute for an ordering or durability invariant.
+
+## Priority rules
+
+Each item appears in the highest applicable tier. A lower tier does not mean a
+lower source-report severity; it means that a higher-priority data category was
+not confirmed.
+
+| Tier | Meaning |
+| --- | --- |
+| Tier 0 | Persistent-data safety and integrity: authoritative overwrite/loss, stranded durable intent, false durability claims, incorrect exported artifacts, or cancellation/recovery behavior that can durably commit the wrong result. |
+| Tier 1 | Temporary user content and content-bound resident state: drafts, provisional message projections, resident transcripts, or their send-recovery controls can be lost, duplicated, or stuck while authoritative data remains safe. |
+| Tier 2 | Mobile and reconnect stability: lifecycle, reattach, replay, progress, and production-browser recovery defects not already promoted by persistent-data impact. |
+| Tier 3 | Remaining supported-feature correctness, compatibility, accessibility, and avoidable provider work. |
+| Tier 4 | Defense-in-depth and policy tests for source-reachable but not yet reproduced failure modes. |
+
+## Tier 0 — Persistent-data safety and integrity
+
+| Work item | Findings | Status | Impact | Risk / dependencies |
+| --- | --- | --- | --- | --- |
+
+## Tier 1 — Temporary and resident data
+
+| Work item | Findings | Status | Impact | Risk / dependencies |
+| --- | --- | --- | --- | --- |
+
+## Tier 2 — Mobile and reconnect stability
+
+| Work item | Findings | Status | Impact | Risk / dependencies |
+| --- | --- | --- | --- | --- |
+| Build the production-stack desktop/mobile lifecycle matrix | [Browser/mobile coverage gap](fastify-multichat-mobile-stability-audit-2026-08-11.md#browsermobile-coverage-gap) | Ready | Existing tests did not exercise the process-loss, transport, concurrency, reattach, journal, and multi-job interleavings behind the findings. | Automated matrix landed in `e96a0f792`: `server/fastify/browser-smoke/acceptedSendProtocol.spec.ts` runs eight journeys over the built production stack (desktop + Pixel 7) with smoke-gated fault seams — keyless streaming provider, viewer disconnect, same-database Fastify restart, SQLite finalization fault — asserting visible UI, resident projection, authoritative transcript/bootstrap, and job/recovery/finalization/outbox state; it also exposed and fixed a real bootstrap-reconciliation defect in `generationPersistenceState`. Verified stable across two consecutive full `pnpm smoke:fastify-browser` runs (all 8 pass; the 2 remaining smoke failures pre-date this workstream at `d26c10623`). **Remaining before workstream closure: a physical-device pass (maintainer hardware required).** |
+
+## Tier 3 — Remaining feature correctness and compatibility
+
+| Work item | Findings | Status | Impact | Risk / dependencies |
+| --- | --- | --- | --- | --- |
+
+## Tier 4 — Defense-in-depth and policy tests
+
+| Work item | Findings | Status | Impact | Risk / dependencies |
+| --- | --- | --- | --- | --- |
+
+## Completed items
+
+Move finished active rows here with Status `Resolved`, a commit, and regression
+coverage. Decisions to retain current behavior also belong here after they are
+documented and pinned.
+
+| Work item | Findings | Status | Impact | Resolution |
+| --- | --- | --- | --- | --- |
+| Retire character `additionalText` from Fastify prompt assembly without deleting imported data | [Contextual character-prompt observation](fastify-multichat-mobile-stability-audit-2026-08-11.md#contextual-migration-spot-checks) | Resolved | Characters relying on the legacy field receive a different prompt, but the divergence is intentional and imported data remains preserved. | Accepted divergence completed in `ec124302c`: the editor shows the unsupported retained field read-only and prompt omission has regression coverage; see the [archived work index](../../.archived-docs/audit/WORK-INDEX.md). |
+| Require an exact assistant result before writing translated PO output | [MS-10 additional issue 2](validate/ms-10-auxiliary-send-recovery-bypass.md) | Resolved | A failed generation could export the source user row as if it were the translated assistant result. | Fixed in `53e59f420`: PO export requires `sendChat` success plus the assistant row adjacent to the exact accepted message ID in the captured chat, with strict forced hydration reconciliation when the projection is missing; success and download are suppressed on failure. Regression: `src/ts/process/files/multisend.test.ts` (adjacency, hydration fallback, failed generation, missing adjacent assistant). |
+| Flush the final PO entry at end-of-file | [MS-10 additional issue 4](validate/ms-10-auxiliary-send-recovery-bypass.md) | Resolved | A valid final PO entry without a trailing blank separator was omitted, producing an incomplete exported artifact. | Fixed in `53e59f420`: the accumulated entry is flushed at EOF. Regression: `src/ts/process/files/multisend.test.ts` fixtures with and without trailing separators. |
+| Fix the PO extracted-note marker typo | [MS-10 additional issue 5](validate/ms-10-auxiliary-send-recovery-bypass.md) | Resolved | `#. Note =` was recognized but `#. Notes =` was removed, leaving the marker in the model input. | Fixed in `53e59f420`: one normalized matcher (`/^#\. Notes? =/`) recognizes and removes both markers. Regression: `src/ts/process/files/multisend.test.ts` singular/plural marker fixtures. |
+| Stress-test restore/import and backup snapshot atomicity before choosing a policy | [Destructive-operation assessment](fastify-multichat-mobile-stability-audit-2026-08-11.md#destructive-operation-assessment) | Resolved | Ordinary commands might have interleaved with long replacement boundaries, and SQLite-plus-asset backups might have captured mixed-time state. | Pinned in `3193191c5`, no corruption reproduced: held commands spanning restore/import are rejected with `409 database_lineage_conflict` and replacement state stays intact; a backup may contain a post-snapshot T2 asset but it stays unindexed and unreachable after restore. No lock/snapshot policy change needed. Regression: `server/fastify/__tests__/backups.test.ts` stress tests. |
+| Fault-inject failure between job registration, viewer attach, and runner tracking | [MS-04 hardening observations](validate/ms-04-pre-job-id-cancellation-gap.md) | Resolved | **Promoted to Tier 0 during validation:** a synchronous failure between registration, viewer attach, and runner tracking DID strand a registered process-local job and its chat slot. | Reproduced and fixed in `3193191c5`: viewer attachment cleans up heartbeat/client state on failure and the launch path aborts and deletes the failed job and releases the chat slot. Four deterministic transition faults assert abort, empty bootstrap registry, 404 reattach, and same-chat retry. Regression: `server/fastify/__tests__/durableGeneration.test.ts`. |
+| Decide consumer-only durable-stream cancellation semantics | [MS-04 hardening observations](validate/ms-04-pre-job-id-cancellation-gap.md) | Resolved | **Promoted to Tier 0 during validation:** consumer-only cancellation correctly avoided server cancellation but leaked the owner abort listener and live SSE reader. | Decision 2026-08-11 (passive detach) pinned and leak fixed in `3193191c5`: a dedicated viewer AbortController detaches only local observation, clearing progress/listeners while the durable job continues; explicit cancellation flows solely through Stop; full replay on reattach covered. Regression: `src/ts/process/request/tests/serverChat.test.ts`. |
+| Replace the Hypa progress scalar with an identified job projection | [MS-09](validate/ms-09-hypa-v3-global-progress.md), [MS-09 E/G](validate/ms-09-hypa-v3-global-progress.md) | Resolved | One job's terminal event hid another active job; labels/counts could describe the wrong chat and the global overlay was intrusive on mobile. | Policy 2026-08-11 implemented in `ecf470b04`: normalized instance-keyed projection with shared selectors for overlay and modal, bounded terminal history/fences, truthful global aggregate by default grouped by chat/job, an accessibility setting for open-chat-only presentation with a compact background indicator, localization and role=status/aria-live semantics. Regression: `src/ts/server/memoryJobProjection.test.ts`, `src/ts/server/memoryJobRefresh.test.ts`, `src/ts/setting/utils.test.ts`. |
+| Make Hypa startup/reconnect and refresh ordering authoritative | [MS-09 A-D](validate/ms-09-hypa-v3-global-progress.md) | Resolved | Missed live events could leave progress permanently absent/open, a stale GET could erase a newer active job, and an unbounded logical-ID fence could reject a recreated job. | Fixed in `ecf470b04`: versioned memory-event stream with an authoritative `memory_snapshot` frame (server subscribes before snapshot creation and buffers newer events), jobs GET carries the same version watermark, client reducers fence stale snapshots/requests, concrete `instance_id` identity (schema v30 backfill) replaces the logical-ID fence, and automatic planner/missing-memory enqueues emit their committed pending jobs. Regression: `server/fastify/__tests__/memoryEvents.test.ts`, `server/fastify/__tests__/memoryJobsRoutes.test.ts`, `server/fastify/__tests__/db.test.ts`, `src/ts/server/events.test.ts`. |
+| Abort a running Hypa provider request when its job is cancelled | [MS-09 F](validate/ms-09-hypa-v3-global-progress.md) | Resolved | SQLite recorded cancellation while provider work continued to consume tokens, quota, network, and time. | Fixed in `ecf470b04`: cancellation aborts the running worker batch/provider signal per job while the commit-time cancelled-state guard is retained. Regression: `server/fastify/__tests__/memoryWorker.test.ts`, `server/fastify/__tests__/memorySummarizeJobHandler.test.ts`, `server/fastify/__tests__/memoryEmbedJobHandler.test.ts`. |
+| Expose per-job reattach failure with exact Retry, Refresh, and Stop actions | [MS-08](validate/ms-08-reattach-exhaustion.md) | Resolved | After retries exhausted, a dead observer still looked like healthy generation and blocked the chat with no recovery action, especially after mobile lifecycle transitions. | Fixed in `6e72ecf49`: observable per-job lifecycle (attached/retrying/exhausted-dead/completed/cancelled) with retained last error; accessible localized failure alert with exact-job Retry/Refresh/Stop (typed cancellation reused); bootstrap reconciliation preserves unrelated failures and rehydrates reconciled chats; sidebar/pinned/chat-list warning treatments. Regression: `src/ts/process/__tests__/reattach.test.ts`, `src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts`, `src/lib/SideBars/*.test.ts`. |
+| Reconcile a replayed accepted append with the exact composer draft generation | [MS-01 Addendum B](validate/ms-01-accepted-send-recovery.md) | Resolved | After reload, the accepted row could coexist with the same text restored as an unsent draft, inviting a duplicate resend. | Wave 3 (`8c822bf35`): composer draft reconciliation clears only the exact accepted draft generation identity (opaque generation identity, never text equality); same-text resends with a newer generation are preserved. Regression: `src/lib/ChatScreens/DefaultChatScreen.composerDrafts.test.ts`, `src/ts/process/acceptedSendRecoveryState.test.ts`. |
+| Reconcile accepted-send recovery with the exact discovered job | [MS-07](validate/ms-07-recovered-job-warning-coexistence.md) | Resolved | Foreground/online/page-show recovery could show "reply could not be started" and Retry beside the matching visibly running job. | Wave 3 (`8c822bf35`): recovery models `retryable -> owned_by_job -> completed`; Retry suppression requires exact operationId/acceptedMessageId/chat lineage; unrelated same-chat jobs retain their warning; completed operations persist until exact transcript reconciliation via the MS-06 barrier. Regression: `src/ts/process/acceptedSendRecoveryState.test.ts`, `src/ts/process/acceptedSendCoordinator.test.ts`. |
+| Prevent stale reattach restoration from outranking a newer same-chat job | [MS-02 A-03](validate/ms-02-chat-level-activity-is-not-operation-ownership.md) | Resolved | A failed stale reattach could be restored beside a newer job, causing Stop to target the stale job while the new job continued and persisted. | Protocol wave 5 implemented in `b14da1985`: one lifecycle reconciler with an atomic epoch fence; same-chat authority ordered by (projectionEpoch, operationStateVersion, attemptNo, jobId); restoration is a no-op when any newer application or candidate exists; exact-attempt reattach with typed 409 stale_generation_attempt redirection; Stop resolves the authoritative current attempt and operation-specific Stop is never redirected. The design's pinned timing sequence is a deterministic regression. Regression: `src/ts/process/__tests__/reattach.test.ts`, `src/ts/server/generationOperations.test.ts`, `server/fastify/__tests__/durableGeneration.test.ts`. |
+| Make Stop order-independent and acknowledged before and after job-ID delivery | [MS-04](validate/ms-04-pre-job-id-cancellation-gap.md), [MS-04 post-ID addendum](validate/ms-04-pre-job-id-cancellation-gap.md), [MS-08 AV-01](validate/ms-08-reattach-exhaustion.md) | Resolved | Stop could appear successful while the provider continued and a full or partial unwanted reply was later persisted. | UX decision 2026-08-11 implemented per protocol wave 4 in `0692762b9`: operation-keyed acknowledged Stopping… with retryable failure; durable encrypted cancel intent staged before viewer detach and replayed with priority; cancel-before-submit tombstones and pre-job-ID persisted intent make Stop order-independent; post-job-ID Stop targets the exact attempt; typed legacy job cancellation; reconciliation until the exact operation is cancelled/completed/absent. Regression: `src/ts/process/index.svelte.stop.test.ts`, `src/ts/server/generationOperations.test.ts`, `src/ts/server/pendingMutationReplay.test.ts`, `server/fastify/__tests__/generationOperations.test.ts`, `server/fastify/__tests__/durableGeneration.test.ts`. |
+| Create one durable, idempotent accepted-send operation | [MS-01](validate/ms-01-accepted-send-recovery.md), [MS-02](validate/ms-02-chat-level-activity-is-not-operation-ownership.md) | Resolved | A user row could be durably accepted while the obligation to launch or recover its reply existed only in browser memory and disappeared on reload or process eviction. | Implemented per the [protocol design](plans/accepted-send-protocol.md): wave 1 ledger/boot-sweep/bootstrap (`43247b49e`), wave 2 atomic submit/status/stream/cancel/retry endpoints with append+intent in one transaction and post-commit launch (`09b70cc6f`), wave 3 browser cutover for composer/Draft Send/Plugin V3/DevTool/PO/multisend with idempotent replay and durable recovery projections (`8c822bf35`). Regression: `server/fastify/__tests__/generationOperations*.test.ts`, `server/fastify/__tests__/durableGeneration.test.ts` (process-loss faults), `src/ts/server/generationOperations.test.ts`, `src/ts/process/acceptedSendCoordinator.test.ts`. |
+| Carry exact send lineage through jobs and transfer same-chat ownership through handoff | [MS-02](validate/ms-02-chat-level-activity-is-not-operation-ownership.md), [MS-01 Addendum A](validate/ms-01-accepted-send-recovery.md), [MS-02 A-01](validate/ms-02-chat-level-activity-is-not-operation-ownership.md), [MS-07 retry addendum](validate/ms-07-recovered-job-warning-coexistence.md) | Resolved | An unrelated same-chat job or a newer user row could be credited to an older send; retry could clear the wrong recovery, and an early lease release permitted duplicate sends. | Waves 2-3 (`09b70cc6f`, `8c822bf35`): operation/message IDs flow through POST, job, SSE, bootstrap, reattach, finalization journal, command events, and recovery; same-chat claims unify protocol and legacy operations; retry reservations are idempotent per retryRequestId; an attempt's job cannot settle another operation. Regression: lineage-agreement and claim-uniqueness suites in `server/fastify/__tests__/durableGeneration.test.ts` and `generationOperations.test.ts`. |
+| Define the server-restart outcome for in-flight generation | [Explicit design limitation](fastify-multichat-mobile-stability-audit-2026-08-11.md#server-restart-loses-in-flight-generation-ownership) | Resolved | A restart lost the runner, replay, lock, and bootstrap projection after a send might already be durable. | Decision 2026-08-11 implemented: wave 1 boot sweep marks interrupted operations `abandoned` with `providerMayHaveRun` and never auto-resumes (`43247b49e`); wave 3 projects abandoned operations as retryable recoveries whose retry requires explicit localized confirmation when the provider may have run (`8c822bf35`). Regression: `server/fastify/__tests__/generationOperationsStartup.test.ts`, `src/ts/process/acceptedSendRecoveryState.test.ts`. |
+| Enforce hard durable replay budgets and an explicit gap/snapshot contract | [MS-03 additional issue B](validate/ms-03-bounded-replay-terminal-reconciliation.md) | Resolved | Protected frames could exceed advertised per-job limits, letting detached jobs create avoidable process-memory pressure, and in-flight reconnect had no explicit gap signal. | Fixed in `5a839b38a`: hard per-job (512 events/2 MiB) and aggregate (16 MiB) budgets with exact accounting, token batch-compaction and latest-state snapshot replacement, oversized terminals staged to an authenticated side-channel with retention, an additive typed `replay_gap` frame, and client gap-truncation handling that defers to the canonical terminal snapshot. Regression: `server/fastify/__tests__/streamJobs.test.ts`, `server/fastify/__tests__/streamJobsRoutes.test.ts`, `server/fastify/__tests__/durableGeneration.test.ts`, `src/ts/process/request/tests/serverChat.test.ts`, `src/ts/process/__tests__/streamResponse.test.ts`. |
+| Recover terminal-only durable and observable effects idempotently | [MS-06 AV-03](validate/ms-06-completion-reconciliation.md) | Resolved | A completion recovered only from the transcript could skip IGP and plugin automation, making interrupted and uninterrupted jobs produce different durable/observable outcomes. | Policy 2026-08-11 implemented in `1dd9f9123`: durable effect ledger keyed by lineage/operation/generation + effect kind with atomic idempotent claims and receipts, created transactionally with assistant persistence; durable/automation effects (server-owned translation, IGP, plugin output listeners) replay exactly once even on late recovery; ephemeral notification/TTS/sound fire only on live terminals with permanent late_recovery skips; emotion/image state recomputes; pre-ledger terminals get conservative receipts. Regression: `server/fastify/__tests__/generationEffects.test.ts`, `src/ts/process/generationEffectLedger.test.ts`, `src/ts/process/recoveredGenerationEffects.test.ts`. |
+| Apply authoritative completion reads before reporting success | [MS-06](validate/ms-06-completion-reconciliation.md), [MS-06 AV-02](validate/ms-06-completion-reconciliation.md) | Resolved | The server row was safe, but the resident chat could remain user-only or partial while UI and Plugin V3 were told generation succeeded. | Fixed in `317c0d2ea`: accepted-send completion is reconciled through one fetch/freshness/apply/post-apply-verify barrier with stable-identity, baseline-revision, projection-epoch, range, and adjacency guards; success requires the resident transcript to contain the accepted row and its adjacent reply, and strict hydration reports the current physical request, not a historical cache bit. Regression: `src/ts/server/chatMessageHydration.test.ts`, `src/ts/process/acceptedSendCoordinator.test.ts`. |
+| Bound authority probes and always settle accepted-send recovery controls | [MS-06 AV-01](validate/ms-06-completion-reconciliation.md), [MS-08 AV-02](validate/ms-08-reattach-exhaustion.md) | Resolved | A stalled bootstrap or transcript read could prevent the initial warning forever or leave Retry disabled indefinitely. | Fixed in `317c0d2ea`: one 10-second abort deadline covers bootstrap and transcript authority reads; timeout classifies as authority unknown (recovery and warning retained); Retry state settles in `finally`. Each never-settling read is tested separately. Regression: `src/ts/process/acceptedSendCoordinator.test.ts`, `src/ts/process/__tests__/reattach.test.ts`. |
+| Reconstruct, render, and eventually settle real finalization-queue state | [MS-05 A-1/A-2/A-6](validate/ms-05-generation-finalization-journal.md) | Resolved | A legitimately provisional reply had no row indicator, its marker was lost on reload, it could disappear and reappear, and it could retry forever without a visible stalled policy. | Policy 2026-08-11 implemented in `ce78d75d2`: writer-scoped bootstrap projection of pending/stalled/terminal/`stalled_legacy`/committed-cleanup states reconstructs snapshot-fenced provisional rows after reload without overwriting newer authoritative state; the exact row renders a localized indicator; retries use capped exponential backoff (5s-5min), continue indefinitely, and show a stalled indicator after three failures; terminal-history pruning removed so journal rows are never silently deleted. Regression: `server/fastify/__tests__/generationFinalizationRetry.test.ts`, `server/fastify/__tests__/bootstrap.test.ts`, `src/ts/process/generationPersistenceState.test.ts`, `src/lib/ChatScreens/Chat.customHtml.test.ts`. |
+| Route every append-and-generate caller through one owned boundary | [MS-10 and addenda 1/3](validate/ms-10-auxiliary-send-recovery-bypass.md), [MS-02 A-02](validate/ms-02-chat-level-activity-is-not-operation-ownership.md) | Resolved | DevTool Autopilot, PO multisend, and slash/STScript `/multisend` could leave accepted rows without replies or recovery; DevTool could also enter legacy reentrant generation. | Containment landed in `d2df26e25`: DevTool and PO multisend await the coordinator per item with captured targets and queued settlement; slash/STScript `/multisend` append through the accepted helper and settle sequentially with `/multisend clear` ordered ahead of appends; the DevTool reentrant path is removed; chat-level activity no longer counts as success evidence (exact adjacent authoritative reply only); a structural allowlist test pins permitted raw `sendChat` callers. The durable atomic accepted-send endpoint remains open in its own row; this containment migrates onto it. Regression: `src/ts/process/rawGenerationCallerAllowlist.test.ts`, `src/ts/process/acceptedSendCoordinator.test.ts`, `src/lib/SideBars/DevTool.svelte.test.ts`, `src/ts/process/files/multisend.test.ts`, `src/ts/process/__tests__/command.resourceGuard.test.ts`, `src/ts/process/__tests__/triggers.resourceGuard.test.ts`. |
+| Fence restored legacy continue/regenerate retries before replay | [MS-05 A-5](validate/ms-05-generation-finalization-journal.md) | Resolved | A pending retry restored from an old backup could replace a newer target message without an assembly-time freshness proof. | Decision 2026-08-11 implemented in `4abc6d1c0`: NULL-snapshot continue/regenerate rows are never replayed; at replay/sweep time they are quarantined as retained terminal `stalled_legacy` rows excluded from pruning, covering rows already present in existing DBs. Regression: `server/fastify/__tests__/durableGeneration.test.ts`, `server/fastify/__tests__/backups.test.ts` (restore→edit→sweep fault coverage). |
+| Make finalization journaling and wire disposition phase-aware | [MS-05](validate/ms-05-generation-finalization-journal.md), [MS-05 A-3/A-4](validate/ms-05-generation-finalization-journal.md) | Resolved | The server could claim `queued` with no retry row, silently lose a cancelled partial result, or report failure after the message already committed. | Fixed in `4abc6d1c0`: journal insert, authoritative commit, bookkeeping, and cleanup are tracked as separate phases with checked receipts; wire dispositions distinguish `unconfirmed`/`queued`/`rejected`/`committed_cleanup_pending`; cancel finalization uses the same contract and integrates with the cancelled terminal disposition; phase-specific metrics and client ownership updated together. Regression: `server/fastify/__tests__/durableGeneration.test.ts` (injected failures incl. real SQLite write locking), `src/ts/process/request/tests/serverChat.test.ts`, `src/ts/process/serverBackedSendChat.findMessage.test.ts`. |
+| Prevent unsupported persistent trigger effects from masquerading as durable mutations | [Contextual trigger/CBS finding](fastify-multichat-mobile-stability-audit-2026-08-11.md#contextual-migration-spot-checks) | Resolved | Visible character, persona, and lorebook effects could silently no-op, so users could believe persistent data changed when it did not. | Decision 2026-08-11 implemented in `67210c623`: unsupported persistent effects surface configuration/import diagnostics (V1/V2 banners, recursive non-mutating definition scan) plus visible localized runtime warnings; imported definitions stay intact and prior retirements are preserved. Regression: `src/lib/SideBars/Scripts/TriggerV2List.svelte.test.ts`, `src/lib/SideBars/Scripts/triggerV2Import.test.ts`, `server/fastify/__tests__/triggers.test.ts`, `server/fastify/__tests__/generation.chat.test.ts`. |
+| Make remaining unsupported trigger/CBS paths explicit and non-throwing | [Contextual trigger/CBS finding](fastify-multichat-mobile-stability-audit-2026-08-11.md#contextual-migration-spot-checks) | Resolved | Non-persistent effects could silently no-op and browser-context CBS callbacks could throw under Fastify. | Decision 2026-08-11 implemented in `67210c623`: browser-language and screen-width CBS resolve server-side from normalized request-local client context and missing values emit structured non-throwing diagnostics. Follow-up 2026-08-21 added `screenheight`/`screen_height` to the same request-local contract using `window.innerHeight`; older clients still receive the unavailable-context warning. Regression: `src/ts/process/request/clientContext.test.ts`, `src/ts/process/request/tests/serverChat.test.ts`, `server/fastify/__tests__/generation.chat.test.ts`. |
+| Make the complete durable terminal result canonical after replay gaps | [MS-03](validate/ms-03-bounded-replay-terminal-reconciliation.md) | Resolved | After token eviction, the browser, plugins, and IGP could consume a truncated suffix; IGP could turn the bad projection into a durable message update. | Fixed in `f372c0ee6`: durable streams replace any surviving replay token suffix with the complete `done.result` snapshot before terminal resolution, terminal consumers, and stream closure; inline streams keep the fallback-only contract. Regression: `src/ts/process/request/tests/serverChat.test.ts`, `src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts`, `server/fastify/__tests__/streamJobs.test.ts`, `server/fastify/__tests__/durableGeneration.test.ts` (both replay caps, send/continue/regenerate, changed/unchanged text). |
+| Give cancelled jobs a non-success terminal disposition | [MS-03 additional issue A](validate/ms-03-bounded-replay-terminal-reconciliation.md) | Resolved | A successfully cancelled job was reported as ordinary completion, so partial text could trigger IGP, plugin output listeners, notifications, and emotion work. | Fixed in `f372c0ee6`: additive `done.outcome` (`completed`/`cancelled`; absence = completed), cancelled streaming persists the mode-aware partial with reconciliation metadata and emits a protected cancelled terminal; cancelled terminals reconcile the row while skipping all success-only effects, and server-owned reroll seeding is terminal-success-gated. Single-writer Stop-then-reattach covered. The acknowledged-Stop lifecycle remains a separate open design item. Regression: same suites as above. |
+| Make optimistic character creation and import completion truthful | [Contextual optimistic-creation finding](fastify-multichat-mobile-stability-audit-2026-08-11.md#contextual-migration-spot-checks) | Resolved | Non-selecting create/import returned an ID or index before durable settlement, so an apparently created character could later disappear after rollback. | Decision 2026-08-11 implemented in `cc0a862af`: creation dispatchers return typed accepted/queued/failed outcomes; IDs/indexes exist only on accepted results; navigation and success notifications wait for durable acceptance behind freshness guards; rejected creations roll back without a phantom target; queued stays reported as queued. Regression: `src/ts/characterCommands.test.ts`, `src/ts/characters.changeChar.test.ts`, `src/ts/characterCards.pngImport.test.ts`, `src/ts/characterCards.realmImport.test.ts`, `src/ts/compatibilityAdapters.test.ts`, `src/ts/playground.test.ts`. |
+| Surface missing and orphaned assets in bundle-import results | [Contextual bundle-import finding](fastify-multichat-mobile-stability-audit-2026-08-11.md#contextual-migration-spot-checks) | Resolved | The browser announced success while dropping the server's report that imported persistent data had missing/orphaned assets. | Fixed in `23d3e98f6`: `importServerBundle` validates and propagates the server `assetReport`; the UI shows a localized qualified completion (clean, missing-reference caveat, orphaned-asset caveat, and combined with the discarded-queued-changes warning). Server import safeguards unchanged. Regression: `src/ts/server/backups.test.ts`, `src/ts/storage/backup.test.ts`. |
+| Normalize the default/legacy Kobold URL | [Contextual Kobold finding](fastify-multichat-mobile-stability-audit-2026-08-11.md#contextual-migration-spot-checks) | Resolved | The repository default ending in `/api/v1` became `/api/v1/api/v1/generate`, so the default legacy provider could target an invalid endpoint. | Fixed in `59f4b3552`: the generate endpoint is joined segment-aware, deduplicating any overlapping suffix. Regression: `server/fastify/__tests__/kobold.test.ts` (bare host, intermediate `/api/v1`, full generate URL). |
+| Implement or explicitly disable Ooba Legacy streaming | [Contextual Ooba finding](fastify-multichat-mobile-stability-audit-2026-08-11.md#contextual-migration-spot-checks) | Resolved | `useStreaming` was calculated but the adapter always used buffered HTTP, so a visible setting had no effect. | Decision 2026-08-11 implemented in `59f4b3552`: Ooba-Legacy-only configurations show unchecked disabled Streaming/Half-streaming controls plus a localized buffered-only compatibility notice; the retired WebSocket adapter stays retired, with the policy documented at the dispatch branch. Regression: `src/lib/Setting/Pages/BotSettings.pendingFlush.svelte.test.ts`, `src/ts/model/modelProfileUiState.test.ts`. |
+| Support or explicitly diagnose standalone `CHAT` save blocks | [Contextual save-import finding](fastify-multichat-mobile-stability-audit-2026-08-11.md#contextual-migration-spot-checks) | Resolved | Saves using that compatibility block could not be imported and surfaced a raw error, although rejection was already atomic. | Documented import-time incompatibility per the 2026-08-11 decision, fixed in `43ac4a1cc`: typed `422 unsupported-standalone-chat-blocks` on the `.risu` and bundle import routes, localized browser diagnostic in every language pack, limitation documented in `README.md` and `docs/structure/assets-and-saves.md`, atomic validate-before-replace preserved. Regression: `server/fastify/__tests__/risuSaveImportRoute.test.ts`, `server/fastify/__tests__/risuSaveBundleImportRoute.test.ts`, `src/ts/server/backups.test.ts`, `src/ts/storage/backup.test.ts`. |
+
+## Deferred items
+
+No items are currently deferred. Move an active row here only after an explicit
+decision and record a revisit trigger.
+
+| Work item | Findings | Status | Impact | Deferral reason / revisit condition |
+| --- | --- | --- | --- | --- |
+
+## Suggested execution order
+
+Tier position ranks user impact. Within a tier, execution should also minimize
+the time that known corruption or false-durability paths remain open and should
+reuse shared protocol work.
+
+1. **Land the contained Tier 0 fixes first:** fence or quarantine unfenced
+   restored retries; make finalization dispositions truthful; make
+   `done.result` canonical; distinguish cancelled terminals; require exact PO
+   output ownership; surface import asset loss; and fix EOF flushing. These do
+   not need to wait for the larger accepted-send design.
+2. **Design accepted send, lineage, and cancellation as one protocol program.**
+   Settle the operation schema, idempotent append/launch boundary, exact job
+   projection, cancel-before/after-POST semantics, and restart outcome
+   together. Implement them as separately reviewable changes with the same
+   identifiers and invariants.
+3. **Contain all caller bypasses in parallel with that design.** Route DevTool,
+   PO, and both `/multisend` paths through the current coordinator now, retain
+   same-chat preparation ownership, and remove chat-level false-success
+   inference. Migrate the containment to the durable endpoint when it lands.
+4. **Close the remaining Tier 0 contracts.** Design idempotent recovery for
+   terminal-only durable effects; make character create/import settlement
+   truthful; and implement or reject persistent trigger mutations explicitly.
+   Run the destructive-operation stress tests early and promote any reproduced
+   data-integrity failure into this batch before selecting a lock/snapshot
+   policy.
+5. **Close resident-state truthfulness next.** Apply completion reads before
+   success, bound authority probes, reconcile drafts, and project legitimate
+   finalization queues. Then connect exact accepted-send recoveries to exact
+   running jobs.
+6. **Finish mobile lifecycle state:** expose reattach failure/actions, rebuild
+   Hypa progress around authoritative job identity, and enforce the replay
+   snapshot/budget contract. Scaffold deterministic browser fault seams early
+   and use the full lifecycle matrix as the acceptance gate for every preceding
+   batch.
+7. **Take Tier 3 by subsystem:** provider transport fixes, save/script
+   compatibility decisions, PO parser cleanup, then memory-job cancellation.
+   Run Tier 4 fault tests opportunistically when the adjacent generation
+   lifecycle code is already under change.
+
+## Source coverage and non-work observations
+
+- The ten validation reports are the detailed evidence base; primary IDs and
+  addenda in the tables link directly to those reports. Shared causes are
+  intentionally represented by one implementation row with multiple finding
+  links rather than repeated in every tier.
+- The consolidated audit's verified safeguards and negative findings are not
+  work items: cross-chat activity is stable-target keyed, the server enforces
+  one running job per chat, most asynchronous writes have stable ownership,
+  typed same-chat 409 remains retryable, durable command replay is ordered and
+  idempotent, and normal finalization is snapshot-fenced.
+- No destructive import defect was confirmed. The Tier 4 destructive-operation
+  validation row preserves only the audit's two explicit concurrency questions and
+  requires reproduction before a locking policy is chosen.
+- Existing exit criteria are acceptance conditions on the corresponding rows,
+  not separate work items. The workstream closes only when every accepted send
+  has an exact durable outcome, every ownership decision is operation-specific,
+  terminal text matches authority before callbacks, Stop is honored across the
+  pre-header window, `queued` always has a durable row, and the production
+  browser matrix passes.
+
+Co-Authored-By: Codex <noreply@openai.com>

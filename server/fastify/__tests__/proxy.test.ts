@@ -295,8 +295,8 @@ function requestProxyFetchOverSocket(
   })
 }
 
-describe('Phase 3 POST /api/v1/proxy/fetch', () => {
-  it('L31: normalizes proxy fetch timeout headers to the default, explicit value, or cap', () => {
+describe('POST /api/v1/proxy/fetch', () => {
+  it('normalizes proxy fetch timeout headers to the default, explicit value, or cap', () => {
     expect(PROXY_FETCH_DEFAULT_TIMEOUT_MS).toBe(NON_DURABLE_REQUEST_DEADLINE_MS)
     expect(getRequestTimeoutMs(undefined)).toBe(PROXY_FETCH_DEFAULT_TIMEOUT_MS)
     expect(getRequestTimeoutMs('')).toBe(PROXY_FETCH_DEFAULT_TIMEOUT_MS)
@@ -305,7 +305,7 @@ describe('Phase 3 POST /api/v1/proxy/fetch', () => {
     expect(getRequestTimeoutMs(`${PROXY_FETCH_MAX_TIMEOUT_MS + 1}`)).toBe(PROXY_FETCH_MAX_TIMEOUT_MS)
   })
 
-  it('L31: cleanup clears proxy fetch timeout timers before they abort', () => {
+  it('cleanup clears proxy fetch timeout timers before they abort', () => {
     vi.useFakeTimers()
     const timeout = createTimeoutController(25)
     timeout.cleanup()
@@ -314,7 +314,7 @@ describe('Phase 3 POST /api/v1/proxy/fetch', () => {
     expect(timeout.timedOut()).toBe(false)
   })
 
-  it('Phase 4.5: strips decompression-sensitive upstream response framing headers', () => {
+  it('strips decompression-sensitive upstream response framing headers', () => {
     expect(
       filterResponseHeaders(
         new Headers({
@@ -480,7 +480,7 @@ describe('Phase 3 POST /api/v1/proxy/fetch', () => {
     expect(res.body).toBe('hello upstream')
   })
 
-  it('Phase 4.5: streams decompressed gzip responses without stale content-length', async () => {
+  it('streams decompressed gzip responses without stale content-length', async () => {
     const plain = 'proxy gzip payload\n'.repeat(750)
     const compressed = gzipSync(Buffer.from(plain, 'utf8'))
     expect(compressed.length).toBeLessThan(Buffer.byteLength(plain))
@@ -532,7 +532,7 @@ describe('Phase 3 POST /api/v1/proxy/fetch', () => {
     }
   })
 
-  it('L31: strips risu-* and host-class headers from the upstream request', async () => {
+  it('strips risu-* and host-class headers from the upstream request', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await harness.app.inject({
       method: 'POST',
@@ -582,7 +582,7 @@ describe('Phase 3 POST /api/v1/proxy/fetch', () => {
     expect(fwd['x-inbound-only']).toBeUndefined()
   })
 
-  it('L31: applies the default deadline when risu-timeout-ms is absent', async () => {
+  it('applies the default deadline when risu-timeout-ms is absent', async () => {
     echo.setResponder(() => {
       // Keep the upstream open until the proxy deadline aborts it.
     })
@@ -603,7 +603,7 @@ describe('Phase 3 POST /api/v1/proxy/fetch', () => {
     })
   })
 
-  it('L31: caps excessive risu-timeout-ms values at the proxy fetch maximum', async () => {
+  it('caps excessive risu-timeout-ms values at the proxy fetch maximum', async () => {
     echo.setResponder(() => {
       // Keep the upstream open until the capped proxy deadline aborts it.
     })
@@ -625,7 +625,7 @@ describe('Phase 3 POST /api/v1/proxy/fetch', () => {
     })
   })
 
-  it('L31: returns 504 when a valid explicit risu-timeout-ms elapses first', async () => {
+  it('returns 504 when a valid explicit risu-timeout-ms elapses first', async () => {
     echo.setResponder((_req, res) => {
       setTimeout(() => {
         res.writeHead(200)
@@ -649,7 +649,7 @@ describe('Phase 3 POST /api/v1/proxy/fetch', () => {
     expect(echo.requests).toHaveLength(1)
   })
 
-  it('L31: normalizes invalid risu-timeout-ms headers to the default deadline', async () => {
+  it('normalizes invalid risu-timeout-ms headers to the default deadline', async () => {
     echo.setResponder(() => {
       // Keep the upstream open until the default proxy deadline aborts it.
     })
@@ -694,12 +694,12 @@ describe('Phase 3 POST /api/v1/proxy/fetch', () => {
     expect(res.body).toBe('data: one\n\ndata: two\n\n')
   })
 
-  it('M6: configures the generous request-receive timeout backstop (600s reference)', () => {
+  it('configures the generous request-receive timeout backstop (600s reference)', () => {
     expect(REQUEST_RECEIVE_TIMEOUT_MS).toBe(600_000)
     expect(harness.app.server.requestTimeout).toBe(REQUEST_RECEIVE_TIMEOUT_MS)
   })
 
-  it('M6: a client disconnect mid-fetch aborts the upstream request', async () => {
+  it('a client disconnect mid-fetch aborts the upstream request', async () => {
     let resolveUpstreamStarted!: () => void
     const upstreamStarted = new Promise<void>((r) => {
       resolveUpstreamStarted = r

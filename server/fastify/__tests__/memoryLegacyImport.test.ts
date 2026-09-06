@@ -74,6 +74,24 @@ function legacySummaryIndex(metadata: unknown): number {
   return typeof value === 'number' ? value : -1
 }
 
+function multipartRisuSave(bytes: Uint8Array) {
+  const boundary = 'risu-memory-legacy-portable-boundary'
+  const head = Buffer.from(
+    [
+      `--${boundary}`,
+      'Content-Disposition: form-data; name="file"; filename="database.risu"',
+      'Content-Type: application/octet-stream',
+      '',
+      '',
+    ].join('\r\n'),
+  )
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`)
+  return {
+    payload: Buffer.concat([head, Buffer.from(bytes), tail]),
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  }
+}
+
 describe('legacy Hypa V3 memory import', () => {
   it('backfills legacy summaries into summarized chunk and summary rows idempotently', () => {
     const db = openDatabase(makeDataDir())
@@ -81,10 +99,12 @@ describe('legacy Hypa V3 memory import', () => {
       expect(backfillLegacyHypaV3MemoryRows(db, legacyDatabase())).toEqual({
         chunksCreated: 2,
         summariesCreated: 2,
+        skippedSummaries: [],
       })
       expect(backfillLegacyHypaV3MemoryRows(db, legacyDatabase())).toEqual({
         chunksCreated: 0,
         summariesCreated: 0,
+        skippedSummaries: [],
       })
 
       const chunks = listMemoryChunks(db, { chatId: 'chat-1' })
@@ -140,6 +160,89 @@ describe('legacy Hypa V3 memory import', () => {
       expect(selected.importantSummaries.map((summary) => summary.text)).toEqual(['They greeted each other.'])
     } finally {
       db.close()
+    }
+  })
+
+  it('salvages valid summaries and reports every malformed legacy summary', () => {
+    const db = openDatabase(makeDataDir())
+    const database = legacyDatabase()
+    database.characters[0].chats[0].hypaV3Data.summaries.push(
+      null as never,
+      { text: '', chatMemos: [], isImportant: false },
+      { text: 'Still salvageable.', chatMemos: ['m-3'], isImportant: false },
+    )
+    try {
+      expect(backfillLegacyHypaV3MemoryRows(db, database)).toEqual({
+        chunksCreated: 3,
+        summariesCreated: 3,
+        skippedSummaries: [
+          {
+            path: 'characters[0].chats[0].hypaV3Data.summaries[2]',
+            reason: 'summary must be an object',
+          },
+          {
+            path: 'characters[0].chats[0].hypaV3Data.summaries[3]',
+            reason: 'summary.text must be a non-empty string',
+          },
+        ],
+      })
+      expect(
+        listMemorySummaries(db, { chatId: 'chat-1' })
+          .map((summary) => summary.text)
+          .sort(),
+      ).toEqual(['Still salvageable.', 'The garden matters.', 'They greeted each other.'])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('returns the legacy-memory salvage report from JSON imports', async () => {
+    const dataDir = makeDataDir()
+    const database = legacyDatabase()
+    database.characters[0].chats[0].hypaV3Data.summaries.push(null as never, {
+      text: '',
+      chatMemos: [],
+      isImportant: false,
+    })
+    const { app } = await buildApp({
+      config: {
+        host: '127.0.0.1',
+        port: 0,
+        dataDir,
+        bodyLimit: 1024 * 1024,
+        importMaxBytes: Infinity,
+        trustProxy: false,
+        hubUrl: 'https://sv.risuai.xyz',
+      },
+      memoryWorker: false,
+      assetGc: false,
+    })
+    try {
+      const { assertion } = await setupAuthedClient(app)
+      const imported = await app.inject({
+        method: 'POST',
+        url: '/api/v1/import/risusave',
+        headers: { 'risu-auth': assertion },
+        payload: { database },
+      })
+
+      expect(imported.statusCode).toBe(200)
+      expect(imported.json().memoryLegacyReport).toEqual({
+        chunksCreated: 2,
+        summariesCreated: 2,
+        skippedSummaries: [
+          {
+            path: 'characters[0].chats[0].hypaV3Data.summaries[2]',
+            reason: 'summary must be an object',
+          },
+          {
+            path: 'characters[0].chats[0].hypaV3Data.summaries[3]',
+            reason: 'summary.text must be a non-empty string',
+          },
+        ],
+      })
+    } finally {
+      await app.close()
     }
   })
 
@@ -312,6 +415,125 @@ describe('legacy Hypa V3 memory import', () => {
         ).toEqual({ summary_id: deletedSummaryId })
       } finally {
         db.close()
+      }
+    } finally {
+      await restarted.app.close()
+    }
+  })
+
+  it('keeps a deleted legacy summary absent after portable export, fresh import, and restart', async () => {
+    const sourceDataDir = makeDataDir()
+    const targetDataDir = makeDataDir()
+    const configFor = (dataDir: string) => ({
+      host: '127.0.0.1',
+      port: 0,
+      dataDir,
+      bodyLimit: 1024 * 1024,
+      importMaxBytes: Infinity,
+      trustProxy: false,
+      hubUrl: 'https://sv.risuai.xyz',
+    })
+
+    const source = await buildApp({
+      config: configFor(sourceDataDir),
+      memoryWorker: false,
+      assetGc: false,
+      generationChat: { finalizationRetry: false },
+    })
+    let exportedBytes!: Uint8Array
+    let deletedSummaryId = ''
+    try {
+      const { assertion } = await setupAuthedClient(source.app)
+      const imported = await source.app.inject({
+        method: 'POST',
+        url: '/api/v1/import/risusave',
+        headers: { 'risu-auth': assertion },
+        payload: { database: legacyDatabase() },
+      })
+      expect(imported.statusCode).toBe(200)
+
+      const sourceDb = openDatabase(sourceDataDir)
+      try {
+        deletedSummaryId =
+          listMemorySummaries(sourceDb, { chatId: 'chat-1' }).find(
+            (summary) => summary.text === 'They greeted each other.',
+          )?.id ?? ''
+      } finally {
+        sourceDb.close()
+      }
+      expect(deletedSummaryId).not.toBe('')
+
+      const deleted = await source.app.inject({
+        method: 'DELETE',
+        url: `/api/v1/memory/summaries/${encodeURIComponent(deletedSummaryId)}`,
+        headers: { 'risu-auth': assertion },
+      })
+      expect(deleted.statusCode).toBe(200)
+
+      const exported = await source.app.inject({
+        method: 'GET',
+        url: '/api/v1/export/risusave',
+        headers: { 'risu-auth': assertion },
+      })
+      expect(exported.statusCode).toBe(200)
+      exportedBytes = new Uint8Array(exported.rawPayload)
+    } finally {
+      await source.app.close()
+    }
+
+    const target = await buildApp({
+      config: configFor(targetDataDir),
+      memoryWorker: false,
+      assetGc: false,
+      generationChat: { finalizationRetry: false },
+    })
+    try {
+      const { assertion } = await setupAuthedClient(target.app)
+      const upload = multipartRisuSave(exportedBytes)
+      const imported = await target.app.inject({
+        method: 'POST',
+        url: '/api/v1/import/risusave',
+        headers: { 'risu-auth': assertion, 'content-type': upload.contentType },
+        payload: upload.payload,
+      })
+      expect(imported.statusCode).toBe(200)
+
+      const targetDb = openDatabase(targetDataDir)
+      try {
+        expect(listMemorySummaries(targetDb, { chatId: 'chat-1' }).map((summary) => summary.text)).toEqual([
+          'The garden matters.',
+        ])
+        expect(
+          targetDb
+            .prepare('SELECT summary_id FROM memory_legacy_summary_tombstones WHERE summary_id = ?')
+            .get(deletedSummaryId),
+        ).toEqual({ summary_id: deletedSummaryId })
+      } finally {
+        targetDb.close()
+      }
+    } finally {
+      await target.app.close()
+    }
+
+    const restarted = await buildApp({
+      config: configFor(targetDataDir),
+      memoryWorker: false,
+      assetGc: false,
+      generationChat: { finalizationRetry: false },
+    })
+    try {
+      const targetDb = openDatabase(targetDataDir)
+      try {
+        expect(listMemorySummaries(targetDb, { chatId: 'chat-1' }).map((summary) => summary.text)).toEqual([
+          'The garden matters.',
+        ])
+        expect(
+          targetDb
+            .prepare('SELECT summary_id FROM memory_legacy_summary_tombstones WHERE summary_id = ?')
+            .get(deletedSummaryId),
+        ).toEqual({ summary_id: deletedSummaryId })
+      } finally {
+        targetDb.close()
       }
     } finally {
       await restarted.app.close()

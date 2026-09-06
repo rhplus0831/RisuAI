@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const lorepresetMocks = vi.hoisted(() => ({
   alertConfirm: vi.fn(),
+  alertError: vi.fn(),
+  alertNormal: vi.fn(),
   createGlobalLorebook: vi.fn(),
   deleteGlobalLorebook: vi.fn(),
   deleteGlobalLorebookById: vi.fn(),
@@ -11,12 +13,45 @@ const lorepresetMocks = vi.hoisted(() => ({
   deleteStateListener: null as null | ((states: MockGlobalLorebookDeleteState[]) => void),
   renameGlobalLorebook: vi.fn(),
   renameGlobalLorebookById: vi.fn(),
-  selectGlobalLorebook: vi.fn(),
+}))
+
+const pageOwnerMocks = vi.hoisted(() => ({
+  listeners: new Set<(snapshot: any) => void>(),
+  retry: vi.fn(),
+  select: vi.fn(),
+  snapshot: {
+    resource: 'loreBookPage',
+    status: 'unloaded',
+    revision: null,
+    state: { present: false },
+    error: null,
+    mutation: { status: 'idle' },
+  } as any,
 }))
 
 vi.mock('../../ts/alert', async (importActual) => ({
   ...(await importActual<typeof import('../../ts/alert')>()),
   alertConfirm: lorepresetMocks.alertConfirm,
+  alertError: lorepresetMocks.alertError,
+  alertNormal: lorepresetMocks.alertNormal,
+}))
+
+vi.mock('src/ts/server/lorebookPageOwner.svelte', () => ({
+  lorebookPageIndexFromSnapshot: (snapshot: any) =>
+    snapshot.state.present && Number.isInteger(snapshot.state.value) && snapshot.state.value >= 0
+      ? snapshot.state.value
+      : null,
+  lorebookPageOwner: {
+    retry: pageOwnerMocks.retry,
+    select: pageOwnerMocks.select,
+  },
+  lorebookPageOwnerState: {
+    subscribe(listener: (snapshot: any) => void) {
+      pageOwnerMocks.listeners.add(listener)
+      listener(structuredClone(pageOwnerMocks.snapshot))
+      return () => pageOwnerMocks.listeners.delete(listener)
+    },
+  },
 }))
 
 vi.mock('src/ts/process/modules', () => ({
@@ -27,14 +62,14 @@ vi.mock('src/ts/process/modules', () => ({
   moduleUpdate: vi.fn(),
 }))
 
-vi.mock('src/ts/server/lorebookBridge.svelte', () => ({
+vi.mock('src/ts/server/lorebookOwner.svelte', () => ({
   applyServerCharacterLorebookResource: vi.fn(() => true),
   createGlobalLorebook: lorepresetMocks.createGlobalLorebook,
   deleteGlobalLorebook: lorepresetMocks.deleteGlobalLorebook,
   deleteGlobalLorebookById: lorepresetMocks.deleteGlobalLorebookById,
   deleteGlobalLorebookWithOutcome: lorepresetMocks.deleteGlobalLorebookWithOutcome,
   deleteGlobalLorebookByIdWithOutcome: lorepresetMocks.deleteGlobalLorebookByIdWithOutcome,
-  flushPendingServerBackedLorebookPatches: vi.fn(async () => {}),
+  flushPendingLorebookOwnerMutations: vi.fn(async () => {}),
   isCharacterLorebookHydrated: vi.fn(() => true),
   isCharacterLorebookMutationReady: vi.fn(() => true),
   markCharacterLorebookHydrated: vi.fn(),
@@ -42,7 +77,6 @@ vi.mock('src/ts/server/lorebookBridge.svelte', () => ({
   renameGlobalLorebook: lorepresetMocks.renameGlobalLorebook,
   renameGlobalLorebookById: lorepresetMocks.renameGlobalLorebookById,
   resetLorebookHydration: vi.fn(),
-  selectGlobalLorebook: lorepresetMocks.selectGlobalLorebook,
   subscribeGlobalLorebookDeleteStates: (listener: (states: MockGlobalLorebookDeleteState[]) => void) => {
     lorepresetMocks.deleteStateListener = listener
     listener([])
@@ -50,15 +84,15 @@ vi.mock('src/ts/server/lorebookBridge.svelte', () => ({
       if (lorepresetMocks.deleteStateListener === listener) lorepresetMocks.deleteStateListener = null
     }
   },
-  watchServerBackedLorebooks: vi.fn(() => () => {}),
 }))
 
 import Lorepreset from './lorepreset.svelte'
 import { language } from '../../lang'
 import {
-  getResourceDatabase as getDatabase,
+  collectionsResourceState,
   replaceResourceDatabase as setDatabaseLite,
 } from 'src/ts/server/resourceState.svelte'
+import { getResourceDatabase as getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 type LorebookFixture = { id: string; name: string; data: never[] }
@@ -108,10 +142,18 @@ async function publishDeleteStates(states: MockGlobalLorebookDeleteState[]): Pro
   await tick()
 }
 
+async function publishPageOwnerSnapshot(snapshot: any): Promise<void> {
+  pageOwnerMocks.snapshot = structuredClone(snapshot)
+  for (const listener of pageOwnerMocks.listeners) listener(structuredClone(pageOwnerMocks.snapshot))
+  await tick()
+}
+
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   lorepresetMocks.alertConfirm.mockReset()
+  lorepresetMocks.alertError.mockReset()
+  lorepresetMocks.alertNormal.mockReset()
   lorepresetMocks.deleteStateListener = null
   lorepresetMocks.deleteGlobalLorebook.mockReset()
   lorepresetMocks.deleteGlobalLorebookById.mockReset()
@@ -138,6 +180,25 @@ beforeEach(() => {
     projectLorebooks(loreBook.map((book, index) => (index === matchingIndices[0] ? { ...book, name } : { ...book })))
     return true
   })
+  pageOwnerMocks.listeners.clear()
+  pageOwnerMocks.snapshot = {
+    resource: 'loreBookPage',
+    status: 'unloaded',
+    revision: null,
+    state: { present: false },
+    error: null,
+    mutation: { status: 'idle' },
+  }
+  pageOwnerMocks.select.mockReset().mockImplementation(async ({ lorebookId, index }) => {
+    await publishPageOwnerSnapshot({
+      ...pageOwnerMocks.snapshot,
+      status: 'ready',
+      state: { present: true, value: index },
+      mutation: { status: 'idle' },
+    })
+    return { status: 'accepted', revision: 2, lorebookId }
+  })
+  pageOwnerMocks.retry.mockReset().mockResolvedValue({ status: 'ok', revision: 3 })
 })
 
 afterEach(() => {
@@ -221,6 +282,23 @@ describe('global lorebook modal targeting', () => {
 
     expect(deleteButton('First')).toBeTruthy()
     expect(deleteButton('Second')).toBeTruthy()
+    expect(deleteButton('First').disabled).toBe(true)
+    expect(deleteButton('Second').disabled).toBe(true)
+  })
+
+  it('fails closed while the global lorebook collection owner is in error', async () => {
+    projectLorebooks([lorebook('g1', 'First'), lorebook('g2', 'Second')])
+    collectionsResourceState.statuses.loreBook = 'error'
+
+    component = mount(Lorepreset, { target })
+    await tick()
+
+    expect(target.textContent).not.toContain('First')
+    expect(target.textContent).not.toContain('Second')
+    const addButton = target.querySelector<HTMLButtonElement>(`button[aria-label="${language.add}"]`)
+    expect(addButton?.disabled).toBe(true)
+    addButton?.click()
+    expect(lorepresetMocks.createGlobalLorebook).not.toHaveBeenCalled()
   })
 })
 
@@ -244,7 +322,7 @@ describe('global lorebook delete status', () => {
     await publishDeleteStates([{ lorebookId: 'g2', mutationId: 'delete-g2', status: 'queued' }])
 
     const queuedRow = target.querySelector<HTMLElement>('[data-risu-global-lorebook-delete-status="queued"]')
-    expect(queuedRow?.textContent).toContain(language.globalLorebookDelete.queued)
+    expect(queuedRow?.querySelector('[role="status"]')).toBeNull()
     expect(queuedRow?.getAttribute('aria-busy')).toBe('true')
     expect(deleteButton('Second').disabled).toBe(true)
     const selectButton = Array.from(queuedRow?.querySelectorAll<HTMLButtonElement>('button') ?? []).find(
@@ -287,8 +365,80 @@ describe('global lorebook delete status', () => {
     )
     expect(selectButton?.disabled).toBe(false)
     selectButton?.click()
-    expect(lorepresetMocks.selectGlobalLorebook).toHaveBeenCalledWith(1)
+    expect(pageOwnerMocks.select).toHaveBeenCalledWith({ lorebookId: 'g2', index: 1 })
     expect(lorebookIds()).toEqual(['g1', 'g2'])
+  })
+})
+
+describe('global lorebook page owner selection', () => {
+  it('selects by stable id and owner index', async () => {
+    projectLorebooks([lorebook('g1', 'First'), lorebook('g2', 'Second')])
+    component = mount(Lorepreset, { target })
+    await settle()
+
+    const second = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === 'Second',
+    )
+    second?.click()
+    await settle()
+
+    expect(pageOwnerMocks.select).toHaveBeenCalledWith({ lorebookId: 'g2', index: 1 })
+    expect(target.querySelector('.bg-selected button')?.textContent).toBe('Second')
+  })
+
+  it('keeps a retained selection visibly queued and reloads after accepted replay', async () => {
+    projectLorebooks([lorebook('g1', 'First'), lorebook('g2', 'Second')])
+    const settlement = deferred<'accepted' | 'failed'>()
+    pageOwnerMocks.select.mockImplementationOnce(async ({ lorebookId, index }) => {
+      await publishPageOwnerSnapshot({
+        ...pageOwnerMocks.snapshot,
+        status: 'ready',
+        state: { present: true, value: index },
+        mutation: { status: 'queued', attempt: 1, index, lorebookId, mutationId: 'selection-g2' },
+      })
+      return { status: 'queued', mutationId: 'selection-g2', settlement: settlement.promise }
+    })
+    component = mount(Lorepreset, { target })
+    await settle()
+
+    const second = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === 'Second',
+    )
+    second?.click()
+    await settle()
+
+    const queuedRow = target.querySelector<HTMLElement>('[data-risu-global-lorebook-selection-status="queued"]')
+    expect(queuedRow?.textContent).toContain(language.globalLorebookSelection.queued)
+    expect(second?.disabled).toBe(true)
+    expect(lorepresetMocks.alertNormal).toHaveBeenCalledWith(language.globalLorebookSelection.queued)
+
+    settlement.resolve('accepted')
+    await settle()
+    expect(pageOwnerMocks.retry).toHaveBeenCalledOnce()
+  })
+
+  it('reports a failed owner selection and leaves the prior page selected', async () => {
+    projectLorebooks([lorebook('g1', 'First'), lorebook('g2', 'Second')])
+    pageOwnerMocks.select.mockImplementationOnce(async ({ lorebookId, index }) => {
+      await publishPageOwnerSnapshot({
+        ...pageOwnerMocks.snapshot,
+        status: 'ready',
+        state: { present: true, value: 0 },
+        mutation: { status: 'failed', attempt: 1, index, lorebookId, error: 'selection failed' },
+      })
+      return { status: 'failed', error: 'selection failed' }
+    })
+    component = mount(Lorepreset, { target })
+    await settle()
+
+    const second = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === 'Second',
+    )
+    second?.click()
+    await settle()
+
+    expect(lorepresetMocks.alertError).toHaveBeenCalledWith(language.globalLorebookSelection.failed('selection failed'))
+    expect(target.querySelector('[data-risu-global-lorebook-selection-status="failed"]')).not.toBeNull()
   })
 })
 

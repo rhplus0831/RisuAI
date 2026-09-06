@@ -9,6 +9,7 @@ import { ACTIVE_WRITER_SESSION_HEADER } from '../src/activeWriter.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { getAllAssetMetadata, insertAssetMetadataBatch, loadPersisted } from '../src/repository.js'
 import { ASSET_BULK_BINARY_CONTENT_TYPE } from '../src/routes/assets.js'
+import { assetExistsRateLimit } from '../src/routeRateLimits.js'
 import type { FastifyInstance } from 'fastify'
 
 interface AssetByteReadMetric {
@@ -182,7 +183,7 @@ afterEach(async () => {
   await stopHarness(harness)
 })
 
-describe('Phase 2C assets', () => {
+describe('assets', () => {
   it('rejects upload without auth once a password is set', async () => {
     await harness.app.inject({
       method: 'POST',
@@ -196,6 +197,33 @@ describe('Phase 2C assets', () => {
       payload: PNG_BYTES,
     })
     expect(res.statusCode).toBe(401)
+  })
+
+  it('does not attach request rate limits to authenticated active-writer uploads', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const raw = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'content-type': 'image/png', 'risu-auth': assertion },
+      payload: PNG_BYTES,
+    })
+    const bulk = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets/bulk',
+      headers: { 'risu-auth': assertion },
+      payload: { assets: [{ contentType: 'image/jpeg', data: JPEG_BYTES.toString('base64') }] },
+    })
+    const exists = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets/exists',
+      payload: { ids: [PNG_SHA, JPEG_SHA] },
+    })
+
+    expect(raw.statusCode).toBe(201)
+    expect(bulk.statusCode).toBe(201)
+    expect(raw.headers['x-ratelimit-limit']).toBeUndefined()
+    expect(bulk.headers['x-ratelimit-limit']).toBeUndefined()
+    expect(exists.headers['x-ratelimit-limit']).toBe(String(assetExistsRateLimit.max))
   })
 
   it('rejects oversized raw upload without auth before body parsing', async () => {

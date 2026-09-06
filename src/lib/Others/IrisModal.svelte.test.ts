@@ -45,7 +45,7 @@ import type { Database } from 'src/ts/storage/database.svelte'
 import { replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
 import { irisStore } from 'src/ts/stores.svelte'
 import { language } from 'src/lang'
-import { SERVER_TOOL_MAX_RESULT_BYTES } from 'src/ts/process/request/serverToolProtocol'
+import { SERVER_TOOL_MAX_RESULT_BYTES } from '@risuai/protocol/server-tool'
 
 const originalAnimate = Element.prototype.animate
 
@@ -431,6 +431,11 @@ describe('IrisModal model availability', () => {
     expect(secondSignal).toBe(firstSignal)
     expect(irisMocks.risuAccessSignals).toEqual([firstSignal])
     expect(firstArg).toMatchObject({ tools: [tool], toolRounds: [] })
+    expect(firstArg.database).toMatchObject({
+      language: 'en',
+      modelRoles: { otherAx: 'claude-3-haiku-20240307' },
+    })
+    expect(secondArg.database).toBe(firstArg.database)
     expect(secondArg.toolRounds).toEqual([
       {
         assistantContent: '',

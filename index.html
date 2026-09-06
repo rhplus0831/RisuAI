@@ -13,13 +13,65 @@
       integrity="sha384-Pu5+C18nP5dwykLJOhd2U4Xen7rjScHN/qusop27hdd2drI+lL5KvX7YntvT8yew"
       crossorigin="anonymous" />
     <meta name="description" content="An AI frontend for both light and core users." />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" />
     <link href="https://fonts.googleapis.com/css2?family=Tilt+Prism&family=Yellowtail&display=swap" rel="stylesheet" />
     <!-- <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; object-src 'none'; require-trusted-types-for 'script'; trusted-types plugin-policy;"> -->
     <title>Risuai</title>
+    <!-- Paint-only cache. Keep this synchronous and independent of the app bundle/server. -->
+    <script data-risu-display-cache>
+      try {
+        const serialized = localStorage.getItem('risu-display-settings-v1')
+        const cached = serialized && serialized.length <= 1024 * 1024 ? JSON.parse(serialized) : null
+        if (cached?.version === 1 && cached.styles && typeof cached.styles === 'object') {
+          const properties = [
+            '--risu-theme-bgcolor',
+            '--risu-theme-darkbg',
+            '--risu-theme-borderc',
+            '--risu-theme-selected',
+            '--risu-theme-draculared',
+            '--risu-theme-textcolor',
+            '--risu-theme-textcolor2',
+            '--risu-theme-darkborderc',
+            '--risu-theme-darkbutton',
+            '--risu-theme-color-scheme',
+            '--FontColorStandard',
+            '--FontColorItalic',
+            '--FontColorBold',
+            '--FontColorItalicBold',
+            '--FontColorQuote1',
+            '--FontColorQuote2',
+            '--risu-font-family',
+            '--risu-animation-speed',
+            '--risu-height-size',
+            '--sidebar-size',
+          ]
+          for (const property of properties) {
+            const value = cached.styles[property]
+            if (typeof value === 'string' && value.length <= 4096) {
+              document.documentElement.style.setProperty(property, value)
+            }
+          }
+          if (typeof cached.reducedMotion === 'boolean') {
+            document.documentElement.classList.toggle('risu-reduced-motion', cached.reducedMotion)
+          }
+        }
+      } catch {}
+    </script>
   </head>
 
   <body>
+    <!-- Keep Custom CSS after head styles, even when lazy component styles arrive later. -->
+    <script data-risu-custom-css-cache>
+      try {
+        const css = localStorage.getItem('risu-custom-css-v1')
+        if (css) {
+          const style = document.createElement('style')
+          style.id = 'customcss'
+          style.textContent = css
+          document.body.appendChild(style)
+        }
+      } catch {}
+    </script>
     <div id="app">
       <noscript>
         <div class="noscript">
@@ -28,13 +80,13 @@
         </div>
       </noscript>
     </div>
-    <!-- Startup placeholder; src/main.ts removes it after mounting the Svelte app. -->
+    <!-- Startup placeholder; src/appStartup.ts removes it after mounting the Svelte app. -->
     <div
       id="preloading"
       role="status"
       aria-live="polite"
       aria-busy="true"
-      class="w-full h-full flex justify-center items-center text-textcolor text-xl bg-gray-900 flex-col absolute top-0 left-0 z-50">
+      class="w-full h-full flex justify-center items-center text-textcolor text-xl bg-bgcolor flex-col absolute top-0 left-0 z-50">
       <div class="flex flex-row items-center">
         <svg
           class="animate-spin -ml-1 mr-3 h-5 w-5 text-textcolor"
@@ -44,9 +96,9 @@
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
         </svg>
-        <span>Loading...</span>
+        <span data-risu-preload-message>Loading...</span>
       </div>
-      <span class="text-sm mt-2 text-textcolor2">Loading Risuai...</span>
+      <span data-risu-preload-detail class="text-sm mt-2 text-textcolor2">Loading Risuai...</span>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

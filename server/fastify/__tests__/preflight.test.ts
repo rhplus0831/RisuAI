@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import type { Database, character } from '../../../src/ts/storage/database.svelte'
+import type { FastifyCharacter as character, FastifyDatabase as Database } from '../src/prompt/serverTypes.js'
 import type {
   PromptItem,
   PromptItemAuthorNote,
@@ -8,11 +8,12 @@ import type {
   PromptItemChatML,
   PromptItemPlain,
   PromptItemTyped,
-} from '../../../src/ts/process/prompt'
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
+} from '../src/prompt/promptTemplate.js'
 import { preflightTemplateTokens, type PromptUnformatedSlots } from '../src/prompt/preflight.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import type { ExpandContext } from '../src/prompt/variables.js'
+import { ensureTokenizerLoadedForDb } from '../src/prompt/tokenizerConfig.js'
+import type { PromptMessage } from '../src/prompt/promptMessage.js'
 
 beforeAll(() => {
   bootPromptVariables()
@@ -76,7 +77,7 @@ function makeCharacter(overrides: Partial<character> = {}): character {
 }
 
 function makeSlots(overrides: Partial<PromptUnformatedSlots> = {}): PromptUnformatedSlots {
-  const empty = (): OpenAIChat[] => []
+  const empty = (): PromptMessage[] => []
   return {
     main: empty(),
     jailbreak: empty(),
@@ -98,7 +99,7 @@ function ctxFor(db: Database): ExpandContext {
 
 const PREBUILT_ASSET_COMMAND_LENGTH = 113 // cl100k_base tokens for the inlined constant.
 
-describe('Phase 7-8b preflightTemplateTokens — null template fallback', () => {
+describe('preflightTemplateTokens — null template fallback', () => {
   it('returns zeros for an empty template and empty slots', () => {
     const db = makeDatabase()
     const result = preflightTemplateTokens({
@@ -128,9 +129,21 @@ describe('Phase 7-8b preflightTemplateTokens — null template fallback', () => 
     expect(result.memoryCardUsed).toBe(false)
     expect(result.hasCachePoint).toBe(false)
   })
+
+  it('budgets the character depth prompt that final rendering inserts', () => {
+    const db = makeDatabase()
+    const result = preflightTemplateTokens({
+      ctx: ctxFor(db),
+      currentChar: makeCharacter({ depth_prompt: { depth: 1, prompt: 'hello' } }),
+      unformated: makeSlots(),
+      promptTemplate: null,
+      usingPromptTemplate: false,
+    })
+    expect(result.addedTokens).toBe(6)
+  })
 })
 
-describe('Phase 7-8b preflightTemplateTokens — flag cards', () => {
+describe('preflightTemplateTokens — flag cards', () => {
   it('memory card flips memoryCardUsed without adding tokens', () => {
     const db = makeDatabase()
     const card = { type: 'memory' } as PromptItemTyped
@@ -162,7 +175,7 @@ describe('Phase 7-8b preflightTemplateTokens — flag cards', () => {
   })
 })
 
-describe('Phase 7-8b preflightTemplateTokens — slot wrap cards', () => {
+describe('preflightTemplateTokens — slot wrap cards', () => {
   it('persona innerFormat wraps each row via {{slot}} before tokenizing', () => {
     const db = makeDatabase()
     const card: PromptItemTyped = {
@@ -237,7 +250,7 @@ describe('Phase 7-8b preflightTemplateTokens — slot wrap cards', () => {
   })
 })
 
-describe('Phase 7-8b preflightTemplateTokens — plain / jailbreak / cot', () => {
+describe('preflightTemplateTokens — plain / jailbreak / cot', () => {
   it('skips jailbreak card when db.jailbreakToggle is false', () => {
     const db = makeDatabase({ jailbreakToggle: false } as Partial<Database>)
     const card: PromptItemPlain = {
@@ -369,7 +382,7 @@ describe('Phase 7-8b preflightTemplateTokens — plain / jailbreak / cot', () =>
   })
 })
 
-describe('Phase 7-8b preflightTemplateTokens — chatML', () => {
+describe('preflightTemplateTokens — chatML', () => {
   it('parses <|im_start|>system|sep|hello<|im_end|> rows', () => {
     const db = makeDatabase()
     const card: PromptItemChatML = {
@@ -401,7 +414,7 @@ describe('Phase 7-8b preflightTemplateTokens — chatML', () => {
   })
 })
 
-describe('Phase 7-8b preflightTemplateTokens — chat range card', () => {
+describe('preflightTemplateTokens — chat range card', () => {
   const slots = (): PromptUnformatedSlots =>
     makeSlots({
       chats: [
@@ -526,7 +539,7 @@ describe('Phase 7-8b preflightTemplateTokens — chat range card', () => {
       } as Database['promptSettings'],
     })
     const card: PromptItemChat = { type: 'chat', rangeStart: 0, rangeEnd: 'end' }
-    const original: OpenAIChat[] = [
+    const original: PromptMessage[] = [
       { role: 'user', content: 'hi' },
       { role: 'assistant', content: 'hello' },
     ]
@@ -543,7 +556,7 @@ describe('Phase 7-8b preflightTemplateTokens — chat range card', () => {
   })
 })
 
-describe('Phase 7-8b preflightTemplateTokens — postEverything', () => {
+describe('preflightTemplateTokens — postEverything', () => {
   it('adds the postEndInnerFormat synthetic row when usingPromptTemplate', () => {
     const db = makeDatabase({
       promptSettings: {
@@ -599,9 +612,10 @@ describe('Phase 7-8b preflightTemplateTokens — postEverything', () => {
   })
 })
 
-describe('Phase 7-8b preflightTemplateTokens — tokenizer routing', () => {
-  it('uses overhead 3 + name accounting for non-gpt models', () => {
+describe('preflightTemplateTokens — tokenizer routing', () => {
+  it('uses overhead 3 + name accounting for non-gpt models', async () => {
     const db = makeDatabase({ aiModel: 'claude-3-5-sonnet' })
+    await ensureTokenizerLoadedForDb(db)
     const card: PromptItemTyped = { type: 'description' }
     const result = preflightTemplateTokens({
       ctx: ctxFor(db),

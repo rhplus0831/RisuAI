@@ -9,9 +9,20 @@ import { buildApp } from '../src/app.js'
 import { openDatabase } from '../src/db.js'
 import { writePersistedWithMessages } from '../src/repository.js'
 import { attachAbort } from '../src/requestAbort.js'
-import { pipeStream } from '../src/routes/generation.js'
+import { CompletionOutputLimitError, collectCompletionFrames, pipeStream } from '../src/routes/generation.js'
+import { STREAM_CLIENT_MAX_BUFFERED_BYTES } from '../src/streamBackpressure.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
-import { LLMFormat } from '../../../src/ts/model/types'
+import { LLMFormat } from '@risuai/shared-core/model-types'
+
+vi.mock('../src/generation/horde.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/generation/horde.js')>()
+  return {
+    ...actual,
+    // Route tests own request mapping; horde.test.ts owns real poll cadence.
+    runHorde: (request: Parameters<typeof actual.runHorde>[0]) =>
+      actual.runHorde({ ...request, pollIntervalMs: request.pollIntervalMs ?? 1 }),
+  }
+})
 
 const subtle = webcrypto.subtle
 
@@ -107,6 +118,36 @@ const basePayload = {
 }
 
 function writeDatabase(database: Record<string, unknown>): void {
+  const providerCredentials = Array.isArray(database.providerCredentials) ? [...database.providerCredentials] : []
+  const existingApiKeys = new Set(
+    providerCredentials.flatMap((credential) =>
+      credential && typeof credential === 'object' && !Array.isArray(credential)
+        ? [String((credential as Record<string, unknown>).apiKey ?? '')]
+        : [],
+    ),
+  )
+  for (const key of [
+    database.openAIKey,
+    database.proxyKey,
+    database.openrouterKey,
+    database.nanogptKey,
+    database.ollamaApiKey,
+    database.claudeAPIKey,
+    database.mistralKey,
+    database.cohereAPIKey,
+    database.hordeConfig && typeof database.hordeConfig === 'object' && !Array.isArray(database.hordeConfig)
+      ? (database.hordeConfig as Record<string, unknown>).apiKey
+      : undefined,
+  ]) {
+    if (typeof key !== 'string' || key.length === 0 || existingApiKeys.has(key)) continue
+    providerCredentials.push({
+      id: `completion-test-credential-${providerCredentials.length + 1}`,
+      name: 'Completion test credential',
+      type: 'apiKey',
+      apiKey: key,
+    })
+    existingApiKeys.add(key)
+  }
   const db = openDatabase(harness.dataDir)
   try {
     writePersistedWithMessages(db, harness.dataDir, {
@@ -121,6 +162,7 @@ function writeDatabase(database: Record<string, unknown>): void {
         useStreaming: false,
         characters: [],
         ...database,
+        ...(providerCredentials.length > 0 ? { providerCredentials } : {}),
       },
       assets: [],
     })
@@ -149,24 +191,28 @@ interface FakeRawReply extends EventEmitter {
   chunks: string[]
   ended: boolean
   writableEnded: boolean
+  writableLength: number
   writeHead(statusCode: number, headers: Record<string, string>): void
-  write(chunk: string): void
+  write(chunk: string): boolean
   end(): void
 }
 
-function fakeReply(): { reply: FastifyReply; raw: FakeRawReply } {
+function fakeReply(bufferedBytes = 0): { reply: FastifyReply; raw: FakeRawReply } {
   const raw = new EventEmitter() as FakeRawReply
   raw.statusCode = 0
   raw.headers = {}
   raw.chunks = []
   raw.ended = false
   raw.writableEnded = false
+  raw.writableLength = bufferedBytes
   raw.writeHead = (statusCode, headers) => {
     raw.statusCode = statusCode
     raw.headers = headers
   }
   raw.write = (chunk) => {
     raw.chunks.push(chunk)
+    raw.writableLength += Buffer.byteLength(chunk)
+    return true
   }
   raw.end = () => {
     raw.ended = true
@@ -196,7 +242,7 @@ function waitForFrame(ms: number, signal: AbortSignal): Promise<boolean> {
   })
 }
 
-describe('Phase 6-1 POST /api/v1/generate/completion', () => {
+describe('POST /api/v1/generate/completion', () => {
   it('returns 401 without auth once a password is set', async () => {
     await harness.app.inject({
       method: 'POST',
@@ -274,6 +320,58 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ type: 'success', result: 'pong' })
+  })
+
+  it('records legacy completion prompts and responses without provider credentials', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const generated = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        ...basePayload,
+        options: {
+          echo: { message: 'history pong', delayMs: 0 },
+          openai: { apiKey: 'must-not-be-recorded' },
+        },
+      },
+    })
+    expect(generated.statusCode).toBe(200)
+
+    const listed = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/request-history',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(listed.statusCode).toBe(200)
+    expect(listed.json()).toMatchObject({
+      records: [
+        {
+          status: 'success',
+          source: 'completion',
+          profile: {
+            sourceKind: 'legacy-client-request',
+            provider: 'echo',
+            modelId: 'echo_model',
+          },
+          responsePreview: 'history pong',
+        },
+      ],
+    })
+
+    const historyId = listed.json().records[0].id as string
+    const detail = await harness.app.inject({
+      method: 'GET',
+      url: `/api/v1/request-history/${historyId}`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(detail.json()).toMatchObject({
+      record: {
+        prompt: [{ role: 'user', content: 'hi' }],
+        response: 'history pong',
+      },
+    })
+    expect(JSON.stringify(detail.json())).not.toContain('must-not-be-recorded')
   })
 
   it('echo non-streaming falls back to default message when options.echo is absent', async () => {
@@ -381,7 +479,7 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
         tools: [tool],
       },
     })
-    expect(first.statusCode).toBe(200)
+    expect(first.statusCode, first.body).toBe(200)
     expect(first.json()).toEqual({
       type: 'success',
       result: '',
@@ -468,9 +566,10 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
     }) as unknown as typeof globalThis.fetch
 
     const { assertion } = await setupAuthedClient(harness.app)
+    const toggles = encodeURIComponent(JSON.stringify({ tools: '1' }))
     const res = await harness.app.inject({
       method: 'POST',
-      url: '/api/v1/generate/completion?operation=ollama-cloud-tool&protocol=native&mode=model&staticModel=ollama-cloud',
+      url: `/api/v1/generate/completion?operation=ollama-cloud-tool&protocol=native&mode=model&staticModel=ollama-cloud&characterId=char-cloud&chatId=chat-cloud&toggles=${toggles}`,
       headers: { 'risu-auth': assertion },
       payload: {
         model: 'browser-controlled-model',
@@ -493,6 +592,35 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
       think: 'medium',
       messages: [{ role: 'user', content: 'use a tool' }],
     })
+
+    const listed = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/request-history',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(listed.json()).toMatchObject({
+      records: [
+        {
+          status: 'success',
+          source: 'chat',
+          context: { characterId: 'char-cloud', chatId: 'chat-cloud' },
+          profile: { provider: 'ollama', modelId: 'ollama-cloud' },
+        },
+      ],
+    })
+    const detail = await harness.app.inject({
+      method: 'GET',
+      url: `/api/v1/request-history/${listed.json().records[0].id as string}`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(detail.json()).toMatchObject({
+      record: {
+        prompt: { messages: [{ role: 'user', content: 'use a tool' }] },
+        toggles: { tools: '1' },
+      },
+    })
+    expect(detail.json().record.response).toContain('cloud stream')
+    expect(JSON.stringify(detail.json())).not.toContain('sk-server-ollama-cloud')
   })
 
   it.each([
@@ -504,6 +632,14 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
     async (format, protocol, url) => {
       writeDatabase({
         aiModel: 'echo_model',
+        providerCredentials: [
+          {
+            id: 'credential-ollama',
+            name: 'Ollama Cloud',
+            type: 'apiKey',
+            apiKey: 'sk-server-profile-ollama',
+          },
+        ],
         modelProfiles: [
           {
             id: 'ollama-cloud-profile',
@@ -511,7 +647,7 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
             providerId: 'ollama',
             modelId: 'ollama-cloud',
             providerOptions: {
-              apiKey: 'sk-server-profile-ollama',
+              credentialId: 'credential-ollama',
               requestModel: 'server-profile-model',
               ollama: { requestFormat: format },
               extraHeaders: {
@@ -567,6 +703,8 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
           ...(protocol === 'openai-responses' ? {} : { stream: false }),
         },
       })
+      expect(new Headers(calls[0].headers).get('authorization')).toBe('Bearer sk-server-profile-ollama')
+      expect(Object.keys(calls[0].headers).filter((key) => key.toLowerCase() === 'authorization')).toHaveLength(1)
     },
   )
 
@@ -623,6 +761,9 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
       aiModel: 'gpt4o',
       subModel: 'gpt4om',
       openAIKey: 'sk-server-owned',
+      // `/completion` callers own their explicit stream flag; persisted
+      // half-streaming must not turn intentionally buffered auxiliary calls on.
+      halfStreaming: true,
       modelRoles: {
         scriptMain: 'gpt-5',
       },
@@ -646,11 +787,11 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
 
     const { assertion } = await setupAuthedClient(harness.app)
     const modes = [
-      ['model', 'gpt4o'],
-      ['submodel', 'gpt4om'],
-      ['memory', 'gpt41'],
-      ['emotion', 'gpt41-mini'],
-      ['otherAx', 'gpt41-nano'],
+      ['model', 'gpt-4o'],
+      ['submodel', 'gpt-4o-mini'],
+      ['memory', 'gpt-4.1'],
+      ['emotion', 'gpt-4.1-mini'],
+      ['otherAx', 'gpt-4.1-nano'],
       ['translate', 'gpt-5-mini'],
       ['scriptMain', 'gpt-5'],
       ['scriptAux', 'gpt-5-nano'],
@@ -733,7 +874,7 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
         `event: done\ndata: ${JSON.stringify({ finishReason: 'stop' })}\n\n`,
     )
     expect(sent).toMatchObject({
-      model: 'gpt4om',
+      model: 'gpt-4o-mini',
       stream: true,
       max_tokens: 11,
       temperature: 0.25,
@@ -797,19 +938,28 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
   it('server-intent completion resolves fallbackProfileId from durable profile settings', async () => {
     writeDatabase({
       aiModel: 'echo_model',
+      top_p: 0.91,
+      frequencyPenalty: 88,
+      PresensePenalty: 77,
+      providerCredentials: [
+        { id: 'credential-fallback', name: 'Fallback', type: 'apiKey', apiKey: 'sk-fallback-profile' },
+      ],
       modelProfiles: [
         {
           id: 'fallback-profile',
           name: 'Fallback Profile',
           modelId: 'reverse_proxy',
           providerOptions: {
+            credentialId: 'credential-fallback',
             requestModel: 'fallback-wire-model',
             baseUrl: 'https://fallback-profile.example.com/v1',
-            apiKey: 'sk-fallback-profile',
           },
           runtimeOptions: {
             maxResponse: 77,
             temperature: 33,
+            topP: 0.42,
+            frequencyPenalty: 25,
+            presencePenalty: -50,
           },
         },
       ],
@@ -848,6 +998,9 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
         model: 'fallback-wire-model',
         max_tokens: 77,
         temperature: 0.33,
+        top_p: 0.42,
+        frequency_penalty: 0.25,
+        presence_penalty: -0.5,
       },
     })
     expect(sentRequest.headers.authorization).toBe('Bearer sk-fallback-profile')
@@ -982,19 +1135,24 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
       {
         label: 'xcustom internal id',
         database: {
-          aiModel: 'xcustom:::profile-openai',
-          customModels: [
+          providerCredentials: [
+            { id: 'xcustom-credential', name: 'Profile OpenAI', type: 'apiKey', apiKey: 'sk-xcustom' },
+          ],
+          modelProfiles: [
             {
-              id: 'xcustom:::profile-openai',
+              id: 'xcustom-profile',
               name: 'Profile OpenAI',
-              internalId: 'xcustom-wire-model',
-              url: 'https://custom.example.com/v1/chat/completions',
-              key: 'sk-xcustom',
-              format: LLMFormat.OpenAICompatible,
-              flags: [],
-              tokenizer: 0,
+              modelId: 'custom-api',
+              providerId: 'custom-api',
+              providerOptions: {
+                credentialId: 'xcustom-credential',
+                baseUrl: 'https://custom.example.com/v1',
+                requestModel: 'xcustom-wire-model',
+              },
             },
           ],
+          modelProfileOrder: ['xcustom-profile'],
+          modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'xcustom-profile' } },
         },
         expectedUrl: 'https://custom.example.com/v1/chat/completions',
         expectedModel: 'xcustom-wire-model',
@@ -1058,7 +1216,7 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
           stream: false,
         },
       })
-      expect(res.statusCode).toBe(200)
+      expect(res.statusCode, `${testCase.label}: ${res.body}`).toBe(200)
       expect(res.json()).toMatchObject({ type: 'success', result: 'profile request ok' })
 
       const sent = captured.at(-1)
@@ -1138,7 +1296,7 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
       },
     })
 
-    expect(res.statusCode).toBe(200)
+    expect(res.statusCode, res.body).toBe(200)
     expect(res.json()).toEqual({ type: 'success', result: 'clean result' })
   })
 
@@ -1184,7 +1342,7 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
   })
 })
 
-describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
+describe('POST /api/v1/generate/completion (openai)', () => {
   const openaiPayload = {
     provider: 'openai',
     model: 'gpt-4o',
@@ -1300,7 +1458,7 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
     )
   })
 
-  it('L2: active streaming completion survives past the original deadline', async () => {
+  it('active streaming completion survives past the original deadline', async () => {
     vi.useFakeTimers()
     const req = fakeAbortReq()
     const { reply, raw } = fakeReply()
@@ -1335,7 +1493,55 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
     cleanup()
   })
 
-  it('L2: idle streaming completion aborts at the bounded deadline', async () => {
+  it('aborts the upstream before writing another SSE frame to a slow consumer', async () => {
+    const { reply, raw } = fakeReply(STREAM_CLIENT_MAX_BUFFERED_BYTES)
+    const abort = vi.fn()
+    let produced = 0
+    let finalized = false
+
+    async function* frames(): AsyncGenerator<CompletionStreamFrame> {
+      try {
+        produced += 1
+        yield { kind: 'token', content: 'first' }
+        produced += 1
+        yield { kind: 'token', content: 'second' }
+      } finally {
+        finalized = true
+      }
+    }
+
+    await pipeStream(reply, frames(), undefined, abort)
+
+    expect(abort).toHaveBeenCalledOnce()
+    expect(raw.chunks).toEqual([])
+    expect(raw.ended).toBe(true)
+    expect(produced).toBe(1)
+    expect(finalized).toBe(true)
+  })
+
+  it('rejects buffered completion output at the UTF-8 byte cap before retaining the overflow token', async () => {
+    let finalized = false
+    async function* frames(): AsyncGenerator<CompletionStreamFrame> {
+      try {
+        yield { kind: 'token', content: '한' }
+        yield { kind: 'token', content: 'abc' }
+        yield { kind: 'done', finishReason: 'stop' }
+      } finally {
+        finalized = true
+      }
+    }
+
+    await expect(collectCompletionFrames(frames(), 5)).rejects.toEqual(
+      expect.objectContaining<Partial<CompletionOutputLimitError>>({
+        name: 'CompletionOutputLimitError',
+        message: 'completion output exceeded the 5-byte buffer cap',
+        maxBytes: 5,
+      }),
+    )
+    expect(finalized).toBe(true)
+  })
+
+  it('idle streaming completion aborts at the bounded deadline', async () => {
     vi.useFakeTimers()
     const req = fakeAbortReq()
     const { reply, raw } = fakeReply()
@@ -1358,7 +1564,7 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
     cleanup()
   })
 
-  it('L2: empty streaming completion tokens do not refresh the deadline', async () => {
+  it('empty streaming completion tokens do not refresh the deadline', async () => {
     vi.useFakeTimers()
     const req = fakeAbortReq()
     const { reply, raw } = fakeReply()
@@ -1524,7 +1730,7 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
   })
 })
 
-describe('Phase 6-4c POST /api/v1/generate/completion (nanogpt + openrouter)', () => {
+describe('POST /api/v1/generate/completion (nanogpt + openrouter)', () => {
   const okOpenAIResponse = (text: string) =>
     new Response(JSON.stringify({ choices: [{ message: { content: text }, finish_reason: 'stop' }] }), {
       status: 200,
@@ -1650,7 +1856,7 @@ describe('Phase 6-4c POST /api/v1/generate/completion (nanogpt + openrouter)', (
   })
 })
 
-describe('Phase 6-5 POST /api/v1/generate/completion (anthropic)', () => {
+describe('POST /api/v1/generate/completion (anthropic)', () => {
   const anthropicPayload = {
     provider: 'anthropic',
     model: 'claude-3-5-sonnet-20241022',
@@ -1823,7 +2029,7 @@ describe('Phase 6-5 POST /api/v1/generate/completion (anthropic)', () => {
   })
 })
 
-describe('Phase 6-6 POST /api/v1/generate/completion (mistral)', () => {
+describe('POST /api/v1/generate/completion (mistral)', () => {
   const mistralPayload = {
     provider: 'mistral',
     model: 'mistral-large-latest',
@@ -1926,7 +2132,7 @@ describe('Phase 6-6 POST /api/v1/generate/completion (mistral)', () => {
   })
 })
 
-describe('Phase 6-23 POST /api/v1/generate/completion (mistral additionalParams + reverse_proxy)', () => {
+describe('POST /api/v1/generate/completion (mistral additionalParams + reverse_proxy)', () => {
   it('applies additionalParams overlay to the mistral body + headers', async () => {
     let captured: { url: string; init: RequestInit } | null = null
     globalThis.fetch = (async (url: string, init: RequestInit) => {
@@ -1999,7 +2205,7 @@ describe('Phase 6-23 POST /api/v1/generate/completion (mistral additionalParams 
   })
 })
 
-describe('Phase 6-8 POST /api/v1/generate/completion (openai with custom baseUrl)', () => {
+describe('POST /api/v1/generate/completion (openai with custom baseUrl)', () => {
   // DeepSeek / DeepInfra route through provider='openai' with a derived
   // baseUrl (from modelInfo.endpoint) and a key from db.OaiCompAPIKeys[...].
   // The wire shape is identical to vanilla openai; only the URL differs.
@@ -2044,7 +2250,7 @@ describe('Phase 6-8 POST /api/v1/generate/completion (openai with custom baseUrl
   })
 })
 
-describe('Phase 6-17 POST /api/v1/generate/completion (xcustom OAI-compat additionalParams)', () => {
+describe('POST /api/v1/generate/completion (xcustom OAI-compat additionalParams)', () => {
   it('applies the additionalParams overlay to the outgoing body + headers', async () => {
     let captured: { url: string; init: RequestInit } | null = null
     globalThis.fetch = (async (url: string, init: RequestInit) => {
@@ -2168,7 +2374,7 @@ describe('Phase 6-17 POST /api/v1/generate/completion (xcustom OAI-compat additi
   })
 })
 
-describe('Phase 6-7 POST /api/v1/generate/completion (cohere)', () => {
+describe('POST /api/v1/generate/completion (cohere)', () => {
   const coherePayload = {
     provider: 'cohere',
     model: 'command-r-plus-04-2024',
@@ -2240,7 +2446,7 @@ describe('Phase 6-7 POST /api/v1/generate/completion (cohere)', () => {
   })
 })
 
-describe('Phase 6-24 POST /api/v1/generate/completion (cohere additionalParams + reverse_proxy)', () => {
+describe('POST /api/v1/generate/completion (cohere additionalParams + reverse_proxy)', () => {
   it('applies additionalParams overlay to the cohere body + headers', async () => {
     let captured: { url: string; init: RequestInit } | null = null
     globalThis.fetch = (async (url: string, init: RequestInit) => {
@@ -2309,7 +2515,7 @@ describe('Phase 6-24 POST /api/v1/generate/completion (cohere additionalParams +
   })
 })
 
-describe('Phase 6-12 POST /api/v1/generate/completion (openai-responses)', () => {
+describe('POST /api/v1/generate/completion (openai-responses)', () => {
   it('forwards to /v1/responses with input items', async () => {
     let captured: { url: string; init: RequestInit } | null = null
     globalThis.fetch = (async (url: string, init: RequestInit) => {
@@ -2343,9 +2549,32 @@ describe('Phase 6-12 POST /api/v1/generate/completion (openai-responses)', () =>
     expect(sent.input).toEqual([{ role: 'user', content: [{ type: 'input_text', text: 'hi' }] }])
     expect(sent.max_output_tokens).toBe(128)
   })
+
+  it('rejects streaming before dispatch because Responses completion is buffered', async () => {
+    const fetchSpy = vi.fn()
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch
+    const { assertion } = await setupAuthedClient(harness.app)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        provider: 'openai-responses',
+        model: 'gpt-5',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: true,
+        options: { 'openai-responses': { apiKey: 'sk-resp' } },
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'openai-responses streaming is not yet supported; set stream: false' })
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
 })
 
-describe('Phase 6-25 POST /api/v1/generate/completion (openai-responses additionalParams + reverse_proxy)', () => {
+describe('POST /api/v1/generate/completion (openai-responses additionalParams + reverse_proxy)', () => {
   it('applies additionalParams overlay to the openai-responses body + headers', async () => {
     let captured: { url: string; init: RequestInit } | null = null
     globalThis.fetch = (async (url: string, init: RequestInit) => {
@@ -2416,7 +2645,7 @@ describe('Phase 6-25 POST /api/v1/generate/completion (openai-responses addition
   })
 })
 
-describe('Phase 6-26 POST /api/v1/generate/completion (openai-legacy-instruct additionalParams + reverse_proxy)', () => {
+describe('POST /api/v1/generate/completion (openai-legacy-instruct additionalParams + reverse_proxy)', () => {
   it('applies additionalParams overlay to the legacy-instruct body + headers', async () => {
     let captured: { url: string; init: RequestInit } | null = null
     globalThis.fetch = (async (url: string, init: RequestInit) => {
@@ -2487,7 +2716,7 @@ describe('Phase 6-26 POST /api/v1/generate/completion (openai-legacy-instruct ad
   })
 })
 
-describe('Phase 6-10 POST /api/v1/generate/completion (openai-legacy-instruct)', () => {
+describe('POST /api/v1/generate/completion (openai-legacy-instruct)', () => {
   const legacyPayload = {
     provider: 'openai-legacy-instruct',
     model: 'gpt-3.5-turbo-instruct',
@@ -2549,7 +2778,7 @@ describe('Phase 6-10 POST /api/v1/generate/completion (openai-legacy-instruct)',
   })
 })
 
-describe('Phase 6-22 POST /api/v1/generate/completion (horde)', () => {
+describe('POST /api/v1/generate/completion (horde)', () => {
   it('400s when options.horde.prompt is missing', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const res = await harness.app.inject({
@@ -2635,7 +2864,7 @@ describe('Phase 6-22 POST /api/v1/generate/completion (horde)', () => {
   })
 })
 
-describe('Phase 6-21 POST /api/v1/generate/completion (bedrock)', () => {
+describe('POST /api/v1/generate/completion (bedrock)', () => {
   it('400s when options.bedrock.credentials is missing', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const res = await harness.app.inject({
@@ -2749,7 +2978,7 @@ describe('Phase 6-21 POST /api/v1/generate/completion (bedrock)', () => {
   })
 })
 
-describe('Phase 6-20 POST /api/v1/generate/completion (gemini vertex)', () => {
+describe('POST /api/v1/generate/completion (gemini vertex)', () => {
   it('400s when options.gemini.vertex is partially populated', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const res = await harness.app.inject({
@@ -2833,7 +3062,7 @@ describe('Phase 6-20 POST /api/v1/generate/completion (gemini vertex)', () => {
   })
 })
 
-describe('Phase 6-9 POST /api/v1/generate/completion (gemini)', () => {
+describe('POST /api/v1/generate/completion (gemini)', () => {
   const geminiPayload = {
     provider: 'gemini',
     model: 'gemini-2.5-flash',
@@ -2931,7 +3160,7 @@ describe('Phase 6-9 POST /api/v1/generate/completion (gemini)', () => {
   })
 })
 
-describe('Phase 6-16 POST /api/v1/generate/completion (ollama)', () => {
+describe('POST /api/v1/generate/completion (ollama)', () => {
   const ollamaPayload = {
     provider: 'ollama',
     model: 'llama3',

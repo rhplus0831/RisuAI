@@ -1,7 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import type { Database, character } from '../../../src/ts/storage/database.svelte'
-import type { PromptItem } from '../../../src/ts/process/prompt'
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
+import type { FastifyCharacter as character, FastifyDatabase as Database } from '../src/prompt/serverTypes.js'
+import type { PromptItem } from '../src/prompt/promptTemplate.js'
 import {
   buildFormatOrder,
   coalesceRows,
@@ -15,8 +14,10 @@ import {
 } from '../src/prompt/templates.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import { preflightTemplateTokens } from '../src/prompt/preflight.js'
+import { createPositionParser, type LoreEntryActive, type LorebookActivationReport } from '../src/prompt/lorebook.js'
 import type { ExpandContext } from '../src/prompt/variables.js'
 import * as promptVariables from '../src/prompt/variables.js'
+import type { PromptMessage } from '../src/prompt/promptMessage.js'
 
 beforeAll(() => {
   bootPromptVariables()
@@ -71,7 +72,7 @@ function makeCharacter(overrides: Partial<character> = {}): character {
 }
 
 function makeSlots(overrides: Partial<UnformatedPromptSlots> = {}): UnformatedPromptSlots {
-  const empty = (): OpenAIChat[] => []
+  const empty = (): PromptMessage[] => []
   return {
     main: empty(),
     jailbreak: empty(),
@@ -87,10 +88,10 @@ function makeSlots(overrides: Partial<UnformatedPromptSlots> = {}): UnformatedPr
   }
 }
 
-const row = (overrides: Partial<OpenAIChat>): OpenAIChat =>
-  ({ role: 'system', content: 'x', ...overrides }) as OpenAIChat
+const row = (overrides: Partial<PromptMessage>): PromptMessage =>
+  ({ role: 'system', content: 'x', ...overrides }) as PromptMessage
 
-describe('Phase 7-10a normalizeTemplate', () => {
+describe('normalizeTemplate', () => {
   it('returns null / false when no template is set', () => {
     const db = makeDatabase({ promptTemplate: undefined })
     const result = normalizeTemplate(db, makeCharacter())
@@ -248,11 +249,11 @@ describe('Phase 7-10a normalizeTemplate', () => {
     const result = normalizeTemplate(db, makeCharacter())
 
     expect(result.promptTemplate?.map((c) => c.type)).toEqual(['description', 'postEverything'])
-    expect(db.promptPresets[0].promptTemplate).toEqual([{ type: 'description' }])
+    expect(db.promptPresets![0].promptTemplate).toEqual([{ type: 'description' }])
   })
 })
 
-describe('Phase 7-10a buildFormatOrder', () => {
+describe('buildFormatOrder', () => {
   it('clones formatingOrder and appends postEverything without mutating the source', () => {
     const db = makeDatabase()
     const before = [...(db.formatingOrder as FormatOrderKey[])]
@@ -262,9 +263,25 @@ describe('Phase 7-10a buildFormatOrder', () => {
   })
 })
 
-describe('Phase 7-10a coalesceRows', () => {
+describe('coalesceRows', () => {
+  it('keeps BardWiki reference rows independently removable on coalescing models', () => {
+    const out: PromptMessage[] = []
+    coalesceRows(
+      out,
+      [
+        row({ content: 'first', memo: 'bardWiki', removable: true }),
+        row({ content: 'second', memo: 'bardWiki', removable: false }),
+      ],
+      'gpt-4o',
+    )
+    expect(out.map(({ content, removable }) => ({ content, removable }))).toEqual([
+      { content: 'first', removable: true },
+      { content: 'second', removable: false },
+    ])
+  })
+
   it('drops empty / whitespace rows but keeps a multimodal row with empty content', () => {
-    const out: OpenAIChat[] = []
+    const out: PromptMessage[] = []
     coalesceRows(
       out,
       [
@@ -278,7 +295,7 @@ describe('Phase 7-10a coalesceRows', () => {
   })
 
   it('merges consecutive same-memo/name system rows on a coalescing model', () => {
-    const out: OpenAIChat[] = []
+    const out: PromptMessage[] = []
     coalesceRows(
       out,
       [
@@ -294,7 +311,7 @@ describe('Phase 7-10a coalesceRows', () => {
   })
 
   it('does not merge a non-system row between two system rows', () => {
-    const out: OpenAIChat[] = []
+    const out: PromptMessage[] = []
     coalesceRows(
       out,
       [row({ content: 'a', memo: 'm' }), row({ role: 'user', content: 'u' }), row({ content: 'b', memo: 'm' })],
@@ -304,13 +321,13 @@ describe('Phase 7-10a coalesceRows', () => {
   })
 
   it('pushes every row verbatim on a non-coalescing model', () => {
-    const out: OpenAIChat[] = []
+    const out: PromptMessage[] = []
     coalesceRows(out, [row({ content: 'a', memo: 'm' }), row({ content: 'b', memo: 'm' })], 'ollama')
     expect(out.map((r) => r.content)).toEqual(['a', 'b'])
   })
 })
 
-describe('Phase 7-10a renderByFormatOrder', () => {
+describe('renderByFormatOrder', () => {
   it('walks the format order and coalesces each slot in order', () => {
     const unformated = makeSlots({
       main: [row({ content: 'main', memo: 'main' })],
@@ -324,7 +341,7 @@ describe('Phase 7-10a renderByFormatOrder', () => {
   })
 })
 
-describe('Phase 7-10b content cards (renderByTemplate)', () => {
+describe('content cards (renderByTemplate)', () => {
   const tpl = (cards: PromptItem[]): PromptItem[] => cards
 
   it('wraps description / persona rows via innerFormat {{slot}}', () => {
@@ -357,6 +374,56 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
     expect(out.map((r) => r.content)).toEqual(['AN: fallback'])
   })
 
+  it('applies role2 to every persona and author-note row', () => {
+    const unformated = makeSlots({
+      personaPrompt: [row({ content: 'persona one' }), row({ content: 'persona two' })],
+      authorNote: [row({ content: 'author note' })],
+    })
+    const { formated } = renderByTemplate(
+      ctxFor(makeDatabase()),
+      makeCharacter(),
+      unformated,
+      [
+        { type: 'persona', role2: 'bot' },
+        { type: 'authornote', role2: 'user' },
+      ],
+      true,
+    )
+
+    expect(formated).toEqual([
+      { role: 'assistant', content: 'persona one' },
+      { role: 'assistant', content: 'persona two' },
+      { role: 'user', content: 'author note' },
+    ])
+  })
+
+  it('applies description role2 only to the base description row', () => {
+    const unformated = makeSlots({
+      description: [
+        row({ content: 'before lore' }),
+        row({ content: 'base description' }),
+        row({ content: 'after lore' }),
+      ],
+    })
+    const { formated } = renderByTemplate(
+      ctxFor(makeDatabase()),
+      makeCharacter(),
+      unformated,
+      [{ type: 'description', role2: 'user' }],
+      true,
+      undefined,
+      [],
+      undefined,
+      1,
+    )
+
+    expect(formated).toEqual([
+      { role: 'system', content: 'before lore' },
+      { role: 'user', content: 'base description' },
+      { role: 'system', content: 'after lore' },
+    ])
+  })
+
   it('renders a plain/main card and maps bot role to assistant', () => {
     const db = makeDatabase()
     const { formated: out } = renderByTemplate(
@@ -378,6 +445,25 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
     expect(botOut[0].role).toBe('assistant')
   })
 
+  it('renders a plain card with omitted location and passes that absence to position parsing', () => {
+    const db = makeDatabase()
+    const positionParser = vi.fn((text: string, location: string | undefined) =>
+      location === undefined ? `legacy ${text}` : `located ${text}`,
+    )
+    const template: PromptItem[] = [{ type: 'plain', text: 'prompt', role: 'system' }]
+    const { formated } = renderByTemplate(
+      ctxFor(db),
+      makeCharacter({ replaceGlobalNote: 'global note replacement' }),
+      makeSlots(),
+      template,
+      true,
+      positionParser,
+    )
+    expect(formated).toEqual([{ role: 'system', content: 'legacy prompt' }])
+    expect(positionParser).toHaveBeenCalledExactlyOnceWith('prompt', undefined)
+    expect(Object.hasOwn(template[0], 'type2')).toBe(false)
+  })
+
   it('applies replaceGlobalNote ({{original}}) on a globalNote card', () => {
     const db = makeDatabase()
     const { formated: out } = renderByTemplate(
@@ -388,6 +474,25 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
       true,
     )
     expect(out[0].content).toBe('[[note]]')
+  })
+
+  it('applies a Global Note position injection once after composing {{original}}', () => {
+    const db = makeDatabase()
+    const positionParser = vi.fn((text: string, loc: string | undefined) =>
+      loc === 'globalNote' ? `${text} INJECTED` : text,
+    )
+    const { formated: out } = renderByTemplate(
+      ctxFor(db),
+      makeCharacter({ replaceGlobalNote: '[[{{original}}]]' }),
+      makeSlots(),
+      tpl([{ type: 'plain', type2: 'globalNote', text: 'note', role: 'system' }]),
+      true,
+      positionParser,
+    )
+
+    expect(out[0].content).toBe('[[note]] INJECTED')
+    expect(positionParser).toHaveBeenCalledOnce()
+    expect(positionParser).toHaveBeenCalledWith('[[note]]', 'globalNote')
   })
 
   it('appends prebuiltAssetCommand on a globalNote card when the char opts in', () => {
@@ -479,7 +584,7 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
   })
 })
 
-describe('Phase 7-10c chat cards', () => {
+describe('chat cards', () => {
   const chatSlots = (): UnformatedPromptSlots =>
     makeSlots({
       chats: [
@@ -489,8 +594,12 @@ describe('Phase 7-10c chat cards', () => {
       ],
     })
 
-  const renderChat = (db: Database, card: PromptItem, unformated = chatSlots(), char = makeCharacter()): OpenAIChat[] =>
-    renderByTemplate(ctxFor(db), char, unformated, [card], true).formated
+  const renderChat = (
+    db: Database,
+    card: PromptItem,
+    unformated = chatSlots(),
+    char = makeCharacter(),
+  ): PromptMessage[] => renderByTemplate(ctxFor(db), char, unformated, [card], true).formated
 
   it('emits the full chat for rangeEnd "end"', () => {
     const out = renderChat(makeDatabase(), { type: 'chat', rangeStart: 0, rangeEnd: 'end' })
@@ -597,10 +706,50 @@ describe('Phase 7-10c chat cards', () => {
     expect(unformated.chats.map((r) => r.role)).toEqual(['user', 'assistant', 'user'])
     expect(unformated.chats[0].content).toBe('u0')
   })
+
+  it('keeps repeated mixed chat cards role-independent (accepted divergence)', () => {
+    const db = makeDatabase({
+      promptSettings: {
+        assistantPrefill: '',
+        postEndInnerFormat: '',
+        sendChatAsSystem: true,
+        sendName: false,
+        utilOverride: false,
+        customChainOfThought: false,
+        maxThoughtTagDepth: -1,
+        trimStartNewChat: false,
+      },
+    } as Partial<Database>)
+    const unformated = makeSlots({
+      chats: [row({ role: 'user', content: 'u0' }), row({ role: 'assistant', content: 'a1' })],
+    })
+
+    const out = renderByTemplate(
+      ctxFor(db),
+      makeCharacter(),
+      unformated,
+      [
+        { type: 'chat', rangeStart: 0, rangeEnd: 'end' },
+        { type: 'chat', rangeStart: 0, rangeEnd: 'end', chatAsOriginalOnSystem: true },
+      ],
+      true,
+    ).formated
+
+    // Accepted divergence from baseline index.svelte.ts:1324/:2030: its shallow
+    // slice let the first card's systemizeChat mutation contaminate the second.
+    expect(out).toEqual([
+      expect.objectContaining({ role: 'system', content: 'user: u0\n\nassistant: a1' }),
+      expect.objectContaining({ role: 'user', content: 'u0' }),
+      expect.objectContaining({ role: 'assistant', content: 'a1' }),
+    ])
+  })
 })
 
-describe('Phase 7-10d memory cards', () => {
-  const mem = (): OpenAIChat[] => [row({ role: 'assistant', content: 'm0' }), row({ role: 'assistant', content: 'm1' })]
+describe('memory cards', () => {
+  const mem = (): PromptMessage[] => [
+    row({ role: 'assistant', content: 'm0' }),
+    row({ role: 'assistant', content: 'm1' }),
+  ]
 
   it('clones the injected memories and passes them through unwrapped', () => {
     const { formated: out } = renderByTemplate(
@@ -613,6 +762,19 @@ describe('Phase 7-10d memory cards', () => {
       mem(),
     )
     expect(out.map((r) => r.content)).toEqual(['m0', 'm1'])
+  })
+
+  it('applies role2 to every injected memory row', () => {
+    const { formated } = renderByTemplate(
+      ctxFor(makeDatabase()),
+      makeCharacter(),
+      makeSlots(),
+      [{ type: 'memory', role2: 'user' }],
+      true,
+      undefined,
+      mem(),
+    )
+    expect(formated.map(({ role }) => role)).toEqual(['user', 'user'])
   })
 
   it('wraps each memory row via innerFormat {{slot}}', () => {
@@ -668,7 +830,7 @@ describe('Phase 7-10d memory cards', () => {
   })
 })
 
-describe('Phase 7-10d cache markers', () => {
+describe('cache markers', () => {
   const slotsWithChat = (): UnformatedPromptSlots =>
     makeSlots({
       chats: [
@@ -682,7 +844,7 @@ describe('Phase 7-10d cache markers', () => {
 
   const chatCard: PromptItem = { type: 'chat', rangeStart: 0, rangeEnd: 'end' }
 
-  const cachePoints = (out: OpenAIChat[]): string[] => out.filter((r) => r.cachePoint).map((r) => r.content)
+  const cachePoints = (out: PromptMessage[]): string[] => out.filter((r) => r.cachePoint).map((r) => r.content)
 
   it('marks up to `depth` rows whose role matches the cache card', () => {
     const { formated: out } = renderByTemplate(
@@ -742,7 +904,7 @@ describe('Phase 7-10d cache markers', () => {
   })
 })
 
-describe('Phase 7-10e prompt-info capture', () => {
+describe('prompt-info capture', () => {
   const captureDb = (): Database =>
     makeDatabase({
       promptInfoInsideChat: true,
@@ -849,7 +1011,7 @@ describe('Phase 7-10e prompt-info capture', () => {
   })
 })
 
-describe('Phase 7-10e content trim', () => {
+describe('content trim', () => {
   it('trims rendered row contents on the template path', () => {
     const { formated } = renderByTemplate(
       ctxFor(makeDatabase()),
@@ -886,7 +1048,7 @@ describe('Phase 7-10e content trim', () => {
   })
 })
 
-describe('Phase 3 M3 stable template card cache', () => {
+describe('stable template card cache', () => {
   const stableCards = (): PromptItem[] => [
     { type: 'plain', type2: 'main', text: 'plain {{user}}', role: 'system' },
     { type: 'jailbreak', type2: 'normal', text: 'jb {{user}}', role: 'system' },
@@ -982,6 +1144,53 @@ describe('Phase 3 M3 stable template card cache', () => {
     expect(promptInfoCalls('desc {{user}} {{slot}}')).toBe(1)
     expect(promptInfoCalls('persona {{user}} {{slot}}')).toBe(1)
     expect(promptInfoCalls('author {{user}} {{slot}}')).toBe(1)
+  })
+
+  it('shares inject-at rendering between preflight and the final stable-card cache read', () => {
+    const db = cacheDb()
+    const ctx = ctxFor(db)
+    const currentChar = makeCharacter({ replaceGlobalNote: '[[{{original}}]]' })
+    const unformated = makeSlots()
+    const template: PromptItem[] = [{ type: 'plain', type2: 'globalNote', text: 'BASE', role: 'system' }]
+    const injector: LoreEntryActive = {
+      depth: 0,
+      pos: '',
+      prompt: 'INJECTED',
+      role: 'system',
+      order: 0,
+      priority: 0,
+      tokens: 1,
+      source: 'injector',
+      inject: { operation: 'append', location: 'globalNote', param: '', lore: false },
+    }
+    const report: LorebookActivationReport = {
+      actives: [injector],
+      disabledUIPrompts: [],
+      matchLog: [],
+    }
+    const stableCardCache = createStableCardRenderCache()
+
+    preflightTemplateTokens({
+      ctx,
+      currentChar,
+      unformated,
+      promptTemplate: template,
+      usingPromptTemplate: true,
+      report,
+      stableCardCache,
+    })
+    const rendered = renderByTemplate(
+      ctx,
+      currentChar,
+      unformated,
+      template,
+      true,
+      createPositionParser(report),
+      undefined,
+      stableCardCache,
+    )
+
+    expect(rendered.formated).toEqual([{ role: 'system', content: '[[BASE]] INJECTED' }])
   })
 
   it('keeps live chat, postEverything, memory, and cache cards outside the stable-card cache', () => {
@@ -1186,7 +1395,7 @@ describe('Phase 3 M3 stable template card cache', () => {
   })
 })
 
-describe('Phase 7-10f renderFinalPrompt', () => {
+describe('renderFinalPrompt', () => {
   const chatTemplate: PromptItem[] = [{ type: 'chat', rangeStart: 0, rangeEnd: 'end' }]
   const chatRows = (): UnformatedPromptSlots =>
     makeSlots({
@@ -1271,7 +1480,7 @@ describe('Phase 7-10f renderFinalPrompt', () => {
   })
 
   it('applies the editRequest seam to both formated and promptText', async () => {
-    const bang = (rows: OpenAIChat[]): OpenAIChat[] => rows.map((r) => ({ ...r, content: r.content + '!' }))
+    const bang = (rows: PromptMessage[]): PromptMessage[] => rows.map((r) => ({ ...r, content: r.content + '!' }))
     const { formated, promptText } = await renderFinalPrompt({
       ctx: ctxFor(
         makeDatabase({

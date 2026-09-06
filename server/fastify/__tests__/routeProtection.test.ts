@@ -6,8 +6,15 @@ import { webcrypto } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { ACTIVE_WRITER_SESSION_HEADER } from '../src/activeWriter.js'
-import { findProtocolRouteDecision, isProtocolMutatingMethod } from '../src/routeManifest.js'
-import { authLoginRateLimit, generationSubmitRateLimit } from '../src/routeRateLimits.js'
+import {
+  findProtocolRouteDecision,
+  findProtocolRouteDecisions,
+  isProtocolMutatingMethod,
+  protocolRouteMatches,
+  PROTOCOL_ROUTE_MANIFEST,
+  PROTOCOL_ROUTE_POLICIES,
+} from '../src/routeManifest.js'
+import { assetExistsRateLimit, authLoginRateLimit, generationSubmitRateLimit } from '../src/routeRateLimits.js'
 
 // Table-wide protection invariants for the Fastify port.
 //
@@ -136,6 +143,66 @@ afterEach(async () => {
 })
 
 describe('route protection (table-wide auth enforcement)', () => {
+  it('keeps public and conditional auth exceptions within the independently reviewed allowlist', () => {
+    const reviewedExceptions = [
+      'health:public',
+      'auth-status:public',
+      'auth-setup:public',
+      'auth-login:public',
+      'auth-crypto:public',
+      'asset-read:public',
+      'asset-exists:public',
+      'push-vapid-public-key:public',
+      'hub-proxy:conditional',
+    ]
+    const actualExceptions = PROTOCOL_ROUTE_MANIFEST.filter((entry) => entry.auth.decision !== 'required').map(
+      (entry) => `${entry.id}:${entry.auth.decision}`,
+    )
+
+    expect(actualExceptions).toEqual(reviewedExceptions)
+  })
+
+  it('keeps mutating active-writer exceptions within the independently reviewed allowlist', () => {
+    const reviewedExceptions = [
+      'auth-setup:auth-session',
+      'auth-login:auth-session',
+      'auth-crypto:stateless-helper',
+      'startup-telemetry:stateless-helper',
+      'settings-cache-read:read-only-post',
+      'settings-group-cache-read:read-only-post',
+      'collections-cache-read:read-only-post',
+      'collection-cache-read:read-only-post',
+      'character-aggregate-cache-read:read-only-post',
+      'characters-cache-read:read-only-post',
+      'chat-messages-bulk-read:read-only-post',
+      'chat-display-sources:read-only-post',
+      'character-lorebook-cache-read:read-only-post',
+      'character-lorebooks-bulk-read:read-only-post',
+      'legacy-preset-cache-read:read-only-post',
+      'prompt-preset-template-cache-read:read-only-post',
+      'asset-exists:read-only-post',
+      'push-subscription-create:auth-session',
+      'push-subscription-delete:auth-session',
+      'mcp-oauth-refresh:runtime-proxy',
+      'embedding-operations:runtime-proxy',
+      'provider-operations:runtime-proxy',
+      'openai-transcription:runtime-proxy',
+      'tts-synthesis:runtime-proxy',
+      'image-generation:runtime-generation',
+      'proxy-fetch:runtime-proxy',
+      'proxy-plugin-fetch:runtime-proxy',
+      'proxy-stream-job-create:runtime-proxy',
+      'proxy-stream-job-cancel:runtime-proxy',
+      'hub-proxy:runtime-proxy',
+      'generation-completion:runtime-generation',
+    ]
+    const actualExceptions = PROTOCOL_ROUTE_MANIFEST.filter(
+      (entry) => entry.methods.some(isProtocolMutatingMethod) && entry.activeWriter.decision !== 'active-writer',
+    ).map((entry) => `${entry.id}:${entry.activeWriter.decision}`)
+
+    expect(actualExceptions).toEqual(reviewedExceptions)
+  })
+
   it('has a protocol-manifest decision for every live API route', async () => {
     const routes = parseRouteTree(harness.app.printRoutes({ commonPrefix: false }))
     const unclassified = routes
@@ -144,6 +211,26 @@ describe('route protection (table-wide auth enforcement)', () => {
       .map((route) => `${route.method} ${route.path}`)
 
     expect(unclassified).toEqual([])
+  })
+
+  it('keeps live routes, shared operations, and server policy bidirectionally unique', () => {
+    const routes = parseRouteTree(harness.app.printRoutes({ commonPrefix: false })).filter((route) =>
+      route.path.startsWith('/api/v1/'),
+    )
+    const ambiguousOrMissing = routes
+      .map((route) => ({ route, decisions: findProtocolRouteDecisions(route.method, route.path) }))
+      .filter(({ decisions }) => decisions.length !== 1)
+      .map(({ route, decisions }) => `${route.method} ${route.path} -> ${decisions.map(({ id }) => id).join(',')}`)
+    const stale = PROTOCOL_ROUTE_MANIFEST.filter(
+      (entry) => !routes.some((route) => protocolRouteMatches(entry, route.method, route.path)),
+    ).map(({ id }) => id)
+    const manifestIds = PROTOCOL_ROUTE_MANIFEST.map(({ id }) => id)
+    const policyIds = PROTOCOL_ROUTE_POLICIES.map(({ id }) => id)
+
+    expect(ambiguousOrMissing).toEqual([])
+    expect(stale).toEqual([])
+    expect(new Set(manifestIds).size).toBe(manifestIds.length)
+    expect(policyIds).toEqual(manifestIds)
   })
 
   it('requires auth on every manifest-protected API route once a password is set', async () => {
@@ -180,9 +267,10 @@ describe('route protection (table-wide auth enforcement)', () => {
     expect(unprotected).toEqual([])
   })
 
-  it('classifies hash-aware hydration POSTs as authenticated read-only routes', () => {
+  it('classifies data-reading POSTs as authenticated read-only routes', () => {
     for (const path of [
       '/api/v1/characters/:id/lorebook',
+      '/api/v1/chats/:chatId/display-sources',
       '/api/v1/legacy-presets/:id',
       '/api/v1/prompt-presets/:id/template',
     ]) {
@@ -338,6 +426,13 @@ describe('active-writer header validation', () => {
 
   it('does not apply the active-writer gate to authenticated hash-aware resource reads', async () => {
     const assertion = await authed()
+    const initialized = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'risu-auth': assertion },
+      payload: { database: { streamGeminiThoughts: false } },
+    })
+    expect(initialized.statusCode, initialized.body).toBe(200)
     await harness.app.inject({
       method: 'GET',
       url: '/api/v1/bootstrap',
@@ -350,6 +445,7 @@ describe('active-writer header validation', () => {
       { url: '/api/v1/collections', statusCode: 200 },
       { url: '/api/v1/collections/modules', statusCode: 200 },
       { url: '/api/v1/characters', statusCode: 200 },
+      { url: '/api/v1/characters/aggregate', statusCode: 200 },
       { url: '/api/v1/characters/x/lorebook', statusCode: 200 },
       { url: '/api/v1/legacy-presets/x', statusCode: 404 },
       { url: '/api/v1/prompt-presets/x/template', statusCode: 404 },
@@ -366,6 +462,14 @@ describe('active-writer header validation', () => {
 })
 
 describe('explicit route rate limits', () => {
+  it('allows the public asset-existence burst represented by the high-asset fixture', () => {
+    const fixtureAssetCount = 4_361
+    const legacyAssetBatchSize = 32
+    const requiredBurst = Math.ceil(fixtureAssetCount / legacyAssetBatchSize)
+
+    expect(Number(assetExistsRateLimit.max)).toBeGreaterThanOrEqual(requiredBurst)
+  })
+
   it('limits auth login attempts with an explicit route limit', async () => {
     const setup = await harness.app.inject({
       method: 'POST',

@@ -1,5 +1,7 @@
 import { alertError } from '../alert'
-import { getCurrentCharacter, getDatabase, type character } from '../storage/database.svelte'
+import type { character, Database } from '../storage/database.svelte'
+import { getSelectedCharacterOwner } from '../characterState'
+import { charactersResourceState, settingsResourceState } from '../server/resourceState.svelte'
 import { runTranslator, translateVox } from '../translator/translator'
 import { globalFetch, loadAsset } from '../globalApi.svelte'
 import { createKeyedRequestCache } from '../model/keyedRequestCache'
@@ -8,7 +10,7 @@ import { runVITS } from './transformers'
 import { MASKED_PROVIDER_SECRET } from '../providerSecretMask'
 import { providerOperationCredential, requestProviderOperation } from '../server/providerOperations'
 import { requestTtsSynthesis, ttsGlobalCredential, TtsSynthesisRequestError } from '../server/tts'
-import type { OpenAiTtsFormat, TtsSynthesisRequest } from '../server/ttsProtocol'
+import type { OpenAiTtsFormat, TtsSynthesisRequest } from '@risuai/protocol/tts-synthesis'
 import {
   getTTSPreprocessors,
   getTTSPostprocessors,
@@ -21,6 +23,20 @@ import {
 
 const TTS_CATALOG_CACHE_TTL_MS = 30_000
 const TTS_PLUGIN_HOOK_TIMEOUT_MS = 10_000
+
+type TtsSettingsGroup = 'media' | 'providers'
+
+function ttsSettingsOwner(group: TtsSettingsGroup): Partial<Database> | undefined {
+  const status = settingsResourceState.groupStatuses[group] ?? 'idle'
+  if (status === 'ready') return settingsResourceState.value as Partial<Database>
+  return undefined
+}
+
+function selectedTtsCharacterOwner(): character | undefined {
+  const status = charactersResourceState.status
+  if (status === 'ready') return getSelectedCharacterOwner()
+  return undefined
+}
 
 export type ElevenTTSVoice = {
   voice_id: string
@@ -271,11 +287,19 @@ async function playAudio(
   startSource(source, [source])
 }
 
+function voicevoxRequestUrl(baseUrl: string, path: string, params: Record<string, string>): string {
+  const url = new URL(`${baseUrl.replace(/\/+$/, '')}/${path}`)
+  for (const [name, value] of Object.entries(params)) {
+    url.searchParams.set(name, value)
+  }
+  return url.toString()
+}
+
 export async function sayTTS(character: character, text: string) {
   const ttsRun = beginTtsRun()
   try {
     if (!character) {
-      const v = getCurrentCharacter()
+      const v = selectedTtsCharacterOwner()
       if (!v) {
         return
       }
@@ -286,7 +310,6 @@ export async function sayTTS(character: character, text: string) {
       return
     }
 
-    let db = getDatabase()
     text = text.replace(/\*/g, '')
 
     if (character.ttsReadOnlyQuoted) {
@@ -330,10 +353,12 @@ export async function sayTTS(character: character, text: string) {
         break
       }
       case 'elevenlab': {
+        const settings = ttsSettingsOwner('media')
+        if (!settings) return
         const response = await requestCredentialedTtsAudio(
           {
             operation: 'elevenlabs.synthesize',
-            credential: ttsGlobalCredential(db.elevenLabKey),
+            credential: ttsGlobalCredential(settings.elevenLabKey),
             input: {
               text,
               voiceId: character.ttsSpeech,
@@ -353,9 +378,12 @@ export async function sayTTS(character: character, text: string) {
         break
       }
       case 'VOICEVOX': {
+        const settings = ttsSettingsOwner('media')
+        const voicevoxUrl = typeof settings?.voicevoxUrl === 'string' ? settings.voicevoxUrl.trim() : ''
+        if (!voicevoxUrl) return
         const jpText = await awaitTtsRun(translateVox(text), ttsRun)
         const query = await awaitTtsRun(
-          fetch(`${db.voicevoxUrl}/audio_query?text=${jpText}&speaker=${character.ttsSpeech}`, {
+          fetch(voicevoxRequestUrl(voicevoxUrl, 'audio_query', { text: jpText, speaker: character.ttsSpeech }), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             signal: ttsRun.controller.signal,
@@ -377,7 +405,7 @@ export async function sayTTS(character: character, text: string) {
             kana: queryJson.kana,
           }
           const getVoice = await awaitTtsRun(
-            fetch(`${db.voicevoxUrl}/synthesis?speaker=${character.ttsSpeech}`, {
+            fetch(voicevoxRequestUrl(voicevoxUrl, 'synthesis', { speaker: character.ttsSpeech }), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(bodyData),
@@ -400,9 +428,11 @@ export async function sayTTS(character: character, text: string) {
         break
       }
       case 'openai': {
+        const settings = ttsSettingsOwner('providers')
+        if (!settings) return
         const cfg = character.oaiTTSConfig?.enabled ? character.oaiTTSConfig : null
         const characterKey = typeof cfg?.apiKey === 'string' ? cfg.apiKey.trim() : ''
-        const globalKey = typeof db.openAIKey === 'string' ? db.openAIKey.trim() : ''
+        const globalKey = typeof settings.openAIKey === 'string' ? settings.openAIKey.trim() : ''
         const usesStoredCredential =
           characterKey === MASKED_PROVIDER_SECRET || (!characterKey && globalKey === MASKED_PROVIDER_SECRET)
         const providedKey =
@@ -448,10 +478,12 @@ export async function sayTTS(character: character, text: string) {
         break
       }
       case 'novelai': {
+        const settings = ttsSettingsOwner('media')
+        if (!settings) return
         const response = await requestCredentialedTtsAudio(
           {
             operation: 'novelai.synthesize',
-            credential: ttsGlobalCredential(db.NAIApiKey),
+            credential: ttsGlobalCredential(settings.NAIApiKey),
             input: {
               text,
               seed: character.naittsConfig.voice,
@@ -472,6 +504,8 @@ export async function sayTTS(character: character, text: string) {
         break
       }
       case 'huggingface': {
+        const settings = ttsSettingsOwner('providers')
+        if (!settings) return
         const inputText =
           character.hfTTS.language === 'en'
             ? text
@@ -480,7 +514,7 @@ export async function sayTTS(character: character, text: string) {
         const response = await requestCredentialedTtsAudio(
           {
             operation: 'huggingface.synthesize',
-            credential: ttsGlobalCredential(db.huggingfaceKey),
+            credential: ttsGlobalCredential(settings.huggingfaceKey),
             input: {
               text: inputText,
               model: character.hfTTS.model,
@@ -601,6 +635,8 @@ export async function sayTTS(character: character, text: string) {
         break
       }
       case 'fishspeech': {
+        const settings = ttsSettingsOwner('media')
+        if (!settings) return
         if (character.fishSpeechConfig.model._id === '') {
           throw new Error(language.errors.fishSpeechModelMissing)
         }
@@ -608,7 +644,7 @@ export async function sayTTS(character: character, text: string) {
         const response = await requestCredentialedTtsAudio(
           {
             operation: 'fish.synthesize',
-            credential: ttsGlobalCredential(db.fishSpeechKey),
+            credential: ttsGlobalCredential(settings.fishSpeechKey),
             input: {
               text,
               referenceId: character.fishSpeechConfig.model._id,
@@ -674,8 +710,9 @@ function requireCatalogResponse(response: Response, provider: string): void {
 }
 
 export async function getElevenTTSVoices(): Promise<ElevenTTSVoice[]> {
-  const db = getDatabase()
-  const apiKey = typeof db.elevenLabKey === 'string' ? db.elevenLabKey : ''
+  const settings = ttsSettingsOwner('media')
+  if (!settings) return []
+  const apiKey = typeof settings.elevenLabKey === 'string' ? settings.elevenLabKey : ''
   const credential = providerOperationCredential(apiKey)
 
   return elevenVoiceCatalogRequests.request(
@@ -698,8 +735,10 @@ export async function getElevenTTSVoices(): Promise<ElevenTTSVoice[]> {
 }
 
 export async function getVOICEVOXVoices(): Promise<VoicevoxSpeaker[]> {
-  const db = getDatabase()
-  const configuredUrl = typeof db.voicevoxUrl === 'string' ? db.voicevoxUrl.trim() : ''
+  const settings = ttsSettingsOwner('media')
+  if (!settings) return []
+  const configuredUrl = typeof settings.voicevoxUrl === 'string' ? settings.voicevoxUrl.trim() : ''
+  if (!configuredUrl) return []
   const baseUrl = configuredUrl.replace(/\/+$/, '')
 
   return voicevoxSpeakerCatalogRequests.request(baseUrl, async () => {
@@ -732,8 +771,9 @@ export async function getVOICEVOXVoices(): Promise<VoicevoxSpeaker[]> {
 }
 
 export async function getFishSpeechModels(): Promise<FishSpeechModel[]> {
-  const db = getDatabase()
-  const apiKey = typeof db.fishSpeechKey === 'string' ? db.fishSpeechKey : ''
+  const settings = ttsSettingsOwner('media')
+  if (!settings) return []
+  const apiKey = typeof settings.fishSpeechKey === 'string' ? settings.fishSpeechKey : ''
   const credential = providerOperationCredential(apiKey)
 
   return fishSpeechModelCatalogRequests.request(

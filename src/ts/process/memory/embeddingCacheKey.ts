@@ -5,13 +5,18 @@ export interface EmbeddingCacheIdentity {
   contextSuffix?: string
 }
 
-export function getEmbeddingCacheKey(content: string, identity: EmbeddingCacheIdentity): string {
-  const customModelSuffix =
-    identity.model === 'custom' && identity.customEmbeddingModel?.trim()
-      ? `-${identity.customEmbeddingModel.trim()}`
-      : ''
-  const customEndpointSuffix =
-    identity.model === 'custom' ? `@${encodeURIComponent(identity.customEmbeddingUrl?.trim() ?? '')}` : ''
+const EMBEDDING_CACHE_KEY_VERSION = 'risu-embedding-cache-v2'
 
-  return `${content}|${identity.model}${customModelSuffix}${customEndpointSuffix}${identity.contextSuffix ?? ''}`
+export function getEmbeddingCacheKey(content: string, identity: EmbeddingCacheIdentity): string {
+  const customModel = identity.model === 'custom' ? (identity.customEmbeddingModel?.trim() ?? '') : ''
+  const customEndpoint = identity.model === 'custom' ? (identity.customEmbeddingUrl?.trim() ?? '') : ''
+
+  return JSON.stringify([
+    EMBEDDING_CACHE_KEY_VERSION,
+    content,
+    identity.model,
+    customModel,
+    customEndpoint,
+    identity.contextSuffix ?? '',
+  ])
 }

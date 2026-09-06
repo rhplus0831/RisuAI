@@ -1,13 +1,11 @@
 import { get, writable } from 'svelte/store'
+import { Sha256 } from '@aws-crypto/sha256-js'
 import {
   saveImage,
   type character,
   type Chat,
   defaultSdDataFunc,
   type loreBook,
-  getDatabase,
-  getCharacterByIndex,
-  setCharacterByIndex,
   isServerCharacterShell,
 } from './storage/database.svelte'
 import { alertAddCharacter, alertConfirm, alertError, alertNormal, alertSelect, alertStore, alertWait } from './alert'
@@ -22,24 +20,26 @@ import { AppendableBuffer, downloadFile, requiresFullEncoderReload } from './glo
 import { updateInlayScreen } from './process/inlayScreen'
 import { parseMarkdownSafe } from './parser/parser.svelte'
 import { translateHTML } from './translator/translator'
-import { activeGenerationTarget, doingChat } from './process/index.svelte'
 import { importCharacter } from './characterCards'
 import { PngChunk } from './pngChunk'
 import {
   CHAT_IMPORT_TOO_LARGE_ERROR,
-  currentChatStateSnapshot,
+  captureChatImportSnapshot,
   dispatchCreateChatForImport,
   dispatchCreateImportedChats,
 } from './chatCommands'
 import { CHAT_GENERATION_SETTINGS_FIELD, type ChatGenerationSettings } from './chatGenerationSettings'
-import { recoverColdStorageCharacter } from './process/coldstorage.svelte'
+import { coldStorageHeader, recoverColdStorageCharacter } from './process/coldstorage.svelte'
 import {
+  applyCharacterCreateOptimistically,
+  applyCharacterDeleteOptimistically,
+  applyCharacterRowMutationScoped,
+  applyCharacterSelectionOptimistically,
   currentCharacterRowSnapshot,
   currentCharacterSelectionSnapshot,
   currentCharacterStateSnapshot,
   currentCharacterTrashTimeSnapshot,
   dispatchCreateAndSelectCharacter,
-  dispatchCompatibleCharacterUpdateScoped,
   dispatchCreateCharacter,
   dispatchDeleteCharacterWithOutcome,
   dispatchSelectCharacter,
@@ -47,7 +47,11 @@ import {
   repairCharacterOrderOptimistically,
   type CharacterMutationOutcome,
 } from './characterCommands'
-import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
+import {
+  charactersResourceState,
+  collectionsResourceState,
+  getCharacterResourceOwner,
+} from './server/resourceState.svelte'
 import { ensureAllChatsHydrated, hydrateChatMessages } from './server/chatMessageHydration.svelte'
 import { hydrateCharacterShell, hydrateSelectedCharacterShell } from './server/characterShellHydration.svelte'
 import { createLatestOperationGuard, type LatestOperationToken } from './server/staleStateGuards'
@@ -77,7 +81,7 @@ interface CharacterAvatarSnapshot {
 }
 
 function findCharacterForExportById(id: string): character {
-  const character = getDatabase().characters.find((candidate) => candidate.chaId === id)
+  const character = characterOwnerById(id)
   if (character) return character
 
   const unknown = createBlankChar()
@@ -94,26 +98,14 @@ let changeCharSelectionAttemptId = 0
 interface ChangeCharOptions {
   reseter?: () => any
   isFresh?: () => boolean
-  allowDuringGeneration?: () => boolean
 }
 
-function characterSelectionMatchesActiveGeneration(index: number): boolean {
-  const target = get(activeGenerationTarget)
-  const character = getDatabase().characters?.[index]
-  const chat = character?.chats?.[character.chatPage]
-  if (!target || !character || !chat) return false
-
-  if (target.characterId !== undefined || character.chaId !== undefined) {
-    if (target.characterId !== character.chaId) return false
-  } else if (target.selectedCharID !== index) {
-    return false
-  }
-
-  if (target.chatId !== undefined || chat.id !== undefined) {
-    return target.chatId === chat.id
-  }
-  return target.chatPage === character.chatPage
-}
+export type CharacterCreationOutcome =
+  | (Extract<CharacterMutationOutcome, { status: 'accepted' }> & {
+      characterId: string
+      index: number
+    })
+  | Exclude<CharacterMutationOutcome, { status: 'accepted' }>
 
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
@@ -139,7 +131,7 @@ function isCurrentCharacterAvatarUpload(input: {
   avatarSnapshot: CharacterAvatarSnapshot
   editorScope: CharacterNavigationScope
 }): boolean {
-  const character = getDatabase().characters?.[input.charIndex]
+  const character = characterOwnerAt(input.charIndex)
   return (
     characterAvatarUploadGuard.isLatest(input.token) &&
     changeCharSelectionAttemptId === input.editorScope.selectionAttemptId &&
@@ -149,32 +141,33 @@ function isCurrentCharacterAvatarUpload(input: {
   )
 }
 
-export function createNewCharacter(
+export async function createNewCharacter(
   options: {
     select?: boolean
   } = {},
-) {
+): Promise<CharacterCreationOutcome> {
+  const navigationScope = captureCharacterNavigationScope()
   const previous = currentCharacterStateSnapshot()
   const character = characterFormatUpdate(createBlankChar())
   const select = options.select ?? false
   const lastInteraction = Date.now()
-  let index = -1
-  withTrustedResourceWrite(() => {
-    getDatabase().characters.push(character)
-    index = getDatabase().characters.length - 1
-    if (select) {
-      character.lastInteraction = lastInteraction
-      ;(getDatabase() as unknown as { currentChar?: number }).currentChar = index
-      selectedCharID.set(index)
-    }
-  })
-  repairCharacterOrderOptimistically({ dispatchReorder: false })
-  if (select) {
-    dispatchCreateAndSelectCharacter(character, previous, lastInteraction)
-  } else {
-    dispatchCreateCharacter(character, previous)
+  let index = applyCharacterCreateOptimistically(character, select ? { lastInteraction } : {})
+  if (index === -1) {
+    return { status: 'failed', result: { status: 'unavailable' } }
   }
-  return index
+  repairCharacterOrderOptimistically({ dispatchReorder: false })
+  const outcome = select
+    ? await dispatchCreateAndSelectCharacter(character, previous, lastInteraction)
+    : await dispatchCreateCharacter(character, previous)
+  if (outcome.status !== 'accepted') {
+    return outcome
+  }
+
+  index = findLiveCharacterIndex(character.chaId)
+  if (select && index !== -1 && characterNavigationScopeMatches(navigationScope)) {
+    index = applyCharacterSelectionOptimistically(character.chaId, lastInteraction)
+  }
+  return { ...outcome, characterId: character.chaId, index }
 }
 
 export interface CharacterAvatarImageSelection {
@@ -218,7 +211,7 @@ export async function selectCharacterAvatarImage(
     const pngExif: Record<string, string> = {}
 
     try {
-      if (type === 'PNG' && getDatabase().characters[charIndex].type === 'character') {
+      if (type === 'PNG' && characterOwnerAt(charIndex)?.type === 'character') {
         const gen = PngChunk.readGenerator(img)
         const allowedChunk = [
           'parameters',
@@ -272,14 +265,12 @@ export async function selectCharacterAvatarImage(
 }
 
 export async function selectCharImg(charIndex: number) {
-  const previous = currentCharacterRowSnapshot(charIndex)
-  const previousCharacter = previous.character
+  const characterId = characterOwnerAt(charIndex)?.chaId
+  if (!characterId) return
 
   await selectCharacterAvatarImage(charIndex, ({ image, pngExif }) => {
-    let applied = false
-    withTrustedResourceWrite(() => {
-      dumpCharImage(charIndex, { dispatch: false })
-      const character = getDatabase().characters[charIndex]
+    applyCharacterRowMutationScoped(charIndex, characterId, (character) => {
+      dumpCharacterImage(character)
       const pngExifEntries = Object.entries(pngExif)
       if (pngExifEntries.length > 0) {
         character.extentions ??= {}
@@ -289,58 +280,50 @@ export async function selectCharImg(charIndex: number) {
         }
       }
       character.image = image
-      applied = true
     })
-
-    if (applied) {
-      dispatchCompatibleCharacterUpdateScoped(previousCharacter, getDatabase().characters[charIndex], previous)
-    }
   })
 }
 
 export function dumpCharImage(charIndex: number, options: { dispatch?: boolean } = {}) {
   const dispatch = options.dispatch ?? true
-  const previous = dispatch ? currentCharacterRowSnapshot(charIndex) : null
-  const previousCharacter = previous?.character ?? null
-  withTrustedResourceWrite(() => {
-    const char = getDatabase().characters[charIndex] as character
-    if (!char.image || char.image === '') {
-      return
-    }
-    char.ccAssets ??= []
-    char.ccAssets.push({
-      type: 'icon',
-      name: 'iconx',
-      uri: char.image,
-      ext: 'png',
-    })
-    char.image = ''
-    getDatabase().characters[charIndex] = char
-  })
-  if (previous && previousCharacter) {
-    dispatchCompatibleCharacterUpdateScoped(previousCharacter, getDatabase().characters[charIndex], previous)
+  const characterId = characterOwnerAt(charIndex)?.chaId
+  if (!characterId) return
+  if (dispatch) {
+    applyCharacterRowMutationScoped(charIndex, characterId, dumpCharacterImage)
+    return
   }
+  const character = characterOwnerAt(charIndex)
+  if (character?.chaId === characterId) dumpCharacterImage(character)
 }
 
 export function changeCharImage(charIndex: number, changeIndex: number) {
-  const previous = currentCharacterRowSnapshot(charIndex)
-  const previousCharacter = previous.character
-  withTrustedResourceWrite(() => {
-    const char = getDatabase().characters[charIndex] as character
+  const characterId = characterOwnerAt(charIndex)?.chaId
+  if (!characterId) return
+  applyCharacterRowMutationScoped(charIndex, characterId, (char) => {
     const image = char.ccAssets[changeIndex].uri
     char.ccAssets.splice(changeIndex, 1)
-    dumpCharImage(charIndex, { dispatch: false })
+    dumpCharacterImage(char)
     char.image = image
-    getDatabase().characters[charIndex] = char
   })
-  dispatchCompatibleCharacterUpdateScoped(previousCharacter, getDatabase().characters[charIndex], previous)
+}
+
+function dumpCharacterImage(char: character): void {
+  if (!char.image) return
+  char.ccAssets ??= []
+  char.ccAssets.push({
+    type: 'icon',
+    name: 'iconx',
+    uri: char.image,
+    ext: 'png',
+  })
+  char.image = ''
 }
 
 export const addingEmotion = writable(false)
 
 function currentCharacterEmotionUploadFreshness(charIndex: number) {
-  const selectedCharacterId = getDatabase().characters?.[get(selectedCharID)]?.chaId
-  const rowCharacter = getDatabase().characters?.[charIndex]
+  const selectedCharacterId = characterOwnerAt(get(selectedCharID))?.chaId
+  const rowCharacter = characterOwnerAt(charIndex)
   return {
     currentCharacterId: selectedCharacterId,
     rowCharacterId: rowCharacter?.chaId,
@@ -355,11 +338,10 @@ function isCurrentCharacterEmotionUpload(operation: CharacterEmotionUploadOperat
 export async function addCharEmotion(charId: number) {
   addingEmotion.set(true)
   const previous = currentCharacterRowSnapshot(charId)
-  const previousCharacter = previous.character
   const target = captureCharacterEmotionUploadTarget({
     characterId: previous.characterId,
     characterIndex: charId,
-    emotionImages: previousCharacter?.emotionImages,
+    emotionImages: previous.character?.emotionImages,
   })
   if (!target) {
     addingEmotion.set(false)
@@ -395,26 +377,16 @@ export async function addCharEmotion(charId: number) {
         uploadedEntries.push([name, imgp])
       }
 
-      let applied = false
-      withTrustedResourceWrite(() => {
-        const dbChar = getDatabase().characters[charId]
+      applyCharacterRowMutationScoped(charId, target.characterId, (dbChar) => {
         const emotionImages = appendFreshCharacterEmotionImages({
           operation: activeOperation,
           freshness: currentCharacterEmotionUploadFreshness(charId),
           entries: uploadedEntries,
         })
-        if (!dbChar || !emotionImages) {
-          return
-        }
+        if (!emotionImages) return
 
         dbChar.emotionImages = emotionImages
-        getDatabase().characters[charId] = dbChar
-        applied = true
       })
-
-      if (applied) {
-        dispatchCompatibleCharacterUpdateScoped(previousCharacter, getDatabase().characters[charId], previous)
-      }
     } finally {
       if (operation) {
         clearCharacterEmotionUpload(operation)
@@ -426,14 +398,11 @@ export async function addCharEmotion(charId: number) {
 }
 
 export function rmCharEmotion(charId: number, emotionId: number) {
-  const previous = currentCharacterRowSnapshot(charId)
-  const previousCharacter = previous.character
-  withTrustedResourceWrite(() => {
-    let dbChar = getDatabase().characters[charId]
+  const characterId = characterOwnerAt(charId)?.chaId
+  if (!characterId) return
+  applyCharacterRowMutationScoped(charId, characterId, (dbChar) => {
     dbChar.emotionImages.splice(emotionId, 1)
-    getDatabase().characters[charId] = dbChar
   })
-  dispatchCompatibleCharacterUpdateScoped(previousCharacter, getDatabase().characters[charId], previous)
 }
 
 export interface ChatExportTarget {
@@ -445,14 +414,23 @@ function resolveChatExportTarget({ characterId, chatId }: ChatExportTarget): {
   char: character
   chat: Chat
 } | null {
-  const char = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+  const char = characterOwnerById(characterId)
   const chat = char?.chats?.find((candidate) => candidate.id === chatId)
   if (!char || !chat) return null
   return { char, chat }
 }
 
 function resolveCharacterExportTarget(characterId: string): character | null {
-  return getDatabase().characters?.find((candidate) => candidate.chaId === characterId) ?? null
+  return characterOwnerById(characterId) ?? null
+}
+
+function assertChatsReadyForExport(chats: readonly Chat[]): void {
+  const affectedChats = chats
+    .filter((chat) => chat.message?.[0]?.data?.startsWith(coldStorageHeader))
+    .map((chat) => chat.name?.trim() || chat.id || language.Chat)
+  if (affectedChats.length > 0) {
+    throw new Error(language.chatExportColdStorageBlocked(affectedChats))
+  }
 }
 
 export async function exportChat(target: ChatExportTarget): Promise<void> {
@@ -479,16 +457,17 @@ export async function exportChat(target: ChatExportTarget): Promise<void> {
     }
     if (!resolveChatExportTarget(stableTarget)) return
     // The exported chat may not be the open (hydrated) one.
-    await hydrateChatMessages(stableTarget.chatId)
+    await hydrateChatMessages(stableTarget.chatId, { strict: true })
     const resolvedTarget = resolveChatExportTarget(stableTarget)
     if (!resolvedTarget) return
     const { char, chat } = resolvedTarget
+    assertChatsReadyForExport([chat])
     const date = new Date().toJSON()
     const htmlChatParse = async (v: string) => {
       v = parseMarkdownSafe(v)
 
       if (doTranslate) {
-        v = await translateHTML(v, false, '', -1)
+        v = await translateHTML(v, false, '', -1, false, { translatorPresetId: chat.translatorPresetId })
       }
 
       if (anonymous) {
@@ -678,18 +657,18 @@ interface CharacterNavigationScope {
 
 function captureCurrentChatImportTarget(): ChatImportTarget | null {
   const selectedIndex = get(selectedCharID)
-  const characterId = getDatabase().characters?.[selectedIndex]?.chaId
+  const characterId = characterOwnerAt(selectedIndex)?.chaId
   if (!characterId) return null
   return { selectedIndex, characterId }
 }
 
 function resolveChatImportTarget(target: ChatImportTarget): { selectedIndex: number; characterId: string } | null {
-  const selectedCharacter = getDatabase().characters?.[target.selectedIndex]
+  const selectedCharacter = characterOwnerAt(target.selectedIndex)
   if (selectedCharacter?.chaId === target.characterId) {
     return target
   }
 
-  const selectedIndex = getDatabase().characters?.findIndex((character) => character.chaId === target.characterId) ?? -1
+  const selectedIndex = findLiveCharacterIndex(target.characterId)
   if (selectedIndex < 0) return null
   return { selectedIndex, characterId: target.characterId }
 }
@@ -758,8 +737,11 @@ export async function importChat() {
       return
     }
     const selectedID = target.selectedIndex
-    const previous = currentChatStateSnapshot()
     const characterId = target.characterId
+    const selectedCharacter = characterOwnerById(characterId)
+    if (!selectedCharacter || characterOwnerAt(selectedID) !== selectedCharacter) return
+    const previous = captureChatImportSnapshot(characterId)
+    if (!previous) return
 
     if (dat.name.endsWith('jsonl')) {
       const lines = Buffer.from(dat.data)
@@ -784,7 +766,7 @@ export async function importChat() {
           if (!isFirst) {
             newChat.message.push({
               role: presedLine.is_user ? 'user' : 'char',
-              data: formatTavernChat(presedLine.mes, getDatabase().characters[selectedID].name),
+              data: formatTavernChat(presedLine.mes, selectedCharacter.name),
             })
           }
         }
@@ -799,18 +781,12 @@ export async function importChat() {
 
       rekeyImportedChat(newChat)
 
-      if (
-        (getDatabase().characters[selectedID].chatFolders ?? []).filter((folder) => folder.id === newChat.folderId)
-          .length === 0
-      ) {
+      if (!(selectedCharacter.chatFolders ?? []).some((folder) => folder.id === newChat.folderId)) {
         newChat.folderId = null
       }
 
-      withTrustedResourceWrite(() => {
-        const character = getDatabase().characters[selectedID]
-        character.chats.unshift(newChat)
-        character.chatPage = 0
-      })
+      selectedCharacter.chats.unshift(newChat)
+      selectedCharacter.chatPage = 0
       if (characterId) {
         const result = await dispatchCreateChatForImport(characterId, newChat, previous)
         if (!reportChatImportCommandResult(result)) return
@@ -827,18 +803,14 @@ export async function importChat() {
           if (importedFolderId) {
             chat.folderId = importedFolderId
           } else {
-            clearUnknownImportedFolder(chat, getDatabase().characters[selectedID])
+            clearUnknownImportedFolder(chat, selectedCharacter)
           }
           rekeyImportedChat(chat)
           normalizeImportedChatGenerationSettings(chat)
         })
-        withTrustedResourceWrite(() => {
-          if (getDatabase().characters[selectedID].chatFolders === undefined) {
-            getDatabase().characters[selectedID].chatFolders = []
-          }
-          getDatabase().characters[selectedID].chatFolders.push(...folders)
-          getDatabase().characters[selectedID].chats.unshift(...chats)
-        })
+        selectedCharacter.chatFolders ??= []
+        selectedCharacter.chatFolders.push(...folders)
+        selectedCharacter.chats.unshift(...chats)
         const result = await dispatchCreateImportedChats(characterId, folders, chats, previous)
         if (!reportChatImportCommandResult(result)) return
         alertNormal(language.successImport)
@@ -855,14 +827,12 @@ export async function importChat() {
               v.localLore = []
             }
             v.fmIndex ??= -1
-            clearUnknownImportedFolder(v, getDatabase().characters[selectedID])
+            clearUnknownImportedFolder(v, selectedCharacter)
             rekeyImportedChat(v)
             normalizeImportedChatGenerationSettings(v)
             return v
           })
-          withTrustedResourceWrite(() => {
-            getDatabase().characters[selectedID].chats.unshift(...normalizedChats)
-          })
+          selectedCharacter.chats.unshift(...normalizedChats)
           const result = await dispatchCreateImportedChats(characterId, [], normalizedChats, previous)
           if (!reportChatImportCommandResult(result)) return
           alertNormal(language.successImport)
@@ -883,12 +853,10 @@ export async function importChat() {
           )
         ) {
           das.fmIndex ??= -1
-          clearUnknownImportedFolder(das, getDatabase().characters[selectedID])
+          clearUnknownImportedFolder(das, selectedCharacter)
           rekeyImportedChat(das)
           normalizeImportedChatGenerationSettings(das)
-          withTrustedResourceWrite(() => {
-            getDatabase().characters[selectedID].chats.unshift(das)
-          })
+          selectedCharacter.chats.unshift(das)
           if (characterId) {
             const result = await dispatchCreateChatForImport(characterId, das, previous, false)
             if (!reportChatImportCommandResult(result)) return
@@ -919,12 +887,10 @@ export async function importChat() {
           checkNullish(json.localLore)
         )
       ) {
-        clearUnknownImportedFolder(json, getDatabase().characters[selectedID])
+        clearUnknownImportedFolder(json, selectedCharacter)
         rekeyImportedChat(json)
         normalizeImportedChatGenerationSettings(json)
-        withTrustedResourceWrite(() => {
-          getDatabase().characters[selectedID].chats.unshift(json)
-        })
+        selectedCharacter.chats.unshift(json)
         if (characterId) {
           const result = await dispatchCreateChatForImport(characterId, json, previous, false)
           if (!reportChatImportCommandResult(result)) return
@@ -949,6 +915,14 @@ function normalizeImportedChatGenerationSettings(chat: unknown): void {
   } else {
     delete chat[CHAT_GENERATION_SETTINGS_FIELD]
   }
+  const translatorPresetId = chat.translatorPresetId
+  if (
+    typeof translatorPresetId !== 'string' ||
+    !translatorPresetId.trim() ||
+    !importCollectionHasId('translatorPresets', translatorPresetId)
+  ) {
+    delete chat.translatorPresetId
+  }
 }
 
 function normalizeImportedGenerationSettingsValue(value: unknown): ChatGenerationSettings | undefined {
@@ -968,6 +942,9 @@ function normalizeImportedGenerationSettingsValue(value: unknown): ChatGeneratio
   const modelPresetId = normalizeImportedModelPresetId(value.modelPresetId)
   if (modelPresetId) {
     normalized.modelPresetId = modelPresetId
+    if (value.modelPresetSelectionSource === 'manual' || value.modelPresetSelectionSource === 'prompt-recommendation') {
+      normalized.modelPresetSelectionSource = value.modelPresetSelectionSource
+    }
     hasPrefill = true
   }
 
@@ -1009,20 +986,28 @@ function normalizeImportedGenerationSettingsValue(value: unknown): ChatGeneratio
 
 function normalizeImportedPersonaId(value: unknown): string | undefined {
   if (!isNonEmptyString(value)) return undefined
-  const personas = Array.isArray(getDatabase().personas) ? getDatabase().personas : []
-  return personas.some((persona) => persona?.id === value) ? value : undefined
+  return importCollectionHasId('personas', value) ? value : undefined
 }
 
 function normalizeImportedModelPresetId(value: unknown): string | undefined {
   if (!isNonEmptyString(value)) return undefined
-  const presets = Array.isArray(getDatabase().modelPresets) ? getDatabase().modelPresets : []
-  return presets.some((preset) => preset?.id === value) ? value : undefined
+  return importCollectionHasId('modelPresets', value) ? value : undefined
 }
 
 function normalizeImportedPromptPresetId(value: unknown): string | undefined {
   if (!isNonEmptyString(value)) return undefined
-  const presets = Array.isArray(getDatabase().promptPresets) ? getDatabase().promptPresets : []
-  return presets.some((preset) => preset?.id === value) ? value : undefined
+  return importCollectionHasId('promptPresets', value) ? value : undefined
+}
+
+type ChatImportCollectionName = 'personas' | 'modelPresets' | 'promptPresets' | 'translatorPresets'
+
+function importCollectionHasId(collectionName: ChatImportCollectionName, id: string): boolean {
+  const projection = collectionsResourceState.values[collectionName]
+  if (collectionsResourceState.statuses[collectionName] === 'ready') {
+    return Array.isArray(projection) && projection.some((entry) => isRecord(entry) && entry.id === id)
+  }
+
+  return false
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1033,18 +1018,80 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
 
-export async function exportAllChats(characterId: string): Promise<void> {
+export interface AllChatsExportFenceEntry {
+  chatId: string | null
+  messageCount: number
+  lastMessageId: string | null
+  lastMessageContentHash: string | null
+}
+
+export interface AllChatsExportFence {
+  chats: AllChatsExportFenceEntry[]
+}
+
+export type ExportAllChatsResult = { success: false } | { success: true; fence: AllChatsExportFence }
+
+function serializedMessageHash(message: Chat['message'][number] | undefined): string | null {
+  if (!message) return null
+  const hash = new Sha256()
+  hash.update(new TextEncoder().encode(JSON.stringify(message)))
+  return Array.from(hash.digestSync(), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+function captureAllChatsExportFence(chats: readonly Chat[]): AllChatsExportFence {
+  return {
+    chats: chats.map((chat) => {
+      const lastMessage = chat.message.at(-1)
+      return {
+        chatId: chat.id ?? null,
+        messageCount: chat.message.length,
+        lastMessageId: lastMessage?.chatId ?? null,
+        lastMessageContentHash: serializedMessageHash(lastMessage),
+      }
+    }),
+  }
+}
+
+export function matchesAllChatsExportFence(chats: readonly Chat[], fence: AllChatsExportFence): boolean {
+  if (chats.length !== fence.chats.length) return false
+
+  const fencedChats = new Map(fence.chats.map((chat) => [chat.chatId, chat]))
+  if (fencedChats.size !== fence.chats.length) return false
+
+  const liveChatIds = new Set<string | null>()
+  for (const chat of chats) {
+    const chatId = chat.id ?? null
+    if (liveChatIds.has(chatId)) return false
+    liveChatIds.add(chatId)
+
+    const fencedChat = fencedChats.get(chatId)
+    if (!fencedChat || chat.message.length !== fencedChat.messageCount) return false
+    const lastMessage = chat.message.at(-1)
+    if (
+      (lastMessage?.chatId ?? null) !== fencedChat.lastMessageId ||
+      serializedMessageHash(lastMessage) !== fencedChat.lastMessageContentHash
+    ) {
+      return false
+    }
+  }
+
+  return true
+}
+
+export async function exportAllChats(characterId: string): Promise<ExportAllChatsResult> {
   const stableCharacterId = characterId
 
   try {
-    if (!resolveCharacterExportTarget(stableCharacterId)) return
+    if (!resolveCharacterExportTarget(stableCharacterId)) return { success: false }
     // This serializes every chat's history, so hydrate lazy chats first.
     await ensureAllChatsHydrated({ strict: true })
     const char = resolveCharacterExportTarget(stableCharacterId)
-    if (!char) return
+    if (!char) return { success: false }
     const date = new Date().toISOString().replace(/[:.]/g, '-')
     const allChats = char.chats
     const allFolders = char.chatFolders
+    assertChatsReadyForExport(allChats)
+    const fence = captureAllChatsExportFence(allChats)
     const stringl = Buffer.from(
       JSON.stringify({
         type: 'risuAllChats',
@@ -1054,27 +1101,29 @@ export async function exportAllChats(characterId: string): Promise<void> {
       }),
       'utf-8',
     )
-    await downloadFile(`${char.name}_all_chats_${date}`.replace(/[<>:"/\\|?*.,]/g, '') + '.json', stringl)
-    alertNormal(language.successExport)
+    await downloadFile(`${char.name}_all_chats_${date}`.replace(/[<>:"/\\|?*.,]/g, '') + '.json', stringl, {
+      revokeObjectUrlAfterMs: null,
+    })
+    return { success: true, fence }
   } catch (error) {
     alertError(error)
+    return { success: false }
   }
 }
 
 function formatTavernChat(chat: string, charName: string) {
-  const db = getDatabase()
   return chat
     .replace(/<([Uu]ser)>|\{\{([Uu]ser)\}\}/g, getUserName())
     .replace(/((\{\{)|<)([Cc]har)(=.+)?((\}\})|>)/g, charName)
 }
 
 export function characterFormatUpdate(
-  indexOrCharacter: number | character,
+  characterOwner: character,
   arg: {
     updateInteraction?: boolean
   } = {},
 ) {
-  let cha = typeof indexOrCharacter === 'number' ? getCharacterByIndex(indexOrCharacter) : indexOrCharacter
+  let cha = characterOwner
   if (cha.chats.length === 0) {
     cha.chats = [
       {
@@ -1159,9 +1208,6 @@ export function characterFormatUpdate(
     cha.customscript = []
   }
   cha.lastInteraction = Date.now()
-  if (typeof indexOrCharacter === 'number') {
-    setCharacterByIndex(indexOrCharacter, cha)
-  }
   for (let i = 0; i < cha.chats.length; i++) {
     const chat = cha.chats[i]
     chat.fmIndex ??= cha.firstMsgIndex ?? -1
@@ -1203,7 +1249,7 @@ export async function removeChar(
   name: string,
   type: 'normal' | 'permanent' | 'permanentForce' = 'normal',
 ): Promise<CharacterMutationOutcome | null> {
-  const characterId = getDatabase().characters?.[index]?.chaId
+  const characterId = characterOwnerAt(index)?.chaId
   if (!characterId || pendingCharacterRemovalIds.has(characterId)) return null
   pendingCharacterRemovalIds.add(characterId)
   try {
@@ -1219,19 +1265,19 @@ export async function removeChar(
     }
     const liveIndex = findLiveCharacterIndex(characterId)
     if (liveIndex < 0) return null
+    const liveCharacter = characterOwnerAt(liveIndex)
+    if (!liveCharacter) return null
     let dispatch: () => Promise<CharacterMutationOutcome> | undefined
     if (type === 'normal') {
       const previous = currentCharacterTrashTimeSnapshot(liveIndex)
       const trashTime = Date.now()
-      withTrustedResourceWrite(() => {
-        getDatabase().characters[liveIndex].trashTime = trashTime
-      })
+      liveCharacter.trashTime = trashTime
       dispatch = () => dispatchUpdateCharacterTrashTimeWithOutcome(characterId, trashTime, previous)
     } else {
       const previous = currentCharacterStateSnapshot()
-      withTrustedResourceWrite(() => {
-        getDatabase().characters.splice(liveIndex, 1)
-      })
+      if (!applyCharacterDeleteOptimistically(characterId)) {
+        return { status: 'failed', result: { status: 'unavailable' } }
+      }
       dispatch = () => dispatchDeleteCharacterWithOutcome(characterId, previous)
     }
     repairCharacterOrderOptimistically({ dispatchReorder: false })
@@ -1260,16 +1306,23 @@ export async function addCharacter(
   reseter()
   switch (r) {
     case 'createfromScratch':
-      createNewCharacter({ select: true })
+      {
+        const outcome = await createNewCharacter({ select: true })
+        if (outcome.status === 'queued') {
+          alertNormal(language.characterCreationQueued)
+        } else if (outcome.status === 'failed') {
+          alertError(language.characterCreationFailed)
+        }
+      }
       break
     case 'importCharacter':
       {
         const navigationScope = captureCharacterNavigationScope()
         const navigationToken = characterImportNavigationGuard.issue(CHARACTER_IMPORT_NAVIGATION_TARGET)
         try {
-          const importedCharacterId = await importCharacter()
-          if (importedCharacterId && isFreshCharacterImportNavigation(navigationToken, navigationScope)) {
-            const index = findLiveCharacterIndex(importedCharacterId)
+          const imported = await importCharacter()
+          if (imported?.status === 'accepted' && isFreshCharacterImportNavigation(navigationToken, navigationScope)) {
+            const index = findLiveCharacterIndex(imported.characterId)
             if (index !== -1) {
               await changeChar(index, {
                 isFresh: () =>
@@ -1293,7 +1346,7 @@ export async function addCharacter(
 
 function captureCharacterNavigationScope(): CharacterNavigationScope {
   const selectedIndex = get(selectedCharID)
-  const currentChar = (getDatabase() as unknown as { currentChar?: number }).currentChar
+  const currentChar = currentCharacterIndexOwner()
   return {
     selectedCharID: selectedIndex,
     selectedCharacterId: characterIdAtIndex(selectedIndex),
@@ -1305,7 +1358,7 @@ function captureCharacterNavigationScope(): CharacterNavigationScope {
 
 function characterNavigationScopeMatches(scope: CharacterNavigationScope): boolean {
   const selectedIndex = get(selectedCharID)
-  const currentChar = (getDatabase() as unknown as { currentChar?: number }).currentChar
+  const currentChar = currentCharacterIndexOwner()
   const selectedCharacterId = characterIdAtIndex(selectedIndex)
   const currentCharacterId = characterIdAtIndex(currentChar)
 
@@ -1332,48 +1385,65 @@ function isFreshCharacterImportNavigation(
 
 export async function changeChar(index: number, arg: ChangeCharOptions = {}) {
   const reseter = arg.reseter ?? (() => {})
-  if (get(doingChat) && !characterSelectionMatchesActiveGeneration(index) && !arg.allowDuringGeneration?.()) {
-    return
-  }
   const selectionAttemptId = ++changeCharSelectionAttemptId
   const isFreshSelectionAttempt = () => selectionAttemptId === changeCharSelectionAttemptId && (arg.isFresh?.() ?? true)
   reseter()
   botMakerMode.set(false)
-  if (getDatabase().characters?.[index]?.coldstorage) {
+  if (characterOwnerAt(index)?.coldstorage) {
     const recovered = await recoverColdStorageCharacter(index)
     if (!isFreshSelectionAttempt() || !recovered) return
   }
-  const characterId = getDatabase().characters?.[index]?.chaId
+  const character = characterOwnerAt(index)
+  const characterId = character?.chaId
   if (!characterId) return
-  if (isServerCharacterShell(getDatabase().characters?.[index])) {
+  if (isServerCharacterShell(character)) {
     const hydrated = await hydrateCharacterShell(characterId)
     if (!isFreshSelectionAttempt()) return
     const hydratedIndex = findLiveCharacterIndex(characterId)
     if (hydratedIndex < 0) return
-    if (!hydrated && isServerCharacterShell(getDatabase().characters?.[hydratedIndex])) return
+    if (!hydrated && isServerCharacterShell(characterOwnerAt(hydratedIndex))) return
   }
   if (!isFreshSelectionAttempt()) return
   const liveIndex = findLiveCharacterIndex(characterId)
-  if (liveIndex < 0 || isServerCharacterShell(getDatabase().characters?.[liveIndex])) return
+  const liveCharacter = liveIndex >= 0 ? characterOwnerAt(liveIndex) : undefined
+  if (!liveCharacter || isServerCharacterShell(liveCharacter)) return
   const previous = currentCharacterSelectionSnapshot(characterId)
   const lastInteraction = Date.now()
-  withTrustedResourceWrite(() => {
-    const character = getDatabase().characters?.[liveIndex]
-    if (character) {
-      character.lastInteraction = lastInteraction
-    }
-    ;(getDatabase() as unknown as { currentChar?: number }).currentChar = liveIndex
-    selectedCharID.set(liveIndex)
-  })
+  if (applyCharacterSelectionOptimistically(characterId, lastInteraction) === -1) return
   dispatchSelectCharacter(characterId, previous, lastInteraction)
   await hydrateSelectedCharacterShell()
 }
 
 function findLiveCharacterIndex(characterId: string): number {
-  return getDatabase().characters?.findIndex((character) => character?.chaId === characterId) ?? -1
+  if (charactersResourceState.status !== 'ready') return -1
+  const rows = characterRowsOwner()
+  const matches = rows.reduce<number[]>((indices, character, index) => {
+    if (character?.chaId === characterId) indices.push(index)
+    return indices
+  }, [])
+  return matches.length === 1 ? matches[0] : -1
 }
 
 function characterIdAtIndex(index: number | undefined): string | undefined {
-  if (typeof index !== 'number' || index < 0) return undefined
-  return getDatabase().characters?.[index]?.chaId
+  return typeof index === 'number' ? characterOwnerAt(index)?.chaId : undefined
+}
+
+function characterRowsOwner(): character[] {
+  return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
+}
+
+function currentCharacterIndexOwner(): number | undefined {
+  return charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : undefined
+}
+
+function characterOwnerAt(index: number): character | undefined {
+  if (index < 0) return undefined
+  if (charactersResourceState.status !== 'ready') return undefined
+  const candidate = characterRowsOwner()[index]
+  if (!candidate?.chaId) return undefined
+  return getCharacterResourceOwner(candidate.chaId)
+}
+
+function characterOwnerById(characterId: string): character | undefined {
+  return characterId && charactersResourceState.status === 'ready' ? getCharacterResourceOwner(characterId) : undefined
 }

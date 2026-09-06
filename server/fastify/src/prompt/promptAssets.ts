@@ -1,4 +1,4 @@
-import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
+import type { FastifyChat as Chat, FastifyCharacter as character, FastifyDatabase as Database } from './serverTypes.js'
 import { getActiveModules, getModuleAssets } from './modules.js'
 
 export type PromptAssetEntry = readonly [string, string, string]
@@ -26,7 +26,8 @@ export function buildPromptAssetTable(args: {
   currentChat: Chat
 }): PromptAssetEntry[] {
   promptAssetTableInstrumentation.builds++
-  return (args.currentChar.additionalAssets ?? []).concat(
-    getModuleAssets(getActiveModules(args.database, args.currentChar, args.currentChat)),
-  )
+  return [
+    ...(args.currentChar.additionalAssets ?? []),
+    ...getModuleAssets(getActiveModules(args.database, args.currentChar, args.currentChat)),
+  ]
 }

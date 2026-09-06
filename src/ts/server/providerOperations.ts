@@ -6,7 +6,7 @@ import type {
   ProviderOperationCredential,
   ProviderOperationRequest,
   ProviderOperationSuccess,
-} from './providerOperationsProtocol'
+} from '@risuai/protocol/provider-operation'
 
 const PROVIDER_OPERATIONS_ENDPOINT = '/api/v1/provider-operations'
 

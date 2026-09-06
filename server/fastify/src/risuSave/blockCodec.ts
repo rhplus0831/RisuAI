@@ -48,9 +48,16 @@ export interface RisuSaveBlockDecodeResult {
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
+export const RISUSAVE_BLOCK_NAME_MAX_BYTES = 255
+export const RISUSAVE_BLOCK_MAX_COUNT = 65_536
+// A valid export normally has one directory entry per resource block. This
+// generous ceiling prevents a small ROOT block from expanding into an
+// unbounded synthetic block list while remaining far above realistic saves.
+export const RISUSAVE_BLOCK_DIRECTORY_MAX_ENTRIES = 65_536
+
 export function encodeRisuSaveBlock(block: EncodableRisuSaveBlock): Uint8Array {
   const name = encoder.encode(block.name)
-  if (name.length > 255) {
+  if (name.length > RISUSAVE_BLOCK_NAME_MAX_BYTES) {
     throw new Error(`RISUSAVE block name is too long: ${block.name}`)
   }
   const content = encoder.encode(block.data)
@@ -81,14 +88,23 @@ export function decodeRisuSaveBlockEnvelope(
   const loadedNames = new Set<string>()
   let offset = RISUSAVE_BLOCK_HEADER.length
   let expandedBytes = 0
+  let blockCount = 0
 
   while (offset < data.length) {
+    blockCount += 1
+    if (blockCount > RISUSAVE_BLOCK_MAX_COUNT) {
+      throw new Error(`RISUSAVE envelope exceeds ${RISUSAVE_BLOCK_MAX_COUNT} blocks`)
+    }
     if (offset + 7 > data.length) {
       throw new Error(`Malformed RISUSAVE block header at offset ${offset}`)
     }
 
     const type = data[offset] as RisuSaveBlockType
-    const compression = data[offset + 1] === 1
+    const compressionMarker = data[offset + 1]
+    if (compressionMarker !== 0 && compressionMarker !== 1) {
+      throw new Error(`Invalid RISUSAVE block compression marker at offset ${offset + 1}`)
+    }
+    const compression = compressionMarker === 1
     const nameLength = data[offset + 2]
     offset += 3
 
@@ -98,6 +114,9 @@ export function decodeRisuSaveBlockEnvelope(
 
     const name = decoder.decode(data.subarray(offset, offset + nameLength))
     offset += nameLength
+    if (loadedNames.has(name)) {
+      throw new Error(`RISUSAVE envelope contains a duplicate block name: ${name}`)
+    }
 
     const byteLength = new DataView(data.buffer, data.byteOffset + offset, 4).getUint32(0, true)
     offset += 4
@@ -154,17 +173,23 @@ function appendCacheOnlyDirectoryReferences(blocks: DecodedRisuSaveBlock[], load
 
   const parsedRoot = JSON.parse(root.content) as { __directory?: unknown }
   if (!Array.isArray(parsedRoot.__directory)) return
+  if (parsedRoot.__directory.length > RISUSAVE_BLOCK_DIRECTORY_MAX_ENTRIES) {
+    throw new Error(`RISUSAVE block directory exceeds ${RISUSAVE_BLOCK_DIRECTORY_MAX_ENTRIES} entries`)
+  }
 
   for (const name of parsedRoot.__directory) {
-    if (typeof name === 'string' && !loadedNames.has(name)) {
-      blocks.push({
-        name,
-        type: RisuSaveBlockType.REMOTE,
-        compression: false,
-        byteLength: 0,
-        content: null,
-        unsupportedReference: 'cache-only',
-      })
+    if (typeof name !== 'string' || loadedNames.has(name)) continue
+    if (encoder.encode(name).byteLength > RISUSAVE_BLOCK_NAME_MAX_BYTES) {
+      throw new Error(`RISUSAVE directory block name exceeds ${RISUSAVE_BLOCK_NAME_MAX_BYTES} bytes`)
     }
+    loadedNames.add(name)
+    blocks.push({
+      name,
+      type: RisuSaveBlockType.REMOTE,
+      compression: false,
+      byteLength: 0,
+      content: null,
+      unsupportedReference: 'cache-only',
+    })
   }
 }

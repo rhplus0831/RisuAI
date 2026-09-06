@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { CopyIcon, PencilIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
+  import { untrack } from 'svelte'
+  import { CopyIcon, GripVerticalIcon, MinusIcon, PencilIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import {
@@ -7,11 +8,17 @@
     type FirstClassModelProfileProviderId,
   } from 'src/ts/model/modelProfileResolver'
   import {
+    modelProfileListItemKey,
+    modelProfileListItems,
+    modelProfileOrderEntryKey,
+    normalizeModelProfileOrder,
     normalizeModelRoleProfiles,
+    normalizeModelRuntimeDefaults,
+    type ModelProfileOrderEntry,
     type ModelProfileRecord,
     type ModelRoleProfileBinding,
   } from 'src/ts/model/modelProfileRecords'
-  import { MODEL_ROLES, modelRoleProfileInheritSource, type ModelRole } from 'src/ts/model/modelRoles'
+  import { MODEL_ROLES, modelRoleProfileInheritSource, type ModelRole } from '@risuai/shared-core/model-roles'
   import { getModelInfo } from 'src/ts/model/modellist'
   import {
     beginPendingModelMutation,
@@ -23,19 +30,26 @@
     isPendingModelMutationProjectionApplied,
     modelProfileProjectionFingerprint as profileProjectionFingerprint,
     retainPendingModelMutation,
+    reorderModelProfilesDurably,
     subscribePendingModelMutations,
     updateModelProfileDurably,
     type PendingModelMutationProjection,
   } from 'src/ts/model/modelProfileMutations'
   import type { ModelProfileSnapshot, ServerCommandResult } from 'src/ts/server/commands'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import type { ProviderCredentialRecord } from 'src/ts/model/providerCredentialRecords'
+  import { collectionsResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
+  import type { Database, ModelPreset } from 'src/ts/storage/database.svelte'
+  import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
+  import { internalReorderSortableOptions } from 'src/ts/gui/internalReorderSortable'
+  import Sortable, { type SortableEvent } from 'sortablejs'
   import ModelProfileEditorDrawer from './ModelProfileEditorDrawer.svelte'
   import ModelRuntimeDefaultsEditor from './ModelRuntimeDefaultsEditor.svelte'
+  import ModelItemActions from './ModelItemActions.svelte'
 
   type EditorMode = 'create' | 'edit' | null
   type ProfileListPendingProjection = Extract<
     PendingModelMutationProjection,
-    { kind: 'profile-create' | 'profile-update' | 'profile-duplicate' | 'profile-delete' }
+    { kind: 'profile-create' | 'profile-update' | 'profile-duplicate' | 'profile-delete' | 'profile-reorder' }
   >
 
   let editorMode = $state<EditorMode>(null)
@@ -45,12 +59,25 @@
   let busy = $state(false)
   let pendingMutations = $state(getPendingModelMutations('model-profiles'))
   let commandError = $state('')
+  let profileListElement: HTMLDivElement | undefined = $state()
+  let profileSortable: Sortable | null = null
 
-  let profiles = $derived(getDatabase().modelProfiles ?? [])
-  let mutationQueued = $derived(pendingMutations.length > 0)
-  let commandNotice = $derived(
-    pendingMutations.some((pending) => pending.phase !== 'dispatching') ? language.modelProfiles.commandQueued : '',
+  let modelProfileOwnersValid = $derived(hasUniqueModelProfileOwners(settingsResourceState.value.modelProfiles))
+  let profiles = $derived(readModelProfileOwners(settingsResourceState.value.modelProfiles))
+  let profileOrder = $derived(normalizeModelProfileOrder(settingsResourceState.value.modelProfileOrder, profiles))
+  let profileItems = $derived(modelProfileListItems(profiles, profileOrder))
+  let credentials = $derived(readOwnerArray<ProviderCredentialRecord>(settingsResourceState.value.providerCredentials))
+  let modelPresets = $derived(readOwnerArray<ModelPreset>(collectionsResourceState.values.modelPresets))
+  let modelSettingsOwner = $derived.by(
+    () =>
+      ({
+        ...settingsResourceState.value,
+        modelProfiles: profiles,
+        modelProfileOrder: profileOrder,
+        providerCredentials: credentials,
+      }) as Database,
   )
+  let mutationQueued = $derived(pendingMutations.length > 0 || !modelProfileOwnersValid)
   let editingProfile = $derived(
     editingProfileId ? profiles.find((profile) => profile.id === editingProfileId) : undefined,
   )
@@ -62,6 +89,28 @@
   })
 
   $effect(() => {
+    profileSortable?.option('disabled', busy || mutationQueued)
+  })
+
+  $effect(() => {
+    if (!profileListElement) return
+    const sortable = Sortable.create(profileListElement, {
+      ...internalReorderSortableOptions,
+      disabled: untrack(() => busy || mutationQueued),
+      draggable: '[data-model-profile-sortable-item]',
+      handle: '[data-model-profile-drag-handle]',
+      onEnd: handleProfileSortEnd,
+    })
+    profileSortable = sortable
+    return () => {
+      try {
+        sortable.destroy()
+      } catch {}
+      if (profileSortable === sortable) profileSortable = null
+    }
+  })
+
+  $effect(() => {
     for (const pending of pendingMutations) {
       if (pending.phase === 'discarded') {
         commandError = language.modelProfiles.commandReplayDiscarded
@@ -69,7 +118,12 @@
         continue
       }
       if (pending.phase === 'dispatching' || !isProfileListProjection(pending.projection)) continue
-      if (isPendingModelMutationProjectionApplied(pending.projection, { modelProfiles: profiles })) {
+      if (
+        isPendingModelMutationProjectionApplied(pending.projection, {
+          modelProfiles: profiles,
+          modelProfileOrder: profileOrder,
+        })
+      ) {
         finishPendingModelMutation(pending.token)
       }
     }
@@ -98,7 +152,7 @@
 
   function statusLabel(profile: ModelProfileRecord): string {
     const resolved = resolveModelProfileByProfileId({
-      database: getDatabase(),
+      database: modelSettingsOwner,
       role: 'chatMain',
       profileId: profile.id,
       lookupModelInfo: (_database, id) => getModelInfo(id),
@@ -112,7 +166,7 @@
   }
 
   function rolesUsingProfile(profileId: string): ModelRole[] {
-    const bindings = normalizeModelRoleProfiles(getDatabase().modelRoleProfiles)
+    const bindings = normalizeModelRoleProfiles(settingsResourceState.value.modelRoleProfiles)
     return MODEL_ROLES.filter((role) => {
       const binding = bindings[role]
       return binding.mode === 'profile' && binding.profileId === profileId
@@ -122,6 +176,18 @@
   function roleListLabel(roles: ModelRole[]): string {
     if (roles.length === 0) return language.modelProfiles.notUsedByRoles
     return roles.map((role) => language.modelRoles.roles[role]).join(', ')
+  }
+
+  function modelPresetLabelsUsingProfile(profileId: string): string[] {
+    return modelPresets.flatMap((preset, index) => {
+      const bindings = normalizeModelRoleProfiles(preset.modelRoleProfiles)
+      const referencesProfile = MODEL_ROLES.some((role) => {
+        const binding = bindings[role]
+        return binding.mode === 'profile' && binding.profileId === profileId
+      })
+      if (!referencesProfile) return []
+      return [preset.name?.trim() || language.modelProfiles.defaultPresetName(index + 1)]
+    })
   }
 
   function openCreateEditor(): void {
@@ -153,6 +219,27 @@
     return JSON.parse(JSON.stringify(value)) as T
   }
 
+  function readOwnerArray<T>(value: unknown): T[] {
+    return Array.isArray(value) ? (value as T[]) : []
+  }
+
+  function readModelProfileOwners(value: unknown): ModelProfileRecord[] {
+    if (!hasUniqueModelProfileOwners(value)) return []
+    return value as ModelProfileRecord[]
+  }
+
+  function hasUniqueModelProfileOwners(value: unknown): value is ModelProfileRecord[] {
+    if (!Array.isArray(value)) return false
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false
+      const id = (candidate as { id?: unknown }).id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return false
+      ids.add(id)
+    }
+    return true
+  }
+
   function isProfileListProjection(
     projection: PendingModelMutationProjection,
   ): projection is ProfileListPendingProjection {
@@ -160,7 +247,8 @@
       projection.kind === 'profile-create' ||
       projection.kind === 'profile-update' ||
       projection.kind === 'profile-duplicate' ||
-      projection.kind === 'profile-delete'
+      projection.kind === 'profile-delete' ||
+      projection.kind === 'profile-reorder'
     )
   }
 
@@ -251,11 +339,7 @@
       return
     }
     try {
-      const outcome = await duplicateModelProfileDurably(
-        profile.id,
-        language.modelProfiles.copyName(profile.name),
-        true,
-      )
+      const outcome = await duplicateModelProfileDurably(profile.id, language.modelProfiles.copyName(profile.name))
       if (outcome.status === 'accepted') {
         finishPendingModelMutation(pendingToken)
         return
@@ -274,6 +358,81 @@
     }
   }
 
+  async function reorderProfiles(order: ModelProfileOrderEntry[]): Promise<void> {
+    if (busy || mutationQueued) return
+    busy = true
+    commandError = ''
+    const pendingToken = beginPendingModelMutation('model-profiles', {
+      kind: 'profile-reorder',
+      order,
+    })
+    if (!pendingToken) {
+      busy = false
+      return
+    }
+    try {
+      const outcome = await reorderModelProfilesDurably(order)
+      if (outcome.status === 'accepted') {
+        finishPendingModelMutation(pendingToken)
+        return
+      }
+      if (outcome.status === 'queued') {
+        retainPendingModelMutation(pendingToken, outcome.mutationId)
+        return
+      }
+      finishPendingModelMutation(pendingToken)
+      commandError = commandErrorMessage(outcome.result)
+    } catch {
+      finishPendingModelMutation(pendingToken)
+      commandError = commandErrorMessage({ status: 'unavailable' })
+    } finally {
+      busy = false
+    }
+  }
+
+  function handleProfileSortEnd(event: SortableEvent): void {
+    const oldIndex = event.oldDraggableIndex
+    const newIndex = event.newDraggableIndex
+    const orderKey = (event.item as HTMLElement).dataset.modelProfileOrderKey
+    restoreProfileSortableDom(event, orderKey)
+    if (
+      busy ||
+      mutationQueued ||
+      oldIndex === undefined ||
+      newIndex === undefined ||
+      oldIndex === newIndex ||
+      !orderKey
+    ) {
+      return
+    }
+    const sourceIndex = profileOrder.findIndex((entry) => modelProfileOrderEntryKey(entry) === orderKey)
+    if (sourceIndex < 0 || newIndex < 0 || newIndex >= profileOrder.length) return
+    const reordered = [...profileOrder]
+    const [moved] = reordered.splice(sourceIndex, 1)
+    if (!moved) return
+    reordered.splice(newIndex, 0, moved)
+    void reorderProfiles(reordered)
+  }
+
+  function restoreProfileSortableDom(event: SortableEvent, orderKey: string | undefined): void {
+    if (!orderKey) return
+    const originalDropZone = Array.from(event.from.querySelectorAll<HTMLElement>('[data-model-profile-drop-key]')).find(
+      (candidate) => candidate.dataset.modelProfileDropKey === orderKey,
+    )
+    originalDropZone?.after(event.item)
+  }
+
+  function addDivider(): void {
+    if (busy || mutationQueued) return
+    const id = `mpd_${createNonSecurityUuid()}`
+    void reorderProfiles([...profileOrder, { kind: 'divider', id }])
+  }
+
+  function deleteDivider(dividerId: string): void {
+    if (busy || mutationQueued || !window.confirm(language.modelProfiles.deleteDividerConfirm)) return
+    void reorderProfiles(profileOrder.filter((entry) => entry.kind !== 'divider' || entry.id !== dividerId))
+  }
+
   function deleteReassignments(profileId: string): Partial<Record<ModelRole, ModelRoleProfileBinding>> {
     const reassignments: Partial<Record<ModelRole, ModelRoleProfileBinding>> = {}
     for (const role of rolesUsingProfile(profileId)) {
@@ -284,6 +443,11 @@
 
   async function deleteProfile(profile: ModelProfileRecord): Promise<void> {
     if (busy || mutationQueued) return
+    const usedByModelPresets = modelPresetLabelsUsingProfile(profile.id)
+    if (usedByModelPresets.length > 0) {
+      commandError = language.modelProfiles.profileUsedByModelPresets(profile.name, usedByModelPresets.join(', '))
+      return
+    }
     const usedByRoles = rolesUsingProfile(profile.id)
     const message =
       usedByRoles.length > 0
@@ -323,92 +487,123 @@
 </script>
 
 <section class="flex flex-col gap-4">
-  <ModelRuntimeDefaultsEditor />
-
   {#if commandError}
     <div class="rounded-md border border-draculared p-3 text-sm text-draculared">{commandError}</div>
   {/if}
-  {#if commandNotice}
-    <div class="rounded-md border border-selected p-3 text-sm text-textcolor" data-model-profile-command-notice>
-      {commandNotice}
-    </div>
-  {/if}
-
-  <div class="flex flex-wrap items-center justify-between gap-2">
+  <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
     <div>
       <h3 class="text-lg font-semibold">{language.modelProfiles.profilesTabTitle}</h3>
       <span class="text-sm text-textcolor2">{language.modelProfiles.profilesTabDescription}</span>
     </div>
-    <Button size="sm" disabled={busy || mutationQueued} onclick={openCreateEditor}>
-      <span class="inline-flex items-center gap-2"><PlusIcon size={16} />{language.modelProfiles.createProfile}</span>
-    </Button>
+    <div class="flex flex-wrap gap-2">
+      <Button size="sm" styled="outlined" disabled={busy || mutationQueued} onclick={addDivider}>
+        <span class="inline-flex items-center gap-2"><MinusIcon size={16} />{language.modelProfiles.addDivider}</span>
+      </Button>
+      <Button size="sm" disabled={busy || mutationQueued} onclick={openCreateEditor}>
+        <span class="inline-flex items-center gap-2"><PlusIcon size={16} />{language.modelProfiles.createProfile}</span>
+      </Button>
+    </div>
   </div>
 
-  {#if profiles.length === 0}
+  <ModelRuntimeDefaultsEditor compact />
+
+  {#if profileItems.length === 0}
     <div class="rounded-md border border-darkborderc p-4 text-sm text-textcolor2">
       {language.modelProfiles.noProfiles}
     </div>
   {:else}
-    <div class="overflow-x-auto rounded-md border border-darkborderc">
-      <table class="w-full min-w-[52rem] text-sm">
-        <thead class="bg-darkbg text-left text-xs uppercase text-textcolor2">
-          <tr>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.profileNameColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.providerColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.modelColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.requestModelColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.fallbackColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.statusColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.usedByColumn}</th>
-            <th class="px-3 py-2 font-medium">{language.modelProfiles.actionsColumn}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each profiles as profile (profile.id)}
-            {@const usedByRoles = rolesUsingProfile(profile.id)}
-            <tr class="border-t border-darkborderc align-top">
-              <td class="px-3 py-3">
-                <span class="block font-medium">{profile.name}</span>
-                <span class="block text-xs text-textcolor2">{profile.id}</span>
-              </td>
-              <td class="px-3 py-3">{providerLabel(profile.providerId)}</td>
-              <td class="px-3 py-3">{modelLabel(profile)}</td>
-              <td class="px-3 py-3">{requestModelLabel(profile)}</td>
-              <td class="px-3 py-3 text-textcolor2">{fallbackCount(profile)}</td>
-              <td class="px-3 py-3">{statusLabel(profile)}</td>
-              <td class="px-3 py-3 text-textcolor2">{roleListLabel(usedByRoles)}</td>
-              <td class="px-3 py-3">
-                <div class="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    styled="outlined"
-                    disabled={busy || mutationQueued}
-                    onclick={() => openEditEditor(profile)}>
-                    <span class="inline-flex items-center gap-1"
-                      ><PencilIcon size={14} />{language.modelProfiles.edit}</span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    styled="outlined"
-                    disabled={busy || mutationQueued}
-                    onclick={() => duplicateProfile(profile)}>
-                    <span class="inline-flex items-center gap-1"
-                      ><CopyIcon size={14} />{language.modelProfiles.duplicate}</span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    styled="danger"
-                    disabled={busy || mutationQueued}
-                    onclick={() => deleteProfile(profile)}>
-                    <span class="inline-flex items-center gap-1"
-                      ><TrashIcon size={14} />{language.modelProfiles.delete}</span>
-                  </Button>
-                </div>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+    <div class="flex flex-col gap-1" role="list" bind:this={profileListElement}>
+      {#each profileItems as item (modelProfileListItemKey(item))}
+        {@const orderKey = modelProfileListItemKey(item)}
+        <div role="presentation" data-model-profile-drop-key={orderKey} class="contents"></div>
+        {#if item.kind === 'profile'}
+          {@const profile = item.profile}
+          <article
+            class="flex items-center gap-1 rounded-md border border-darkborderc px-2 text-sm hover:bg-darkbg"
+            role="listitem"
+            data-model-profile-row
+            data-model-profile-sortable-item
+            data-model-profile-order-key={orderKey}
+            data-profile-id={profile.id}>
+            <span
+              class="flex h-11 w-11 shrink-0 touch-none cursor-grab items-center justify-center text-textcolor2 active:cursor-grabbing"
+              title={language.modelProfiles.dragProfile}
+              data-model-profile-drag-handle
+              aria-hidden="true">
+              <GripVerticalIcon size={16} />
+            </span>
+            <button
+              type="button"
+              class="flex min-w-0 flex-1 items-center gap-1 py-3 text-left"
+              disabled={busy || mutationQueued}
+              onclick={() => openEditEditor(profile)}
+              aria-label={`${language.modelProfiles.edit}: ${profile.name}`}>
+              <span class="flex min-w-0 flex-1 flex-col gap-1">
+                <span class="font-medium break-words">{profile.name}</span>
+                <span class="break-words text-xs text-textcolor2">
+                  {providerLabel(profile.providerId)} · {modelLabel(profile)}
+                  {#if profile.providerOptions?.requestModel?.trim() && profile.providerOptions.requestModel.trim() !== profile.modelId}
+                    · {requestModelLabel(profile)}
+                  {/if}
+                  {#if profile.fallbacks?.length}
+                    · {fallbackCount(profile)}{/if}
+                </span>
+                {#if statusLabel(profile) !== language.modelProfiles.statusBuckets.ready}
+                  <span class="text-xs text-yellow-300">{statusLabel(profile)}</span>
+                {/if}
+              </span>
+              <span class="pointer-events-none shrink-0 text-textcolor2" aria-hidden="true"
+                ><PencilIcon size={16} /></span>
+            </button>
+            <ModelItemActions
+              label={language.modelProfiles.itemActions(profile.name)}
+              disabled={busy || mutationQueued}>
+              {#snippet children(close)}
+                <button
+                  type="button"
+                  class="flex min-h-11 items-center gap-2 rounded-md px-3 py-2 text-left hover:bg-darkbg"
+                  onclick={() => {
+                    close()
+                    void duplicateProfile(profile)
+                  }}><CopyIcon size={14} />{language.modelProfiles.duplicate}</button>
+                <button
+                  type="button"
+                  class="flex min-h-11 items-center gap-2 rounded-md px-3 py-2 text-left text-draculared hover:bg-darkbg"
+                  onclick={() => {
+                    close()
+                    void deleteProfile(profile)
+                  }}><TrashIcon size={14} />{language.modelProfiles.delete}</button>
+              {/snippet}
+            </ModelItemActions>
+          </article>
+        {:else}
+          <div
+            class="flex items-center rounded-md transition-colors hover:bg-white/5"
+            role="listitem"
+            data-model-profile-divider-row
+            data-model-profile-sortable-item
+            data-model-profile-order-key={orderKey}
+            data-divider-id={item.id}>
+            <span
+              class="flex h-11 w-11 shrink-0 touch-none cursor-grab items-center justify-center text-textcolor2 active:cursor-grabbing"
+              title={language.modelProfiles.dragDivider}
+              data-model-profile-drag-handle
+              aria-hidden="true">
+              <GripVerticalIcon size={16} />
+            </span>
+            <button
+              type="button"
+              class="flex min-h-11 flex-1 cursor-pointer items-center gap-3 px-2 py-3 text-textcolor2"
+              aria-label={language.modelProfiles.deleteDividerConfirm}
+              disabled={busy || mutationQueued}
+              onclick={() => deleteDivider(item.id)}>
+              <span class="h-px flex-1 bg-darkborderc"></span>
+              <span aria-hidden="true">---</span>
+              <span class="h-px flex-1 bg-darkborderc"></span>
+            </button>
+          </div>
+        {/if}
+      {/each}
     </div>
   {/if}
 
@@ -418,7 +613,9 @@
         mode={editorMode}
         profile={editingProfileBaseline ?? editingProfile}
         {profiles}
-        usedByRoles={editingProfile ? rolesUsingProfile(editingProfile.id) : []}
+        {profileOrder}
+        {credentials}
+        runtimeDefaults={normalizeModelRuntimeDefaults(settingsResourceState.value.modelRuntimeDefaults)}
         statusText={editingProfile ? statusLabel(editingProfile) : language.modelProfiles.statusBuckets.incomplete}
         {busy}
         {commandError}

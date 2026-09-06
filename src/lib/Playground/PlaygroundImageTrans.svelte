@@ -68,6 +68,7 @@
 </script>
 
 <script lang="ts">
+  import { onDestroy } from 'svelte'
   import { language } from 'src/lang'
   import TextInput from '../UI/GUI/TextInput.svelte'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
@@ -105,11 +106,20 @@
   let imageEpoch = 0
   let imageSelectionEpoch = 0
   let selectionEpoch = 0
+  let activeTranslationController: AbortController | null = null
+  let destroyed = false
+
+  onDestroy(() => {
+    destroyed = true
+    imageSelectionEpoch += 1
+    activeTranslationController?.abort()
+    activeTranslationController = null
+  })
 
   async function selectFile(): Promise<boolean> {
     const selectionEpoch = ++imageSelectionEpoch
     const file = await selectSingleFile(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif'])
-    if (!file || selectionEpoch !== imageSelectionEpoch) {
+    if (destroyed || !file || selectionEpoch !== imageSelectionEpoch) {
       return false
     }
 
@@ -125,7 +135,7 @@
     await decodeImageBlob(img, new Blob([file.data]))
     // Decoding is asynchronous. A later selection must retain ownership even
     // when an older, larger image happens to finish last.
-    if (selectionEpoch !== imageSelectionEpoch) return false
+    if (destroyed || selectionEpoch !== imageSelectionEpoch) return false
     inputImage = img
     imageEpoch += 1
     aspectRatio = img.width / img.height
@@ -148,7 +158,7 @@
   }
 
   async function imageTranslate(type: number = 0) {
-    if (loading) {
+    if (destroyed || loading) {
       return
     }
     const runMode = mode
@@ -159,6 +169,7 @@
     const runSelectionEpoch = selectionEpoch
     let runImageEpoch = imageEpoch
     const isCurrentRun = () =>
+      !destroyed &&
       mode === runMode &&
       modeEpoch === runModeEpoch &&
       imageEpoch === runImageEpoch &&
@@ -166,6 +177,7 @@
       prompt === runPrompt &&
       selLang === runLanguage &&
       (runMode !== 'manual' || output === runOutput)
+    let requestController: AbortController | null = null
     loading = true
     try {
       if (runMode === 'auto') {
@@ -277,6 +289,8 @@
               required: ['content', 'translation', 'bg_hex_color', 'text_hex_color'],
             }
 
+      requestController = new AbortController()
+      activeTranslationController = requestController
       const d = await requestChatData(
         {
           formated: [
@@ -295,6 +309,7 @@
           schema: JSON.stringify(schema),
         },
         'translate',
+        requestController.signal,
       )
 
       if (!isCurrentRun()) return
@@ -336,14 +351,21 @@
         render()
       }
     } catch (error) {
-      alertError(error)
+      if (!destroyed) {
+        alertError(error)
+      }
     } finally {
-      loading = false
+      if (activeTranslationController === requestController) {
+        activeTranslationController = null
+      }
+      if (!destroyed) {
+        loading = false
+      }
     }
   }
 
   function render() {
-    if (!inputImage) {
+    if (destroyed || !inputImage) {
       return
     }
     if (!ctx) {

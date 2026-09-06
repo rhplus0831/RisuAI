@@ -22,10 +22,35 @@ const characterDisplaySpies = vi.hoisted(() => ({
   getCharacterDisplayInfo: vi.fn(),
 }))
 
+const alertSpies = vi.hoisted(() => ({
+  alertError: vi.fn(),
+  alertNormal: vi.fn(),
+}))
+
+const routerSpies = vi.hoisted(() => ({
+  navigate: vi.fn(),
+}))
+
+const routeResourceSpies = vi.hoisted(() => ({
+  prefetchCharacterRouteResource: vi.fn(),
+}))
+
 vi.mock('../../ts/characters', () => characterSpies)
 vi.mock('src/ts/characters', () => characterSpies)
 vi.mock('src/ts/characterCommands', () => characterCommandSpies)
 vi.mock('src/ts/globalApi.svelte', () => globalApiSpies)
+vi.mock('src/ts/alert', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/ts/alert')>()),
+  ...alertSpies,
+}))
+vi.mock('../../ts/router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../ts/router')>()),
+  navigate: routerSpies.navigate,
+}))
+vi.mock('src/ts/server/routeResourceLoader', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/ts/server/routeResourceLoader')>()),
+  prefetchCharacterRouteResource: routeResourceSpies.prefetchCharacterRouteResource,
+}))
 vi.mock('src/ts/characterDisplayName', async (importOriginal) => {
   const actual = await importOriginal<typeof import('src/ts/characterDisplayName')>()
   characterDisplaySpies.getCharacterDisplayInfo.mockImplementation(actual.getCharacterDisplayInfo)
@@ -35,7 +60,11 @@ vi.mock('src/ts/characterDisplayName', async (importOriginal) => {
   }
 })
 
-import GridCatalog, { formatGridCatalogCharacterLists, normalizeGridCatalogSearch } from './GridCatalog.svelte'
+import GridCatalog, {
+  formatGridCatalogCharacterLists,
+  formatGridCatalogCharacterListsFromCharacters,
+  normalizeGridCatalogSearch,
+} from './GridCatalog.svelte'
 import MobileCharacters, {
   filterMobileCharacterRows,
   formatMobileCharacterRows,
@@ -44,13 +73,16 @@ import MobileCharacters, {
   resolveMobileRelativeTimeLocale,
 } from '../Mobile/MobileCharacters.svelte'
 import { changeLanguage, language } from 'src/lang'
+import { installLanguageReactivity } from 'src/lang/reactivity'
 import { languageKorean } from 'src/lang/ko'
 import { languageSpanish } from 'src/lang/es'
-import { MobileSearch } from 'src/ts/stores.svelte'
+import { MobileSearch, selectedCharID } from 'src/ts/stores.svelte'
 import {
-  getResourceDatabase as getDatabase,
+  charactersResourceState,
+  settingsResourceState,
   replaceResourceDatabase as setDatabaseLite,
 } from 'src/ts/server/resourceState.svelte'
+import { getResourceDatabase as getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -86,6 +118,7 @@ function makeCharacter(options: CharacterFixtureOptions) {
     creatorNotes: options.creatorNotes ?? 'No description',
     trashTime: options.trashTime,
     chats: Array.from({ length: options.chatCount ?? 0 }),
+    chatCount: options.chatCount ?? 0,
     lastInteraction: options.lastInteraction ?? 0,
     type: 'character',
   }
@@ -215,10 +248,12 @@ function gridAction(listKind: GridCatalogListKind, characterId: string, actionKi
 }
 
 beforeEach(() => {
+  installLanguageReactivity()
   target = document.createElement('div')
   document.body.appendChild(target)
   vi.clearAllMocks()
   MobileSearch.set('')
+  selectedCharID.set(-1)
   changeLanguage('en')
   seedCatalog()
 })
@@ -231,11 +266,12 @@ afterEach(() => {
   target.remove()
   document.body.innerHTML = ''
   MobileSearch.set('')
+  selectedCharID.set(-1)
   changeLanguage('en')
 })
 
 describe('GridCatalog derived lists', () => {
-  it('L42: GridCatalog filters active and trash lists with shared count and stable order', async () => {
+  it('GridCatalog filters active and trash lists with shared count and stable order', async () => {
     mountCatalog()
     await clickCatalogTab('grid')
     await updateSearch('AL PHA')
@@ -289,7 +325,18 @@ describe('GridCatalog derived lists', () => {
     expect(descriptionForCharacterId('trash', 'trash-beta')).toBe('Description de la corbeille')
   })
 
-  it('L42: GridCatalog search recomputes formatted lists once per search edit and reuses them across tabs', async () => {
+  it('fails language settings errors closed to the description fallback order', async () => {
+    getDatabase().language = 'ko'
+    getDatabase().characters[0].creatorNotes = '# `en`\nEnglish description\n# `ko`\n한국어 설명'
+    settingsResourceState.groupStatuses.language = 'error'
+
+    mountCatalog()
+    await clickCatalogTab('list')
+
+    expect(descriptionForCharacterId('list', 'alpha-main')).toBe('English description')
+  })
+
+  it('GridCatalog search recomputes formatted lists once per search edit and reuses them across tabs', async () => {
     seedCatalog()
     mountCatalog()
     await clickCatalogTab('grid')
@@ -306,7 +353,112 @@ describe('GridCatalog derived lists', () => {
     expect(characterDisplaySpies.getCharacterDisplayInfo).toHaveBeenCalledTimes(getDatabase().characters.length * 2)
   })
 
-  it('L42: GridCatalog trash actions keep restore and permanent-delete targets', async () => {
+  it('formats the catalog from the character owner rather than an aggregate snapshot', () => {
+    const aggregate = makeCharacter({ chaId: 'aggregate', name: 'Aggregate Character' })
+    const owner = makeCharacter({ chaId: 'owner', name: 'Owner Character' })
+
+    expect(formatGridCatalogCharacterListsFromCharacters([owner] as any, '')).toMatchObject({
+      active: [{ chaId: 'owner', name: 'Owner Character' }],
+      trash: [],
+    })
+    expect(formatGridCatalogCharacterLists({ characters: [aggregate] } as any, '')).toMatchObject({
+      active: [{ chaId: 'aggregate', name: 'Aggregate Character' }],
+      trash: [],
+    })
+  })
+
+  it('waits for the character owner before rendering, selecting, and navigating', async () => {
+    setDatabaseLite({
+      language: 'en',
+      currentChar: 0,
+      characters: [
+        {
+          ...makeCharacter({ chaId: 'owner-character', name: 'Owner Character' }),
+          chatPage: 0,
+          chats: [{ id: 'owner-chat' }],
+        },
+      ],
+    } as any)
+    charactersResourceState.status = 'idle'
+    selectedCharID.set(99)
+
+    mountCatalog()
+    await clickCatalogTab('list')
+
+    expect(gridRows('list')).toEqual([])
+    expect(routerSpies.navigate).not.toHaveBeenCalled()
+
+    charactersResourceState.status = 'ready'
+    await tick()
+    expect(listHeadings('list')).toEqual(['Owner Character'])
+    expect(rowForCharacterId('list', 'owner-character').dataset.risuSelected).toBe('true')
+    gridAction('list', 'owner-character', 'open').click()
+
+    expect(routerSpies.navigate).toHaveBeenCalledWith('/character/owner-character/owner-chat')
+    expect(characterSpies.changeChar).not.toHaveBeenCalled()
+  })
+
+  it('does not render fallback or resident rows before owner readiness', async () => {
+    charactersResourceState.characters = []
+    charactersResourceState.status = 'idle'
+
+    mountCatalog()
+    await clickCatalogTab('list')
+
+    expect(gridRows('list')).toEqual([])
+    expect(routerSpies.navigate).not.toHaveBeenCalled()
+
+    charactersResourceState.characters = [
+      makeCharacter({ chaId: 'resident-character', name: 'Resident Character' }),
+    ] as any
+    charactersResourceState.status = 'error'
+    await tick()
+    expect(gridRows('list')).toEqual([])
+
+    charactersResourceState.status = 'loading'
+    await tick()
+    expect(gridRows('list')).toEqual([])
+
+    charactersResourceState.characters = []
+    charactersResourceState.status = 'ready'
+    await tick()
+    expect(gridRows('list')).toEqual([])
+  })
+
+  it('fails the ready catalog closed for duplicate character owner ids', async () => {
+    setDatabaseLite({
+      language: 'en',
+      characters: [
+        {
+          ...makeCharacter({ chaId: 'duplicate-character', name: 'Active Duplicate' }),
+          chatPage: 0,
+          chats: [{ id: 'active-chat' }],
+        },
+        {
+          ...makeCharacter({ chaId: 'duplicate-character', name: 'Trash Duplicate', trashTime: 20 }),
+          chatPage: 0,
+          chats: [{ id: 'trash-chat' }],
+        },
+      ],
+    } as any)
+
+    mountCatalog()
+    await clickCatalogTab('list')
+    expect(gridRows('list')).toEqual([])
+
+    await clickCatalogTab('trash')
+    expect(gridRows('trash')).toEqual([])
+
+    expect(routerSpies.navigate).not.toHaveBeenCalled()
+    expect(routeResourceSpies.prefetchCharacterRouteResource).not.toHaveBeenCalled()
+    expect(characterSpies.changeChar).not.toHaveBeenCalled()
+    expect(characterSpies.removeChar).not.toHaveBeenCalled()
+    expect(characterCommandSpies.currentCharacterRowSnapshot).not.toHaveBeenCalled()
+    expect(characterCommandSpies.dispatchUpdateCharacterScopedWithOutcome).not.toHaveBeenCalled()
+    expect(charactersResourceState.characters[1].trashTime).toBe(20)
+  })
+
+  it('GridCatalog trash actions keep restore and permanent-delete targets', async () => {
     mountCatalog()
     await clickCatalogTab('trash')
 
@@ -332,24 +484,19 @@ describe('GridCatalog derived lists', () => {
     expect(characterSpies.removeChar).toHaveBeenCalledWith(4, 'Trashed Alpha', 'permanent')
   })
 
-  it('keeps an id-less legacy character trashed when restore cannot be persisted', async () => {
+  it('does not expose an id-less legacy character before owner readiness', async () => {
     setDatabaseLite({
       language: 'en',
       characters: [makeCharacter({ name: 'Legacy Trash', trashTime: 20 })],
     } as any)
+    charactersResourceState.status = 'loading'
     mountCatalog()
     await clickCatalogTab('trash')
 
-    gridAction('trash', '', 'restore').click()
-    await tick()
-    await tick()
-
+    expect(gridRows('trash')).toEqual([])
     expect(getDatabase().characters[0].trashTime).toBe(20)
     expect(characterCommandSpies.currentCharacterRowSnapshot).not.toHaveBeenCalled()
     expect(characterCommandSpies.dispatchUpdateCharacterScopedWithOutcome).not.toHaveBeenCalled()
-    expect(target.querySelector('[data-risu-character-action-status="failed"]')?.textContent).toContain(
-      language.characterRestoreUnavailable('Legacy Trash'),
-    )
   })
 
   it('keeps a character action pending through durable classification and reports queued or failed outcomes', async () => {
@@ -364,18 +511,15 @@ describe('GridCatalog derived lists', () => {
 
     expect(deleteButton.disabled).toBe(true)
     expect(deleteButton.getAttribute('aria-busy')).toBe('true')
-    expect(target.querySelector('[data-risu-character-action-status="pending"]')?.textContent).toContain(
-      language.characterRemovalPending('AlphaHero'),
-    )
+    expect(target.querySelector('[data-risu-character-action-status="pending"]')).toBeNull()
 
     removal.resolve({ status: 'queued', result: { status: 'unavailable' } })
     await tick()
     await tick()
 
     expect(deleteButton.disabled).toBe(false)
-    expect(target.querySelector('[data-risu-character-action-status="queued"]')?.textContent).toContain(
-      language.characterRemovalQueued('AlphaHero'),
-    )
+    expect(target.querySelector('[data-risu-character-action-status="queued"]')).toBeNull()
+    expect(deleteButton.dataset.risuMutationStatus).toBe('queued')
 
     const restore = deferred<any>()
     characterCommandSpies.dispatchUpdateCharacterScopedWithOutcome.mockReturnValueOnce(restore.promise)
@@ -384,9 +528,7 @@ describe('GridCatalog derived lists', () => {
     restoreButton.click()
     await tick()
 
-    expect(target.querySelector('[data-risu-character-action-status="pending"]')?.textContent).toContain(
-      language.characterRestorePending('Beta Backlog'),
-    )
+    expect(target.querySelector('[data-risu-character-action-status="pending"]')).toBeNull()
     restore.resolve({ status: 'failed', result: { status: 'error', error: 'rejected' } })
     await tick()
     await tick()
@@ -394,6 +536,26 @@ describe('GridCatalog derived lists', () => {
     expect(target.querySelector('[data-risu-character-action-status="failed"]')?.textContent).toContain(
       language.characterRestoreFailed('Beta Backlog'),
     )
+  })
+
+  it('ignores a catalog action that settles after unmount', async () => {
+    const removal = deferred<any>()
+    characterSpies.removeChar.mockReturnValueOnce(removal.promise)
+    mountCatalog()
+    await clickCatalogTab('list')
+
+    gridAction('list', 'alpha-main', 'delete').click()
+    await tick()
+    if (!component) throw new Error('Grid catalog was not mounted')
+    unmount(component)
+    component = undefined
+
+    removal.resolve({ status: 'queued', result: { status: 'unavailable' } })
+    await tick()
+    await tick()
+
+    expect(alertSpies.alertNormal).not.toHaveBeenCalled()
+    expect(alertSpies.alertError).not.toHaveBeenCalled()
   })
 
   it('exposes named character controls and announces an empty search result', async () => {
@@ -464,7 +626,7 @@ describe('GridCatalog derived lists', () => {
     expect(trashLists.trash.map((char) => char.name)).toEqual(['First Trash Match'])
   })
 
-  it('M6: MobileCharacters helper preserves sort, trash filtering, legacy keys, search, and ago text', () => {
+  it('MobileCharacters helper preserves sort, trash filtering, legacy keys, search, and ago text', () => {
     const now = 1_000_000_000
     const agoFormatter = {
       format: vi.fn((value: number, unit: Intl.RelativeTimeFormatUnit) => `${value}:${unit}`),
@@ -560,7 +722,7 @@ describe('GridCatalog derived lists', () => {
         makeCharacter({ chaId: 'unknown-time', name: 'Unknown Time', lastInteraction: 0 }),
       ],
     } as any)
-    changeLanguage('ko')
+    await changeLanguage('ko')
 
     mountMobileCharacters()
     await tick()
@@ -574,15 +736,15 @@ describe('GridCatalog derived lists', () => {
     expect(agoText('known-time')).toBe(new Intl.RelativeTimeFormat('ko', { style: 'short' }).format(-2, 'hour'))
     expect(agoText('unknown-time')).toBe(languageKorean.unknownInteractionTime)
 
-    getDatabase().language = 'es'
-    changeLanguage('es')
+    settingsResourceState.value.language = 'es'
+    await changeLanguage('es')
     await tick()
 
     expect(agoText('known-time')).toBe(new Intl.RelativeTimeFormat('es', { style: 'short' }).format(-2, 'hour'))
     expect(agoText('unknown-time')).toBe(languageSpanish.unknownInteractionTime)
   })
 
-  it('M6: MobileCharacters sorted rows recompute on corpus changes but not search-only changes', async () => {
+  it('MobileCharacters sorted rows recompute on corpus changes but not search-only changes', async () => {
     setDatabaseLite({
       language: 'en',
       characters: [

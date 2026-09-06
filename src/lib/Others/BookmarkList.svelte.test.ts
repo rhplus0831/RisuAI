@@ -11,6 +11,7 @@ const bookmarkMocks = vi.hoisted(() => ({
   dispatchUpdateChatScopedWithOutcome: vi.fn(),
   hydrateChatMessages: vi.fn(),
   navigateToCharacterChatMessage: vi.fn(),
+  restoreChatRowMetadata: vi.fn(),
 }))
 
 vi.mock('../ChatScreens/Chat.svelte', async () => ({
@@ -45,15 +46,11 @@ vi.mock('src/ts/chatCommands', () => ({
   currentChatStateSnapshot: vi.fn(),
   dispatchUpdateChat: vi.fn(),
   dispatchUpdateChatScopedWithOutcome: bookmarkMocks.dispatchUpdateChatScopedWithOutcome,
+  restoreChatRowMetadata: bookmarkMocks.restoreChatRowMetadata,
 }))
 
 vi.mock('src/ts/server/commands', () => ({
   canUseServerCommands: bookmarkMocks.canUseServerCommands,
-}))
-
-vi.mock('src/ts/server/chatBridge.svelte', () => ({
-  rollbackServerBackedChatRowMetadata: vi.fn(),
-  syncServerBackedChatMetadataBaselines: vi.fn(),
 }))
 
 vi.mock('src/ts/server/chatMessageHydration.svelte', async (importOriginal) => ({
@@ -68,11 +65,9 @@ vi.mock('src/ts/router', () => ({
 import BookmarkList from './BookmarkList.svelte'
 import { language } from 'src/lang'
 import { bookmarkListOpen, selectedCharID } from 'src/ts/stores.svelte'
-import {
-  getResourceDatabase as getDatabase,
-  replaceResourceDatabase as setDatabaseLite,
-} from 'src/ts/server/resourceState.svelte'
-import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
+import type { ChatMutationFinalOutcome, ChatMutationOutcome } from 'src/ts/chatCommands'
+import { charactersResourceState, replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
+import { getResourceDatabase as getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -82,6 +77,15 @@ function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => voi
     resolve = resolvePromise
   })
   return { promise, resolve }
+}
+
+function queuedMutationOutcome(settlement: Promise<ChatMutationFinalOutcome>, mutationId: string): ChatMutationOutcome {
+  return {
+    status: 'queued',
+    result: { status: 'unavailable' },
+    mutationIds: [mutationId],
+    settlement,
+  }
 }
 
 function seedBookmarkDatabase(messageResident: boolean): void {
@@ -113,6 +117,7 @@ function seedBookmarkDatabase(messageResident: boolean): void {
         triggerscript: [],
       },
     ],
+    currentChar: 0,
   } as never)
 }
 
@@ -148,6 +153,7 @@ function seedBookmarkOwners(aResident: boolean, bResident: boolean): void {
     language: 'en',
     username: 'User',
     characters: [bookmarkOwner('a', aResident), bookmarkOwner('b', bResident)],
+    currentChar: 0,
   } as never)
 }
 
@@ -155,7 +161,7 @@ function installOwnerHydration(suffix: 'a' | 'b', ownerIndex: number, hydration:
   bookmarkMocks.hydrateChatMessages.mockImplementation(async (chatId: string) => {
     if (chatId !== `chat-${suffix}`) return
     await hydration.promise
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[ownerIndex].chats[0].message = [
         {
           chatId: `message-${suffix}-old`,
@@ -201,7 +207,7 @@ describe('BookmarkList hydration and navigation', () => {
     seedBookmarkDatabase(false)
     bookmarkMocks.hydrateChatMessages.mockImplementationOnce(async () => {
       await hydration.promise
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].message = [
           { chatId: 'message-old', role: 'user', data: 'Older bookmarked message' },
           { chatId: 'message-tail', role: 'char', data: 'Resident tail message' },
@@ -223,6 +229,31 @@ describe('BookmarkList hydration and navigation', () => {
     expect(target.textContent).not.toContain(language.noBookmarks)
   })
 
+  it('hydrates bookmarked metadata when no resident transcript owner exists', async () => {
+    const hydration = deferred()
+    seedBookmarkDatabase(true)
+    withTestDatabaseWrite(() => {
+      getDatabase().characters[0].chats[0].message = undefined as never
+    })
+    bookmarkMocks.hydrateChatMessages.mockImplementationOnce(async () => {
+      await hydration.promise
+      withTestDatabaseWrite(() => {
+        getDatabase().characters[0].chats[0].message = [
+          { chatId: 'message-old', role: 'user', data: 'Older bookmarked message' },
+        ]
+      })
+    })
+
+    component = mount(BookmarkList, { target })
+    await tick()
+
+    expect(bookmarkMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-a', { strict: true })
+    expect(target.querySelector('[role="status"]')?.textContent).toBe(language.loading)
+
+    hydration.resolve()
+    await vi.waitFor(() => expect(target.querySelector('[data-risu-bookmark-id="message-old"]')).not.toBeNull())
+  })
+
   it('routes a bookmark jump through the chat-message navigation queue and closes', async () => {
     seedBookmarkDatabase(true)
     component = mount(BookmarkList, { target })
@@ -238,9 +269,11 @@ describe('BookmarkList hydration and navigation', () => {
     expect(get(bookmarkListOpen)).toBe(false)
   })
 
-  it('tracks bookmark persistence by row, serializes a later edit, and reports queued and failed outcomes', async () => {
-    const renameSettlement = deferred<any>()
-    const removeSettlement = deferred<any>()
+  it('tracks bookmark persistence by row and settles queued operations as accepted or failed', async () => {
+    const renameRequest = deferred<ChatMutationOutcome>()
+    const renameSettlement = deferred<ChatMutationFinalOutcome>()
+    const removeRequest = deferred<ChatMutationOutcome>()
+    const removeSettlement = deferred<ChatMutationFinalOutcome>()
     seedBookmarkDatabase(true)
     bookmarkMocks.canUseServerCommands.mockReturnValue(true)
     bookmarkMocks.alertInput.mockResolvedValueOnce('Renamed bookmark')
@@ -251,8 +284,8 @@ describe('BookmarkList hydration and navigation', () => {
       chat: JSON.parse(JSON.stringify(getDatabase().characters[0].chats[0])),
     }))
     bookmarkMocks.dispatchUpdateChatScopedWithOutcome
-      .mockReturnValueOnce(renameSettlement.promise)
-      .mockReturnValueOnce(removeSettlement.promise)
+      .mockReturnValueOnce(renameRequest.promise)
+      .mockReturnValueOnce(removeRequest.promise)
 
     component = mount(BookmarkList, { target })
     await vi.waitFor(() => expect(target.querySelector('[data-risu-bookmark-id="message-old"]')).not.toBeNull())
@@ -271,22 +304,27 @@ describe('BookmarkList hydration and navigation', () => {
     remove!.click()
     expect(bookmarkMocks.dispatchUpdateChatScopedWithOutcome).toHaveBeenCalledTimes(1)
 
-    renameSettlement.resolve({ status: 'queued', result: { status: 'unavailable' } })
+    renameRequest.resolve(queuedMutationOutcome(renameSettlement.promise, 'rename-mutation'))
     await vi.waitFor(() =>
-      expect(target.querySelector('[data-risu-bookmark-mutation-status="queued"]')?.textContent).toContain(
-        language.bookmarkRenameQueued('Older bookmark'),
-      ),
+      expect(bookmarkMocks.alertNormal).toHaveBeenCalledWith(language.bookmarkRenameQueued('Older bookmark')),
     )
-    expect(bookmarkMocks.alertNormal).toHaveBeenCalledWith(language.bookmarkRenameQueued('Older bookmark'))
+    expect(pendingRow?.getAttribute('data-risu-mutation-status')).toBe('queued')
+    expect(target.querySelector('[data-risu-bookmark-mutation-status="queued"]')).toBeNull()
+
+    renameSettlement.resolve({ status: 'accepted' })
+    await vi.waitFor(() => expect(pendingRow?.getAttribute('data-risu-mutation-status')).toBe('idle'))
 
     target.querySelector<HTMLButtonElement>('[data-risu-bookmark-action="remove"]')!.click()
     await vi.waitFor(() => expect(bookmarkMocks.dispatchUpdateChatScopedWithOutcome).toHaveBeenCalledTimes(2))
     expect(target.querySelector('[data-risu-bookmark-id="message-old"]')).toBeNull()
-    expect(target.querySelector('[data-risu-bookmark-mutation-status="pending"]')?.textContent).toContain(
-      language.bookmarkRemovePending('Renamed bookmark'),
+    expect(target.querySelector('[data-risu-bookmark-mutation-status="pending"]')).toBeNull()
+
+    removeRequest.resolve(queuedMutationOutcome(removeSettlement.promise, 'remove-mutation'))
+    await vi.waitFor(() =>
+      expect(bookmarkMocks.alertNormal).toHaveBeenCalledWith(language.bookmarkRemoveQueued('Renamed bookmark')),
     )
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const chat = getDatabase().characters[0].chats[0]
       chat.bookmarks = ['message-old']
       chat.bookmarkNames = { 'message-old': 'Renamed bookmark' }
@@ -302,8 +340,54 @@ describe('BookmarkList hydration and navigation', () => {
     expect(bookmarkMocks.alertError).toHaveBeenCalledWith(language.bookmarkRemoveFailed('Renamed bookmark'))
   })
 
+  it('does not let an older queued settlement overwrite a newer rename attempt', async () => {
+    const firstSettlement = deferred<ChatMutationFinalOutcome>()
+    const secondSettlement = deferred<ChatMutationFinalOutcome>()
+    seedBookmarkDatabase(true)
+    bookmarkMocks.canUseServerCommands.mockReturnValue(true)
+    bookmarkMocks.alertInput.mockResolvedValueOnce('First rename').mockResolvedValueOnce('Second rename')
+    bookmarkMocks.currentChatScopedSnapshot.mockImplementation(() => ({
+      selectedCharID: 0,
+      characterId: 'char-a',
+      chatId: 'chat-a',
+      chat: JSON.parse(JSON.stringify(getDatabase().characters[0].chats[0])),
+    }))
+    bookmarkMocks.dispatchUpdateChatScopedWithOutcome
+      .mockResolvedValueOnce(queuedMutationOutcome(firstSettlement.promise, 'first-rename'))
+      .mockResolvedValueOnce(queuedMutationOutcome(secondSettlement.promise, 'second-rename'))
+
+    component = mount(BookmarkList, { target })
+    await vi.waitFor(() => expect(target.querySelector('[data-risu-bookmark-action="rename"]')).not.toBeNull())
+
+    target.querySelector<HTMLButtonElement>('[data-risu-bookmark-action="rename"]')!.click()
+    await vi.waitFor(() =>
+      expect(
+        target.querySelector('[data-risu-bookmark-id="message-old"]')?.getAttribute('data-risu-mutation-status'),
+      ).toBe('queued'),
+    )
+    target.querySelector<HTMLButtonElement>('[data-risu-bookmark-action="rename"]')!.click()
+    await vi.waitFor(() => expect(bookmarkMocks.dispatchUpdateChatScopedWithOutcome).toHaveBeenCalledTimes(2))
+
+    firstSettlement.resolve({ status: 'failed', result: { status: 'error', error: 'first rejected' } })
+    await vi.waitFor(() =>
+      expect(bookmarkMocks.alertError).toHaveBeenCalledWith(language.bookmarkRenameFailed('Older bookmark')),
+    )
+    expect(
+      target.querySelector('[data-risu-bookmark-id="message-old"]')?.getAttribute('data-risu-mutation-status'),
+    ).toBe('queued')
+
+    secondSettlement.resolve({ status: 'accepted' })
+    await vi.waitFor(() =>
+      expect(
+        target.querySelector('[data-risu-bookmark-id="message-old"]')?.getAttribute('data-risu-mutation-status'),
+      ).toBe('idle'),
+    )
+    expect(target.querySelector('[data-risu-bookmark-mutation-status="failed"]')).toBeNull()
+  })
+
   it('reports a bookmark settlement even after the modal unmounts', async () => {
-    const settlement = deferred<any>()
+    const request = deferred<ChatMutationOutcome>()
+    const settlement = deferred<ChatMutationFinalOutcome>()
     seedBookmarkDatabase(true)
     bookmarkMocks.canUseServerCommands.mockReturnValue(true)
     bookmarkMocks.alertInput.mockResolvedValueOnce('Detached rename')
@@ -313,7 +397,7 @@ describe('BookmarkList hydration and navigation', () => {
       chatId: 'chat-a',
       chat: JSON.parse(JSON.stringify(getDatabase().characters[0].chats[0])),
     }))
-    bookmarkMocks.dispatchUpdateChatScopedWithOutcome.mockReturnValueOnce(settlement.promise)
+    bookmarkMocks.dispatchUpdateChatScopedWithOutcome.mockReturnValueOnce(request.promise)
     component = mount(BookmarkList, { target })
     await vi.waitFor(() => expect(target.querySelector('[data-risu-bookmark-action="rename"]')).not.toBeNull())
 
@@ -322,9 +406,14 @@ describe('BookmarkList hydration and navigation', () => {
     unmount(component)
     component = undefined
 
-    settlement.resolve({ status: 'queued', result: { status: 'unavailable' } })
+    request.resolve(queuedMutationOutcome(settlement.promise, 'detached-rename'))
     await vi.waitFor(() =>
       expect(bookmarkMocks.alertNormal).toHaveBeenCalledWith(language.bookmarkRenameQueued('Older bookmark')),
+    )
+
+    settlement.resolve({ status: 'failed', result: { status: 'error', error: 'rejected after unmount' } })
+    await vi.waitFor(() =>
+      expect(bookmarkMocks.alertError).toHaveBeenCalledWith(language.bookmarkRenameFailed('Older bookmark')),
     )
   })
 
@@ -337,7 +426,7 @@ describe('BookmarkList hydration and navigation', () => {
       const ownerIndex = suffix === 'a' ? 0 : 1
       const hydration = suffix === 'a' ? aHydration : bHydration
       await hydration.promise
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[ownerIndex].chats[0].message = [
           {
             chatId: `message-${suffix}-old`,
@@ -353,6 +442,7 @@ describe('BookmarkList hydration and navigation', () => {
     await tick()
     expect(bookmarkMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-a', { strict: true })
 
+    charactersResourceState.currentChar = 1
     selectedCharID.set(1)
     await vi.waitFor(() => expect(bookmarkMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-b', { strict: true }))
 
@@ -379,6 +469,7 @@ describe('BookmarkList hydration and navigation', () => {
     await vi.waitFor(() => expect(target.querySelector('[data-risu-bookmark-id="message-a-old"]')).not.toBeNull())
     expect(bookmarkMocks.hydrateChatMessages).not.toHaveBeenCalled()
 
+    charactersResourceState.currentChar = 1
     selectedCharID.set(1)
     await vi.waitFor(() => expect(bookmarkMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-b', { strict: true }))
     expect(target.querySelector('[role="status"]')?.textContent).toBe(language.loading)
@@ -387,5 +478,76 @@ describe('BookmarkList hydration and navigation', () => {
     bHydration.resolve()
     await vi.waitFor(() => expect(target.querySelector('[data-risu-bookmark-id="message-b-old"]')).not.toBeNull())
     expect(target.textContent).toContain('B older bookmark')
+  })
+
+  it('fails closed when the selected character stable id is duplicated', async () => {
+    seedBookmarkDatabase(true)
+    withTestDatabaseWrite(() => {
+      getDatabase().characters.push(JSON.parse(JSON.stringify(getDatabase().characters[0])))
+    })
+
+    component = mount(BookmarkList, { target })
+    await tick()
+
+    expect(bookmarkMocks.hydrateChatMessages).not.toHaveBeenCalled()
+    expect(target.querySelector('[data-risu-bookmark-id]')).toBeNull()
+  })
+
+  it('fails closed on character owner errors and duplicate active chat ids', async () => {
+    seedBookmarkDatabase(true)
+    withTestDatabaseWrite(() => {
+      getDatabase().characters.push({
+        ...bookmarkOwner('b', true),
+        chats: [{ ...bookmarkOwner('b', true).chats[0], id: 'chat-a' }],
+      } as any)
+    })
+
+    component = mount(BookmarkList, { target })
+    await tick()
+    expect(bookmarkMocks.hydrateChatMessages).not.toHaveBeenCalled()
+    expect(target.querySelector('[data-risu-bookmark-id]')).toBeNull()
+
+    unmount(component)
+    component = undefined
+    seedBookmarkDatabase(true)
+    charactersResourceState.rowStatuses['char-a'] = 'error'
+    component = mount(BookmarkList, { target })
+    await tick()
+    expect(target.querySelector('[data-risu-bookmark-id]')).toBeNull()
+
+    unmount(component)
+    component = undefined
+    seedBookmarkDatabase(true)
+    charactersResourceState.status = 'error'
+    component = mount(BookmarkList, { target })
+    await tick()
+    expect(target.querySelector('[data-risu-bookmark-id]')).toBeNull()
+  })
+
+  it('fails closed on duplicate bookmark and message stable ids', async () => {
+    seedBookmarkDatabase(true)
+    withTestDatabaseWrite(() => {
+      getDatabase().characters[0].chats[0].bookmarks = ['message-old', 'message-old']
+    })
+
+    component = mount(BookmarkList, { target })
+    await tick()
+    expect(target.querySelector('[data-risu-bookmark-id]')).toBeNull()
+    expect(bookmarkMocks.hydrateChatMessages).not.toHaveBeenCalled()
+
+    unmount(component)
+    component = undefined
+    seedBookmarkDatabase(true)
+    withTestDatabaseWrite(() => {
+      getDatabase().characters[0].chats[0].message.push({
+        chatId: 'message-old',
+        role: 'char',
+        data: 'Duplicate stable message id',
+      } as never)
+    })
+
+    component = mount(BookmarkList, { target })
+    await tick()
+    expect(target.querySelector('[data-risu-bookmark-id]')).toBeNull()
   })
 })

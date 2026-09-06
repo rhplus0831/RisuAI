@@ -1,9 +1,20 @@
+import { createHash } from 'node:crypto'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
-import type { Chat, Database, character, loreBook } from '../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
-import type { RisuModule } from '../../../src/ts/process/modules'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+  FastifyLoreBook as loreBook,
+} from '../src/prompt/serverTypes.js'
+import type { PromptMessage } from '../src/prompt/promptMessage.js'
+import type { ServerModule as RisuModule } from '../src/prompt/moduleDescriptors.js'
 import { createTriggerVarEngine, type TriggerVarEngine } from '../src/prompt/triggerVars.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
+import { openDatabase } from '../src/db.js'
+import { assetPath, getAssetMetadataById, listInlayCatalogEntries } from '../src/repository.js'
 import {
   createLuaExecBudget,
   isBlockedAddress,
@@ -134,8 +145,8 @@ function makeRuntime(
   return { ctx, engine }
 }
 
-function rows(...contents: string[]): OpenAIChat[] {
-  return contents.map((content) => ({ role: 'user', content }) as OpenAIChat)
+function rows(...contents: string[]): PromptMessage[] {
+  return contents.map((content) => ({ role: 'user', content }) as PromptMessage)
 }
 
 // A short exec limit keeps the runaway tests fast.
@@ -157,7 +168,7 @@ describe('server Lua runtime — pure edit-hook dispatch', () => {
 
     expect(result.error).toBeUndefined()
     expect(result.timedOut).toBe(false)
-    const out = result.res as OpenAIChat[]
+    const out = result.res as PromptMessage[]
     expect(out).toHaveLength(2)
     expect(out[0].content).toBe('alpha')
     expect(out[1].content).toBe('omega [EDIT]')
@@ -182,6 +193,77 @@ describe('server Lua runtime — pure edit-hook dispatch', () => {
     expect(engine.varChanged).toBe(true)
   })
 
+  it('returns lightweight chat fields and a bounded recent-chat array', async () => {
+    const chat = makeChat({
+      message: [
+        { role: 'user', data: 'older', time: 41 },
+        { role: 'char', data: 'latest' },
+      ] as Chat['message'],
+    })
+    const { ctx } = makeRuntime({ chat })
+    const code = `
+      function onStart(id)
+        return json.encode({
+          firstData = getChatData(id, 0),
+          lastRole = getChatRole(id, -1),
+          missingData = getChatData(id, 99),
+          missingRole = getChatRole(id, 99),
+          recent = getRecentChats(id, 1.9)
+        })
+      end
+    `
+
+    const result = await runServerLua({ code, mode: 'start' }, ctx)
+
+    expect(result.error).toBeUndefined()
+    expect(JSON.parse(result.res as string)).toEqual({
+      firstData: 'older',
+      lastRole: 'char',
+      missingData: '',
+      missingRole: '',
+      recent: [{ role: 'char', data: 'latest', time: 0 }],
+    })
+  })
+
+  it('keeps unchanged setters nil and does not mark state changed or stop generation', async () => {
+    const { ctx, engine } = makeRuntime({
+      scriptstate: { $same: 'value', $__sameState: '"value"' },
+    })
+    const code = `
+      function onStart(id)
+        local chatResult = setChatVar(id, 'same', 'value')
+        local stateResult = setState(id, 'sameState', 'value')
+        local changedResult = setStateChanged(id, 'sameState', 'value')
+        return type(chatResult) .. '|' .. type(stateResult) .. '|' .. type(changedResult)
+      end
+    `
+
+    const result = await runServerLua({ code, mode: 'start' }, ctx)
+
+    expect(result.res).toBe('nil|nil|nil')
+    expect(result.stopSending).toBe(false)
+    expect(engine.varChanged).toBe(false)
+  })
+
+  it('returns true only when the changed setter variants write a new value', async () => {
+    const { ctx, engine } = makeRuntime()
+    const code = `
+      function onStart(id)
+        local chatChanged = setChatVarChanged(id, 'mood', 'curious')
+        local stateChanged = setStateChanged(id, 'turns', 7)
+        return tostring(chatChanged) .. '|' .. tostring(stateChanged)
+      end
+    `
+
+    const result = await runServerLua({ code, mode: 'start' }, ctx)
+
+    expect(result.res).toBe('true|true')
+    expect(result.stopSending).toBe(false)
+    expect(engine.getVar('mood')).toBe('curious')
+    expect(engine.getVar('__turns')).toBe('7')
+    expect(engine.varChanged).toBe(true)
+  })
+
   it('gates setChatVar by access key — a forged id cannot write', async () => {
     const { ctx, engine } = makeRuntime()
     const code = `
@@ -193,6 +275,98 @@ describe('server Lua runtime — pure edit-hook dispatch', () => {
     await runServerLua({ code, mode: 'editRequest', data: rows('x') }, ctx)
     expect(engine.getVar('mood')).toBe('null')
     expect(engine.varChanged).toBe(false)
+  })
+})
+
+describe('server Lua runtime — character ownership', () => {
+  it.each(['character', undefined, null])('preserves character reads and writes with legacy type %j', async (type) => {
+    const char = makeChar()
+    // Legacy fixtures can retain a null/missing tag at this runtime boundary.
+    Object.assign(char, { type })
+    const { ctx } = makeRuntime({ char })
+    const result = await runServerLua(
+      {
+        code: `function onStart(id)
+          local before = getName(id)
+          setName(id, 'Renamed')
+          return before .. '|' .. getName(id) .. '|' .. getCharacterFirstMessage(id)
+        end`,
+        mode: 'start',
+      },
+      ctx,
+    )
+    expect(result.error).toBeUndefined()
+    expect(result.res).toBe('Tess|Renamed|Hi there.')
+    expect(char.name).toBe('Renamed')
+    expect(char.type).toBe(type)
+  })
+
+  it('does not grant character getters or setters to a simple edit owner', async () => {
+    const { ctx } = makeRuntime()
+    const simple = { type: 'simple' as const, chaId: 'simple-owner', name: 'Hidden' }
+    ctx.char = simple
+    const result = await runServerLua(
+      {
+        code: `function onStart(id)
+          setName(id, 'Renamed')
+          return getName(id) .. '|' .. getCharacterFirstMessage(id)
+        end`,
+        mode: 'start',
+      },
+      ctx,
+    )
+    expect(result.error).toBeUndefined()
+    expect(result.res).toBe('|')
+    expect(simple.name).toBe('Hidden')
+  })
+})
+
+describe('server Lua runtime — complete chat replacement contract', () => {
+  it('keeps only role/data and cannot introduce new speaker identities through setFullChat', async () => {
+    const { ctx } = makeRuntime({
+      chat: makeChat({ message: [{ role: 'char', data: 'before', saying: 'existing', name: 'Existing' }] }),
+    })
+    const result = await runServerLua(
+      {
+        code: `
+      listenEdit('editRequest', function(id, data, meta)
+        setFullChat(id, {
+          {role='char',data='replacement',saying='new-sibling',name='Injected name',future='extension'},
+          {role='user',data='question',saying='another-sibling'},
+        })
+        return data
+      end)
+    `,
+        mode: 'editRequest',
+        data: rows('request'),
+      },
+      ctx,
+    )
+    expect(result.error).toBeUndefined()
+    expect(ctx.chat.message).toEqual([
+      { role: 'char', data: 'replacement' },
+      { role: 'user', data: 'question' },
+    ])
+  })
+
+  it('rejects non-text complete chat replacements before mutating the working history', async () => {
+    const { ctx } = makeRuntime({ chat: makeChat({ message: [{ role: 'char', data: 'before' }] }) })
+    const before = structuredClone(ctx.chat.message)
+    const result = await runServerLua(
+      {
+        code: `
+      listenEdit('editRequest', function(id, data, meta)
+        setFullChat(id, {{role='char',data=42}})
+        return data
+      end)
+    `,
+        mode: 'editRequest',
+        data: rows('request'),
+      },
+      ctx,
+    )
+    expect(result.error).toContain('setFullChat expects text message records')
+    expect(ctx.chat.message).toEqual(before)
   })
 })
 
@@ -222,7 +396,7 @@ describe('server Lua runtime — request() egress guard (SSRF)', () => {
     }
   })
 
-  it('L23: blocks embedded-private IPv6 transition forms (mapped-hex / compatible / 6to4 / NAT64)', () => {
+  it('blocks embedded-private IPv6 transition forms (mapped-hex / compatible / 6to4 / NAT64)', () => {
     for (const blocked of [
       '::ffff:7f00:1', // IPv4-mapped loopback, hex form (dotted form was already unwrapped)
       '::ffff:a9fe:a9fe', // IPv4-mapped metadata IP, hex form
@@ -308,7 +482,7 @@ describe('server Lua runtime — request() egress guard (SSRF)', () => {
     expect(statuses[30]).toBe(429)
   })
 
-  it('L25: a blocked URL does not consume the egress budget', async () => {
+  it('a blocked URL does not consume the egress budget', async () => {
     const rate: RequestRateState = { count: 0, resetAt: 0 }
     const deps: EgressDeps = {
       lookup: async () => [{ address: '93.184.216.34', family: 4 }],
@@ -328,7 +502,21 @@ describe('server Lua runtime — request() egress guard (SSRF)', () => {
     expect(rate.count).toBe(1)
   })
 
-  it('L20: an abort mid-fetch rejects through serverLuaRequest instead of returning a synthetic 400', async () => {
+  it('enforces the response cap using UTF-8 bytes instead of decoded code units', async () => {
+    const rate: RequestRateState = { count: 0, resetAt: 0 }
+    const deps: EgressDeps = {
+      lookup: async () => [{ address: '93.184.216.34', family: 4 }],
+      // 1,000,001 two-byte characters are under the 2,000,000 code-unit cap
+      // but exceed its UTF-8 byte boundary.
+      fetchImpl: async () => ({ status: 200, data: 'é'.repeat(1_000_001) }),
+    }
+
+    const raw = await serverLuaRequest('https://example.test/multibyte', deps, rate)
+
+    expect(JSON.parse(raw)).toEqual({ status: 400, data: 'internal error' })
+  })
+
+  it('an abort mid-fetch rejects through serverLuaRequest instead of returning a synthetic 400', async () => {
     const controller = new AbortController()
     const rate: RequestRateState = { count: 0, resetAt: 0 }
     let seenSignal: AbortSignal | undefined
@@ -373,7 +561,7 @@ describe('server Lua runtime — request() binding + low-level gate', () => {
     // Low-level granted → request runs through the injected fetch.
     const granted = makeRuntime({ egress, rateState: { count: 0, resetAt: 0 } })
     const ok = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, granted.ctx)
-    expect((ok.res as OpenAIChat[])[0].content).toBe('204')
+    expect((ok.res as PromptMessage[])[0].content).toBe('204')
 
     // Low-level denied (edit-hook default) → request returns nil.
     const denied = makeRuntime({ egress, rateState: { count: 0, resetAt: 0 } })
@@ -381,7 +569,7 @@ describe('server Lua runtime — request() binding + low-level gate', () => {
       { code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: false },
       denied.ctx,
     )
-    expect((blocked.res as OpenAIChat[])[0].content).toBe('BLOCKED')
+    expect((blocked.res as PromptMessage[])[0].content).toBe('BLOCKED')
   })
 })
 
@@ -411,6 +599,26 @@ describe('server Lua runtime — low-level LLM bindings', () => {
             requestModel: 'script-aux-model',
           },
         },
+        {
+          id: 'character-script-debug',
+          name: 'Character Script Debug',
+          providerId: 'debug-echo',
+          modelId: 'debug-echo',
+          providerOptions: {
+            baseUrl: 'debug://character-script',
+            requestModel: 'character-script-model',
+          },
+        },
+        {
+          id: 'module-aux-debug',
+          name: 'Module Auxiliary Debug',
+          providerId: 'debug-echo',
+          modelId: 'debug-echo',
+          providerOptions: {
+            baseUrl: 'debug://module-aux',
+            requestModel: 'module-aux-model',
+          },
+        },
       ],
       modelRoleProfiles: {
         scriptMain: { mode: 'profile', profileId: 'script-main-debug' },
@@ -432,12 +640,82 @@ describe('server Lua runtime — low-level LLM bindings', () => {
     const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
 
     expect(result.error).toBeUndefined()
-    const payload = JSON.parse((result.res as OpenAIChat[])[0].content)
+    const payload = JSON.parse((result.res as PromptMessage[])[0].content)
     expect(payload).toMatchObject({
       provider: 'debug-echo',
       baseUrl: 'debug://script-aux',
       requestModel: 'script-aux-model',
     })
+  })
+
+  it('uses the active character script model override for LLM calls', async () => {
+    const char = makeChar({ scriptModelOverrides: { llmProfileId: 'character-script-debug' } })
+    const { ctx } = makeRuntime({ char, database: debugEchoDatabase() })
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        local res = LLM(id, {{ role = 'user', content = 'character prompt' }})
+        data[1].content = res.result
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
+
+    const payload = JSON.parse((result.res as PromptMessage[])[0].content)
+    expect(payload).toMatchObject({
+      baseUrl: 'debug://character-script',
+      requestModel: 'character-script-model',
+    })
+  })
+
+  it('uses the owning module override instead of the active character override', async () => {
+    const char = makeChar({ scriptModelOverrides: { axLlmProfileId: 'script-aux-debug' } })
+    const module = makeModule({ scriptModelOverrides: { axLlmProfileId: 'module-aux-debug' } })
+    const { ctx } = makeRuntime({
+      char,
+      database: { ...debugEchoDatabase(), modules: [module] },
+    })
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        local res = axLLM(id, {{ role = 'user', content = 'module prompt' }})
+        data[1].content = res.result
+        return data
+      end)
+    `
+
+    const result = await runServerLua(
+      {
+        code,
+        mode: 'editRequest',
+        data: rows('orig'),
+        lowLevelAccess: true,
+        source: { ownerType: 'module', ownerId: module.id, ownerName: module.name },
+      },
+      ctx,
+    )
+
+    const payload = JSON.parse((result.res as PromptMessage[])[0].content)
+    expect(payload).toMatchObject({
+      baseUrl: 'debug://module-aux',
+      requestModel: 'module-aux-model',
+    })
+  })
+
+  it('fails explicitly when a local script override references a missing profile', async () => {
+    const char = makeChar({ scriptModelOverrides: { llmProfileId: 'missing-script-profile' } })
+    const { ctx } = makeRuntime({ char, database: debugEchoDatabase() })
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        local res = LLM(id, {{ role = 'user', content = 'missing prompt' }})
+        data[1].content = res.result
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
+
+    expect((result.res as PromptMessage[])[0].content).toContain('missing script model profile')
+    expect((result.res as PromptMessage[])[0].content).toContain('missing-script-profile')
   })
 
   it('keeps axLLMMain denied without low-level access', async () => {
@@ -453,7 +731,7 @@ describe('server Lua runtime — low-level LLM bindings', () => {
     const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: false }, ctx)
 
     expect(result.error).toBeUndefined()
-    expect((result.res as OpenAIChat[])[0].content).toBe('DENIED')
+    expect((result.res as PromptMessage[])[0].content).toBe('DENIED')
   })
 
   it('routes LLM and simpleLLM through the scriptMain model role', async () => {
@@ -470,7 +748,7 @@ describe('server Lua runtime — low-level LLM bindings', () => {
     const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
 
     expect(result.error).toBeUndefined()
-    const [full, simple] = (result.res as OpenAIChat[])[0].content.split('\n---\n').map((part) => JSON.parse(part))
+    const [full, simple] = (result.res as PromptMessage[])[0].content.split('\n---\n').map((part) => JSON.parse(part))
     expect(full).toMatchObject({
       provider: 'debug-echo',
       baseUrl: 'debug://script-main',
@@ -481,6 +759,73 @@ describe('server Lua runtime — low-level LLM bindings', () => {
       baseUrl: 'debug://script-main',
       requestModel: 'script-main-model',
     })
+  })
+})
+
+describe('server Lua runtime — persona description', () => {
+  it('uses the selected persona row over stale legacy profile scalars', async () => {
+    const { ctx } = makeRuntime({
+      database: {
+        selectedPersonaId: 'persona-row',
+        selectedPersona: 0,
+        username: 'STALE NAME',
+        personaPrompt: 'STALE PROMPT',
+        personas: [
+          { id: 'persona-row', name: 'Canonical Name', icon: '', personaPrompt: 'CANONICAL PROMPT', note: '' },
+        ],
+      },
+    })
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        data[1].content = getPersonaName(id) .. '|' .. getPersonaDescription(id)
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig') }, ctx)
+
+    expect(result.error).toBeUndefined()
+    expect((result.res as PromptMessage[])[0].content).toBe('Canonical Name|CANONICAL PROMPT')
+  })
+
+  it('falls back to explicit legacy profile aliases when stable selection is missing', async () => {
+    const { ctx } = makeRuntime({
+      database: {
+        selectedPersonaId: 'missing-row',
+        selectedPersona: 0,
+        username: 'LEGACY NAME',
+        personaPrompt: 'LEGACY PROMPT',
+        personas: [{ id: 'persona-row', name: 'Wrong Row', icon: '', personaPrompt: 'WRONG PROMPT', note: '' }],
+      },
+    })
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        data[1].content = getPersonaName(id) .. '|' .. getPersonaDescription(id)
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig') }, ctx)
+
+    expect(result.error).toBeUndefined()
+    expect((result.res as PromptMessage[])[0].content).toBe('LEGACY NAME|LEGACY PROMPT')
+  })
+
+  it('returns the effective persona prompt expanded in the current character CBS scope', async () => {
+    const { ctx } = makeRuntime({
+      database: { personaPrompt: 'Persona {{user}} accompanies {{char}}.' },
+    })
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        data[1].content = getPersonaDescription(id)
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig') }, ctx)
+
+    expect(result.error).toBeUndefined()
+    expect((result.res as PromptMessage[])[0].content).toBe('Persona Operator accompanies Tess.')
   })
 })
 
@@ -523,7 +868,7 @@ describe('server Lua runtime — getLoreBooksMain', () => {
     const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig') }, ctx)
 
     expect(result.error).toBeUndefined()
-    const books = JSON.parse((result.res as OpenAIChat[])[0].content) as loreBook[]
+    const books = JSON.parse((result.res as PromptMessage[])[0].content) as loreBook[]
     expect(books.map((book) => book.id)).toEqual(['local-1', 'local-2', 'global-1', 'module-a-1'])
     expect(books.map((book) => book.content)).toEqual([
       'local Tess',
@@ -548,14 +893,254 @@ describe('server Lua runtime — getLoreBooksMain', () => {
     const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig') }, ctx)
 
     expect(result.error).toBeUndefined()
-    const books = JSON.parse((result.res as OpenAIChat[])[0].content) as loreBook[]
+    const books = JSON.parse((result.res as PromptMessage[])[0].content) as loreBook[]
     expect(books).toHaveLength(1)
     expect(books[0]).toMatchObject({
+      id: expect.any(String),
       comment: 'preset',
       content: 'added for Operator',
       insertorder: 7,
       key: 'preset-key',
     })
+    expect(books[0].id).not.toBe('')
+  })
+})
+
+describe('server Lua runtime — loadLoreBooks', () => {
+  it('returns activated lore as exact data/role rows in activation order', async () => {
+    const chat = makeChat({
+      localLore: [
+        lore({
+          id: 'local-active',
+          comment: 'local',
+          content: '@@role assistant\n  local {{char}}  ',
+          alwaysActive: true,
+          insertorder: 10,
+        }),
+        lore({
+          id: 'local-inactive',
+          comment: 'inactive',
+          content: 'must not appear',
+          key: 'missing-key',
+          insertorder: 15,
+        }),
+      ],
+    })
+    const module = makeModule({
+      id: 'module-a',
+      lorebook: [
+        lore({
+          id: 'module-active',
+          comment: 'module',
+          content: '@@role user\nmodule {{user}}',
+          alwaysActive: true,
+          insertorder: 30,
+        }),
+      ],
+    })
+    const char = makeChar({
+      chats: [chat],
+      globalLore: [
+        lore({
+          id: 'global-active',
+          comment: 'global',
+          content: 'global {{char}}',
+          alwaysActive: true,
+          insertorder: 20,
+        }),
+      ],
+    })
+    const { ctx } = makeRuntime({
+      chat,
+      char,
+      database: {
+        loreBookToken: 10_000,
+        modules: [module],
+        enabledModules: ['module-a'],
+      } as Partial<Database>,
+    })
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        data[1].content = json.encode(loadLoreBooks(id))
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
+
+    expect(result.error).toBeUndefined()
+    expect(JSON.parse((result.res as PromptMessage[])[0].content)).toEqual([
+      { data: 'local Tess', role: 'char' },
+      { data: 'global Tess', role: 'system' },
+      { data: 'module Operator', role: 'user' },
+    ])
+  })
+})
+
+describe('server Lua runtime — similarity', () => {
+  it('ranks values by the baseline dot-product similarity using the shared embedding contract', async () => {
+    const { ctx } = makeRuntime({
+      database: {
+        hypaModel: 'custom',
+        hypaCustomSettings: { url: 'https://embeddings.example/v1', key: 'test-key', model: 'test-model' },
+      },
+    })
+    ctx.luaSimilarity = {
+      embed: async ({ input }) => {
+        const vectors = input.map((value) => {
+          switch (value) {
+            case 'right':
+            case 'query':
+              return new Float32Array([1, 0])
+            case 'middle':
+              return new Float32Array([0.5, 0.5])
+            default:
+              return new Float32Array([0, 1])
+          }
+        })
+        return { model: 'test-model', vectors, dim: 2 }
+      },
+    }
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        local ranked = similarity(id, 'query', { 'left', 'right', 'middle' }):await()
+        data[1].content = ranked[1] .. ',' .. ranked[2] .. ',' .. ranked[3]
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
+
+    expect(result.error).toBeUndefined()
+    expect((result.res as PromptMessage[])[0].content).toBe('right,middle,left')
+  })
+
+  it('returns the baseline nil failure value when the embedding provider reaches its deadline', async () => {
+    const { ctx } = makeRuntime({
+      database: {
+        hypaModel: 'custom',
+        hypaCustomSettings: { url: 'https://embeddings.example/v1', key: 'test-key', model: 'test-model' },
+      },
+    })
+    ctx.luaSimilarity = {
+      deadlineMs: 10,
+      embed: async () => await new Promise<never>(() => undefined),
+    }
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        local ranked = similarity(id, 'query', { 'value' }):await()
+        data[1].content = ranked == nil and 'nil' or 'unexpected'
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
+
+    expect(result.error).toBeUndefined()
+    expect((result.res as PromptMessage[])[0].content).toBe('nil')
+  })
+})
+
+describe('server Lua runtime — generateImage', () => {
+  it('uses the configured image model, persists the image, and returns an inlay marker', async () => {
+    const { ctx } = makeRuntime({
+      database: {
+        sdProvider: 'stability',
+        stabilityModel: 'sd3-medium',
+        stabllityStyle: 'anime',
+      },
+    })
+    let receivedRequest: unknown
+    const imageBytes = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z8Z0AAAAASUVORK5CYII=',
+      'base64',
+    )
+    const assetId = createHash('sha256').update(imageBytes).digest('hex')
+    const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-lua-image-'))
+    const assetDb = openDatabase(dataDir)
+    ctx.requestHistoryDb = assetDb
+    ctx.assetDataDir = dataDir
+    ctx.luaImageGeneration = {
+      execute: async (request) => {
+        receivedRequest = request
+        return { bytes: imageBytes, contentType: 'image/png' }
+      },
+    }
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        data[1].content = generateImage(id, 'a lighthouse', 'fog'):await()
+        return data
+      end)
+    `
+
+    try {
+      const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
+
+      expect(result.error).toBeUndefined()
+      expect(receivedRequest).toEqual({
+        provider: 'stability',
+        credential: { source: 'stored' },
+        prompt: 'a lighthouse',
+        negativePrompt: 'fog',
+        model: 'sd3-medium',
+        style: 'anime',
+      })
+      expect((result.res as PromptMessage[])[0].content).toBe(`{{inlay::${assetId}}}`)
+      const asset = getAssetMetadataById(assetDb, assetId)
+      expect(asset).toMatchObject({ id: assetId, contentType: 'image/png', size: imageBytes.length })
+      expect(existsSync(assetPath(dataDir, asset!))).toBe(true)
+      expect(listInlayCatalogEntries(assetDb)).toContainEqual(
+        expect.objectContaining({ assetId, name: assetId, type: 'image' }),
+      )
+    } finally {
+      assetDb.close()
+      rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+
+  it('returns the baseline failure string when image generation fails', async () => {
+    const { ctx } = makeRuntime({ database: { sdProvider: 'dalle', dallEQuality: 'standard' } })
+    ctx.luaImageGeneration = {
+      execute: async () => {
+        throw new Error('upstream unavailable')
+      },
+    }
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        data[1].content = generateImage(id, 'a lighthouse'):await()
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
+
+    expect(result.error).toBeUndefined()
+    expect((result.res as PromptMessage[])[0].content).toBe('Error: Image generation failed')
+  })
+})
+
+describe('server Lua runtime — unsupported server APIs reject loudly', () => {
+  it.each([
+    {
+      api: 'multimodal LLM',
+      call: "LLM(id, { { role = 'user', content = 'look' } }, true)",
+    },
+    { api: 'getCharacterImage', call: 'getCharacterImage(id)' },
+    { api: 'getPersonaImage', call: 'getPersonaImage(id)' },
+  ])('$api raises a script-facing unsupported-server error', async ({ call }) => {
+    const { ctx } = makeRuntime()
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        ${call}
+        data[1].content = 'SHOULD_NOT_APPLY'
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
+
+    expect(result.error).toContain('Lua API is unsupported on the server')
+    expect(result.res).toBeUndefined()
   })
 })
 
@@ -593,8 +1178,8 @@ describe('server Lua runtime — execution limit', () => {
   })
 })
 
-describe('server Lua runtime — request-signal abort (L20)', () => {
-  it('L20: an already-aborted request signal returns immediately without dispatching', async () => {
+describe('server Lua runtime — request-signal abort', () => {
+  it('an already-aborted request signal returns immediately without dispatching', async () => {
     const { ctx, engine } = makeRuntime()
     const controller = new AbortController()
     controller.abort()
@@ -613,7 +1198,7 @@ describe('server Lua runtime — request-signal abort (L20)', () => {
     expect(engine.getVar('mood')).toBe('null')
   })
 
-  it('L20: aborting mid-dispatch cancels in-flight hook work well before the exec limit', async () => {
+  it('aborting mid-dispatch cancels in-flight hook work well before the exec limit', async () => {
     const { ctx, engine } = makeRuntime()
     const controller = new AbortController()
     ctx.signal = controller.signal
@@ -639,7 +1224,7 @@ describe('server Lua runtime — request-signal abort (L20)', () => {
     expect(engine.varChanged).toBe(false)
   })
 
-  it('L20: aborting while a Lua request() egress fetch is in flight cancels the run promptly', async () => {
+  it('aborting while a Lua request() egress fetch is in flight cancels the run promptly', async () => {
     const controller = new AbortController()
     let fetchStarted = false
     const egress: EgressDeps = {
@@ -713,8 +1298,8 @@ describe('server Lua runtime — interactive APIs fail explicitly', () => {
   })
 })
 
-describe('server Lua runtime — aggregate exec budget (L19)', () => {
-  it('L19: an exhausted aggregate budget short-circuits before booting an engine', async () => {
+describe('server Lua runtime — aggregate exec budget', () => {
+  it('an exhausted aggregate budget short-circuits before booting an engine', async () => {
     const { ctx } = makeRuntime()
     ctx.execBudget = { totalMs: 100, usedMs: 100 }
     const before = readLuaEngineAcquireStats()
@@ -728,7 +1313,7 @@ describe('server Lua runtime — aggregate exec budget (L19)', () => {
     expect(after.pooledAcquires + after.freshAcquires).toBe(before.pooledAcquires + before.freshAcquires)
   })
 
-  it('L19: runaway hooks across a trigger loop are bounded by the aggregate budget, not per-run limits', async () => {
+  it('runaway hooks across a trigger loop are bounded by the aggregate budget, not per-run limits', async () => {
     const chat = makeChat()
     const runawayEffect = {
       comment: 'runaway',
@@ -769,8 +1354,8 @@ describe('server Lua runtime — aggregate exec budget (L19)', () => {
   })
 })
 
-describe('server Lua runtime — pre-warmed engines (L21)', () => {
-  it('L21: a default-limit run serves from the warm pool without a hot-path boot, output identical', async () => {
+describe('server Lua runtime — pre-warmed engines', () => {
+  it('a default-limit run serves from the warm pool without a hot-path boot, output identical', async () => {
     // Prime: this run may boot inline, but its completion refills the pool.
     const code = `
       listenEdit('editRequest', function(id, data, meta)
@@ -804,10 +1389,10 @@ describe('server Lua runtime — pre-warmed engines (L21)', () => {
         : result.runtimeMetricFields,
     })
     expect(withoutDuration(pooled)).toEqual(withoutDuration(fresh))
-    expect((pooled.res as OpenAIChat[])[1].content).toBe('omega [EDIT]')
+    expect((pooled.res as PromptMessage[])[1].content).toBe('omega [EDIT]')
   })
 
-  it('L21: pooled engines never leak Lua globals between runs (per-call isolation preserved)', async () => {
+  it('pooled engines never leak Lua globals between runs (per-call isolation preserved)', async () => {
     const readMarker = `
       listenEdit('editRequest', function(id, data, meta)
         data[1].content = tostring(MARKER)
@@ -820,16 +1405,16 @@ describe('server Lua runtime — pre-warmed engines (L21)', () => {
       { code: `MARKER = 'leaked'\n${readMarker}`, mode: 'editRequest', data: rows('x') },
       writer.ctx,
     )
-    expect((wrote.res as OpenAIChat[])[0].content).toBe('leaked')
+    expect((wrote.res as PromptMessage[])[0].content).toBe('leaked')
 
     // …and run B (a pooled engine under the same default limit) must not see it.
     await settleLuaEnginePool()
     const reader = makeRuntime()
     const read = await runServerLua({ code: readMarker, mode: 'editRequest', data: rows('x') }, reader.ctx)
-    expect((read.res as OpenAIChat[])[0].content).toBe('nil')
+    expect((read.res as PromptMessage[])[0].content).toBe('nil')
   })
 
-  it('L21: a fresh boot never overlaps an active run with a pending Lua continuation', async () => {
+  it('a fresh boot never overlaps an active run with a pending Lua continuation', async () => {
     // Engine boots mutate the shared wasm module; booting while another engine
     // sits in an in-flight `:await()` continuation crashes wasmoon. Run A
     // suspends inside request():await(); run B uses a custom exec limit, so it
@@ -908,12 +1493,12 @@ describe('server Lua runtime — pre-warmed engines (L21)', () => {
     expect(resultA.error).toBeUndefined()
     expect(a.engine.getVar('aDone')).toBe('yes')
     expect(resultB.error).toBeUndefined()
-    expect((resultB.res as OpenAIChat[])[0].content).toBe('b [B]')
+    expect((resultB.res as PromptMessage[])[0].content).toBe('b [B]')
     const after = readLuaEngineAcquireStats()
     expect(after.freshAcquires).toBe(duringA.freshAcquires + 1)
   })
 
-  it('L21: a pooled engine never overlaps an active run with a pending Lua continuation', async () => {
+  it('a pooled engine never overlaps an active run with a pending Lua continuation', async () => {
     // Regression for two output Lua hooks that both wait on low-level host fns
     // such as axLLM(): even when a second prewarmed engine is available, it must
     // not run beside the suspended continuation.
@@ -997,13 +1582,70 @@ describe('server Lua runtime — pre-warmed engines (L21)', () => {
     expect(resultA.error).toBeUndefined()
     expect(a.engine.getVar('aDone')).toBe('yes')
     expect(resultB.error).toBeUndefined()
-    expect((resultB.res as OpenAIChat[])[0].content).toBe('b [B]')
+    expect((resultB.res as PromptMessage[])[0].content).toBe('b [B]')
     const after = readLuaEngineAcquireStats()
     expect(after.pooledAcquires).toBe(duringA.pooledAcquires + 1)
   })
 })
 
 describe('server Lua runtime — runLuaEditTrigger entry', () => {
+  it.each([
+    { mode: 'editRequest', body: "return 'wrong channel'" },
+    { mode: 'editRequest', body: "return {{role='user',content=42}}" },
+    { mode: 'editOutput', body: 'return 42' },
+  ])('rejects malformed $mode edit-hook outputs at the Lua boundary: $body', async ({ mode, body }) => {
+    const chat = makeChat()
+    const char = makeChar({
+      chats: [chat],
+      triggerscript: [
+        {
+          comment: 'bad output',
+          type: 'request',
+          conditions: [],
+          effect: [{ type: 'triggerlua', code: `listenEdit('${mode}', function(id,data,meta) ${body} end)` }],
+        },
+      ],
+    })
+    const { ctx } = makeRuntime({ chat, char })
+    const { char: _char, ...editCtx } = ctx
+    const result =
+      mode === 'editOutput'
+        ? runLuaEditTrigger(char, mode, 'original', undefined, editCtx)
+        : runLuaEditTrigger(char, mode, rows('original'), undefined, editCtx)
+    await expect(result).rejects.toThrow('Lua edit hook expected')
+  })
+
+  it('preserves valid prompt-row extension data and null/no-result fallback', async () => {
+    const chat = makeChat()
+    const char = makeChar({
+      chats: [chat],
+      triggerscript: [
+        {
+          comment: 'output',
+          type: 'request',
+          conditions: [],
+          effect: [
+            {
+              type: 'triggerlua',
+              code: `
+      listenEdit('editRequest', function(id,data,meta)
+        data[1].future = {label='preserved'}
+        return data
+      end)
+      listenEdit('editOutput', function(id,data,meta) return nil end)
+    `,
+            },
+          ],
+        },
+      ],
+    })
+    const { ctx } = makeRuntime({ chat, char })
+    const { char: _char, ...editCtx } = ctx
+    const output = await runLuaEditTrigger(char, 'editRequest', rows('valid'), undefined, editCtx)
+    expect(output[0]).toEqual({ role: 'user', content: 'valid', future: { label: 'preserved' } })
+    expect(await runLuaEditTrigger(char, 'editOutput', 'unchanged', undefined, editCtx)).toBe('unchanged')
+  })
+
   it('runs a character triggerlua editRequest hook over the rows', async () => {
     const chat = makeChat()
     const char = makeChar({

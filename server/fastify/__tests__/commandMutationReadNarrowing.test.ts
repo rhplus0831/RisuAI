@@ -6,12 +6,12 @@ import { StatementSync } from 'node:sqlite'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { openDatabase } from '../src/db.js'
-import { loadPersisted, loadPersistedForChatMutation } from '../src/repository.js'
+import { loadChatHydration, loadPersisted, loadPersistedForChatMutation } from '../src/repository.js'
 import { applyTargetedCommandMutation } from '../src/commands/mutations.js'
 import { normalizeAllCharacterChats } from '../src/commands/chats.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import { assertScopedLoadOnHotPath, withServerLoadInstrumentation } from './helpers/loadCostHarness.js'
-import { buildLargeCorpusFixture } from '../../../src/ts/__tests__/largeCorpusFixture.js'
+import { buildLargeCorpusFixture } from '../../../test/fixtures/largeCorpusFixture.js'
 
 // Command-mutation read narrowing: targeted message/scriptstate/generation
 // command routes locate one chat row and mutate it (or write the message store
@@ -149,8 +149,8 @@ function readSettingsRecord(): Record<string, unknown> {
   }
 }
 
-describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture', () => {
-  it('M3/L5/L6: a scriptstate PATCH performs zero whole-corpus payload reads', async () => {
+describe('command-mutation read narrowing on the large-corpus fixture', () => {
+  it('a scriptstate PATCH performs zero whole-corpus payload reads', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)
 
@@ -233,6 +233,24 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     await runScopedModuleDefinitionCommand('triggers')
   })
 
+  it('character module-link commands load only the exact character row and modules collection', async () => {
+    const fixture = buildLargeCorpusFixture()
+    const revision = await importDatabase(fixture.database)
+    const { result: loadRun, readCountByTable } = await withSqliteSelectReadInstrumentation(() =>
+      withServerLoadInstrumentation(() =>
+        command('POST', `/api/v1/commands/characters/${fixture.hot.characterId}/modules/reorder`, {
+          baseRevision: revision,
+          moduleIds: ['corpus-module-1'],
+        }),
+      ),
+    )
+
+    expect(loadRun.result.statusCode, JSON.stringify(loadRun.result.json())).toBe(200)
+    expect(loadRun.corpusLoads.map((load) => load.table)).toEqual(['modules'])
+    expect(loadRun.loadCountByTable).toEqual({ modules: 1 })
+    expect(readCountByTable).toEqual({ schema_version: 1, settings: 1, modules: 1, characters: 1 })
+  })
+
   it('compact definition mutations retain exact character and module-scoped read budgets', async () => {
     const fixture = buildLargeCorpusFixture()
     let revision = await importDatabase(fixture.database)
@@ -280,7 +298,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     await runModulePatch('triggers')
   })
 
-  it('H2: chat-create performs zero whole-corpus message/hypa reads while writing only the new transcript', async () => {
+  it('chat-create performs zero whole-corpus message/hypa reads while writing only the new transcript', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)
     const targetCharacterId = fixture.hot.characterId
@@ -353,9 +371,24 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     expect(hotAfter.map((message) => message.chatId)).toEqual(existingHotMessages.map((message) => message.chatId))
   })
 
-  it('M5: character PATCH repairs and writes the target row without whole-corpus reads', async () => {
+  it('character PATCH writes the target row without filling unrelated legacy defaults', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)
+
+    const setupDb = openDatabase(harness.dataDir)
+    try {
+      const row = setupDb.prepare('SELECT data_json FROM characters WHERE id = ?').get(fixture.hot.characterId) as {
+        data_json: string
+      }
+      const character = JSON.parse(row.data_json) as Record<string, unknown>
+      delete character.creatorNotes
+      character.opaqueOwnerField = { preserve: ['target', 1] }
+      setupDb
+        .prepare('UPDATE characters SET data_json = ? WHERE id = ?')
+        .run(JSON.stringify(character), fixture.hot.characterId)
+    } finally {
+      setupDb.close()
+    }
 
     const res = await assertScopedLoadOnHotPath(() =>
       command('PATCH', `/api/v1/commands/characters/${fixture.hot.characterId}`, {
@@ -380,11 +413,14 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
       const target = db.prepare('SELECT data_json FROM characters WHERE id = ?').get(fixture.hot.characterId) as {
         data_json: string
       }
-      expect(JSON.parse(target.data_json)).toMatchObject({
+      const patched = JSON.parse(target.data_json) as Record<string, unknown>
+      expect(patched).toMatchObject({
         chaId: fixture.hot.characterId,
         name: 'M5 renamed character',
         desc: 'target row only',
+        opaqueOwnerField: { preserve: ['target', 1] },
       })
+      expect(patched).not.toHaveProperty('creatorNotes')
       const sibling = db.prepare('SELECT data_json FROM characters WHERE id = ?').get('corpus-char-1') as {
         data_json: string
       }
@@ -394,7 +430,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     }
   })
 
-  it('M5: chat PATCH without modules uses chatScopedRead and preserves selected chat state', async () => {
+  it('chat PATCH without modules uses chatScopedRead and preserves selected chat state', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)
 
@@ -443,7 +479,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     }
   })
 
-  it('M5: chat PATCH takes the explicit broad fallback only for patch.modules', async () => {
+  it('chat PATCH takes the explicit broad fallback only for patch.modules', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)
 
@@ -511,7 +547,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     }
   })
 
-  it('L13: single-key plugin-storage PUT/DELETE skip database loads while bulk merge still reads current storage', async () => {
+  it('single-key plugin-storage PUT/DELETE skip database loads while bulk merge still reads current storage', async () => {
     const fixture = buildLargeCorpusFixture()
     let revision = await importDatabase(fixture.database)
 
@@ -560,7 +596,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     }
   })
 
-  it('M3: settings commands read only the settings row on extracted SQLite state', async () => {
+  it('settings commands read only settings plus the explicitly owned Hypa collection', async () => {
     const fixture = buildLargeCorpusFixture()
     let revision = await importDatabase({
       ...fixture.database,
@@ -585,21 +621,26 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
       withServerLoadInstrumentation(() =>
         command('PATCH', '/api/v1/commands/settings/memory', {
           baseRevision: revision,
-          patch: { hypaV3Presets: [{ name: 'request-preset' }] },
+          patch: {
+            selectedHypaV3PresetId: 'request-preset',
+            hypaV3Presets: [{ id: 'request-preset', name: 'request-preset', settings: {} }],
+          },
         }),
       ),
     )
     expect(memoryRun.result.result.statusCode).toBe(200)
-    expect(memoryRun.result.corpusLoadCount).toBe(0)
-    expect(memoryRun.result.loadCountByTable.hypa_v3_presets ?? 0).toBe(0)
-    expectSettingsCommandReadOnlySettings(memoryRun.readCountByTable)
+    expect(memoryRun.result.corpusLoadCount).toBe(1)
+    expectCollectionLoadOnlyTables(memoryRun.result.loadCountByTable, ['hypa_v3_presets'])
+    expectCollectionCommandReadOnlyTables(memoryRun.readCountByTable, ['hypa_v3_presets'])
 
     const db = openDatabase(harness.dataDir)
     try {
       const rows = db.prepare('SELECT data_json FROM hypa_v3_presets ORDER BY position').all() as Array<{
         data_json: string
       }>
-      expect(rows.map((row) => JSON.parse(row.data_json))).toEqual([{ name: 'request-preset' }])
+      expect(rows.map((row) => JSON.parse(row.data_json))).toEqual([
+        { id: 'request-preset', name: 'request-preset', settings: {} },
+      ])
     } finally {
       db.close()
     }
@@ -618,7 +659,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     expectSettingsCommandReadOnlySettings(promptRun.readCountByTable)
   })
 
-  it('M3: settings scoped read falls back broad for legacy embedded settings rows', async () => {
+  it('settings scoped read falls back broad for legacy embedded settings rows', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)
 
@@ -756,7 +797,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     })
   })
 
-  it('L11: collection commands read only settings plus requested collection tables', async () => {
+  it('collection commands read only settings plus requested collection tables', async () => {
     const fixture = buildLargeCorpusFixture()
     let revision = await importDatabase(fixture.database)
 
@@ -770,7 +811,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
       const { result: loadRun, readCountByTable } = await withSqliteSelectReadInstrumentation(() =>
         withServerLoadInstrumentation(() => command(method, url, payload)),
       )
-      expect(loadRun.result.statusCode).toBe(200)
+      expect(loadRun.result.statusCode, JSON.stringify(loadRun.result.json())).toBe(200)
       expectCollectionCommandReadOnlyTables(readCountByTable, expectedTables)
       expectCollectionLoadOnlyTables(loadRun.loadCountByTable, expectedLoadTables)
       const body = loadRun.result.json() as Record<string, unknown>
@@ -808,7 +849,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
       'POST',
       '/api/v1/commands/personas',
       { baseRevision: revision, persona: { id: 'l11-persona', name: 'L11 Persona' } },
-      ['personas'],
+      ['personas', 'modules'],
     )
 
     await runScopedCollectionCommand(
@@ -843,6 +884,20 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     )
 
     await runScopedCollectionCommand(
+      'PATCH',
+      '/api/v1/commands/modules/corpus-module-1',
+      { baseRevision: revision, patch: { name: 'L11 Module' } },
+      ['modules'],
+    )
+
+    await runScopedCollectionCommand(
+      'PUT',
+      '/api/v1/commands/modules/corpus-module-1/lorebooks',
+      { baseRevision: revision, entries: [] },
+      ['modules'],
+    )
+
+    await runScopedCollectionCommand(
       'POST',
       '/api/v1/commands/plugins',
       {
@@ -854,13 +909,14 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
           realArg: {},
           customLink: [],
           argMeta: {},
+          version: '3.0',
         },
       },
       ['plugins'],
     )
   })
 
-  it('L11: collection scoped reads fall back broad for unrelated embedded settings rows', async () => {
+  it('collection scoped reads fall back broad for unrelated embedded settings rows', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)
 
@@ -892,7 +948,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     expect(loadCountByTable.characters ?? 0).toBeGreaterThanOrEqual(1)
   })
 
-  it('M3/L5/L6: the full message lifecycle stays scoped (append, patch, delete, truncate, replace, generation-result)', async () => {
+  it('the full message lifecycle stays scoped (append, patch, delete, truncate, replace, generation-result)', async () => {
     const fixture = buildLargeCorpusFixture()
     let revision = await importDatabase(fixture.database)
     const chatId = fixture.hot.chatId
@@ -1054,6 +1110,363 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
       expect(exactChat.generationSettings).toStrictEqual(degradedGenerationSettings)
     } finally {
       db.close()
+    }
+  })
+
+  it('single-chat commands preserve noncanonical target metadata and sibling rows', async () => {
+    const fixture = buildLargeCorpusFixture()
+    const revision = await importDatabase(fixture.database)
+    const db = openDatabase(harness.dataDir)
+    try {
+      const siblingId = fixture.characters[0].chats[1].id
+      const siblingBefore = db.prepare('SELECT rowid, data_json FROM chats WHERE id = ?').get(siblingId) as {
+        rowid: number
+        data_json: string
+      }
+      const sibling = JSON.parse(siblingBefore.data_json) as Record<string, unknown>
+      sibling.folderId = 'orphan-folder'
+      sibling.opaqueOwnerField = { keep: true }
+      sibling.generationSettings = {
+        configured: 'legacy',
+        sidebarToggles: { keep: 'on', invalid: 17 },
+        unknown: { nested: true },
+      }
+      const siblingJson = JSON.stringify(sibling)
+      db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(siblingJson, siblingId)
+
+      const targetBefore = db.prepare('SELECT rowid, data_json FROM chats WHERE id = ?').get(fixture.hot.chatId) as {
+        rowid: number
+        data_json: string
+      }
+      const target = JSON.parse(targetBefore.data_json) as Record<string, unknown>
+      target.folderId = 'orphan-target-folder'
+      target.opaqueOwnerField = { keep: ['target', 2] }
+      target.generationSettings = {
+        configured: 'legacy',
+        sidebarToggles: { keep: 'on', invalid: 17 },
+        unknown: { nested: true },
+      }
+      target.scriptstate = {}
+      db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(JSON.stringify(target), fixture.hot.chatId)
+
+      const expectedTarget = {
+        ...target,
+        scriptstate: { '$sibling-proof': 'target-only' },
+      }
+
+      const assertSiblingStable = () => {
+        const siblingAfter = db.prepare('SELECT rowid, data_json FROM chats WHERE id = ?').get(siblingId) as {
+          rowid: number
+          data_json: string
+        }
+        expect(siblingAfter.rowid).toBe(siblingBefore.rowid)
+        expect(siblingAfter.data_json).toBe(siblingJson)
+      }
+      const assertTargetMetadataStable = () => {
+        const targetAfter = db.prepare('SELECT rowid, data_json FROM chats WHERE id = ?').get(fixture.hot.chatId) as {
+          rowid: number
+          data_json: string
+        }
+        expect(targetAfter.rowid).toBe(targetBefore.rowid)
+        expect(JSON.parse(targetAfter.data_json)).toStrictEqual(expectedTarget)
+      }
+
+      let response = await command('PATCH', `/api/v1/commands/chats/${fixture.hot.chatId}/scriptstate`, {
+        baseRevision: revision,
+        patch: { '$sibling-proof': 'target-only' },
+      })
+      expect(response.statusCode, response.body).toBe(200)
+      let nextRevision = response.json().revision as number
+      assertSiblingStable()
+      assertTargetMetadataStable()
+
+      response = await command('POST', `/api/v1/commands/chats/${fixture.hot.chatId}/messages`, {
+        baseRevision: nextRevision,
+        message: { role: 'user', data: 'target-only message', chatId: 'target-only-message' },
+      })
+      expect(response.statusCode, response.body).toBe(200)
+      nextRevision = response.json().revision as number
+      assertSiblingStable()
+      assertTargetMetadataStable()
+
+      response = await command('POST', `/api/v1/commands/chats/${fixture.hot.chatId}/generation-result`, {
+        baseRevision: nextRevision,
+        generationResult: {
+          message: {
+            role: 'char',
+            data: 'target-only generation',
+            chatId: 'target-only-generation',
+            generationInfo: { generationId: 'target-only-generation' },
+          },
+        },
+      })
+      expect(response.statusCode, response.body).toBe(200)
+      assertSiblingStable()
+      assertTargetMetadataStable()
+    } finally {
+      db.close()
+    }
+  })
+
+  it('ordinary scoped mutations reject damaged target rows instead of repairing them', async () => {
+    const fixture = buildLargeCorpusFixture()
+    const revision = await importDatabase(fixture.database)
+    const db = openDatabase(harness.dataDir)
+    try {
+      const characterRow = db.prepare('SELECT data_json FROM characters WHERE id = ?').get(fixture.hot.characterId) as {
+        data_json: string
+      }
+      const character = JSON.parse(characterRow.data_json) as Record<string, unknown>
+      const damagedCharacter = { ...character }
+      delete damagedCharacter.chaId
+      const damagedCharacterJson = JSON.stringify(damagedCharacter)
+      db.prepare('UPDATE characters SET data_json = ? WHERE id = ?').run(damagedCharacterJson, fixture.hot.characterId)
+
+      const characterPatch = await command('PATCH', `/api/v1/commands/characters/${fixture.hot.characterId}`, {
+        baseRevision: revision,
+        patch: { name: 'must not repair' },
+      })
+      expect(characterPatch.statusCode).toBe(400)
+      expect(characterPatch.json().error).toBe('character.chaId must be a non-empty string')
+      expect(
+        (
+          db.prepare('SELECT data_json FROM characters WHERE id = ?').get(fixture.hot.characterId) as {
+            data_json: string
+          }
+        ).data_json,
+      ).toBe(damagedCharacterJson)
+      db.prepare('UPDATE characters SET data_json = ? WHERE id = ?').run(
+        characterRow.data_json,
+        fixture.hot.characterId,
+      )
+
+      const chatRow = db.prepare('SELECT data_json FROM chats WHERE id = ?').get(fixture.hot.chatId) as {
+        data_json: string
+      }
+      const damagedChat = JSON.parse(chatRow.data_json) as Record<string, unknown>
+      delete damagedChat.note
+      const damagedChatJson = JSON.stringify(damagedChat)
+      db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(damagedChatJson, fixture.hot.chatId)
+
+      const scriptstatePatch = await command('PATCH', `/api/v1/commands/chats/${fixture.hot.chatId}/scriptstate`, {
+        baseRevision: revision,
+        patch: { $flag: 'must not repair' },
+      })
+      expect(scriptstatePatch.statusCode).toBe(400)
+      expect(scriptstatePatch.json().error).toBe('chat.note must be a string')
+      expect(
+        (db.prepare('SELECT data_json FROM chats WHERE id = ?').get(fixture.hot.chatId) as { data_json: string })
+          .data_json,
+      ).toBe(damagedChatJson)
+      db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(chatRow.data_json, fixture.hot.chatId)
+
+      const messageId = `corpus-msg-0-0-0`
+      const messageRow = db.prepare('SELECT json FROM messages WHERE uid = ? AND alternate = 0').get(messageId) as {
+        json: string
+      }
+      const damagedMessage = JSON.parse(messageRow.json) as Record<string, unknown>
+      damagedMessage.role = 'legacy-invalid'
+      const damagedMessageJson = JSON.stringify(damagedMessage)
+      db.prepare('UPDATE messages SET role = ?, json = ? WHERE uid = ? AND alternate = 0').run(
+        'legacy-invalid',
+        damagedMessageJson,
+        messageId,
+      )
+
+      const messagePatch = await command('PATCH', `/api/v1/commands/messages/${messageId}`, {
+        baseRevision: revision,
+        patch: { data: 'must not coerce' },
+      })
+      expect(messagePatch.statusCode).toBe(400)
+      expect(messagePatch.json().error).toBe('message.role must be user or char')
+      expect(
+        (db.prepare('SELECT json FROM messages WHERE uid = ? AND alternate = 0').get(messageId) as { json: string })
+          .json,
+      ).toBe(damagedMessageJson)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('ordinary collection and Agent commands leave malformed persisted owners byte-identical', async () => {
+    const fixture = buildLargeCorpusFixture()
+    fixture.database.botPresets = [
+      { id: 'preset-a', name: 'Preset A' },
+      { id: 'preset-b', name: 'Preset B' },
+    ]
+    fixture.database.botPresetsId = 0
+    fixture.database.currentPluginProvider = ''
+    fixture.database.plugins = [
+      {
+        name: 'plugin-a',
+        script: '',
+        arguments: {},
+        realArg: {},
+        customLink: [],
+        argMeta: {},
+        version: '3.0',
+      },
+      {
+        name: 'plugin-b',
+        script: '',
+        arguments: {},
+        realArg: {},
+        customLink: [],
+        argMeta: {},
+        version: '3.0',
+      },
+    ]
+    const revision = await importDatabase(fixture.database)
+    const db = openDatabase(harness.dataDir)
+    try {
+      const eventCount = () =>
+        (db.prepare('SELECT COUNT(*) AS count FROM command_events').get() as { count: number }).count
+      const beforeEvents = eventCount()
+
+      const presetRows = db
+        .prepare('SELECT position, data_json FROM bot_presets ORDER BY position')
+        .all() as unknown as Array<{
+        position: number
+        data_json: string
+      }>
+      const damagedPreset = { ...(JSON.parse(presetRows[1].data_json) as Record<string, unknown>), id: 'preset-a' }
+      const damagedPresetJson = JSON.stringify(damagedPreset)
+      db.prepare('UPDATE bot_presets SET data_json = ? WHERE position = 1').run(damagedPresetJson)
+      const presetPatch = await command('PATCH', '/api/v1/commands/presets/preset-a', {
+        baseRevision: revision,
+        patch: { name: 'must not repair presets' },
+      })
+      expect(presetPatch.statusCode).toBe(400)
+      expect(presetPatch.json().error).toBe('Duplicate botPresets id: preset-a')
+      expect(
+        (db.prepare('SELECT data_json FROM bot_presets WHERE position = 1').get() as { data_json: string }).data_json,
+      ).toBe(damagedPresetJson)
+      db.prepare('UPDATE bot_presets SET data_json = ? WHERE position = 1').run(presetRows[1].data_json)
+
+      const promptRow = db.prepare('SELECT data_json FROM prompt_presets WHERE position = 0').get() as {
+        data_json: string
+      }
+      const damagedPromptPreset = JSON.parse(promptRow.data_json) as Record<string, unknown>
+      const damagedPromptItems = damagedPromptPreset.promptTemplate as Array<Record<string, unknown>>
+      delete damagedPromptItems[0].id
+      const damagedPromptJson = JSON.stringify(damagedPromptPreset)
+      db.prepare('UPDATE prompt_presets SET data_json = ? WHERE position = 0').run(damagedPromptJson)
+      const promptCreate = await command('POST', '/api/v1/commands/prompt-items', {
+        baseRevision: revision,
+        promptPresetId: 'corpus-prompt-preset-0',
+        promptItem: { id: 'must-not-create', type: 'plain', text: 'must not repair prompts' },
+      })
+      expect(promptCreate.statusCode).toBe(400)
+      expect(promptCreate.json().error).toContain('promptTemplate[0].id must be a non-empty string')
+      expect(
+        (db.prepare('SELECT data_json FROM prompt_presets WHERE position = 0').get() as { data_json: string })
+          .data_json,
+      ).toBe(damagedPromptJson)
+      db.prepare('UPDATE prompt_presets SET data_json = ? WHERE position = 0').run(promptRow.data_json)
+
+      const pluginRows = db
+        .prepare('SELECT position, data_json FROM plugins ORDER BY position')
+        .all() as unknown as Array<{
+        position: number
+        data_json: string
+      }>
+      const damagedPlugin = { ...(JSON.parse(pluginRows[1].data_json) as Record<string, unknown>), name: 'plugin-a' }
+      const damagedPluginJson = JSON.stringify(damagedPlugin)
+      db.prepare('UPDATE plugins SET data_json = ? WHERE position = 1').run(damagedPluginJson)
+      const pluginPatch = await command('PATCH', '/api/v1/commands/plugins/plugin-a', {
+        baseRevision: revision,
+        patch: { enabled: true },
+      })
+      expect(pluginPatch.statusCode).toBe(400)
+      expect(pluginPatch.json().error).toBe('Duplicate plugins id: plugin-a')
+      expect(
+        (db.prepare('SELECT data_json FROM plugins WHERE position = 1').get() as { data_json: string }).data_json,
+      ).toBe(damagedPluginJson)
+      db.prepare('UPDATE plugins SET data_json = ? WHERE position = 1').run(pluginRows[1].data_json)
+
+      const settingsRow = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      const damagedSettings = JSON.parse(settingsRow.data_json) as Record<string, unknown>
+      damagedSettings.agents = {}
+      const damagedSettingsJson = JSON.stringify(damagedSettings)
+      db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(damagedSettingsJson)
+      const agentCreate = await command('POST', '/api/v1/commands/agents', {
+        baseRevision: revision,
+        agent: {},
+      })
+      expect(agentCreate.statusCode).toBe(400)
+      expect(agentCreate.json().error).toBe('agents must be an array')
+      expect((db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }).data_json).toBe(
+        damagedSettingsJson,
+      )
+
+      expect(eventCount()).toBe(beforeEvents)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('prefers canonical character/chat/message rows over embedded payloads across reopen', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase(fixture.database)
+    const staleMessage = { role: 'char', data: 'stale embedded', chatId: 'stale-message' }
+    const staleHypa = { mainChunks: [{ text: 'stale embedded hypa' }] }
+    const canonicalChat = fixture.characters
+      .flatMap((character) => character.chats)
+      .find((chat) => chat.id === fixture.hot.chatId)!
+    const db = openDatabase(harness.dataDir)
+    const staleDatabase = {
+      characters: [
+        {
+          chaId: fixture.hot.characterId,
+          chats: [
+            {
+              id: fixture.hot.chatId,
+              message: [staleMessage],
+              hypaV3Data: staleHypa,
+            },
+          ],
+        },
+      ],
+    }
+    const settings = JSON.parse(
+      (db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }).data_json,
+    ) as Record<string, unknown>
+    settings.characters = staleDatabase.characters
+    db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+
+    const assertCanonicalWins = () => {
+      const persisted = loadPersisted(db, harness.dataDir).database as {
+        characters: Array<{ chats: Array<{ id: string; message?: unknown[] }> }>
+      }
+      const character = persisted.characters.find((candidate) =>
+        candidate.chats.some((chat) => chat.id === fixture.hot.chatId),
+      )!
+      const chat = character.chats.find((candidate) => candidate.id === fixture.hot.chatId)!
+      expect(chat.message).toBeUndefined()
+      const hydration = loadChatHydration(db, harness.dataDir, fixture.hot.chatId)
+      expect(hydration.message).toEqual(canonicalChat.message)
+      expect(hydration.hypaV3Data).toEqual(canonicalChat.hypaV3Data)
+    }
+
+    try {
+      assertCanonicalWins()
+    } finally {
+      db.close()
+    }
+
+    const reopened = openDatabase(harness.dataDir)
+    try {
+      const persisted = loadPersisted(reopened, harness.dataDir).database as {
+        characters: Array<{ chats: Array<{ id: string }> }>
+      }
+      expect(persisted.characters.flatMap((character) => character.chats).map((chat) => chat.id)).toContain(
+        fixture.hot.chatId,
+      )
+      const hydration = loadChatHydration(reopened, harness.dataDir, fixture.hot.chatId)
+      expect(hydration.message).toEqual(canonicalChat.message)
+      expect(hydration.hypaV3Data).toEqual(canonicalChat.hypaV3Data)
+    } finally {
+      reopened.close()
     }
   })
 

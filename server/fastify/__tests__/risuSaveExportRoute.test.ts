@@ -7,8 +7,10 @@ import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { decodeRisuSaveBlockEnvelope } from '../src/risuSave/blockCodec.js'
 import { decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
-import { classifyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
+import { classifyRisuSaveEnvelope, decodeLegacyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
+import { RISU_SERVER_DATA_KEY } from '../src/risuSave/portableMetadata.js'
 import { writePersistedWithMessages } from '../src/repository.js'
+import { addAlternateMessage } from '../src/messageStore.js'
 import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
 
@@ -101,9 +103,10 @@ function persistExportableDatabase(dataDir: string): void {
         ],
         characterOrder: ['export-route-char'],
         botPresets: [{ id: 'preset-a', name: 'Preset A' }],
-        modules: [{ id: 'module-a', name: 'Module A' }],
+        moduleFolders: [{ id: 'folder-a', name: 'Writing' }],
+        modules: [{ id: 'module-a', name: 'Module A', folderId: 'folder-a' }],
         loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
-        plugins: [{ id: 'plugin-a', name: 'Plugin A' }],
+        plugins: [{ id: 'plugin-a', name: 'Plugin A', version: '3.0' }],
         pluginCustomStorage: { 'plugin-a:key': { assetId: ASSET_ID } },
       },
       assets: [{ id: ASSET_ID, ext: 'png', size: 12, contentType: 'image/png' }],
@@ -141,7 +144,7 @@ function authedInject(opts: Record<string, unknown>) {
   })
 }
 
-describe('Phase 9-8b repository .risu export route', () => {
+describe('repository .risu export route', () => {
   it('exports repository snapshots as downloadable RISUSAVE block bytes by default', async () => {
     persistExportableDatabase(harness.dataDir)
 
@@ -163,6 +166,8 @@ describe('Phase 9-8b repository .risu export route', () => {
     expect(decoded.database.pluginCustomStorage).toEqual({
       'plugin-a:key': { assetId: ASSET_ID },
     })
+    expect(decoded.database.moduleFolders).toEqual([{ id: 'folder-a', name: 'Writing' }])
+    expect(decoded.database.modules).toContainEqual(expect.objectContaining({ id: 'module-a', folderId: 'folder-a' }))
     expect(harness.commandEvents.list()).toEqual([
       {
         type: 'state.exported',
@@ -199,6 +204,90 @@ describe('Phase 9-8b repository .risu export route', () => {
     const decoded = decodeRisuSaveImportSnapshot(bytes)
     expect(decoded.envelope).toBe('legacy-raw')
     expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(ASSET_ID)
+  })
+
+  it('exports durable reroll candidates with their owning chat', async () => {
+    persistExportableDatabase(harness.dataDir)
+    const db = openDatabase(harness.dataDir)
+    try {
+      addAlternateMessage(db, 'export-route-chat', {
+        role: 'char',
+        data: 'portable reroll candidate',
+        chatId: 'export-route-alternate',
+      })
+    } finally {
+      db.close()
+    }
+
+    const exported = await authedInject({
+      method: 'GET',
+      url: '/api/v1/export/risusave?envelope=legacy-raw',
+    })
+
+    expect(exported.statusCode).toBe(200)
+    const decoded = decodeRisuSaveImportSnapshot(new Uint8Array(exported.rawPayload))
+    const chat = (decoded.database.characters as Array<{ chats: Array<Record<string, unknown>> }>)[0].chats[0]
+    expect(chat.alternates).toEqual([
+      {
+        role: 'char',
+        data: 'portable reroll candidate',
+        chatId: 'export-route-alternate',
+      },
+    ])
+  })
+
+  it.each([
+    ['/api/v1/export/risusave', 'blocks'],
+    ['/api/v1/export/risusave?envelope=legacy-raw', 'legacy'],
+  ] as const)('exports tombstones but no retry or push secrets through %s', async (url, envelope) => {
+    persistExportableDatabase(harness.dataDir)
+    const db = openDatabase(harness.dataDir)
+    try {
+      db.exec(`
+        INSERT INTO memory_legacy_summary_tombstones (summary_id, chat_id, deleted_at)
+        VALUES ('route-summary', 'route-chat', '2026-07-23T00:00:00.000Z');
+        INSERT INTO generation_finalization_retries (
+          generation_id, chat_id, mode, message_json, alternate_messages_json,
+          chat_var_mutations_json, status
+        ) VALUES (
+          'route-queue-secret', 'route-chat', 'send',
+          '{"role":"char","data":"route-queue-payload"}', '[]', '[]', 'terminal'
+        );
+        INSERT INTO push_subscriptions (endpoint, subscription_json)
+        VALUES (
+          'https://push.example/route-secret',
+          '{"endpoint":"https://push.example/route-secret","keys":{"auth":"route-push-auth"}}'
+        );
+      `)
+    } finally {
+      db.close()
+    }
+
+    const exported = await authedInject({ method: 'GET', url })
+    expect(exported.statusCode).toBe(200)
+    const bytes = new Uint8Array(exported.rawPayload)
+    const decoded = decodeRisuSaveImportSnapshot(bytes)
+    expect(decoded.portableMetadata).toEqual({
+      version: 1,
+      memoryLegacySummaryTombstones: [
+        {
+          summaryId: 'route-summary',
+          chatId: 'route-chat',
+          deletedAt: '2026-07-23T00:00:00.000Z',
+        },
+      ],
+    })
+    expect(decoded.database).not.toHaveProperty(RISU_SERVER_DATA_KEY)
+
+    const serializedEnvelope =
+      envelope === 'legacy'
+        ? JSON.stringify(decodeLegacyRisuSaveEnvelope(bytes))
+        : JSON.stringify(decodeRisuSaveBlockEnvelope(bytes).blocks.map((block) => block.content))
+    expect(serializedEnvelope).toContain(RISU_SERVER_DATA_KEY)
+    expect(serializedEnvelope).not.toContain('route-queue-secret')
+    expect(serializedEnvelope).not.toContain('route-queue-payload')
+    expect(serializedEnvelope).not.toContain('https://push.example/route-secret')
+    expect(serializedEnvelope).not.toContain('route-push-auth')
   })
 
   it('normalizes missing resource families before block export', async () => {

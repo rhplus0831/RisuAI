@@ -10,7 +10,7 @@ import type {
   OpenAiCompatibleImageGenerationRequest,
   StabilityImageGenerationRequest,
   WaveSpeedImageGenerationRequest,
-} from '../../../src/ts/server/imageGenerationProtocol.js'
+} from '@risuai/protocol/image-generation-operation'
 import { readBoundedBodyJson } from './generation/body.js'
 import { MASKED_PROVIDER_SECRET } from './providerSecrets.js'
 import { createTimeoutController } from './proxy.js'
@@ -233,6 +233,9 @@ async function executeNovelAi(
 ): Promise<GeneratedImage> {
   const configuredUrl = readString(settings.NAIImgUrl) || 'https://image.novelai.net/ai/generate-image'
   const url = validateConfiguredEndpoint(configuredUrl)
+  if (request.credential.source === 'stored' && !isOfficialNovelAiEndpoint(url)) {
+    throw invalidConfiguration()
+  }
   const response = await requestUpstream(
     url,
     {
@@ -249,6 +252,15 @@ async function executeNovelAi(
   )
   const archive = await readBoundedBodyBytes(response, context.maxUpstreamBytes)
   return extractNovelAiImage(archive, context.maxImageBytes)
+}
+
+function isOfficialNovelAiEndpoint(value: string): boolean {
+  const url = new URL(value)
+  return (
+    url.protocol === 'https:' &&
+    url.hostname.toLowerCase() === 'image.novelai.net' &&
+    (url.port === '' || url.port === '443')
+  )
 }
 
 async function executeDallE(

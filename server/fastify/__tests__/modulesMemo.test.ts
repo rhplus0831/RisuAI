@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import type { Chat, Database, character } from '../../../src/ts/storage/database.svelte'
-import type { RisuModule } from '../../../src/ts/process/modules'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+} from '../src/prompt/serverTypes.js'
+import type { ServerModule as RisuModule } from '../src/prompt/moduleDescriptors.js'
 import { getActiveModules } from '../src/prompt/modules.js'
 
 /**
@@ -33,7 +37,7 @@ function makeChat(overrides: Partial<Chat> = {}): Chat {
   return { id: 'chat-1', message: [], ...overrides } as unknown as Chat
 }
 
-describe('L1 getActiveModules per-assembly memo', () => {
+describe('getActiveModules per-assembly memo', () => {
   it('returns the same resolved array for repeat calls with identical inputs', () => {
     const db = makeDatabase()
     const char = makeCharacter({ modules: ['mod-b'] } as Partial<character>)

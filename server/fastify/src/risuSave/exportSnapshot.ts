@@ -3,11 +3,22 @@ import { RisuSaveBlockType, encodeRisuSaveBlockEnvelope } from './blockCodec.js'
 import { type LegacyRisuSaveEnvelopeKind, encodeLegacyRisuSaveEnvelope } from './legacyEnvelopeCodec.js'
 import { normalizeRisuSaveSnapshotDatabase } from './importSnapshot.js'
 import { type Persisted, ValidationError, loadPersistedWithMessages } from '../repository.js'
+import { listLegacySummaryTombstones } from '../memoryLegacyImport.js'
+import {
+  GREETING_TRANSLATIONS_PORTABLE_FIELD,
+  listSourceValidGreetingTranslations,
+} from '../translation/greetingTranslationStore.js'
+import {
+  RISU_SERVER_DATA_KEY,
+  emptyRisuServerPortableMetadata,
+  type RisuServerPortableMetadata,
+} from './portableMetadata.js'
 
 type JsonRecord = Record<string, unknown>
 
 export interface RisuSaveExportSnapshot {
   database: JsonRecord
+  portableMetadata: RisuServerPortableMetadata
 }
 
 export interface RisuSaveBlockExportOptions {
@@ -28,15 +39,46 @@ export function buildRepositoryRisuSaveExportSnapshot(db: DatabaseSync, dataDir:
   // Messages live in SQLite; hydrate them back so exported
   // CHARACTER_WITH_CHAT blocks carry the full chat history.
   const persisted = loadPersistedWithMessages(db, dataDir)
-  return buildRisuSaveExportSnapshotFromPersisted(persisted)
+  return buildRisuSaveExportSnapshotFromPersisted(
+    persisted,
+    {
+      version: 1,
+      memoryLegacySummaryTombstones: listLegacySummaryTombstones(db),
+    },
+    db,
+  )
 }
 
-export function buildRisuSaveExportSnapshotFromPersisted(persisted: Persisted): RisuSaveExportSnapshot {
+export function buildRisuSaveExportSnapshotFromPersisted(
+  persisted: Persisted,
+  portableMetadata: RisuServerPortableMetadata = emptyRisuServerPortableMetadata(),
+  db?: DatabaseSync,
+): RisuSaveExportSnapshot {
   if (persisted.database === null || persisted.database === undefined) {
     throw new ValidationError('database payload missing')
   }
+  const database = normalizeRisuSaveSnapshotDatabase(persisted.database)
+  if (db) materializeGreetingTranslations(db, database)
   return {
-    database: normalizeRisuSaveSnapshotDatabase(persisted.database),
+    database,
+    portableMetadata,
+  }
+}
+
+function materializeGreetingTranslations(db: DatabaseSync, database: JsonRecord): void {
+  if (!Array.isArray(database.characters)) return
+  for (const character of database.characters) {
+    if (!character || typeof character !== 'object' || Array.isArray(character)) continue
+    const record = character as JsonRecord
+    if (typeof record.chaId !== 'string') continue
+    delete record[GREETING_TRANSLATIONS_PORTABLE_FIELD]
+    const rows = listSourceValidGreetingTranslations(db, record.chaId, record)
+    if (rows.length === 0) continue
+    record[GREETING_TRANSLATIONS_PORTABLE_FIELD] = rows.map((row) => ({
+      greetingIndex: row.greetingIndex,
+      settingsHash: row.settingsHash,
+      translation: row.translation,
+    }))
   }
 }
 
@@ -60,14 +102,24 @@ export function encodeRisuSaveLegacyExportSnapshot(
   snapshot: RisuSaveExportSnapshot,
   kind: LegacyRisuSaveEnvelopeKind = 'legacy-compressed',
 ): Uint8Array {
-  return encodeLegacyRisuSaveEnvelope(snapshot.database, kind)
+  return encodeLegacyRisuSaveEnvelope(buildPortableDatabase(snapshot), kind)
 }
 
 export function encodeRisuSaveBlockExportSnapshot(
   snapshot: RisuSaveExportSnapshot,
   options: RisuSaveBlockExportOptions = {},
 ): Uint8Array {
-  return encodeRisuSaveBlockEnvelope(buildRisuSaveExportBlocks(snapshot.database, options))
+  return encodeRisuSaveBlockEnvelope(buildRisuSaveExportBlocks(buildPortableDatabase(snapshot), options))
+}
+
+function buildPortableDatabase(snapshot: RisuSaveExportSnapshot): JsonRecord {
+  return {
+    ...snapshot.database,
+    [RISU_SERVER_DATA_KEY]: {
+      version: snapshot.portableMetadata.version,
+      memoryLegacySummaryTombstones: snapshot.portableMetadata.memoryLegacySummaryTombstones.map((row) => ({ ...row })),
+    },
+  }
 }
 
 export function buildRisuSaveExportBlocks(

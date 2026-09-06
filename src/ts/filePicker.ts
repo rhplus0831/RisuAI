@@ -1,5 +1,5 @@
 import { isIOS } from './platform'
-import { getDatabase } from './storage/database.svelte'
+import { settingsResourceState } from './server/resourceState.svelte'
 
 export interface SelectSingleFileOptions {
   onFileSelected?: (file: File) => void
@@ -44,7 +44,12 @@ export function selectFileByDom(allowedExtensions: string[], multiple: 'multiple
     }
     fileInput.type = 'file'
     fileInput.multiple = multiple === 'multiple'
-    const acceptAll = getDatabase().allowAllExtentionFiles || isIOS() || allowedExtensions[0] === '*'
+    const acceptAll =
+      (settingsResourceState.status !== 'error' &&
+        settingsResourceState.groupStatuses.advanced === 'ready' &&
+        settingsResourceState.value.allowAllExtentionFiles === true) ||
+      isIOS() ||
+      allowedExtensions[0] === '*'
     if (!acceptAll) {
       if (allowedExtensions && allowedExtensions.length) {
         fileInput.accept = allowedExtensions.map((ext) => `.${ext}`).join(',')

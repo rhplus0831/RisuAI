@@ -8,7 +8,32 @@ vi.mock('../modules', async (importActual) => {
 import { setDatabase, type Database, type character } from '../../storage/database.svelte'
 import type { OpenAIChat } from '../index.svelte'
 import type { PromptItem } from '../prompt'
-import { preflightTemplateTokens, type PromptUnformatedSlots } from '../promptBudget/preflightTemplateTokens'
+import {
+  preflightTemplateTokens as preflightTemplateTokensWithDatabase,
+  type PromptUnformatedSlots,
+} from '../promptBudget/preflightTemplateTokens'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
+
+function preflightTemplateTokens(
+  promptTemplate: Parameters<typeof preflightTemplateTokensWithDatabase>[0],
+  usingPromptTemplate: boolean,
+  unformated: PromptUnformatedSlots,
+  tokenizer: Parameters<typeof preflightTemplateTokensWithDatabase>[3],
+  currentChar: character,
+  positionParser: (text: string, loc: string) => string,
+  descriptionBaseIndex?: number,
+) {
+  return preflightTemplateTokensWithDatabase(
+    promptTemplate,
+    usingPromptTemplate,
+    unformated,
+    tokenizer,
+    currentChar,
+    positionParser,
+    getDatabase(),
+    descriptionBaseIndex,
+  )
+}
 
 class FakeTokenizer {
   /** Returns the content-length of the message so token math is predictable. */
@@ -102,6 +127,18 @@ describe('preflightTemplateTokens - no template path', () => {
       passThroughPositionParser,
     )
     expect(result.addedTokens).toBe(0)
+  })
+
+  it('budgets the character depth prompt that final rendering inserts', async () => {
+    const result = await preflightTemplateTokens(
+      null,
+      false,
+      emptyUnformated(),
+      new FakeTokenizer() as never,
+      makeChar({ depth_prompt: { depth: 1, prompt: 'Depth {{char}}' } }),
+      passThroughPositionParser,
+    )
+    expect(result.addedTokens).toBe('Depth Test'.length)
   })
 })
 

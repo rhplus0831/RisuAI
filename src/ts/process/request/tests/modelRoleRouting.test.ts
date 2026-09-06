@@ -18,13 +18,17 @@ vi.mock('../../../model/modelProfileResolver', async (importActual) => {
 })
 
 import { resolveModelProfile } from '../../../model/modelProfileResolver'
+import { createDefaultModelRoleProfiles } from '../../../model/modelProfileRecords'
+import { settingsResourceState } from '../../../server/resourceState.svelte'
 import { language } from '../../../../lang'
 import { setDatabase, type Database } from '../../../storage/database.svelte'
 import { requestChatData, requestChatDataMain } from '../request'
 import { applyParameters } from '../shared'
 
-function seedDb(overrides: Partial<Database> = {}): void {
-  setDatabase({
+let databaseOwner: Database
+
+function seedDb(overrides: Partial<Database> = {}): Database {
+  databaseOwner = {
     aiModel: 'echo_model',
     subModel: 'echo_model',
     modelRoles: {},
@@ -36,7 +40,29 @@ function seedDb(overrides: Partial<Database> = {}): void {
     genTime: 1,
     extractJson: '',
     ...overrides,
-  } as unknown as Database)
+  } as unknown as Database
+  setDatabase(databaseOwner)
+  return databaseOwner
+}
+
+function applyOwnedParameters(
+  data: Parameters<typeof applyParameters>[0],
+  parameters: Parameters<typeof applyParameters>[1],
+  rename: Parameters<typeof applyParameters>[2],
+  mode: Parameters<typeof applyParameters>[3],
+  options: Omit<Parameters<typeof applyParameters>[4], 'database'>,
+) {
+  return applyParameters(data, parameters, rename, mode, { ...options, database: databaseOwner })
+}
+
+function durableRoleProfiles(
+  role: keyof Database['modelRoleProfiles'],
+  profileId: string,
+): Database['modelRoleProfiles'] {
+  return {
+    ...createDefaultModelRoleProfiles(),
+    [role]: { mode: 'profile', profileId },
+  }
 }
 
 function installSuccessFetch(): ReturnType<typeof vi.fn> {
@@ -60,14 +86,52 @@ afterEach(() => {
 })
 
 describe('requestChatDataMain model-role routing', () => {
+  it('fails closed while the implicit settings owner is incomplete', async () => {
+    settingsResourceState.groupStatuses.providers = 'loading'
+    const fetchSpy = installSuccessFetch()
+
+    const result = await requestChatDataMain(
+      {
+        formated: [{ role: 'user', content: 'hi' }],
+        bias: {},
+      },
+      'model',
+    )
+
+    expect(result).toEqual({ type: 'fail', result: 'Request settings are not ready.' })
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(vi.mocked(resolveModelProfile)).not.toHaveBeenCalled()
+  })
+
+  it('uses an explicit request snapshot while the live settings owner reloads', async () => {
+    const database = databaseOwner
+    settingsResourceState.groupStatuses.providers = 'loading'
+    const fetchSpy = installSuccessFetch()
+
+    const result = await requestChatDataMain(
+      {
+        database,
+        formated: [{ role: 'user', content: 'hi' }],
+        bias: {},
+        staticModel: 'echo_model',
+      },
+      'model',
+    )
+
+    expect(result).toEqual({ type: 'success', result: 'ok' })
+    expect(fetchSpy).toHaveBeenCalledOnce()
+  })
+
   it('resolves scriptAux through the profile resolver before plugin blocking', async () => {
-    seedDb({
-      modelRoles: { scriptAux: 'pluginmodel:::blocked' } as Database['modelRoles'],
+    const database = seedDb({
+      modelProfiles: [{ id: 'script-aux-profile', name: 'Script aux', modelId: 'pluginmodel:::blocked' }],
+      modelRoleProfiles: durableRoleProfiles('scriptAux', 'script-aux-profile'),
     })
     const fetchSpy = installSuccessFetch()
 
     const result = await requestChatDataMain(
       {
+        database,
         formated: [{ role: 'user', content: 'hi' }],
         bias: {},
         blockPlugins: true,
@@ -154,8 +218,17 @@ describe('requestChatDataMain model-role routing', () => {
   })
 
   it('sends legacy fallback model ids as staticModel attempts', async () => {
-    seedDb({
+    const database = seedDb({
       modelRoles: { memory: 'role-memory-model' } as Database['modelRoles'],
+      modelProfiles: [
+        {
+          id: 'memory-profile',
+          name: 'Memory',
+          modelId: 'role-memory-model',
+          fallbacks: [{ mode: 'model', modelId: 'fallback-memory-model' }],
+        },
+      ],
+      modelRoleProfiles: durableRoleProfiles('memory', 'memory-profile'),
       fallbackModels: {
         model: [],
         memory: ['fallback-memory-model'],
@@ -181,6 +254,7 @@ describe('requestChatDataMain model-role routing', () => {
 
     const result = await requestChatData(
       {
+        database,
         formated: [{ role: 'user', content: 'hi' }],
         bias: {},
       },
@@ -207,7 +281,16 @@ describe('requestChatDataMain model-role routing', () => {
       description: 'Get character information.',
       inputSchema: { type: 'object' },
     }
-    seedDb({
+    const database = seedDb({
+      modelProfiles: [
+        {
+          id: 'chat-main-profile',
+          name: 'Chat main',
+          modelId: 'echo_model',
+          fallbacks: [{ mode: 'model', modelId: 'fallback-model' }],
+        },
+      ],
+      modelRoleProfiles: durableRoleProfiles('chatMain', 'chat-main-profile'),
       fallbackModels: {
         model: ['fallback-model'],
         memory: [],
@@ -236,6 +319,7 @@ describe('requestChatDataMain model-role routing', () => {
     await expect(
       requestChatData(
         {
+          database,
           formated: [{ role: 'user', content: 'hi' }],
           bias: {},
           tools: [tool],
@@ -254,6 +338,7 @@ describe('requestChatDataMain model-role routing', () => {
   it('sends durable fallback profile refs as profile fallback attempts', async () => {
     seedDb({
       aiModel: 'gpt-5',
+      providerCredentials: [{ id: 'credential-fallback', name: 'Fallback', type: 'apiKey', apiKey: 'fallback-key' }],
       modelProfiles: [
         {
           id: 'primary-profile',
@@ -269,8 +354,8 @@ describe('requestChatDataMain model-role routing', () => {
           name: 'Fallback Profile',
           modelId: 'openrouter',
           providerOptions: {
+            credentialId: 'credential-fallback',
             requestModel: 'fallback/provider-model',
-            apiKey: 'fallback-key',
           },
           runtimeOptions: {
             maxResponse: 123,
@@ -317,12 +402,13 @@ describe('requestChatDataMain model-role routing', () => {
   it('uses a first-class profile override as the primary request target', async () => {
     seedDb({
       aiModel: 'echo_model',
+      providerCredentials: [{ id: 'credential-translator', name: 'Translator', type: 'apiKey', apiKey: 'step-key' }],
       modelProfiles: [
         {
           id: 'translator-step-profile',
           name: 'Translator Step',
           modelId: 'openrouter',
-          providerOptions: { requestModel: 'step/provider-model', apiKey: 'step-key' },
+          providerOptions: { requestModel: 'step/provider-model', credentialId: 'credential-translator' },
         },
       ],
       fallbackModels: {
@@ -354,6 +440,26 @@ describe('requestChatDataMain model-role routing', () => {
       staticModel: '',
       fallbackProfileId: 'translator-step-profile',
     })
+  })
+
+  it('does not silently fall back when a strict profile override is missing', async () => {
+    const fetchSpy = installSuccessFetch()
+
+    const result = await requestChatData(
+      {
+        formated: [{ role: 'user', content: 'hi' }],
+        bias: {},
+        profileIdOverride: 'missing-script-profile',
+        strictProfileIdOverride: true,
+      },
+      'scriptMain',
+    )
+
+    expect(result).toEqual({
+      type: 'fail',
+      result: 'Model profile not found or unavailable: missing-script-profile',
+    })
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 
   it('continues to raw model fallbacks when the active durable profile config is incomplete', async () => {
@@ -390,8 +496,17 @@ describe('requestChatDataMain model-role routing', () => {
   })
 
   it('keeps the primary model as the final empty staticModel attempt after resolver fallbacks fail', async () => {
-    seedDb({
+    const database = seedDb({
       modelRoles: { memory: 'role-memory-model' } as Database['modelRoles'],
+      modelProfiles: [
+        {
+          id: 'memory-primary-profile',
+          name: 'Memory primary',
+          modelId: 'role-memory-model',
+          fallbacks: [{ mode: 'model', modelId: 'fallback-memory-model' }],
+        },
+      ],
+      modelRoleProfiles: durableRoleProfiles('memory', 'memory-primary-profile'),
       fallbackModels: {
         model: [],
         memory: ['fallback-memory-model'],
@@ -422,6 +537,7 @@ describe('requestChatDataMain model-role routing', () => {
 
     const result = await requestChatData(
       {
+        database,
         formated: [{ role: 'user', content: 'hi' }],
         bias: {},
       },
@@ -438,8 +554,10 @@ describe('requestChatDataMain model-role routing', () => {
   })
 
   it('stops retrying responses that contain a banned character set at the configured limit', async () => {
-    seedDb({
+    const database = seedDb({
       banCharacterset: ['Han'],
+      modelProfiles: [{ id: 'chat-main-profile', name: 'Chat main', modelId: 'echo_model' }],
+      modelRoleProfiles: durableRoleProfiles('chatMain', 'chat-main-profile'),
       requestRetrys: 2,
     })
     const fetchSpy = vi.fn(async () => {
@@ -452,6 +570,7 @@ describe('requestChatDataMain model-role routing', () => {
 
     const result = await requestChatData(
       {
+        database,
         formated: [{ role: 'user', content: 'hi' }],
         bias: {},
       },
@@ -463,7 +582,16 @@ describe('requestChatDataMain model-role routing', () => {
   })
 
   it('moves to the next fallback after banned responses exhaust their retries', async () => {
-    seedDb({
+    const database = seedDb({
+      modelProfiles: [
+        {
+          id: 'chat-main-profile',
+          name: 'Chat main',
+          modelId: 'echo_model',
+          fallbacks: [{ mode: 'model', modelId: 'fallback-model' }],
+        },
+      ],
+      modelRoleProfiles: durableRoleProfiles('chatMain', 'chat-main-profile'),
       fallbackModels: {
         model: ['fallback-model'],
         memory: [],
@@ -492,6 +620,7 @@ describe('requestChatDataMain model-role routing', () => {
 
     const result = await requestChatData(
       {
+        database,
         formated: [{ role: 'user', content: 'hi' }],
         bias: {},
       },
@@ -503,8 +632,10 @@ describe('requestChatDataMain model-role routing', () => {
   })
 
   it('does not read a fallback bucket for the legacy submodel mode', async () => {
-    seedDb({
+    const database = seedDb({
       subModel: 'role-submodel',
+      modelProfiles: [{ id: 'chat-aux-profile', name: 'Chat aux', modelId: 'role-submodel' }],
+      modelRoleProfiles: durableRoleProfiles('chatAux', 'chat-aux-profile'),
       fallbackModels: {
         model: ['main-fallback-model'],
         submodel: ['submodel-fallback-model'],
@@ -525,6 +656,7 @@ describe('requestChatDataMain model-role routing', () => {
 
     const result = await requestChatData(
       {
+        database,
         formated: [{ role: 'user', content: 'hi' }],
         bias: {},
       },
@@ -560,10 +692,10 @@ describe('requestChatDataMain model-role routing', () => {
       },
     })
 
-    expect(applyParameters({}, ['temperature'], {}, 'scriptMain', { modelId: 'echo_model' })).toEqual({
+    expect(applyOwnedParameters({}, ['temperature'], {}, 'scriptMain', { modelId: 'echo_model' })).toEqual({
       temperature: 0.6,
     })
-    expect(applyParameters({}, ['temperature'], {}, 'scriptAux', { modelId: 'echo_model' })).toEqual({
+    expect(applyOwnedParameters({}, ['temperature'], {}, 'scriptAux', { modelId: 'echo_model' })).toEqual({
       temperature: 0.8,
     })
 
@@ -581,11 +713,131 @@ describe('requestChatDataMain model-role routing', () => {
       },
     })
 
-    expect(applyParameters({}, ['temperature'], {}, 'scriptMain', { modelId: 'echo_model' })).toEqual({
+    expect(applyOwnedParameters({}, ['temperature'], {}, 'scriptMain', { modelId: 'echo_model' })).toEqual({
       temperature: 0.3,
     })
-    expect(applyParameters({}, ['temperature'], {}, 'scriptAux', { modelId: 'echo_model' })).toEqual({
+    expect(applyOwnedParameters({}, ['temperature'], {}, 'scriptAux', { modelId: 'echo_model' })).toEqual({
       temperature: 0.2,
     })
+  })
+
+  it('uses resolved profile samplers instead of conflicting flat parameters', () => {
+    seedDb({
+      temperature: 91,
+      top_k: 91,
+      top_p: 0.91,
+      frequencyPenalty: 91,
+      PresensePenalty: 91,
+      reasoningEffort: 0,
+      thinkingTokens: 91,
+      verbosity: 0,
+    })
+
+    expect(
+      applyOwnedParameters(
+        {},
+        [
+          'temperature',
+          'top_k',
+          'top_p',
+          'frequency_penalty',
+          'presence_penalty',
+          'reasoning_effort',
+          'reasoning_effort_xhigh',
+          'thinking_tokens',
+          'verbosity',
+        ],
+        {},
+        'model',
+        {
+          modelId: 'gpt-5.5',
+          runtimeOptions: {
+            temperature: 0.42,
+            topK: 17,
+            topP: 0.43,
+            frequencyPenalty: 0.25,
+            presencePenalty: -0.5,
+            reasoningEffort: 3,
+            thinkingTokens: 2048,
+            verbosity: 2,
+          },
+        },
+      ),
+    ).toEqual({
+      temperature: 0.42,
+      top_k: 17,
+      top_p: 0.43,
+      frequency_penalty: 0.25,
+      presence_penalty: -0.5,
+      reasoning_effort: 'xhigh',
+      thinking_tokens: 2048,
+      verbosity: 'high',
+    })
+  })
+
+  it('keeps configured separate parameters ahead of resolved profile samplers', () => {
+    seedDb({
+      seperateParametersEnabled: true,
+      seperateParameters: {
+        memory: { temperature: 65, top_p: 0.66 },
+        emotion: {},
+        translate: {},
+        otherAx: {},
+        scriptMain: {},
+        scriptAux: {},
+        overrides: {},
+      },
+    })
+
+    expect(
+      applyOwnedParameters({}, ['temperature', 'top_p'], {}, 'memory', {
+        modelId: 'profile-memory',
+        runtimeOptions: { temperature: 0.42, topP: 0.43 },
+      }),
+    ).toEqual({ temperature: 0.65, top_p: 0.66 })
+  })
+
+  it('maps reasoning effort through none, min-medium, and xhigh capability tiers', () => {
+    seedDb({ reasoningEffort: -1 })
+    expect(
+      applyOwnedParameters({}, ['reasoning_effort', 'reasoning_effort_none'], {}, 'model', { modelId: 'gpt-5.1' }),
+    ).toEqual({ reasoning_effort: 'none' })
+
+    seedDb({ reasoningEffort: 0 })
+    expect(
+      applyOwnedParameters({}, ['reasoning_effort', 'reasoning_effort_min_medium'], {}, 'model', {
+        modelId: 'gpt-5.4-pro',
+      }),
+    ).toEqual({ reasoning_effort: 'medium' })
+
+    seedDb({ reasoningEffort: 3 })
+    expect(
+      applyOwnedParameters({}, ['reasoning_effort', 'reasoning_effort_xhigh'], {}, 'model', { modelId: 'gpt-5.5' }),
+    ).toEqual({ reasoning_effort: 'xhigh' })
+    expect(applyOwnedParameters({}, ['reasoning_effort'], {}, 'model', { modelId: 'gpt-5' })).toEqual({
+      reasoning_effort: 'high',
+    })
+  })
+
+  it('skips reasoning capability pseudo-parameters for separate-by-model values', () => {
+    seedDb({
+      seperateParametersEnabled: true,
+      seperateParametersByModel: true,
+      seperateParameters: {
+        memory: {},
+        emotion: {},
+        translate: {},
+        otherAx: {},
+        scriptMain: {},
+        scriptAux: {},
+        overrides: { 'gpt-5.5': { reasoning_effort: 3 } },
+      },
+    })
+
+    expect(
+      applyOwnedParameters({}, ['reasoning_effort', 'reasoning_effort_none', 'reasoning_effort_xhigh'], {}, 'model', {
+        modelId: 'gpt-5.5',
+      }),
+    ).toEqual({ reasoning_effort: 'xhigh' })
   })
 })

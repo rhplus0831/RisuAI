@@ -57,18 +57,13 @@ export const importRateLimit: RateLimitOptions = {
   timeWindow: MINUTE,
 }
 
-export const assetUploadRateLimit: RateLimitOptions = {
-  max: 120,
-  timeWindow: MINUTE,
-}
-
-export const assetBulkUploadRateLimit: RateLimitOptions = {
-  max: 30,
-  timeWindow: MINUTE,
-}
-
 export const assetExistsRateLimit: RateLimitOptions = {
-  max: 120,
+  max: 180,
+  timeWindow: MINUTE,
+}
+
+export const storageUsageRateLimit: RateLimitOptions = {
+  max: 10,
   timeWindow: MINUTE,
 }
 

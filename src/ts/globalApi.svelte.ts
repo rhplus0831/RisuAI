@@ -1,19 +1,12 @@
 import { checkNullish } from './util'
 import { sha256Hex } from './sha256Fallback'
 import { get } from 'svelte/store'
-import { type Database, defaultSdDataFunc, getDatabase, appVer, getCurrentCharacter } from './storage/database.svelte'
+import { type Chat, type character, type Database, defaultSdDataFunc, appVer } from './storage/database.svelte'
 import { checkRisuUpdate } from './update'
-import {
-  MobileGUI,
-  botMakerMode,
-  loadedStore,
-  LoadingStatusState,
-  selIdState,
-  reloadGuiDisplay,
-  bodyIntercepterStore,
-} from './stores.svelte'
-import { loadPlugins } from './plugins/plugins.svelte'
-import { alertError, alertMd, alertNormal, alertSelect, alertTOS, waitAlert } from './alert'
+import { reloadGuiDisplay, bodyIntercepterStore } from './stores.svelte'
+import { selIdState } from './stores/coreStores.svelte'
+import { isPluginRuntimeReady, loadPlugins } from './plugins/plugins.svelte'
+import { alertError, alertMd, alertNormal, alertSelect, waitAlert } from './alert'
 import { characterURLImport } from './characterCards'
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from './storage/defaultPrompts'
 import { AutoStorage } from './storage/autoStorage'
@@ -35,7 +28,7 @@ import {
 import { getNodeServerProxyAuth } from './storage/fastifyStorage'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './server/activeWriterSession'
 import { setCachedServerCommandRevision } from './server/commands'
-import { currentChatSelectionSnapshot, dispatchSelectChat } from './chatCommands'
+import { dispatchSelectChat } from './chatCommands'
 import {
   readServerAssetBytes,
   serverAssetContentType,
@@ -48,10 +41,18 @@ import {
   type ServerBackupProgress,
   type ServerBackupProgressCallback,
 } from './server/backups'
-import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { normalizeCharacterOrder } from './characterCommands'
 import { triggerOpenChatGenerationReattach } from './process/reattach'
 import { language } from '../lang'
+import { persistenceSavingState } from './server/persistenceActivity.svelte'
+import { getSelectedCharacterOwner, selectCharacterOwner } from './characterState'
+import {
+  charactersResourceState,
+  getCharacterResourceOwner,
+  getChatMetadataOwnerState,
+  settingsResourceState,
+} from './server/resourceState.svelte'
+import { getChatMessageOwnerState } from './server/chatMessageHydration.svelte'
 
 export { getFileSrc } from './fileSource'
 
@@ -71,7 +72,15 @@ interface fetchLog {
 
 let fetchLog: fetchLog[] = []
 
-export async function downloadFile(name: string, dat: Uint8Array | ArrayBuffer | string) {
+export interface DownloadFileOptions {
+  revokeObjectUrlAfterMs?: number | null
+}
+
+export async function downloadFile(
+  name: string,
+  dat: Uint8Array | ArrayBuffer | string,
+  options: DownloadFileOptions = {},
+) {
   if (typeof dat === 'string') {
     dat = Buffer.from(dat, 'utf-8')
   }
@@ -91,9 +100,12 @@ export async function downloadFile(name: string, dat: Uint8Array | ArrayBuffer |
 
   downloadURL(url, name)
 
-  setTimeout(() => {
-    URL.revokeObjectURL(url)
-  }, 10000)
+  const revokeObjectUrlAfterMs = options.revokeObjectUrlAfterMs === undefined ? 10000 : options.revokeObjectUrlAfterMs
+  if (revokeObjectUrlAfterMs !== null) {
+    setTimeout(() => {
+      URL.revokeObjectURL(url)
+    }, revokeObjectUrlAfterMs)
+  }
 }
 
 let fileCache: {
@@ -104,14 +116,30 @@ let fileCache: {
   res: [],
 }
 
+export const SERVER_ASSET_EXISTS_MAX_IDS = 1024
 const SERVER_ASSET_BULK_MAX_ITEMS = 32
 const SERVER_ASSET_BULK_MAX_RAW_BYTES = 32 * 1024 * 1024
 const SERVER_ASSET_BULK_BINARY_CONTENT_TYPE = 'application/vnd.risu.assets-bulk'
+export const SERVER_ASSET_HASH_CONCURRENCY = 4
+export const SERVER_ASSET_OPERATION_TIMEOUT_MS = 5 * 60 * 1000
+const SERVER_ASSET_RATE_LIMIT_MAX_RETRIES = 3
+const SERVER_ASSET_RATE_LIMIT_FALLBACK_DELAY_MS = 1000
 
 export interface AssetSaveInput {
   data: Uint8Array
   customId?: string
   fileName?: string
+}
+
+export type AssetSaveProgressCallback = (completed: number, total: number) => void
+
+export interface SaveAssetsOptions {
+  /**
+   * Reports inputs whose asset ids have been confirmed by the server. Supplying
+   * a callback uses independently acknowledged uploads so progress never gets
+   * ahead of persistence inside an otherwise opaque bulk request.
+   */
+  onProgress?: AssetSaveProgressCallback
 }
 
 interface PreparedServerAssetUpload {
@@ -143,15 +171,12 @@ export async function saveAsset(data: Uint8Array, customId: string = '', fileNam
   return uploadServerAsset(data, fileExtension)
 }
 
-export async function saveAssets(assets: readonly AssetSaveInput[]): Promise<string[]> {
+export async function saveAssets(
+  assets: readonly AssetSaveInput[],
+  options: SaveAssetsOptions = {},
+): Promise<string[]> {
   if (assets.length === 0) return []
-  const prepared = await Promise.all(
-    assets.map(async (asset) => ({
-      assetId: await sha256Hex(asset.data),
-      data: asset.data,
-      contentType: serverAssetContentType(assetExtensionFromFileName(asset.fileName ?? '')),
-    })),
-  )
+  const prepared = await prepareServerAssetUploads(assets)
   const missingIds = await findMissingServerAssetIds(prepared.map((asset) => asset.assetId))
   const missingUploads: PreparedServerAssetUpload[] = []
   const queuedMissingIds = new Set<string>()
@@ -161,28 +186,67 @@ export async function saveAssets(assets: readonly AssetSaveInput[]): Promise<str
     missingUploads.push(asset)
   }
 
-  for (const batch of chunkServerAssetUploads(missingUploads)) {
-    const uploadedIds = await uploadServerAssetsBatch(batch)
-    for (const [index, uploadedId] of uploadedIds.entries()) {
-      const expectedId = batch[index]?.assetId
-      if (uploadedId !== expectedId) {
-        throw new Error(`Server bulk asset upload returned unexpected asset id: ${uploadedId}`)
+  if (options.onProgress) {
+    const inputCountsByAssetId = new Map<string, number>()
+    for (const asset of prepared) {
+      inputCountsByAssetId.set(asset.assetId, (inputCountsByAssetId.get(asset.assetId) ?? 0) + 1)
+    }
+
+    let completed = 0
+    for (const [assetId, inputCount] of inputCountsByAssetId) {
+      if (!missingIds.has(assetId)) {
+        completed += inputCount
       }
     }
+    if (completed > 0) {
+      options.onProgress(completed, assets.length)
+    }
+
+    await uploadServerAssetsIndividually(missingUploads, (uploadedId) => {
+      completed += inputCountsByAssetId.get(uploadedId) ?? 0
+      options.onProgress?.(completed, assets.length)
+    })
+    return prepared.map((asset) => asset.assetId)
+  }
+
+  for (const batch of chunkServerAssetUploads(missingUploads)) {
+    const uploadedIds = await uploadServerAssetsBatch(batch)
+    validateServerAssetUploadIds(batch, uploadedIds)
   }
 
   return prepared.map((asset) => asset.assetId)
 }
 
+async function prepareServerAssetUploads(assets: readonly AssetSaveInput[]): Promise<PreparedServerAssetUpload[]> {
+  const prepared = new Array<PreparedServerAssetUpload>(assets.length)
+  let nextIndex = 0
+  const workerCount = Math.min(SERVER_ASSET_HASH_CONCURRENCY, assets.length)
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const index = nextIndex
+        nextIndex += 1
+        if (index >= assets.length) return
+        const asset = assets[index]
+        prepared[index] = {
+          assetId: await sha256Hex(asset.data),
+          data: asset.data,
+          contentType: serverAssetContentType(assetExtensionFromFileName(asset.fileName ?? '')),
+        }
+      }
+    }),
+  )
+  return prepared
+}
+
 async function findMissingServerAssetIds(assetIds: readonly string[]): Promise<Set<string>> {
   const uniqueAssetIds = [...new Set(assetIds)]
   if (uniqueAssetIds.length === 0) return new Set()
-  const assetExistsBatchSize = 1024
   const missing = new Set<string>()
 
-  for (let offset = 0; offset < uniqueAssetIds.length; offset += assetExistsBatchSize) {
-    const ids = uniqueAssetIds.slice(offset, offset + assetExistsBatchSize)
-    const response = await fetch('/api/v1/assets/exists', {
+  for (let offset = 0; offset < uniqueAssetIds.length; offset += SERVER_ASSET_EXISTS_MAX_IDS) {
+    const ids = uniqueAssetIds.slice(offset, offset + SERVER_ASSET_EXISTS_MAX_IDS)
+    const response = await fetchServerAssetOperation('/api/v1/assets/exists', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -241,6 +305,49 @@ function chunkServerAssetUploads(assets: readonly PreparedServerAssetUpload[]): 
   return chunks
 }
 
+async function uploadServerAssetsIndividually(
+  assets: readonly PreparedServerAssetUpload[],
+  onUploaded: (assetId: string) => void,
+): Promise<void> {
+  let nextIndex = 0
+  let failed = false
+  let firstError: unknown
+  const workerCount = Math.min(SERVER_ASSET_HASH_CONCURRENCY, assets.length)
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (!failed) {
+        const index = nextIndex
+        nextIndex += 1
+        if (index >= assets.length) return
+        const asset = assets[index]
+        try {
+          const uploadedIds = await uploadServerAssetsBatch([asset])
+          validateServerAssetUploadIds([asset], uploadedIds)
+          onUploaded(uploadedIds[0])
+        } catch (error) {
+          failed = true
+          firstError = error
+        }
+      }
+    }),
+  )
+  if (failed) {
+    throw firstError
+  }
+}
+
+function validateServerAssetUploadIds(
+  expectedAssets: readonly PreparedServerAssetUpload[],
+  uploadedIds: readonly string[],
+): void {
+  for (const [index, uploadedId] of uploadedIds.entries()) {
+    const expectedId = expectedAssets[index]?.assetId
+    if (uploadedId !== expectedId) {
+      throw new Error(`Server bulk asset upload returned unexpected asset id: ${uploadedId}`)
+    }
+  }
+}
+
 async function uploadServerAssetsBatch(assets: readonly PreparedServerAssetUpload[]): Promise<string[]> {
   if (assets.length === 0) return []
   if (assets.length === 1) {
@@ -253,7 +360,7 @@ async function uploadServerAssetsBatch(assets: readonly PreparedServerAssetUploa
   }
 
   const auth = await getNodeServerProxyAuth()
-  const response = await fetch('/api/v1/assets/bulk', {
+  const response = await fetchServerAssetOperation('/api/v1/assets/bulk', {
     method: 'POST',
     headers: {
       'content-type': SERVER_ASSET_BULK_BINARY_CONTENT_TYPE,
@@ -298,6 +405,47 @@ async function uploadServerAssetsBatch(assets: readonly PreparedServerAssetUploa
   })
 }
 
+async function fetchServerAssetOperation(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
+  for (let retry = 0; ; retry += 1) {
+    const response = await fetchServerAssetOperationAttempt(input, init)
+    if (response.status !== 429 || retry >= SERVER_ASSET_RATE_LIMIT_MAX_RETRIES) {
+      return response
+    }
+
+    const retryAfter = response.headers.get('retry-after')
+    await response.arrayBuffer().catch(() => undefined)
+    const delayMs = serverAssetRetryDelayMs(retryAfter)
+    if (delayMs > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, delayMs))
+    }
+  }
+}
+
+async function fetchServerAssetOperationAttempt(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
+  const timeoutSignal = buildTimeoutSignal(init.signal ?? undefined, SERVER_ASSET_OPERATION_TIMEOUT_MS)
+  try {
+    const response = await fetch(input, { ...init, signal: timeoutSignal.signal })
+    return retainFetchCancellationThroughBody(response, timeoutSignal.signal, timeoutSignal.cleanup)
+  } catch (error) {
+    timeoutSignal.cleanup()
+    throw error
+  }
+}
+
+function serverAssetRetryDelayMs(retryAfter: string | null): number {
+  if (retryAfter !== null) {
+    const seconds = Number(retryAfter)
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.ceil(seconds * 1000)
+    }
+    const deadline = Date.parse(retryAfter)
+    if (Number.isFinite(deadline)) {
+      return Math.max(0, deadline - Date.now())
+    }
+  }
+  return SERVER_ASSET_RATE_LIMIT_FALLBACK_DELAY_MS
+}
+
 function buildServerAssetBulkBinaryBody(assets: readonly PreparedServerAssetUpload[]): ArrayBuffer {
   const manifestBytes = new TextEncoder().encode(
     JSON.stringify({
@@ -338,9 +486,7 @@ export async function loadAsset(id: string) {
 }
 
 let lastSave = ''
-export let saving = $state({
-  state: false,
-})
+export let saving = persistenceSavingState
 
 /**
  * Saves the current state of the database.
@@ -607,7 +753,6 @@ export function addFetchLog(arg: {
  */
 export async function globalFetch(url: string, arg: GlobalFetchArgs = {}): Promise<GlobalFetchResult> {
   try {
-    const db = getDatabase()
     if (arg.abortSignal?.aborted) {
       return { ok: false, data: 'aborted', headers: {}, status: 400 }
     }
@@ -615,11 +760,11 @@ export async function globalFetch(url: string, arg: GlobalFetchArgs = {}): Promi
     const urlHost = new URL(url).hostname
     const useLocalNetworkRoute = arg.networkRoute === 'local_network' && isLocalNetworkUrl(url)
     const forcePlainFetch =
-      (knownHostes.includes(urlHost) || db.usePlainFetch || arg.plainFetchForce) &&
+      (knownHostes.includes(urlHost) || settingsResourceState.value.usePlainFetch || arg.plainFetchForce) &&
       !arg.plainFetchDeforce &&
       !useLocalNetworkRoute
 
-    if (arg.interceptor) {
+    if (arg.interceptor && isPluginRuntimeReady()) {
       for (const interceptor of bodyIntercepterStore) {
         try {
           arg.body = (await interceptor.callback(arg.body, arg.interceptor)) || arg.body
@@ -759,6 +904,7 @@ async function fetchWithProxy(
     upstreamHeaders['Content-Type'] ??=
       arg.body instanceof URLSearchParams ? 'application/x-www-form-urlencoded' : 'application/json'
     const nodeProxyAuth = await getNodeServerProxyAuth()
+    const requestLocation = settingsResourceState.value.requestLocation
     const headers = {
       'risu-header': encodeURIComponent(JSON.stringify(upstreamHeaders)),
       'risu-url': encodeURIComponent(url),
@@ -768,7 +914,7 @@ async function fetchWithProxy(
         'risu-timeout-ms': Math.max(1, Math.floor(arg.requestTimeoutMs)).toString(),
       }),
       ...(nodeProxyAuth && { 'risu-auth': nodeProxyAuth }),
-      ...(getDatabase()?.requestLocation && { 'risu-location': getDatabase().requestLocation }),
+      ...(requestLocation && { 'risu-location': requestLocation }),
     }
 
     const body = arg.body instanceof URLSearchParams ? arg.body.toString() : JSON.stringify(arg.body)
@@ -830,7 +976,7 @@ export async function pluginGlobalFetch(url: string, arg: GlobalFetchArgs = {}):
       return { ok: false, data: 'aborted', headers: {}, status: 400 }
     }
 
-    if (arg.interceptor) {
+    if (arg.interceptor && isPluginRuntimeReady()) {
       for (const interceptor of bodyIntercepterStore) {
         try {
           arg.body = (await interceptor.callback(arg.body, arg.interceptor)) || arg.body
@@ -923,7 +1069,7 @@ export function replaceDbResources(db: Database, replacer: { [key: string]: stri
  * call characterCommands.repairCharacterOrderOptimistically().
  */
 export function checkCharOrder() {
-  return !normalizeCharacterOrder(getDatabase().characterOrder, getDatabase().characters).changed
+  return !normalizeCharacterOrder(charactersResourceState.characterOrder, charactersResourceState.characters).changed
 }
 
 /**
@@ -992,7 +1138,7 @@ export class LocalWriter {
    * @returns {Promise<boolean>} - A promise that resolves to a boolean indicating success.
    */
   async init(name = 'Binary', ext = ['bin']): Promise<boolean> {
-    const streamSaver = await import('streamsaver')
+    const { default: streamSaver } = await import('streamsaver')
     const writableStream = streamSaver.createWriteStream(name + '.' + ext[0])
     this.writer = writableStream.getWriter()
     return true
@@ -1139,14 +1285,20 @@ export class AppendableBuffer {
  */
 const pipeFetchLog = (fetchLogIndex: number, readableStream: ReadableStream<Uint8Array>) => {
   if (fetchLogIndex < 0) return readableStream
-  const splited = readableStream.tee()
-
-  ;(async () => {
-    const text = await new Response(splited[0]).text()
-    fetchLog[fetchLogIndex].response = text
-  })()
-
-  return splited[1]
+  const decoder = new TextDecoder()
+  let responseText = ''
+  return readableStream.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        responseText += decoder.decode(chunk, { stream: true })
+        controller.enqueue(chunk)
+      },
+      flush() {
+        responseText += decoder.decode()
+        if (fetchLog[fetchLogIndex]) fetchLog[fetchLogIndex].response = responseText
+      },
+    }),
+  )
 }
 
 async function fetchViaProxyJobWs(
@@ -1212,10 +1364,11 @@ async function fetchViaProxyJobWs(
   const ws = new WebSocket(wsUrl, wsProtocols)
   ws.binaryType = 'arraybuffer'
   let terminalProxyFrameSeen = false
-  let localRequestAborted = false
+  let deleteJobOnClose = false
   let cancelDeleteSent = false
   let abortListenerAttached = false
   let abortHandler: () => void = () => {}
+  let responseCreated = false
 
   const detachAbortListener = () => {
     if (!abortListenerAttached) {
@@ -1238,18 +1391,22 @@ async function fetchViaProxyJobWs(
     }).catch(() => {})
   }
 
-  const closeAndEnd = () => {
+  const closeAndEnd = (error?: Error) => {
     if (settled) {
       return
     }
     settled = true
     detachAbortListener()
-    if (localRequestAborted && !terminalProxyFrameSeen) {
+    if (deleteJobOnClose && !terminalProxyFrameSeen) {
       deleteProxyJobOnce()
     }
     if (streamController) {
       try {
-        streamController.close()
+        if (error) {
+          streamController.error(error)
+        } else {
+          streamController.close()
+        }
       } catch {
         // no-op
       }
@@ -1266,6 +1423,7 @@ async function fetchViaProxyJobWs(
       streamController = controller
     },
     cancel() {
+      if (!terminalProxyFrameSeen) deleteJobOnClose = true
       closeAndEnd()
     },
   })
@@ -1278,28 +1436,60 @@ async function fetchViaProxyJobWs(
     }
   }
 
+  const terminateInvalidProxyStream = (message: string) => {
+    if (settled || terminalProxyFrameSeen) return
+    deleteJobOnClose = true
+    status = 502
+    responseHeaders = { 'content-type': 'text/plain; charset=utf-8' }
+    ensureHeadersReady()
+    if (responseCreated) {
+      closeAndEnd(new Error(message))
+    } else {
+      streamController?.enqueue(encoder.encode(message))
+      closeAndEnd()
+    }
+  }
+
   ws.onmessage = (event) => {
     const binaryChunk = readProxyJobWsBinaryChunk(event.data)
     if (binaryChunk) {
-      ensureHeadersReady()
+      if (!headersReady) {
+        terminateInvalidProxyStream('Proxy WebSocket sent a body chunk before upstream headers')
+        return
+      }
       streamController?.enqueue(binaryChunk)
       return
     }
     const parsed = parseProxyJobWsEvent(typeof event.data === 'string' ? event.data : '')
-    if (!parsed || !streamController) {
+    if (!streamController) {
+      return
+    }
+    if (!parsed) {
+      terminateInvalidProxyStream('Proxy WebSocket sent an invalid protocol frame')
       return
     }
     switch (parsed.type) {
       case 'job_accepted':
+        if (parsed.jobId !== jobId) {
+          terminateInvalidProxyStream('Proxy WebSocket accepted an unexpected job')
+        }
+        return
       case 'ping':
         return
       case 'upstream_headers':
+        if (headersReady) {
+          terminateInvalidProxyStream('Proxy WebSocket sent duplicate upstream headers')
+          return
+        }
         status = parsed.status
         responseHeaders = parsed.headers ?? {}
         ensureHeadersReady()
         return
       case 'chunk':
-        ensureHeadersReady()
+        if (!headersReady) {
+          terminateInvalidProxyStream('Proxy WebSocket sent a body chunk before upstream headers')
+          return
+        }
         streamController.enqueue(decodeProxyJobWsChunk(parsed.dataBase64))
         return
       case 'error': {
@@ -1313,35 +1503,26 @@ async function fetchViaProxyJobWs(
         return
       }
       case 'done':
+        if (!headersReady) {
+          terminateInvalidProxyStream('Proxy WebSocket completed before upstream headers')
+          return
+        }
         terminalProxyFrameSeen = true
-        ensureHeadersReady()
         closeAndEnd()
         return
     }
   }
 
   ws.onerror = () => {
-    if (!streamController) {
-      return
-    }
-    status = 502
-    responseHeaders = { 'content-type': 'text/plain; charset=utf-8' }
-    ensureHeadersReady()
-    streamController.enqueue(encoder.encode('Proxy WebSocket stream error'))
-    closeAndEnd()
+    terminateInvalidProxyStream('Proxy WebSocket stream error')
   }
 
   ws.onclose = () => {
-    if (!headersReady) {
-      status = 502
-      responseHeaders = { 'content-type': 'text/plain; charset=utf-8' }
-      ensureHeadersReady()
-    }
-    closeAndEnd()
+    terminateInvalidProxyStream('Proxy WebSocket closed before a terminal frame')
   }
 
   abortHandler = () => {
-    localRequestAborted = true
+    deleteJobOnClose = true
     status = 499
     responseHeaders = { 'content-type': 'text/plain; charset=utf-8' }
     ensureHeadersReady()
@@ -1358,6 +1539,7 @@ async function fetchViaProxyJobWs(
   }
 
   await waitHeaders
+  responseCreated = true
   return new Response(pipedReadable, {
     status,
     headers: new Headers(responseHeaders),
@@ -1418,7 +1600,7 @@ async function fetchNativeInternal(
     realBody = undefined
   } else if (typeof arg.body === 'string') {
     let body: string = arg.body
-    if (useInterceptor) {
+    if (useInterceptor && isPluginRuntimeReady()) {
       for (const interceptor of bodyIntercepterStore) {
         try {
           body = (await interceptor.callback(body, arg.interceptor)) || body
@@ -1506,7 +1688,9 @@ async function fetchNativeInternal(
                 'risu-timeout-ms': Math.max(1, Math.floor(arg.requestTimeoutMs)).toString(),
               }),
               ...(nodeProxyAuth ? { 'risu-auth': nodeProxyAuth } : {}),
-              ...(getDatabase()?.requestLocation && { 'risu-location': getDatabase().requestLocation }),
+              ...(settingsResourceState.value.requestLocation && {
+                'risu-location': settingsResourceState.value.requestLocation,
+              }),
             }
           : {
               'risu-header': encodeURIComponent(JSON.stringify(headers)),
@@ -1516,7 +1700,9 @@ async function fetchNativeInternal(
                 'risu-timeout-ms': Math.max(1, Math.floor(arg.requestTimeoutMs)).toString(),
               }),
               ...(nodeProxyAuth ? { 'risu-auth': nodeProxyAuth } : {}),
-              ...(getDatabase()?.requestLocation && { 'risu-location': getDatabase().requestLocation }),
+              ...(settingsResourceState.value.requestLocation && {
+                'risu-location': settingsResourceState.value.requestLocation,
+              }),
             },
         method: arg.method,
         signal: requestSignal,
@@ -1802,11 +1988,12 @@ export function getLanguageCodes() {
     }
   }
 
+  const displayLanguage = settingsResourceState.value.language === 'cn' ? 'zh' : settingsResourceState.value.language
   languageCodes = languageCodes
     .map((v) => {
       return {
         code: v.code.toLocaleLowerCase(),
-        name: new Intl.DisplayNames([getDatabase().language === 'cn' ? 'zh' : getDatabase().language], {
+        name: new Intl.DisplayNames([displayLanguage || 'en'], {
           type: 'language',
           fallback: 'none',
         }).of(v.code),
@@ -1976,18 +2163,77 @@ export let chatFoldedStateMessageIndex = $state({
   index: -1,
 })
 
+function globalApiCharacterOwners(): readonly character[] {
+  if (
+    charactersResourceState.status === 'ready' ||
+    charactersResourceState.status === 'idle' ||
+    charactersResourceState.status === 'loading'
+  ) {
+    return charactersResourceState.characters
+  }
+  return []
+}
+
+function selectedGlobalApiCharacterOwner(): { character: character; selectedIndex: number } | undefined {
+  if (charactersResourceState.status === 'ready') {
+    const character = getSelectedCharacterOwner()
+    if (!character?.chaId || getCharacterResourceOwner(character.chaId) !== character) return undefined
+    const selectedIndex = charactersResourceState.characters.indexOf(character)
+    return selectedIndex >= 0 ? { character, selectedIndex } : undefined
+  }
+
+  if (charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading') return undefined
+
+  const selectedIndex = selIdState.selId
+  const character = selectCharacterOwner(globalApiCharacterOwners(), selectedIndex)
+  return character ? { character, selectedIndex } : undefined
+}
+
+function uniqueGlobalApiChatOwner(character: character, chatId: string): Chat | undefined {
+  if (!chatId) return undefined
+  const matches = (character.chats ?? []).filter((candidate) => candidate?.id === chatId)
+  if (matches.length !== 1) return undefined
+
+  if (charactersResourceState.status === 'ready') {
+    return getChatMetadataOwnerState(chatId) ? matches[0] : undefined
+  }
+
+  let matchCount = 0
+  for (const candidateCharacter of globalApiCharacterOwners()) {
+    for (const candidateChat of candidateCharacter.chats ?? []) {
+      if (candidateChat?.id === chatId) matchCount += 1
+      if (matchCount > 1) return undefined
+    }
+  }
+  return matchCount === 1 ? matches[0] : undefined
+}
+
+function selectedGlobalApiChatOwner(): { character: character; selectedIndex: number; chat: Chat } | undefined {
+  const selected = selectedGlobalApiCharacterOwner()
+  if (!selected) return undefined
+  const candidate = selected.character.chats?.[selected.character.chatPage]
+  if (!candidate?.id) return undefined
+  const chat = uniqueGlobalApiChatOwner(selected.character, candidate.id)
+  return chat ? { ...selected, chat } : undefined
+}
+
+function clearChatFoldTarget(): void {
+  chatFoldedState.data = null
+  chatFoldedStateMessageIndex.index = -1
+}
+
 $effect.root(() => {
   $effect(() => {
     if (!chatFoldedState.data) {
       return
     }
-    const char = getDatabase().characters[selIdState.selId]
-    const chat = char.chats[char.chatPage]
-    if (chatFoldedState.data.targetCharacterId !== char.chaId) {
-      chatFoldedState.data = null
-    }
-    if (chatFoldedState.data.targetChatId !== chat.id) {
-      chatFoldedState.data = null
+    const owner = selectedGlobalApiChatOwner()
+    if (
+      !owner ||
+      chatFoldedState.data.targetCharacterId !== owner.character.chaId ||
+      chatFoldedState.data.targetChatId !== owner.chat.id
+    ) {
+      clearChatFoldTarget()
     }
   })
 
@@ -1996,36 +2242,50 @@ $effect.root(() => {
       chatFoldedStateMessageIndex.index = -1
       return
     }
-    const char = getDatabase().characters[selIdState.selId]
-    const chat = char.chats[char.chatPage]
-    const messageIndex = chat.message.findIndex((v) => {
-      return chatFoldedState.data?.targetMessageId === v.chatId
-    })
-    if (messageIndex === -1) {
+    const owner = selectedGlobalApiChatOwner()
+    const transcript = owner ? getChatMessageOwnerState(owner.chat.id) : undefined
+    const targetMessageId = chatFoldedState.data.targetMessageId
+    const matchingIndexes = transcript?.messages.reduce<number[]>((indexes, message, index) => {
+      if (message.chatId === targetMessageId) indexes.push(index)
+      return indexes
+    }, [])
+    if (!matchingIndexes || matchingIndexes.length !== 1) {
       console.warn('Target message for folding id' + chatFoldedState.data?.targetMessageId + ' not found')
-      chatFoldedStateMessageIndex.index = -1
+      clearChatFoldTarget()
       return
     }
-    chatFoldedStateMessageIndex.index = messageIndex
+    chatFoldedStateMessageIndex.index = matchingIndexes[0]
   })
 })
 
 export function foldChatToMessage(targetMessageIdOrIndex: string | number) {
-  let targetMessageId = ''
+  const owner = selectedGlobalApiChatOwner()
+  const transcript = owner ? getChatMessageOwnerState(owner.chat.id) : undefined
+  if (!owner || !transcript) {
+    clearChatFoldTarget()
+    return
+  }
+
+  let targetMessageId: string | undefined
   if (typeof targetMessageIdOrIndex === 'number') {
-    const char = getCurrentCharacter()
-    const chat = char.chats[char.chatPage]
-    const message = chat.message[targetMessageIdOrIndex]
-    targetMessageId = message.chatId
+    if (!Number.isInteger(targetMessageIdOrIndex) || targetMessageIdOrIndex < 0) {
+      clearChatFoldTarget()
+      return
+    }
+    targetMessageId = transcript.messages[targetMessageIdOrIndex]?.chatId
   } else {
     targetMessageId = targetMessageIdOrIndex
   }
-  const char = getCurrentCharacter()
-  const chat = char.chats[char.chatPage]
+
+  if (!targetMessageId || transcript.messages.filter((message) => message.chatId === targetMessageId).length !== 1) {
+    clearChatFoldTarget()
+    return
+  }
+
   chatFoldedState.data = {
-    targetCharacterId: char.chaId,
-    targetChatId: chat.id,
-    targetMessageId: targetMessageId,
+    targetCharacterId: owner.character.chaId,
+    targetChatId: owner.chat.id,
+    targetMessageId,
   }
 }
 
@@ -2033,31 +2293,27 @@ export function changeChatTo(IdOrIndex: string | number) {
   // Scalar rollback: selecting a chat only flips `chatPage`, so capturing
   // the whole-characters ChatStateSnapshot here deep-cloned every hydrated
   // transcript on the UI thread per chat click.
-  const previous = currentChatSelectionSnapshot()
-  const currentCharacter = getCurrentCharacter()
-  let index = -1
-  if (typeof IdOrIndex === 'number') {
-    index = IdOrIndex
-  }
+  const selected = selectedGlobalApiCharacterOwner()
+  if (!selected) return
 
-  if (typeof IdOrIndex === 'string') {
-    index = currentCharacter.chats.findIndex((v) => {
-      return v.id === IdOrIndex
-    })
-  }
-
-  if (index === -1) {
+  const index =
+    typeof IdOrIndex === 'number'
+      ? IdOrIndex
+      : selected.character.chats.findIndex((candidate) => candidate.id === IdOrIndex)
+  if (!Number.isInteger(index) || index < 0 || index >= selected.character.chats.length) {
     return
   }
 
-  withTrustedResourceWrite(() => {
-    getDatabase().characters[selIdState.selId].chatPage = index
+  const candidate = selected.character.chats[index]
+  const chat = candidate?.id ? uniqueGlobalApiChatOwner(selected.character, candidate.id) : undefined
+  if (!chat) return
+
+  dispatchSelectChat(chat.id, {
+    characterId: selected.character.chaId,
+    selectedCharID: selected.selectedIndex,
+    chatPage: selected.character.chatPage,
   })
   triggerOpenChatGenerationReattach()
-  const chatId = currentCharacter.chats[index]?.id
-  if (chatId) {
-    dispatchSelectChat(chatId, previous)
-  }
   reloadGuiDisplay()
 }
 
@@ -2065,8 +2321,8 @@ export function createChatCopyName(originalName: string, type: 'Copy' | 'Branch'
   let name = originalName.replaceAll(/\(((Copy|Branch)( \d+)?)\)$/g, '').trim()
   let copyIndex = 1
   let newName = `${name} (${type})`
-  const char = getCurrentCharacter()
-  while (char.chats.find((v) => v.name === newName)) {
+  const char = selectedGlobalApiCharacterOwner()?.character
+  while (char?.chats.find((v) => v.name === newName)) {
     copyIndex++
     newName = `${name} (${type} ${copyIndex})`
   }

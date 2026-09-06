@@ -7,13 +7,16 @@ vi.mock('../storage/fastifyStorage', () => ({
 }))
 
 import { subscribeServerCommandEvents } from './events'
+import { ACTIVE_WRITER_SESSION_HEADER } from './activeWriterSession'
 import type { CommandEvent } from './commands'
-import type { ServerMemoryEvent, ServerWriterEvent } from './events'
+import type { ServerMemoryEvent, ServerMemoryJobSnapshot, ServerWriterEvent } from './events'
+import type { ServerBardWikiJobEvent } from './bardWikiJobEvents'
 
 interface CapturedFetch {
   url: string
   method: string
   authHeader: string | null
+  writerSessionHeader: string | null
   lastEventIdHeader: string | null
   signal: AbortSignal | null
 }
@@ -38,6 +41,7 @@ function stubEventsFetch(body: string | null, status = 200): CapturedFetch[] {
         url: String(input),
         method: init.method ?? 'GET',
         authHeader: headers?.['risu-auth'] ?? null,
+        writerSessionHeader: headers?.[ACTIVE_WRITER_SESSION_HEADER] ?? null,
         lastEventIdHeader: headers?.['Last-Event-ID'] ?? null,
         signal: init.signal ?? null,
       })
@@ -63,31 +67,86 @@ afterEach(() => {
 describe('server command event subscription helper', () => {
   it('fetches the event stream with auth and emits command, memory, and writer events', async () => {
     const commandEvent: CommandEvent = {
-      type: 'settings.updated',
+      type: 'generation.persisted',
       revision: 3,
-      resource: 'settings',
+      resource: 'generation',
+      id: 'message-a',
+      parentId: 'chat-a',
+      databaseLineage: 'database-a',
+      operationId: 'operation-a',
+      sourceMessageId: 'message-user-a',
+      jobId: 'job-a',
       origin: { writerSessionId: 'writer-a' },
     }
     const memoryEvent: ServerMemoryEvent = {
       type: 'memory.job',
+      streamId: 'memory-stream-1',
+      version: 2,
       chatId: 'chat-1',
       job: {
         id: 'job-1',
+        instanceId: 'job-instance-1',
         kind: 'summarize',
         status: 'pending',
         attemptCount: 0,
         maxAttempts: 3,
+        updatedAt: '2026-08-11T00:00:00.000Z',
       },
-      sideEffect: {
-        kind: 'hypav3_progress',
-        payload: {
-          open: true,
-          miniMsg: '1',
-          msg: '[Hypa V3] Waiting to summarize...',
-          subMsg: '1 queued',
-          status: 'pending',
-          queuedCount: 1,
+    }
+    const memorySnapshot: ServerMemoryJobSnapshot = {
+      type: 'memory.snapshot',
+      streamId: 'memory-stream-1',
+      version: 1,
+      jobs: [
+        {
+          id: 'snapshot-job',
+          instanceId: 'snapshot-instance',
+          chatId: 'chat-2',
+          kind: 'embed',
+          status: 'running',
+          attemptCount: 1,
+          maxAttempts: 3,
+          updatedAt: '2026-08-11T00:00:00.000Z',
         },
+      ],
+      bardWikiJobs: [
+        {
+          id: 'bard-job-1',
+          instanceId: 'bard-instance-1',
+          chatId: 'chat-1',
+          receiptId: 'receipt-1',
+          kind: 'apply_turn',
+          status: 'running',
+          errorCode: null,
+          errorSummary: null,
+          attemptCount: 1,
+          maxAttempts: 3,
+          progressCurrent: null,
+          progressTotal: null,
+          nextRunAt: '2026-08-11T00:00:00.000Z',
+          createdAt: '2026-08-11T00:00:00.000Z',
+          updatedAt: '2026-08-11T00:00:00.000Z',
+        },
+      ],
+    }
+    const bardWikiEvent: ServerBardWikiJobEvent = {
+      type: 'bardwiki.job',
+      streamId: 'memory-stream-1',
+      version: 3,
+      chatId: 'chat-1',
+      job: {
+        id: 'bard-job-1',
+        instanceId: 'bard-instance-1',
+        receiptId: 'receipt-1',
+        kind: 'apply_turn',
+        status: 'failed',
+        errorCode: 'provider_error',
+        errorSummary: 'Provider failed',
+        attemptCount: 3,
+        maxAttempts: 3,
+        progressCurrent: null,
+        progressTotal: null,
+        updatedAt: '2026-08-11T00:01:00.000Z',
       },
     }
     const writerEvent: ServerWriterEvent = { sessionId: 'writer-b', epoch: 2 }
@@ -104,8 +163,14 @@ describe('server command event subscription helper', () => {
         'event: message',
         'data: ignored',
         '',
+        'event: memory_snapshot',
+        `data: ${JSON.stringify(memorySnapshot)}`,
+        '',
         'event: memory',
         `data: ${JSON.stringify(memoryEvent)}`,
+        '',
+        'event: memory',
+        `data: ${JSON.stringify(bardWikiEvent)}`,
         '',
         'event: memory',
         'data: {"type":"memory.job","chatId":"chat-1"}',
@@ -114,26 +179,35 @@ describe('server command event subscription helper', () => {
     )
     const seen: CommandEvent[] = []
     const memorySeen: ServerMemoryEvent[] = []
+    const memorySnapshots: ServerMemoryJobSnapshot[] = []
+    const bardWikiSeen: ServerBardWikiJobEvent[] = []
     const writerSeen: ServerWriterEvent[] = []
 
     const subscription = await subscribeServerCommandEvents({
       onCommandEvent: (event) => seen.push(event),
       onMemoryEvent: (event) => memorySeen.push(event),
+      onBardWikiEvent: (event) => bardWikiSeen.push(event),
+      onMemorySnapshot: (snapshot) => memorySnapshots.push(snapshot),
       onWriterEvent: (event) => writerSeen.push(event),
     })
 
     expect(subscription.status).toBe('ok')
     await waitFor(() => seen.length === 1)
     await waitFor(() => memorySeen.length === 1)
+    await waitFor(() => memorySnapshots.length === 1)
+    await waitFor(() => bardWikiSeen.length === 1)
     await waitFor(() => writerSeen.length === 1)
     expect(seen).toEqual([commandEvent])
     expect(memorySeen).toEqual([memoryEvent])
+    expect(memorySnapshots).toEqual([memorySnapshot])
+    expect(bardWikiSeen).toEqual([bardWikiEvent])
     expect(writerSeen).toEqual([writerEvent])
     expect(calls).toHaveLength(1)
     expect(calls[0]).toMatchObject({
       url: '/api/v1/events',
       method: 'GET',
       authHeader: 'events-auth-token',
+      writerSessionHeader: expect.any(String),
     })
   })
 
@@ -180,6 +254,21 @@ describe('server command event subscription helper', () => {
 
     expect(subscription.status).toBe('ok')
     await waitFor(() => onError.mock.calls.length === 1)
+    expect(onError.mock.calls[0][0]).toContain('Malformed command event frame')
+  })
+
+  it('rejects command frames with malformed recovery lineage metadata', async () => {
+    stubEventsFetch(
+      'event: command\ndata: {"type":"generation.persisted","revision":3,"resource":"generation","operationId":7}\n\n',
+    )
+    const onCommandEvent = vi.fn()
+    const onError = vi.fn()
+
+    const subscription = await subscribeServerCommandEvents({ onCommandEvent, onError })
+
+    expect(subscription.status).toBe('ok')
+    await waitFor(() => onError.mock.calls.length === 1)
+    expect(onCommandEvent).not.toHaveBeenCalled()
     expect(onError.mock.calls[0][0]).toContain('Malformed command event frame')
   })
 

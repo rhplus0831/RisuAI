@@ -108,7 +108,7 @@ describe('runHorde', () => {
     await vi.advanceTimersByTimeAsync(1000)
     await vi.advanceTimersByTimeAsync(1000)
     const r = await p
-    expect(r).toEqual({ type: 'success', result: 'horde says hello' })
+    expect(r).toEqual({ type: 'success', result: 'horde says hello', apiMetadata: { jobId: 'job-1' } })
 
     // First call is the async submit; subsequent are status polls.
     expect(calls[0].url).toBe('https://stablehorde.net/api/v2/generate/text/async')
@@ -151,6 +151,39 @@ describe('runHorde', () => {
     await p
     const sent = JSON.parse(captured!.init!.body as string)
     expect(sent.models).toBeUndefined()
+  })
+
+  it('applies additional parameters and headers to the async submission', async () => {
+    let captured: RequestInit | null = null
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/async')) {
+        captured = init ?? null
+        return jsonResp({ id: 'job-params' }, 202)
+      }
+      return jsonResp({ done: true, generations: [{ text: 'x' }] })
+    })
+    const resolved = resolveHordeRequest({
+      prompt: 'hi',
+      model: 'auto',
+      temperature: 0.7,
+      additionalParams: [
+        ['params.temperature', '0.2'],
+        ['custom_flag', 'true'],
+        ['header::X-Global-Trace', 'horde'],
+      ],
+      pollIntervalMs: 1,
+      signal: new AbortController().signal,
+    })!
+
+    const pending = runHorde(resolved)
+    await vi.advanceTimersByTimeAsync(5)
+    await pending
+
+    expect(JSON.parse(captured!.body as string)).toMatchObject({
+      params: { temperature: 0.2 },
+      custom_flag: true,
+    })
+    expect((captured!.headers as Record<string, string>)['X-Global-Trace']).toBe('horde')
   })
 
   it('omits absent sampler fields from the async payload', async () => {
@@ -203,6 +236,33 @@ describe('runHorde', () => {
     })
   })
 
+  it('fails fast and cleans up when a status poll is non-successful', async () => {
+    const calls: string[] = []
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? 'GET'} ${url}`)
+      if (url.endsWith('/async')) return jsonResp({ id: 'job-auth' }, 202)
+      if (init?.method === 'DELETE') return jsonResp({})
+      return new Response('unauthorized', { status: 401 })
+    })
+    const resolved = resolveHordeRequest({
+      prompt: 'hi',
+      model: 'auto',
+      pollIntervalMs: 1,
+      signal: new AbortController().signal,
+    })!
+
+    const pending = runHorde(resolved)
+    await vi.advanceTimersByTimeAsync(5)
+
+    expect(await pending).toEqual({
+      type: 'fail',
+      result:
+        'Provider request failed: HTTP 401 from https://stablehorde.net/api/v2/generate/text/status/job-auth: unauthorized',
+    })
+    await Promise.resolve()
+    expect(calls).toContain('DELETE https://stablehorde.net/api/v2/generate/text/status/job-auth')
+  })
+
   it('returns fail and fires DELETE when is_possible: false', async () => {
     const calls: string[] = []
     vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
@@ -223,6 +283,7 @@ describe('runHorde', () => {
     expect(await p).toEqual({
       type: 'fail',
       result: 'horde reports the job is not possible',
+      nonRetryable: true,
     })
     expect(calls).toContain('DELETE https://stablehorde.net/api/v2/generate/text/status/job-x')
   })
@@ -300,7 +361,7 @@ describe('runHorde', () => {
     expect(calls).toContain('DELETE https://stablehorde.net/api/v2/generate/text/status/job-t')
   })
 
-  it('L4: bounds a hung cleanup DELETE with its own abort signal', async () => {
+  it('bounds a hung cleanup DELETE with its own abort signal', async () => {
     const deleteSignals: AbortSignal[] = []
     let deleteAborted: Promise<void> = Promise.resolve()
     const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms: number) => {
@@ -379,6 +440,7 @@ describe('runHorde', () => {
     expect(await p).toEqual({
       type: 'fail',
       result: 'horde finished with no generations',
+      nonRetryable: true,
     })
   })
 })

@@ -1,13 +1,14 @@
+import { decodeProviderGenerationSettings } from '../prompt/generationInputDecoder.js'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import type { Database } from '../../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
-import type { LegacyModelMode } from '../../../../src/ts/model/modelRoles.js'
+import type { ProviderGenerationSettings as Database } from '../prompt/serverTypes.js'
+import type { PromptMessage } from '../prompt/promptMessage.js'
+import type { LegacyModelMode } from '@risuai/shared-core/model-roles'
 import {
   assertModelProfileGenerationReady,
   resolveModelProfile,
   resolveModelProfileByProfileId,
   type ResolvedModelProfile,
-} from '../../../../src/ts/model/modelProfileResolver.js'
+} from '@risuai/shared-core/model-profile-resolver'
 import type { AuthState } from '../auth.js'
 import { resolveAnthropicRequest, runAnthropic, runAnthropicStream } from '../generation/anthropic.js'
 import { resolveEchoRequest, runEcho, runEchoStream } from '../generation/echo.js'
@@ -36,8 +37,10 @@ import { requireAuth } from '../http.js'
 import type { DatabaseSync } from 'node:sqlite'
 import { loadServerIntentCompletionSettings } from '../repository.js'
 import { dispatchChatProvider } from '../prompt/chatDispatch.js'
+import { applyProfileBoundGenerationFields } from '../prompt/effectiveGenerationConfig.js'
 import { generationSubmitRateLimit } from '../routeRateLimits.js'
 import { attachAbort } from '../requestAbort.js'
+import { writeBoundedRaw } from '../streamBackpressure.js'
 import { handleOllamaCloudToolProxy, isOllamaCloudToolOperation } from '../ollamaCloudToolProxy.js'
 import {
   validateServerToolDefinitions,
@@ -45,7 +48,15 @@ import {
   type ServerToolCall,
   type ServerToolDefinition,
   type ServerToolRound,
-} from '../../../../src/ts/process/request/serverToolProtocol.js'
+} from '@risuai/protocol/server-tool'
+import {
+  completeRequestHistory,
+  createRequestHistoryResponseCapture,
+  requestHistoryRedactionValues,
+  tryBeginRequestHistory,
+  type RequestHistoryHandle,
+  type RequestHistoryProfileSnapshot,
+} from '../requestHistory.js'
 
 const SUPPORTED_PROVIDERS = new Set([
   'echo',
@@ -64,6 +75,19 @@ const SUPPORTED_PROVIDERS = new Set([
   'bedrock',
   'horde',
 ])
+
+/**
+ * Buffered completion routes must not accumulate an unbounded provider stream.
+ * Match the per-response upstream cap while counting decoded UTF-8 output.
+ */
+export const MAX_BUFFERED_COMPLETION_OUTPUT_BYTES = 32 * 1024 * 1024
+
+export class CompletionOutputLimitError extends Error {
+  constructor(readonly maxBytes: number) {
+    super(`completion output exceeded the ${maxBytes}-byte buffer cap`)
+    this.name = 'CompletionOutputLimitError'
+  }
+}
 
 interface ChatMessage {
   role: string
@@ -335,11 +359,13 @@ function selectedCompletionProfile(db: Database, body: CompletionRequestBody): R
 }
 
 function buildCompletionDatabase(db: Database, body: CompletionRequestBody, profile: ResolvedModelProfile): Database {
-  const next = {
-    ...db,
-    aiModel: profile.modelId,
-    useStreaming: body.stream === true,
-  } as Database
+  const next: Database = { ...db }
+  applyProfileBoundGenerationFields(next, profile)
+  next.aiModel = profile.modelId
+  // `/completion` callers explicitly negotiate their transport via `stream`.
+  // Half-streaming callers promote that flag before reaching this route.
+  next.halfStreaming = false
+  next.useStreaming = body.stream === true
   const maxTokens = finiteNumber(body.maxTokens)
   if (maxTokens !== undefined) {
     next.maxResponse = maxTokens
@@ -354,16 +380,17 @@ function buildCompletionDatabase(db: Database, body: CompletionRequestBody, prof
   }
   if (typeof body.currentCharName === 'string' && body.currentCharName.length > 0) {
     const first = Array.isArray(db.characters) ? db.characters[0] : undefined
-    next.characters = [{ ...(first as object), name: body.currentCharName }] as Database['characters']
+    next.characters = [{ ...first, name: body.currentCharName }]
   }
   return next
 }
 
 function settingsToCompletionDatabase(settings: Record<string, unknown>): Database {
-  return settings as unknown as Database
+  return decodeProviderGenerationSettings(settings)
 }
 
 function badRequest(reply: FastifyReply, error: string): void {
+  finishLegacyRequestHistory(reply, { status: 'error', error })
   reply.code(400).send({ error })
 }
 
@@ -389,7 +416,110 @@ function completionPayload(result: CompletionResult): CompletionResponsePayload 
   }
 }
 
-function writeSseChunk(reply: FastifyReply, frame: CompletionStreamFrame): void {
+interface LegacyRequestHistoryTracker {
+  handle: RequestHistoryHandle
+  settled: boolean
+}
+
+const legacyRequestHistoryByReply = new WeakMap<FastifyReply, LegacyRequestHistoryTracker>()
+
+function beginLegacyRequestHistory(input: {
+  db: DatabaseSync
+  reply: FastifyReply
+  provider: string
+  model: string
+  prompt: unknown
+  stream: boolean
+  options: unknown
+}): void {
+  const settings = loadServerIntentCompletionSettings(input.db)
+  const profile: RequestHistoryProfileSnapshot = {
+    id: `legacy:${input.provider}:${input.model}`,
+    role: 'otherAx',
+    sourceKind: 'legacy-client-request',
+    provider: input.provider,
+    modelId: input.model,
+    requestModel: input.model,
+  }
+  const handle = tryBeginRequestHistory({
+    db: input.db,
+    limit: settings?.requestHistoryLimit,
+    source: 'completion',
+    profile,
+    prompt: input.prompt,
+    metadata: {
+      mode: 'legacy-client-request',
+      streamingRequested: input.stream,
+    },
+    redactionValues: requestHistoryRedactionValues(input.options),
+  })
+  if (!handle) return
+  const tracker: LegacyRequestHistoryTracker = { handle, settled: false }
+  legacyRequestHistoryByReply.set(input.reply, tracker)
+  input.reply.raw.once('close', () => {
+    finishLegacyRequestHistory(input.reply, {
+      status: input.reply.statusCode >= 400 ? 'error' : 'cancelled',
+      error:
+        input.reply.statusCode >= 400
+          ? `Completion request ended with HTTP ${input.reply.statusCode}`
+          : 'Completion request ended before a terminal provider response',
+    })
+  })
+}
+
+function finishLegacyRequestHistory(
+  reply: FastifyReply,
+  input: {
+    status: 'success' | 'error' | 'cancelled'
+    response?: string
+    error?: string
+    metadata?: Record<string, unknown>
+    apiMetadata?: Record<string, unknown>
+    responseTruncatedBytes?: number
+  },
+): void {
+  const tracker = legacyRequestHistoryByReply.get(reply)
+  if (!tracker || tracker.settled) return
+  tracker.settled = true
+  legacyRequestHistoryByReply.delete(reply)
+  completeRequestHistory(tracker.handle, input)
+}
+
+function sendCompletionResult(reply: FastifyReply, result: CompletionResult): void {
+  const payload = completionPayload(result)
+  const success = result.type === 'success'
+  const apiMetadata = {
+    ...(result.model !== undefined ? { model: result.model } : {}),
+    ...(result.apiMetadata ?? {}),
+  }
+  finishLegacyRequestHistory(reply, {
+    status: success ? 'success' : 'error',
+    response: success ? result.result : '',
+    ...(success ? {} : { error: result.result }),
+    ...(Object.keys(apiMetadata).length > 0 ? { apiMetadata } : {}),
+    metadata: {
+      ...(result.model !== undefined ? { model: result.model } : {}),
+      ...(typeof result.status === 'number' ? { providerStatus: result.status } : {}),
+      ...(result.statusText ? { providerStatusText: result.statusText } : {}),
+      ...(result.code ? { providerCode: result.code } : {}),
+      ...(result.toolCalls?.length ? { toolCalls: result.toolCalls } : {}),
+    },
+  })
+  reply.code(200).send(payload)
+}
+
+function legacyFinalizedPrompt(
+  provider: string,
+  messages: ChatMessage[],
+  options: { horde?: HordeOptions; anthropic?: AnthropicOptions; bedrock?: BedrockOptions },
+): unknown {
+  if (provider === 'horde' && typeof options.horde?.prompt === 'string') return options.horde.prompt
+  const system =
+    provider === 'anthropic' ? options.anthropic?.system : provider === 'bedrock' ? options.bedrock?.system : undefined
+  return typeof system === 'string' && system.length > 0 ? { system, messages } : messages
+}
+
+function writeSseChunk(reply: FastifyReply, frame: CompletionStreamFrame, abortUpstream?: () => void): boolean {
   const event = frame.kind === 'done' ? 'done' : frame.kind === 'error' ? 'error' : 'chunk'
   const data =
     frame.kind === 'done'
@@ -406,7 +536,9 @@ function writeSseChunk(reply: FastifyReply, frame: CompletionStreamFrame): void 
             code: frame.code,
           })
         : JSON.stringify({ type: 'token', content: frame.content ?? '' })
-  reply.raw.write(`event: ${event}\ndata: ${data}\n\n`)
+  return writeBoundedRaw(reply.raw, `event: ${event}\ndata: ${data}\n\n`, {
+    onOverflow: abortUpstream,
+  })
 }
 
 function isCompletionDeadlineActivityFrame(frame: CompletionStreamFrame): boolean {
@@ -421,31 +553,87 @@ export async function pipeStream(
   reply: FastifyReply,
   frames: AsyncIterable<CompletionStreamFrame>,
   refreshDeadline?: () => void,
+  abortUpstream?: () => void,
 ): Promise<void> {
   reply.raw.writeHead(200, {
     'content-type': 'text/event-stream',
     'cache-control': 'no-store',
     connection: 'keep-alive',
   })
+  const response = createRequestHistoryResponseCapture()
   try {
     for await (const frame of frames) {
-      writeSseChunk(reply, frame)
+      const written = writeSseChunk(reply, frame, abortUpstream)
+      if (!written) break
+      if (frame.kind === 'token') response.append(frame.content ?? '')
+      if (frame.kind === 'done') {
+        const captured = response.snapshot()
+        finishLegacyRequestHistory(reply, {
+          status: 'success',
+          response: captured.response,
+          responseTruncatedBytes: captured.truncatedBytes,
+          ...(frame.apiMetadata ? { apiMetadata: frame.apiMetadata } : {}),
+          metadata: {
+            ...(frame.finishReason ? { finishReason: frame.finishReason } : {}),
+            ...(frame.alternates ? { alternates: frame.alternates } : {}),
+            ...(frame.toolCalls ? { toolCalls: frame.toolCalls } : {}),
+          },
+        })
+      }
+      if (frame.kind === 'error') {
+        const captured = response.snapshot()
+        finishLegacyRequestHistory(reply, {
+          status: 'error',
+          response: captured.response,
+          responseTruncatedBytes: captured.truncatedBytes,
+          error: frame.error ?? 'Provider request failed',
+          ...(frame.apiMetadata ? { apiMetadata: frame.apiMetadata } : {}),
+          metadata: {
+            ...(frame.status !== undefined ? { providerStatus: frame.status } : {}),
+            ...(frame.statusText ? { providerStatusText: frame.statusText } : {}),
+            ...(frame.code ? { providerCode: frame.code } : {}),
+            ...(frame.reason ? { providerReason: frame.reason } : {}),
+          },
+        })
+      }
       if (refreshDeadline && isCompletionDeadlineActivityFrame(frame)) {
         refreshDeadline()
       }
     }
+  } catch (error) {
+    const captured = response.snapshot()
+    finishLegacyRequestHistory(reply, {
+      status: 'error',
+      response: captured.response,
+      responseTruncatedBytes: captured.truncatedBytes,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw error
   } finally {
+    const captured = response.snapshot()
+    finishLegacyRequestHistory(reply, {
+      status: 'cancelled',
+      response: captured.response,
+      responseTruncatedBytes: captured.truncatedBytes,
+      error: 'Completion stream ended before a terminal provider response',
+    })
     reply.raw.end()
   }
 }
 
-async function collectCompletionFrames(
+export async function collectCompletionFrames(
   frames: AsyncIterable<CompletionStreamFrame>,
+  maxBytes = MAX_BUFFERED_COMPLETION_OUTPUT_BYTES,
 ): Promise<CompletionResponsePayload> {
-  let result = ''
+  const resultChunks: string[] = []
+  let resultBytes = 0
+  const result = (): string => resultChunks.join('')
   for await (const frame of frames) {
     if (frame.kind === 'token') {
-      result += frame.content ?? ''
+      const content = frame.content ?? ''
+      resultBytes += Buffer.byteLength(content)
+      if (resultBytes > maxBytes) throw new CompletionOutputLimitError(maxBytes)
+      resultChunks.push(content)
       continue
     }
     if (frame.kind === 'error') {
@@ -460,23 +648,23 @@ async function collectCompletionFrames(
     if (frame.kind === 'done') {
       return {
         type: 'success',
-        result,
+        result: result(),
         ...(frame.toolCalls?.length ? { toolCalls: frame.toolCalls } : {}),
       }
     }
   }
-  return { type: 'success', result }
+  return { type: 'success', result: result() }
 }
 
 async function handleEchoStreaming(req: FastifyRequest, reply: FastifyReply, options: EchoOptions): Promise<void> {
-  const { signal, refresh, cleanup } = attachAbort(req, reply)
+  const { signal, refresh, abort, cleanup } = attachAbort(req, reply)
   try {
     const echo = resolveEchoRequest({
       message: options.message,
       delayMs: options.delayMs,
       signal,
     })
-    await pipeStream(reply, runEchoStream(echo), refresh)
+    await pipeStream(reply, runEchoStream(echo), refresh, abort)
   } finally {
     cleanup()
   }
@@ -492,7 +680,7 @@ async function handleEchoBuffered(req: FastifyRequest, reply: FastifyReply, opti
     })
     const result = await runEcho(echo)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -575,7 +763,7 @@ async function handleAnthropicStreaming(
   messages: unknown[],
   options: AnthropicOptions,
 ): Promise<void> {
-  const { signal, refresh, cleanup } = attachAbort(req, reply)
+  const { signal, refresh, abort, cleanup } = attachAbort(req, reply)
   try {
     const ap = coerceAnthropicAdditionalParams(options)
     if (ap.ok === false) {
@@ -598,7 +786,7 @@ async function handleAnthropicStreaming(
       badRequest(reply, 'options.anthropic.apiKey is required')
       return
     }
-    await pipeStream(reply, runAnthropicStream(resolved), refresh)
+    await pipeStream(reply, runAnthropicStream(resolved), refresh, abort)
   } finally {
     cleanup()
   }
@@ -636,7 +824,7 @@ async function handleAnthropicBuffered(
     }
     const result = await runAnthropic(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -668,7 +856,7 @@ async function handleKoboldBuffered(
     }
     const result = await runKobold(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -702,7 +890,7 @@ async function handleOobaLegacyBuffered(
     }
     const result = await runOobaLegacy(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -715,7 +903,7 @@ async function handleOllamaStreaming(
   messages: unknown[],
   options: OllamaOptions,
 ): Promise<void> {
-  const { signal, refresh, cleanup } = attachAbort(req, reply)
+  const { signal, refresh, abort, cleanup } = attachAbort(req, reply)
   try {
     const resolved = resolveOllamaRequest({
       model,
@@ -734,7 +922,7 @@ async function handleOllamaStreaming(
       badRequest(reply, 'options.ollama.baseUrl is required (and messages must be non-empty)')
       return
     }
-    await pipeStream(reply, runOllamaStream(resolved), refresh)
+    await pipeStream(reply, runOllamaStream(resolved), refresh, abort)
   } finally {
     cleanup()
   }
@@ -768,7 +956,7 @@ async function handleOllamaBuffered(
     }
     const result = await runOllama(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -801,7 +989,7 @@ async function handleHordeBuffered(
     }
     const result = await runHorde(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -852,7 +1040,7 @@ async function handleBedrockBuffered(
     }
     const result = await runBedrock(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -891,7 +1079,7 @@ async function handleResponsesBuffered(
     }
     const result = await runOpenAIResponses(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -932,7 +1120,7 @@ async function handleLegacyInstructBuffered(
     }
     const result = await runOpenAILegacyInstruct(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -945,7 +1133,7 @@ async function handleGeminiStreaming(
   messages: unknown[],
   options: GeminiOptions,
 ): Promise<void> {
-  const { signal, refresh, cleanup } = attachAbort(req, reply)
+  const { signal, refresh, abort, cleanup } = attachAbort(req, reply)
   try {
     const vertex = coerceVertexAuth(options.vertex)
     let vertexAuth: VertexAuthCoerced | undefined
@@ -972,7 +1160,7 @@ async function handleGeminiStreaming(
       badRequest(reply, 'options.gemini.apiKey or options.gemini.vertex is required (and contents must be non-empty)')
       return
     }
-    await pipeStream(reply, runGeminiStream(resolved), refresh)
+    await pipeStream(reply, runGeminiStream(resolved), refresh, abort)
   } finally {
     cleanup()
   }
@@ -1014,7 +1202,7 @@ async function handleGeminiBuffered(
     }
     const result = await runGemini(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -1059,7 +1247,7 @@ async function handleCohereBuffered(
     }
     const result = await runCohere(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -1072,7 +1260,7 @@ async function handleMistralStreaming(
   messages: unknown[],
   options: MistralOptions,
 ): Promise<void> {
-  const { signal, refresh, cleanup } = attachAbort(req, reply)
+  const { signal, refresh, abort, cleanup } = attachAbort(req, reply)
   try {
     const ap = coerceMistralAdditionalParams(options)
     if (ap.ok === false) {
@@ -1098,7 +1286,7 @@ async function handleMistralStreaming(
       badRequest(reply, 'options.mistral.apiKey is required')
       return
     }
-    await pipeStream(reply, runMistralStream(resolved), refresh)
+    await pipeStream(reply, runMistralStream(resolved), refresh, abort)
   } finally {
     cleanup()
   }
@@ -1139,7 +1327,7 @@ async function handleMistralBuffered(
     }
     const result = await runMistral(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -1152,7 +1340,7 @@ async function handleOpenAICompatibleStreaming(
   messages: unknown[],
   variant: OpenAICompatibleVariant,
 ): Promise<void> {
-  const { signal, refresh, cleanup } = attachAbort(req, reply)
+  const { signal, refresh, abort, cleanup } = attachAbort(req, reply)
   try {
     const resolved = resolveOpenAIRequest({
       model,
@@ -1170,7 +1358,7 @@ async function handleOpenAICompatibleStreaming(
       badRequest(reply, 'apiKey is required')
       return
     }
-    await pipeStream(reply, runOpenAIStream(resolved), refresh)
+    await pipeStream(reply, runOpenAIStream(resolved), refresh, abort)
   } finally {
     cleanup()
   }
@@ -1203,7 +1391,7 @@ async function handleOpenAICompatibleBuffered(
     }
     const result = await runOpenAI(resolved)
     if (result.aborted === true) return
-    reply.code(200).send(completionPayload(result))
+    sendCompletionResult(reply, result)
   } finally {
     cleanup()
   }
@@ -1214,6 +1402,7 @@ async function handleServerIntentCompletion(
   reply: FastifyReply,
   body: CompletionRequestBody,
   db: DatabaseSync,
+  dataDir: string,
 ): Promise<void> {
   if (body.provider !== undefined || body.model !== undefined || body.options !== undefined) {
     return badRequest(reply, 'server-intent completion must not include provider, model, or options')
@@ -1266,7 +1455,7 @@ async function handleServerIntentCompletion(
     return badRequest(reply, 'database is not initialized')
   }
 
-  const { signal, refresh, cleanup } = attachAbort(req, reply)
+  const { signal, refresh, abort, cleanup } = attachAbort(req, reply)
   try {
     const baseDatabase = settingsToCompletionDatabase(settings)
     const profile = selectedCompletionProfile(baseDatabase, body)
@@ -1274,22 +1463,30 @@ async function handleServerIntentCompletion(
     const database = buildCompletionDatabase(baseDatabase, body, profile)
     const frames = await dispatchChatProvider({
       database,
-      formated: messages as OpenAIChat[],
+      formated: messages as PromptMessage[],
       outputTokens: finiteNumber(body.maxTokens),
+      currentCharacterName: typeof body.currentCharName === 'string' ? body.currentCharName : undefined,
       profile,
       signal,
       tools,
       toolRounds,
+      history: {
+        db,
+        source: 'completion',
+        metadata: { mode: isCompletionModelMode(body.mode) ? body.mode : 'model' },
+      },
+      inlayAssetPersistence: { db, dataDir },
     })
 
     if (body.stream === true) {
-      await pipeStream(reply, frames, refresh)
+      await pipeStream(reply, frames, refresh, abort)
       return
     }
 
     const result = await collectCompletionFrames(frames)
     reply.code(200).send(result)
   } catch (err) {
+    if (err instanceof CompletionOutputLimitError) abort()
     const message = err instanceof Error && err.message.length > 0 ? err.message : String(err)
     reply.code(400).send({ error: message || 'provider dispatch failed' })
   } finally {
@@ -1313,7 +1510,7 @@ export function registerGenerationRoutes(
 
     const body = (req.body ?? {}) as CompletionRequestBody
     if (body.kind === SERVER_INTENT_KIND) {
-      await handleServerIntentCompletion(req, reply, body, db)
+      await handleServerIntentCompletion(req, reply, body, db, dataDir)
       return
     }
 
@@ -1356,6 +1553,16 @@ export function registerGenerationRoutes(
       bedrock?: BedrockOptions
       horde?: HordeOptions
     }
+
+    beginLegacyRequestHistory({
+      db,
+      reply,
+      provider,
+      model: body.model,
+      prompt: legacyFinalizedPrompt(provider, messages, options),
+      stream: body.stream,
+      options,
+    })
 
     if (provider === 'echo') {
       const echoOpts = options.echo ?? {}

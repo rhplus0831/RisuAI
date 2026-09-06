@@ -31,6 +31,7 @@
 </script>
 
 <button
+  type="button"
   {onclick}
   {disabled}
   aria-pressed={selected}

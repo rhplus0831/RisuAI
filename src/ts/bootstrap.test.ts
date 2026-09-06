@@ -14,6 +14,11 @@ const resourceApi = vi.hoisted(() => ({
   hooks: { kind: 'resource-hooks' },
 }))
 
+const routeResourceApi = vi.hoisted(() => ({
+  ensure: vi.fn(async () => undefined),
+  stop: vi.fn(),
+}))
+
 const commandApi = vi.hoisted(() => ({
   initialize: vi.fn(),
   reconciler: null as null | ((event: any, events: any[], localEffects: ReadonlyMap<number, any>) => Promise<void>),
@@ -24,6 +29,7 @@ const eventApi = vi.hoisted(() => ({
     sinceRevision?: number | null
     onCommandEvent: (event: TestCommandEvent) => void
     onMemoryEvent?: (event: TestMemoryEvent) => void
+    onMemorySnapshot?: (snapshot: TestMemorySnapshot) => void
     onWriterEvent?: (event: TestWriterEvent) => void
     onFrame?: (frame?: { event: string; data: string }) => void
     onError?: (error: string) => void
@@ -37,10 +43,19 @@ const hydrationApi = vi.hoisted(() => ({
   acknowledgeCreatedChatTranscriptLocalEffect: vi.fn(() => true),
   acknowledgeMessageMutationLocalEffect: vi.fn(() => true),
   applyMessageTranslationLocalEffect: vi.fn(() => true),
-  hydrateActiveChat: vi.fn(async () => undefined),
+  hydrateActiveChat: vi.fn(async () => true),
   invalidateChatHydration: vi.fn(),
+  readinessRefreshHook: null as null | (() => void),
+  requestReadinessRefresh: vi.fn(),
   resetChatHydration: vi.fn(),
   startChatMessageHydration: vi.fn(),
+  stopChatMessageHydration: vi.fn(),
+}))
+const characterHydrationApi = vi.hoisted(() => ({
+  clear: vi.fn(),
+  hydrateSelected: vi.fn(async () => true),
+  startSelected: vi.fn(),
+  stopSelected: vi.fn(),
 }))
 
 const lorebookApi = vi.hoisted(() => ({
@@ -56,17 +71,35 @@ const promptTemplateApi = vi.hoisted(() => ({
   isTainted: vi.fn(() => false),
   markProjectionApplied: vi.fn(),
   peekOwnerRevision: vi.fn((): number | null => 5),
+  reset: vi.fn(),
 }))
 
 const runtimeApi = vi.hoisted(() => ({
+  prepareOpenChatGenerationReattach: vi.fn(async () => undefined),
+  setActiveGenerationReattachReadinessPredicate: vi.fn(),
   setActiveGenerationJobs: vi.fn(),
+  setGenerationFinalizationPersistences: vi.fn(),
+  startGenerationFinalizationPersistenceRefresh: vi.fn(),
+  stopGenerationFinalizationPersistenceRefresh: vi.fn(),
   startActiveGenerationReattach: vi.fn(),
+  stopActiveGenerationReattach: vi.fn(),
   triggerOpenChatGenerationReattach: vi.fn(),
   setActiveMessageTranslations: vi.fn(),
   startActiveMessageTranslationRefresh: vi.fn(),
+  stopActiveMessageTranslationRefresh: vi.fn(),
+  setActiveGreetingTranslations: vi.fn(),
+  startActiveGreetingTranslationRefresh: vi.fn(),
+  stopActiveGreetingTranslationRefresh: vi.fn(),
+  applyGenerationOperationBootstrap: vi.fn(),
+  configureGenerationOperationProtocol: vi.fn(),
+}))
+const recoveredGenerationApi = vi.hoisted(() => ({
+  discardPendingRecoveredGenerationEffects: vi.fn(async () => undefined),
+  reconcilePendingRecoveredGenerationEffects: vi.fn(async () => undefined),
+  setPendingRecoveredGenerationEffects: vi.fn(),
 }))
 
-const bridgeApi = vi.hoisted(() => ({ stop: vi.fn(), start: vi.fn() }))
+const ownerMutationLifecycleApi = vi.hoisted(() => ({ stop: vi.fn(), start: vi.fn() }))
 const pendingMutationApi = vi.hoisted(() => ({
   count: vi.fn(),
   flushAcknowledgements: vi.fn(),
@@ -76,11 +109,20 @@ const pendingMutationApi = vi.hoisted(() => ({
   scope: null as string | null,
 }))
 const ownershipApi = vi.hoisted(() => ({ count: vi.fn(() => 0), discard: vi.fn(), reset: vi.fn() }))
-const memoryApi = vi.hoisted(() => ({ publish: vi.fn(), applyProgress: vi.fn() }))
-const activeWriterApi = vi.hoisted(() => ({ enterTakeover: vi.fn() }))
+const projectionLifecycleApi = vi.hoisted(() => ({ discard: vi.fn(async (_reason: string) => undefined) }))
+const memoryApi = vi.hoisted(() => ({ publish: vi.fn(), applyEvent: vi.fn(() => true), applySnapshot: vi.fn() }))
+const activeWriterApi = vi.hoisted(() => ({ adoptPendingOwner: vi.fn(), enterTakeover: vi.fn() }))
 const pushApi = vi.hoisted(() => ({
   initialize: vi.fn(async () => undefined),
   reconcile: vi.fn(async () => ({ status: 'applied' })),
+  stop: vi.fn(),
+}))
+const optionalRuntimeApi = vi.hoisted(() => ({
+  disposeStoreEffects: vi.fn(),
+  installStoreEffects: vi.fn(),
+  startObserver: vi.fn(),
+  stopObserver: vi.fn(),
+  stopPluginSync: vi.fn(),
 }))
 
 interface TestCommandEvent {
@@ -94,15 +136,37 @@ interface TestCommandEvent {
 
 interface TestMemoryEvent {
   type: 'memory.job'
+  streamId: string
+  version: number
   chatId: string
-  job: { id: string; kind: string; status: string; attemptCount: number; maxAttempts: number }
-  sideEffect?: { kind: 'hypav3_progress'; payload: unknown }
+  job: {
+    id: string
+    instanceId: string
+    kind: string
+    status: string
+    attemptCount: number
+    maxAttempts: number
+    updatedAt?: string
+  }
+}
+
+interface TestMemorySnapshot {
+  type: 'memory.snapshot'
+  streamId: string
+  version: number
+  jobs: Array<TestMemoryEvent['job'] & { chatId: string }>
 }
 
 interface TestWriterEvent {
   sessionId: string | null
   epoch: number
 }
+
+// The lifecycle's real hydration/cache clearing has its own focused suite.
+// Keep bootstrap ordering independent of that cold dynamic import's duration.
+vi.mock('./observerProjectionLifecycle', () => ({
+  discardObserverProjectionState: projectionLifecycleApi.discard,
+}))
 
 vi.mock('./server/bootstrap', () => ({
   fetchServerBootstrap: bootstrapApi.fetch,
@@ -122,6 +186,11 @@ vi.mock('./server/resourceInvalidation', () => ({
   refreshInvalidatedServerResources: resourceApi.refreshInvalidated,
 }))
 
+vi.mock('./server/routeResourceLoader', () => ({
+  ensureResourceSurfaces: routeResourceApi.ensure,
+  stopRouteResourceLoader: routeResourceApi.stop,
+}))
+
 vi.mock('./server/resourceRefresh', () => ({
   forceServerDatabaseReplacementRefresh: resourceApi.forceReplacement,
   forceServerResourceRefresh: resourceApi.forceRefresh,
@@ -131,10 +200,29 @@ vi.mock('./server/resourceRefresh', () => ({
 vi.mock('./server/events', () => ({ subscribeServerCommandEvents: eventApi.subscribe }))
 vi.mock('./server/activeWriterSession', async (importActual) => {
   const actual = await importActual<typeof import('./server/activeWriterSession')>()
-  return { ...actual, enterWriterTakeoverFlow: activeWriterApi.enterTakeover }
+  return {
+    ...actual,
+    adoptPendingMutationWriterSessionId: (sessionId: string) => {
+      activeWriterApi.adoptPendingOwner(sessionId)
+      return actual.adoptPendingMutationWriterSessionId(sessionId)
+    },
+    enterWriterTakeoverFlow: activeWriterApi.enterTakeover,
+  }
 })
-vi.mock('./server/chatMessageHydration.svelte', () => hydrationApi)
-vi.mock('./server/lorebookBridge.svelte', () => lorebookApi)
+vi.mock('./server/chatMessageHydration.svelte', () => ({
+  ...hydrationApi,
+  requestActiveChatReadinessRefresh: hydrationApi.requestReadinessRefresh,
+  setActiveChatReadinessRefreshHook: (hook: (() => void) | null) => {
+    hydrationApi.readinessRefreshHook = hook
+  },
+}))
+vi.mock('./server/characterShellHydration.svelte', () => ({
+  clearCharacterShellHydrationState: characterHydrationApi.clear,
+  hydrateSelectedCharacterShell: characterHydrationApi.hydrateSelected,
+  startSelectedCharacterShellHydration: characterHydrationApi.startSelected,
+  stopSelectedCharacterShellHydration: characterHydrationApi.stopSelected,
+}))
+vi.mock('./server/lorebookOwner.svelte', () => lorebookApi)
 vi.mock('./server/promptTemplateHydration', () => ({
   ensurePromptTemplateHydrated: promptTemplateApi.ensure,
   hasPromptTemplateOwnerProjectionEpochChanged: promptTemplateApi.hasOwnerEpochChanged,
@@ -142,21 +230,23 @@ vi.mock('./server/promptTemplateHydration', () => ({
   isPromptTemplateOwnerAcknowledgementTainted: promptTemplateApi.isTainted,
   markPromptTemplateProjectionApplied: promptTemplateApi.markProjectionApplied,
   peekPromptTemplateOwnerRevision: promptTemplateApi.peekOwnerRevision,
+  resetPromptTemplateHydration: promptTemplateApi.reset,
 }))
-vi.mock('./server/bridgeFlush', () => ({
-  startBridgePatchLifecycleFlush: bridgeApi.start,
+vi.mock('./server/ownerMutationLifecycle', () => ({
+  startOwnerMutationLifecycleFlush: ownerMutationLifecycleApi.start,
 }))
 vi.mock('./server/pendingMutationReplay', () => ({
   replayPendingMutations: pendingMutationApi.replay,
 }))
 vi.mock('./server/pendingMutationOutbox', () => ({
-  countPendingMutationRecords: pendingMutationApi.count,
+  countBlockingPendingMutationRecords: pendingMutationApi.count,
   preparePendingMutationOutbox: pendingMutationApi.prepare,
   readSinglePendingMutationOwner: pendingMutationApi.readOwner,
+  stagePendingMutation: vi.fn(),
 }))
-vi.mock('./server/pendingBridgeFlushRegistry', async (importActual) => {
-  const actual = await importActual<typeof import('./server/pendingBridgeFlushRegistry')>()
-  return { ...actual, resetRegisteredPendingBridgeOwnershipState: ownershipApi.reset }
+vi.mock('./server/pendingOwnerMutationRegistry', async (importActual) => {
+  const actual = await importActual<typeof import('./server/pendingOwnerMutationRegistry')>()
+  return { ...actual, resetRegisteredOwnerState: ownershipApi.reset }
 })
 vi.mock('./server/durableMutationDispatch', () => ({
   countRegisteredDurableMutationSettlements: ownershipApi.count,
@@ -165,22 +255,44 @@ vi.mock('./server/durableMutationDispatch', () => ({
   setPendingMutationDiscardNotifier: vi.fn(),
 }))
 vi.mock('./process/reattach', () => ({
+  prepareOpenChatGenerationReattach: runtimeApi.prepareOpenChatGenerationReattach,
+  setActiveGenerationReattachReadinessPredicate: runtimeApi.setActiveGenerationReattachReadinessPredicate,
   setActiveGenerationJobs: runtimeApi.setActiveGenerationJobs,
   startActiveGenerationReattach: runtimeApi.startActiveGenerationReattach,
+  stopActiveGenerationReattach: runtimeApi.stopActiveGenerationReattach,
   triggerOpenChatGenerationReattach: runtimeApi.triggerOpenChatGenerationReattach,
 }))
+vi.mock('./process/generationPersistenceState', () => ({
+  setGenerationFinalizationPersistences: runtimeApi.setGenerationFinalizationPersistences,
+  startGenerationFinalizationPersistenceRefresh: runtimeApi.startGenerationFinalizationPersistenceRefresh,
+  stopGenerationFinalizationPersistenceRefresh: runtimeApi.stopGenerationFinalizationPersistenceRefresh,
+}))
+vi.mock('./process/recoveredGenerationEffects', () => recoveredGenerationApi)
 vi.mock('./server/messageTranslationJobs', () => ({
   setActiveMessageTranslations: runtimeApi.setActiveMessageTranslations,
   startActiveMessageTranslationRefresh: runtimeApi.startActiveMessageTranslationRefresh,
+  stopActiveMessageTranslationRefresh: runtimeApi.stopActiveMessageTranslationRefresh,
+}))
+vi.mock('./server/greetingTranslations.svelte', () => ({
+  setActiveGreetingTranslations: runtimeApi.setActiveGreetingTranslations,
+  startActiveGreetingTranslationRefresh: runtimeApi.startActiveGreetingTranslationRefresh,
+  stopActiveGreetingTranslationRefresh: runtimeApi.stopActiveGreetingTranslationRefresh,
+}))
+vi.mock('./server/generationOperations', () => ({
+  applyGenerationOperationBootstrap: runtimeApi.applyGenerationOperationBootstrap,
+  configureGenerationOperationProtocol: runtimeApi.configureGenerationOperationProtocol,
 }))
 vi.mock('./server/memoryJobEvents', () => ({ publishServerMemoryJobEvent: memoryApi.publish }))
-vi.mock('./process/request/serverMemory', () => ({ applyServerHypaV3Progress: memoryApi.applyProgress }))
+vi.mock('./server/memoryJobProjection.svelte', () => ({
+  applyServerMemoryJobEvent: memoryApi.applyEvent,
+  applyServerMemoryJobSnapshot: memoryApi.applySnapshot,
+}))
 
 vi.mock('./server/commands', async (importActual) => {
   const actual = await importActual<typeof import('./server/commands')>()
   return {
     ...actual,
-    initializeServerDatabase: commandApi.initialize,
+    initializeServerDatabaseForBootstrap: commandApi.initialize,
     setServerCommandSuccessReconciler: (reconciler: typeof commandApi.reconciler) => {
       commandApi.reconciler = reconciler
       actual.setServerCommandSuccessReconciler(reconciler)
@@ -189,20 +301,28 @@ vi.mock('./server/commands', async (importActual) => {
 })
 
 vi.mock('./plugins/plugins.svelte', () => ({
+  isPluginRuntimeReady: () => true,
   loadPlugins: vi.fn(async () => undefined),
   startPluginRuntimeSync: vi.fn(),
+  stopPluginRuntimeSync: optionalRuntimeApi.stopPluginSync,
 }))
 vi.mock('./alert', () => ({
   alertError: vi.fn(),
   alertMd: vi.fn(),
-  alertTOS: vi.fn(async () => true),
+  alertRequiredSelect: vi.fn(async () => '0'),
   waitAlert: vi.fn(async () => undefined),
 }))
 vi.mock('./gui/animation', () => ({ updateReducedMotion: vi.fn() }))
 vi.mock('./gui/colorscheme', () => ({ updateColorScheme: vi.fn(), updateTextThemeAndCSS: vi.fn() }))
 vi.mock('./gui/guisize', () => ({ updateGuisize: vi.fn() }))
 vi.mock('./gui/heightMode', () => ({ updateHeightMode: vi.fn() }))
-vi.mock('./observer.svelte', () => ({ startObserveDom: vi.fn() }))
+vi.mock('./observer.svelte', () => ({
+  startObserveDom: optionalRuntimeApi.startObserver,
+  stopObserveDom: optionalRuntimeApi.stopObserver,
+}))
+vi.mock('./stores/runtimeEffects.svelte', () => ({
+  installStoreRuntimeEffects: optionalRuntimeApi.installStoreEffects,
+}))
 vi.mock('./process/modules', () => ({
   getModuleAssets: vi.fn(() => []),
   getModuleLorebooks: vi.fn(() => []),
@@ -216,17 +336,26 @@ vi.mock('./model/modellist', () => ({
 vi.mock('./server/pushNotificationSetting', () => ({
   initializePushNotificationCoordinator: pushApi.initialize,
   reconcileChatCompletionPushNotificationSetting: pushApi.reconcile,
+  stopPushNotificationCoordinator: pushApi.stop,
 }))
 
 import {
   calculateServerResourceReconnectDelayMs,
   createGlobalErrorHandlers,
+  currentGlobalPromptTemplateOwnerId,
+  discardGenerationRecoveryStartup,
   loadData,
   loadWebInitialDatabase,
+  retryGenerationRecoveryStartup,
+  retryObserverWriterPromotion,
+  retryPluginStartup,
+  stopDeferredStartupRuntimes,
   stopServerResourceEvents,
 } from './bootstrap'
 import { loadPlugins, startPluginRuntimeSync } from './plugins/plugins.svelte'
-import { alertError } from './alert'
+import { alertError, alertRequiredSelect, waitAlert } from './alert'
+import { language } from 'src/lang'
+import * as languageRuntime from 'src/lang'
 import { updateHeightMode } from './gui/heightMode'
 import {
   clearAppliedServerResourceRevision,
@@ -239,7 +368,14 @@ import {
 } from './server/commands'
 import { getActiveWriterSessionId } from './server/activeWriterSession'
 import { adoptReplacementDatabaseOwnership } from './server/replacementDatabaseOwnership'
-import { getDatabase, setResourceWriteGuardEnabled, withTrustedResourceWrite } from './storage/database.svelte'
+import {
+  backgroundReady,
+  getStartupCoordinatorSnapshot,
+  getStartupReadinessSnapshot,
+  recordStartupMilestone,
+  resetStartupReadinessForTests,
+} from './startupReadiness'
+
 import {
   applyCollectionsResource,
   applyCharacterResource,
@@ -266,12 +402,15 @@ import {
   resetServerResourceState,
   settingsResourceState,
 } from './server/resourceState.svelte'
-import { getServerResourceApplyEpoch } from './server/resourceWriteGuard.svelte'
 import { captureDestructiveRefreshEpoch, createDestructiveRefreshToken } from './server/staleStateGuards'
-import { loadedStore, selectedCharID } from './stores.svelte'
+import { selectedCharID } from './stores.svelte'
+import { currentRoute } from './router'
 import { updateReducedMotion } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
 import { updateGuisize } from './gui/guisize'
+import { __observerShellFlagTestHooks } from './observerShellFlag'
+import { observerShellLifecycleStore, resetObserverShellLifecycleForTests } from './observerShellLifecycle.svelte'
+import { getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 function runtimeBootstrap(overrides: Record<string, unknown> = {}) {
   return {
@@ -283,7 +422,26 @@ function runtimeBootstrap(overrides: Record<string, unknown> = {}) {
       requestedWriterWasActive: true,
       writerEpoch: 1,
       activeGenerationJobs: [{ chatId: 'chat-a', jobId: 'job-a' }],
+      generationFinalizations: [
+        {
+          generationId: 'generation-a',
+          chatId: 'chat-a',
+          messageId: 'generation-a',
+          mode: 'send',
+          state: 'queued',
+          failureCount: 1,
+        },
+      ],
       activeMessageTranslations: [{ chatId: 'chat-a', messageId: 'message-a' }],
+      activeGreetingTranslations: [
+        {
+          characterId: 'char-a',
+          chatId: 'chat-a',
+          greetingIndex: -1,
+          settingsHash: 'settings-a',
+          jobId: 'greeting-job-a',
+        },
+      ],
       ...overrides,
     },
   }
@@ -338,21 +496,34 @@ function seedResourceDatabase() {
 }
 
 beforeEach(() => {
+  __observerShellFlagTestHooks.setOverride(false)
+  resetObserverShellLifecycleForTests()
+  resetStartupReadinessForTests()
+  recordStartupMilestone('entry', 0)
+  recordStartupMilestone('shell-mounted', 1)
+  stopDeferredStartupRuntimes()
   stopServerResourceEvents()
-  setResourceWriteGuardEnabled(false)
   resetServerResourceState()
   seedResourceDatabase()
-  loadedStore.set(false)
   selectedCharID.set(-1)
+  currentRoute.set({ kind: 'home', path: '/' })
   clearCachedServerCommandRevision()
   clearAppliedServerResourceRevision()
 
   vi.clearAllMocks()
+  recoveredGenerationApi.discardPendingRecoveredGenerationEffects.mockReset().mockResolvedValue(undefined)
+  recoveredGenerationApi.reconcilePendingRecoveredGenerationEffects.mockReset().mockResolvedValue(undefined)
+  recoveredGenerationApi.setPendingRecoveredGenerationEffects.mockReset()
+  activeWriterApi.adoptPendingOwner.mockClear()
+  optionalRuntimeApi.installStoreEffects.mockReturnValue(optionalRuntimeApi.disposeStoreEffects)
+  optionalRuntimeApi.startObserver.mockReturnValue(optionalRuntimeApi.stopObserver)
   ownershipApi.count.mockClear()
   ownershipApi.discard.mockReset()
   ownershipApi.reset.mockReset()
+  projectionLifecycleApi.discard.mockReset().mockResolvedValue(undefined)
   eventApi.subscriptions = []
-  bridgeApi.start.mockReturnValue(bridgeApi.stop)
+  hydrationApi.readinessRefreshHook = null
+  ownerMutationLifecycleApi.start.mockReturnValue(ownerMutationLifecycleApi.stop)
   pendingMutationApi.flushAcknowledgements.mockReset()
   pendingMutationApi.flushAcknowledgements.mockResolvedValue(undefined)
   pendingMutationApi.count.mockReset()
@@ -368,8 +539,7 @@ beforeEach(() => {
   pendingMutationApi.readOwner.mockReset()
   pendingMutationApi.readOwner.mockResolvedValue(null)
   pendingMutationApi.replay.mockResolvedValue({ attempted: 0, discarded: 0, retained: 0, succeeded: 0 })
-  promptTemplateApi.ensure.mockClear()
-  promptTemplateApi.ensure.mockResolvedValue(true)
+  promptTemplateApi.ensure.mockReset().mockResolvedValue(true)
   promptTemplateApi.hasOwnerEpochChanged.mockReset()
   promptTemplateApi.hasOwnerEpochChanged.mockReturnValue(false)
   promptTemplateApi.isHydrated.mockReset()
@@ -382,6 +552,7 @@ beforeEach(() => {
   bootstrapApi.fetch.mockResolvedValue(runtimeBootstrap())
   bootstrapApi.fetchReadOnly.mockResolvedValue(runtimeBootstrap({ revision: 5 }))
   resourceApi.loadInitial.mockResolvedValue({ status: 'ok', revision: 5, scope: 'full' })
+  routeResourceApi.ensure.mockReset().mockResolvedValue(undefined)
   resourceApi.refreshInvalidated.mockImplementation(async (events: TestCommandEvent | TestCommandEvent[]) => {
     const batch = Array.isArray(events) ? events : [events]
     return { status: 'ok', revision: batch.at(-1)?.revision ?? 5, scope: 'targeted' }
@@ -396,12 +567,269 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  __observerShellFlagTestHooks.setOverride(null)
+  resetObserverShellLifecycleForTests()
+  stopDeferredStartupRuntimes()
   stopServerResourceEvents()
+  resetStartupReadinessForTests()
   vi.useRealTimers()
   vi.restoreAllMocks()
 })
 
 describe('API-backed client bootstrap', () => {
+  it('fails closed when the globally selected prompt owner is duplicated', () => {
+    getDatabase().promptPresets = [
+      { id: 'prompt-a', name: 'Prompt A' },
+      { id: 'prompt-a', name: 'Duplicate Prompt A' },
+    ] as never
+    getDatabase().promptPresetsId = 0
+
+    expect(currentGlobalPromptTemplateOwnerId()).toBeNull()
+  })
+
+  it.each([false, true])(
+    'holds first shell capability for selected locale readiness (observer=%s)',
+    async (observer) => {
+      __observerShellFlagTestHooks.setOverride(observer)
+      let release!: () => void
+      const readiness = vi.spyOn(languageRuntime, 'awaitLanguageReady').mockReturnValueOnce(
+        new Promise((resolve) => {
+          release = resolve
+        }),
+      )
+      const loading = loadData()
+      await vi.waitFor(() => expect(readiness).toHaveBeenCalledOnce())
+      expect(resourceApi.loadInitial).toHaveBeenCalledOnce()
+      expect(getStartupCoordinatorSnapshot().capabilities.canRenderShell).toBe(false)
+      expect(eventApi.subscribe).not.toHaveBeenCalled()
+      expect(backgroundReady()).toBe(false)
+      release()
+      await loading
+      expect(getStartupCoordinatorSnapshot().capabilities.canRenderShell).toBe(true)
+      expect(backgroundReady()).toBe(true)
+    },
+  )
+
+  it('retries locale loading in a resumed projection step without rehydrating the shell', async () => {
+    const failure = new Error('locale chunk unavailable')
+    vi.spyOn(languageRuntime, 'awaitLanguageReady').mockRejectedValueOnce(failure)
+    const selection = vi.spyOn(languageRuntime, 'changeLanguage')
+    await loadData()
+    expect(alertError).toHaveBeenCalledExactlyOnceWith(failure)
+    expect(resourceApi.loadInitial).toHaveBeenCalledOnce()
+    expect(selection).toHaveBeenCalledTimes(2)
+    expect(selection).toHaveBeenNthCalledWith(1, 'en')
+    expect(selection).toHaveBeenNthCalledWith(2, 'en')
+    expect(backgroundReady()).toBe(true)
+  })
+
+  it('keeps the conservative writer-first boundary when the observer flag is disabled', async () => {
+    await loadData()
+
+    expect(bootstrapApi.fetchReadOnly).not.toHaveBeenCalled()
+    expect(resourceApi.loadInitial).toHaveBeenCalledOnce()
+    expect(resourceApi.loadInitial).toHaveBeenCalledWith({ hooks: resourceApi.hooks })
+    expect(getStartupCoordinatorSnapshot()).toMatchObject({
+      observerShellEnabled: false,
+      capabilities: {
+        canRenderShell: true,
+        canApplyRoutes: true,
+        canMutate: true,
+      },
+    })
+  })
+
+  it('renders a coherent observer shell before delayed writer recovery without enabling writes', async () => {
+    __observerShellFlagTestHooks.setOverride(true)
+    let releaseWriter!: (value: ReturnType<typeof runtimeBootstrap>) => void
+    bootstrapApi.fetch.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseWriter = resolve
+        }),
+    )
+
+    const loading = loadData()
+
+    await vi.waitFor(() => expect(resourceApi.loadInitial).toHaveBeenCalledOnce())
+    expect(bootstrapApi.fetchReadOnly).toHaveBeenCalledWith(null, { cacheRevision: false })
+    expect(resourceApi.loadInitial).toHaveBeenNthCalledWith(1)
+    expect(getStartupCoordinatorSnapshot()).toMatchObject({
+      observerShellEnabled: true,
+      capabilities: {
+        canRenderShell: true,
+        canApplyRoutes: false,
+        canMutate: false,
+        canGenerate: false,
+      },
+    })
+    expect(peekAppliedServerResourceRevision()).toBe(5)
+    expect(eventApi.subscribe).not.toHaveBeenCalled()
+
+    releaseWriter(runtimeBootstrap())
+    await loading
+
+    expect(resourceApi.loadInitial).toHaveBeenCalledTimes(2)
+    expect(resourceApi.loadInitial).toHaveBeenNthCalledWith(2, { hooks: resourceApi.hooks })
+    expect(getStartupCoordinatorSnapshot().capabilities).toMatchObject({
+      canRenderShell: true,
+      canApplyRoutes: true,
+      canMutate: true,
+    })
+  })
+
+  it('keeps writer capability closed until the post-replay projection and event cursor are installed', async () => {
+    __observerShellFlagTestHooks.setOverride(true)
+    let releaseEvents!: (value: { status: 'ok'; unsubscribe: typeof eventApi.unsubscribe }) => void
+    eventApi.subscribe.mockImplementationOnce((input) => {
+      eventApi.subscriptions.push(input)
+      return new Promise((resolve) => {
+        releaseEvents = resolve
+      })
+    })
+    resourceApi.loadInitial
+      .mockImplementationOnce(async () => {
+        replaceResourceDatabase(
+          {
+            characters: [
+              {
+                __serverCharacterShell: true,
+                chaId: 'observer-char',
+                name: 'Observer summary',
+                creatorNotes: 'stale observer detail',
+              },
+            ],
+            characterOrder: ['observer-char'],
+            currentChar: 0,
+          } as never,
+          5,
+        )
+        return { status: 'ok', revision: 5, scope: 'shell' }
+      })
+      .mockImplementationOnce(async () => {
+        replaceResourceDatabase(
+          {
+            characters: [
+              { chaId: 'char-a', name: 'Authoritative Ada', chatPage: 0, chats: [{ id: 'chat-a', message: [] }] },
+              { chaId: 'char-b', name: 'Authoritative Bea', chatPage: 0, chats: [{ id: 'chat-b', message: [] }] },
+            ],
+            characterOrder: ['char-a', 'char-b'],
+            currentChar: 1,
+          } as never,
+          8,
+        )
+        return { status: 'ok', revision: 8, scope: 'shell' }
+      })
+
+    const loading = loadData()
+
+    await vi.waitFor(() => expect(eventApi.subscribe).toHaveBeenCalledOnce())
+    expect(getStartupCoordinatorSnapshot().capabilities).toMatchObject({
+      canRenderShell: true,
+      canApplyRoutes: false,
+      canMutate: false,
+    })
+    expect(getDatabase().characters.map((character) => character.chaId)).toEqual(['char-a', 'char-b'])
+    expect(getDatabase().characters[0]?.name).toBe('Authoritative Ada')
+    expect(getDatabase().characters.some((character) => character.chaId === 'observer-char')).toBe(false)
+    expect(get(selectedCharID)).toBe(1)
+    expect(peekCachedServerCommandRevision()).toBe(8)
+    expect(peekAppliedServerResourceRevision()).toBe(8)
+    expect(commandApi.reconciler).not.toBeNull()
+    expect(eventApi.subscriptions[0]?.sinceRevision).toBe(8)
+
+    releaseEvents({ status: 'ok', unsubscribe: eventApi.unsubscribe })
+    await loading
+
+    expect(getStartupCoordinatorSnapshot().capabilities).toMatchObject({
+      canRenderShell: true,
+      canApplyRoutes: true,
+      canMutate: true,
+    })
+  })
+
+  it('shares a targeted observer promotion retry without duplicating replay or event subscription', async () => {
+    __observerShellFlagTestHooks.setOverride(true)
+    let releaseRetryEvents!: (value: { status: 'ok'; unsubscribe: typeof eventApi.unsubscribe }) => void
+    eventApi.subscribe.mockImplementation(async (input) => {
+      eventApi.subscriptions.push(input)
+      if (eventApi.subscriptions.length === 1) {
+        return { status: 'error', error: 'event stream unavailable' }
+      }
+      return new Promise((resolve) => {
+        releaseRetryEvents = resolve
+      })
+    })
+    pendingMutationApi.replay
+      .mockResolvedValueOnce({ attempted: 1, discarded: 0, retained: 0, succeeded: 1 })
+      .mockResolvedValueOnce({ attempted: 0, discarded: 0, retained: 0, succeeded: 0 })
+
+    await loadData()
+
+    expect(getStartupCoordinatorSnapshot().capabilities.canMutate).toBe(false)
+    expect(get(observerShellLifecycleStore).mode).toBe('unavailable')
+
+    const firstRetry = retryObserverWriterPromotion()
+    const secondRetry = retryObserverWriterPromotion()
+
+    expect(secondRetry).toBe(firstRetry)
+    await vi.waitFor(() => expect(eventApi.subscribe).toHaveBeenCalledTimes(2))
+    expect(get(observerShellLifecycleStore).mode).toBe('retrying')
+    expect(bootstrapApi.fetch).toHaveBeenCalledTimes(2)
+    expect(pendingMutationApi.replay).toHaveBeenCalledTimes(2)
+    expect(resourceApi.loadInitial).toHaveBeenCalledTimes(3)
+    expect(eventApi.unsubscribe).not.toHaveBeenCalled()
+
+    releaseRetryEvents({ status: 'ok', unsubscribe: eventApi.unsubscribe })
+    await expect(Promise.all([firstRetry, secondRetry])).resolves.toEqual([true, true])
+
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(2)
+    expect(pendingMutationApi.replay).toHaveBeenCalledTimes(2)
+    expect(get(observerShellLifecycleStore).mode).toBe('promoted')
+    expect(getStartupCoordinatorSnapshot().capabilities.canMutate).toBe(true)
+  })
+
+  it('returns a failed promotion to a stable observer and stops partially restarted writer runtimes', async () => {
+    __observerShellFlagTestHooks.setOverride(true)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    eventApi.subscribe.mockImplementation(async (input) => {
+      eventApi.subscriptions.push(input)
+      return { status: 'error', error: 'event stream unavailable' }
+    })
+
+    await loadData()
+    expect(get(observerShellLifecycleStore).mode).toBe('unavailable')
+
+    await expect(retryObserverWriterPromotion()).resolves.toBe(false)
+
+    expect(getStartupCoordinatorSnapshot().capabilities.canMutate).toBe(false)
+    expect(get(observerShellLifecycleStore).mode).toBe('unavailable')
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(2)
+    expect(runtimeApi.stopActiveMessageTranslationRefresh).toHaveBeenCalledOnce()
+    expect(runtimeApi.stopActiveGreetingTranslationRefresh).toHaveBeenCalledOnce()
+    expect(runtimeApi.stopActiveGenerationReattach).toHaveBeenCalledOnce()
+    expect(runtimeApi.stopGenerationFinalizationPersistenceRefresh).toHaveBeenCalledOnce()
+    expect(hydrationApi.stopChatMessageHydration).toHaveBeenCalledOnce()
+  })
+
+  it('falls back to writer-first startup when the optional observer read fails', async () => {
+    __observerShellFlagTestHooks.setOverride(true)
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    resourceApi.loadInitial
+      .mockResolvedValueOnce({ status: 'error', error: 'observer shell unavailable' })
+      .mockResolvedValueOnce({ status: 'ok', revision: 6, scope: 'shell' })
+
+    await loadData()
+
+    expect(resourceApi.loadInitial).toHaveBeenCalledTimes(2)
+    expect(consoleWarn).toHaveBeenCalledWith('Observer shell load failed: observer shell unavailable')
+    expect(getStartupCoordinatorSnapshot().capabilities).toMatchObject({
+      canRenderShell: true,
+      canApplyRoutes: true,
+      canMutate: true,
+    })
+  })
+
   it('retries startup after the user acknowledges a transient bootstrap failure', async () => {
     bootstrapApi.fetch.mockResolvedValueOnce({ status: 'unavailable' }).mockResolvedValueOnce(runtimeBootstrap())
 
@@ -409,7 +837,74 @@ describe('API-backed client bootstrap', () => {
 
     expect(alertError).toHaveBeenCalledOnce()
     expect(bootstrapApi.fetch).toHaveBeenCalledTimes(2)
-    expect(get(loadedStore)).toBe(true)
+    expect(backgroundReady()).toBe(true)
+    expect(getStartupReadinessSnapshot()).toMatchObject({
+      phase: 'background-ready',
+      attempts: [
+        {
+          attemptId: 1,
+          failureCode: 'writer-bootstrap-failed',
+          failureMilestone: 'observer-ready',
+        },
+        { attemptId: 2, completedAtMs: expect.any(Number) },
+      ],
+    })
+  })
+
+  it('settles into a useful observer after writer bootstrap failure and retries only on request', async () => {
+    __observerShellFlagTestHooks.setOverride(true)
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    bootstrapApi.fetch.mockResolvedValueOnce({ status: 'unavailable' }).mockResolvedValueOnce(runtimeBootstrap())
+
+    await loadData()
+
+    expect(bootstrapApi.fetch).toHaveBeenCalledOnce()
+    expect(alertError).not.toHaveBeenCalled()
+    expect(waitAlert).not.toHaveBeenCalled()
+    expect(backgroundReady()).toBe(false)
+    expect(getStartupCoordinatorSnapshot().capabilities).toMatchObject({
+      canRenderShell: true,
+      canApplyRoutes: false,
+      canMutate: false,
+    })
+    expect(get(observerShellLifecycleStore).mode).toBe('unavailable')
+    expect(consoleWarn).toHaveBeenCalledWith(
+      'Writer startup deferred while the observer shell remains available:',
+      expect.any(Error),
+    )
+
+    await expect(retryObserverWriterPromotion()).resolves.toBe(true)
+
+    expect(bootstrapApi.fetch).toHaveBeenCalledTimes(2)
+    expect(pendingMutationApi.replay).toHaveBeenCalledOnce()
+    expect(eventApi.subscribe).toHaveBeenCalledOnce()
+    expect(backgroundReady()).toBe(true)
+    expect(get(observerShellLifecycleStore).mode).toBe('promoted')
+  })
+
+  it('keeps the observer shell after explicit takeover denial and permits a later targeted retry', async () => {
+    __observerShellFlagTestHooks.setOverride(true)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    bootstrapApi.fetch
+      .mockResolvedValueOnce({ status: 'active-writer-connected', error: 'active_writer_connected' })
+      .mockResolvedValueOnce(runtimeBootstrap())
+    vi.mocked(alertRequiredSelect).mockResolvedValueOnce('1')
+
+    await loadData()
+
+    expect(getStartupCoordinatorSnapshot().capabilities).toMatchObject({
+      canRenderShell: true,
+      canApplyRoutes: false,
+      canMutate: false,
+    })
+    expect(get(observerShellLifecycleStore).mode).toBe('takeover-denied')
+    expect(resourceApi.loadInitial).toHaveBeenCalledOnce()
+    expect(pendingMutationApi.prepare).not.toHaveBeenCalled()
+
+    await expect(retryObserverWriterPromotion()).resolves.toBe(true)
+
+    expect(bootstrapApi.fetch).toHaveBeenCalledTimes(2)
+    expect(get(observerShellLifecycleStore).mode).toBe('promoted')
   })
 
   it('starts plugin runtime synchronization after the initial plugin load', async () => {
@@ -420,6 +915,494 @@ describe('API-backed client bootstrap', () => {
     expect(vi.mocked(loadPlugins).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(startPluginRuntimeSync).mock.invocationCallOrder[0],
     )
+  })
+
+  it('starts selected hydration after writer readiness and prepares reattach after chat dependencies', async () => {
+    await loadData()
+
+    expect(eventApi.subscribe.mock.invocationCallOrder[0]).toBeLessThan(
+      characterHydrationApi.startSelected.mock.invocationCallOrder[0],
+    )
+    expect(eventApi.subscribe.mock.invocationCallOrder[0]).toBeLessThan(
+      hydrationApi.startChatMessageHydration.mock.invocationCallOrder[0],
+    )
+    expect(promptTemplateApi.ensure.mock.invocationCallOrder[0]).toBeLessThan(
+      runtimeApi.startActiveGenerationReattach.mock.invocationCallOrder[0],
+    )
+    expect(runtimeApi.startActiveGenerationReattach.mock.invocationCallOrder[0]).toBeLessThan(
+      runtimeApi.prepareOpenChatGenerationReattach.mock.invocationCallOrder[0],
+    )
+  })
+
+  it('localizes plugin startup failure and retries it without repeating successful startup steps', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.mocked(loadPlugins).mockRejectedValueOnce(new Error('plugin startup failed')).mockResolvedValueOnce(undefined)
+
+    await loadData()
+
+    expect(bootstrapApi.fetch).toHaveBeenCalledOnce()
+    expect(pendingMutationApi.prepare).toHaveBeenCalledOnce()
+    expect(pendingMutationApi.replay).toHaveBeenCalledOnce()
+    expect(resourceApi.loadInitial).toHaveBeenCalledOnce()
+    expect(eventApi.subscribe).toHaveBeenCalledOnce()
+    expect(pushApi.initialize).toHaveBeenCalledOnce()
+    expect(loadPlugins).toHaveBeenCalledOnce()
+    expect(startPluginRuntimeSync).not.toHaveBeenCalled()
+    expect(backgroundReady()).toBe(true)
+    expect(alertError).not.toHaveBeenCalled()
+    expect(getStartupCoordinatorSnapshot()).toMatchObject({
+      capabilities: {
+        canRenderShell: true,
+        canApplyRoutes: true,
+        canMutate: true,
+        pluginsReady: false,
+        canGenerate: false,
+      },
+      failures: {
+        pluginsReady: expect.objectContaining({ failureCode: 'plugin-initialization-failed' }),
+        canGenerate: expect.objectContaining({ failureCode: 'plugin-initialization-failed' }),
+      },
+    })
+    expect(consoleWarn).toHaveBeenCalledWith('Plugin runtime initialization failed:', expect.any(Error))
+
+    await expect(retryPluginStartup()).resolves.toBe(true)
+
+    expect(loadPlugins).toHaveBeenCalledTimes(2)
+    expect(startPluginRuntimeSync).toHaveBeenCalledOnce()
+    expect(getStartupReadinessSnapshot().attempts).toEqual([
+      expect.objectContaining({ attemptId: 1, completedAtMs: expect.any(Number) }),
+      expect.objectContaining({ attemptId: 2, completedAtMs: expect.any(Number) }),
+    ])
+    expect(getStartupCoordinatorSnapshot()).toMatchObject({
+      capabilities: {
+        canRenderShell: true,
+        canApplyRoutes: true,
+        canMutate: true,
+        pluginsReady: true,
+        canGenerate: true,
+      },
+      failures: {},
+      completedSteps: expect.arrayContaining([
+        'writer-owner-adoption',
+        'writer-bootstrap',
+        'writer-initialize',
+        'writer-outbox-prepare',
+        'writer-receipt-flush',
+        'writer-pending-replay',
+        'writer-resource-hydration',
+        'writer-projection-install',
+        'writer-runtime-services',
+        'writer-event-subscription',
+        'writer-shell',
+        'push-runtime',
+        'plugin-runtime',
+        'generation-recovery',
+        'chat-readiness',
+        'background-runtime',
+        'background-readiness',
+      ]),
+    })
+  })
+
+  it('retries a localized generation recovery failure without repeating successful startup steps', async () => {
+    const recoveryFailure = new Error('generation effects unavailable')
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    recoveredGenerationApi.reconcilePendingRecoveredGenerationEffects
+      .mockRejectedValueOnce(recoveryFailure)
+      .mockResolvedValueOnce(undefined)
+
+    await loadData()
+
+    expect(backgroundReady()).toBe(true)
+    expect(recoveredGenerationApi.reconcilePendingRecoveredGenerationEffects).toHaveBeenCalledOnce()
+    expect(getStartupCoordinatorSnapshot()).toMatchObject({
+      capabilities: {
+        canRenderShell: true,
+        canApplyRoutes: true,
+        canMutate: true,
+        pluginsReady: true,
+        canGenerate: false,
+      },
+      failures: {
+        canGenerate: expect.objectContaining({ failureCode: 'generation-recovery-failed' }),
+      },
+    })
+    expect(consoleWarn).toHaveBeenCalledWith('Generation recovery initialization failed:', recoveryFailure)
+
+    await expect(retryGenerationRecoveryStartup()).resolves.toBe(true)
+
+    expect(recoveredGenerationApi.reconcilePendingRecoveredGenerationEffects).toHaveBeenCalledTimes(2)
+    expect(bootstrapApi.fetch).toHaveBeenCalledOnce()
+    expect(pendingMutationApi.prepare).toHaveBeenCalledOnce()
+    expect(pendingMutationApi.replay).toHaveBeenCalledOnce()
+    expect(resourceApi.loadInitial).toHaveBeenCalledOnce()
+    expect(eventApi.subscribe).toHaveBeenCalledOnce()
+    expect(pushApi.initialize).toHaveBeenCalledOnce()
+    expect(loadPlugins).toHaveBeenCalledOnce()
+    expect(startPluginRuntimeSync).toHaveBeenCalledOnce()
+    expect(getStartupReadinessSnapshot().attempts).toEqual([
+      expect.objectContaining({ attemptId: 1, completedAtMs: expect.any(Number) }),
+      expect.objectContaining({ attemptId: 2, completedAtMs: expect.any(Number) }),
+    ])
+    expect(getStartupCoordinatorSnapshot()).toMatchObject({
+      capabilities: {
+        canRenderShell: true,
+        canApplyRoutes: true,
+        canMutate: true,
+        pluginsReady: true,
+        canGenerate: true,
+      },
+      failures: {},
+      completedSteps: expect.arrayContaining(['generation-recovery', 'chat-readiness', 'background-readiness']),
+    })
+  })
+
+  it('discards a localized generation recovery failure and reopens generation', async () => {
+    recoveredGenerationApi.reconcilePendingRecoveredGenerationEffects.mockRejectedValueOnce(
+      new Error('generation effects unavailable'),
+    )
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await loadData()
+
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(false)
+    await expect(discardGenerationRecoveryStartup()).resolves.toBe(true)
+
+    expect(recoveredGenerationApi.reconcilePendingRecoveredGenerationEffects).toHaveBeenCalledOnce()
+    expect(recoveredGenerationApi.discardPendingRecoveredGenerationEffects).toHaveBeenCalledOnce()
+    expect(getStartupCoordinatorSnapshot()).toMatchObject({
+      capabilities: { canGenerate: true },
+      failures: {},
+      completedSteps: expect.arrayContaining(['generation-recovery']),
+    })
+  })
+
+  it('allows plugin and chat readiness to complete while push initialization is delayed', async () => {
+    let releasePush!: () => void
+    pushApi.initialize.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releasePush = resolve
+        }),
+    )
+
+    const loading = loadData()
+
+    await vi.waitFor(() => expect(loadPlugins).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true))
+    expect(getStartupCoordinatorSnapshot().capabilities).toMatchObject({
+      canRenderShell: true,
+      canMutate: true,
+      pluginsReady: true,
+    })
+    expect(backgroundReady()).toBe(false)
+
+    releasePush()
+    await loading
+    expect(backgroundReady()).toBe(true)
+  })
+
+  it('isolates a failed push initialization from shell, mutation, and chat readiness', async () => {
+    const pushFailure = new Error('push storage unavailable')
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    pushApi.initialize.mockRejectedValueOnce(pushFailure)
+
+    await loadData()
+
+    expect(getStartupCoordinatorSnapshot().capabilities).toMatchObject({
+      canRenderShell: true,
+      canMutate: true,
+      pluginsReady: true,
+      canGenerate: true,
+    })
+    expect(backgroundReady()).toBe(true)
+    expect(alertError).not.toHaveBeenCalled()
+    expect(consoleWarn).toHaveBeenCalledWith('Failed to initialize push runtime:', pushFailure)
+  })
+
+  it('owns idempotent cleanup for deferred app and plugin runtimes', async () => {
+    const addEventListener = vi.spyOn(window, 'addEventListener')
+    const removeEventListener = vi.spyOn(window, 'removeEventListener')
+
+    await loadData()
+
+    expect(optionalRuntimeApi.installStoreEffects).toHaveBeenCalledOnce()
+    expect(optionalRuntimeApi.startObserver).toHaveBeenCalledOnce()
+    expect(addEventListener.mock.calls.filter(([type]) => type === 'error')).toHaveLength(1)
+    expect(addEventListener.mock.calls.filter(([type]) => type === 'unhandledrejection')).toHaveLength(1)
+
+    stopDeferredStartupRuntimes()
+    stopDeferredStartupRuntimes()
+
+    expect(optionalRuntimeApi.disposeStoreEffects).toHaveBeenCalledOnce()
+    expect(optionalRuntimeApi.stopObserver).toHaveBeenCalledOnce()
+    expect(pushApi.stop).toHaveBeenCalledOnce()
+    expect(optionalRuntimeApi.stopPluginSync).toHaveBeenCalledTimes(2)
+    expect(removeEventListener.mock.calls.filter(([type]) => type === 'error')).toHaveLength(1)
+    expect(removeEventListener.mock.calls.filter(([type]) => type === 'unhandledrejection')).toHaveLength(1)
+  })
+
+  it('shares one coordinator attempt loop between concurrent startup callers', async () => {
+    let releasePlugins!: () => void
+    vi.mocked(loadPlugins).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releasePlugins = resolve
+        }),
+    )
+
+    const firstLoad = loadData()
+    const secondLoad = loadData()
+    expect(secondLoad).toBe(firstLoad)
+    await vi.waitFor(() => expect(loadPlugins).toHaveBeenCalledOnce())
+
+    releasePlugins()
+    await Promise.all([firstLoad, secondLoad])
+
+    expect(bootstrapApi.fetch).toHaveBeenCalledOnce()
+    expect(eventApi.subscribe).toHaveBeenCalledOnce()
+    expect(getStartupReadinessSnapshot().attempts).toHaveLength(1)
+  })
+
+  it('keeps event revisions contiguous across coordinator transitions', async () => {
+    let releasePush!: () => void
+    pushApi.initialize.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releasePush = resolve
+        }),
+    )
+    let releasePlugins!: () => void
+    vi.mocked(loadPlugins).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releasePlugins = resolve
+        }),
+    )
+    let releaseCharacter!: () => void
+    characterHydrationApi.hydrateSelected.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          releaseCharacter = () => resolve(true)
+        }),
+    )
+    let releaseWarning!: () => void
+    vi.mocked(waitAlert).mockImplementationOnce(
+      () =>
+        new Promise<Awaited<ReturnType<typeof waitAlert>>>((resolve) => {
+          releaseWarning = () => resolve({ type: 'none', msg: '' })
+        }),
+    )
+
+    const secureContextDescriptor = Object.getOwnPropertyDescriptor(window, 'isSecureContext')
+    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: false })
+    localStorage.removeItem('insecureOriginWarned')
+    eventApi.subscribe.mockImplementationOnce(async (input) => {
+      eventApi.subscriptions.push(input)
+      input.onCommandEvent({ type: 'settings.updated', revision: 6, resource: 'settings' })
+      return { status: 'ok', unsubscribe: eventApi.unsubscribe }
+    })
+
+    let loading: Promise<void> | undefined
+    try {
+      loading = loadData()
+
+      await vi.waitFor(() => expect(pushApi.initialize).toHaveBeenCalledOnce())
+      expect(eventApi.subscriptions[0]?.sinceRevision).toBe(5)
+      await vi.waitFor(() => expect(peekAppliedServerResourceRevision()).toBe(6))
+
+      eventApi.subscriptions[0].onCommandEvent({ type: 'settings.updated', revision: 7, resource: 'settings' })
+      await vi.waitFor(() => expect(peekAppliedServerResourceRevision()).toBe(7))
+      releasePush()
+
+      await vi.waitFor(() => expect(loadPlugins).toHaveBeenCalledOnce())
+      eventApi.subscriptions[0].onCommandEvent({ type: 'settings.updated', revision: 8, resource: 'settings' })
+      await vi.waitFor(() => expect(peekAppliedServerResourceRevision()).toBe(8))
+      releasePlugins()
+
+      await vi.waitFor(() => expect(characterHydrationApi.hydrateSelected).toHaveBeenCalled())
+      eventApi.subscriptions[0].onCommandEvent({ type: 'settings.updated', revision: 9, resource: 'settings' })
+      await vi.waitFor(() => expect(peekAppliedServerResourceRevision()).toBe(9))
+      releaseCharacter()
+
+      await vi.waitFor(() => expect(waitAlert).toHaveBeenCalledOnce())
+      expect(getStartupReadinessSnapshot().phase).toBe('chat-ready')
+      eventApi.subscriptions[0].onCommandEvent({ type: 'settings.updated', revision: 10, resource: 'settings' })
+      await vi.waitFor(() => expect(peekAppliedServerResourceRevision()).toBe(10))
+      releaseWarning()
+
+      await loading
+      expect(getStartupReadinessSnapshot().phase).toBe('background-ready')
+      expect(resourceApi.refreshInvalidated.mock.calls.map(([events]) => events)).toEqual([
+        [expect.objectContaining({ revision: 6 })],
+        [expect.objectContaining({ revision: 7 })],
+        [expect.objectContaining({ revision: 8 })],
+        [expect.objectContaining({ revision: 9 })],
+        [expect.objectContaining({ revision: 10 })],
+      ])
+    } finally {
+      releasePush?.()
+      releasePlugins?.()
+      releaseCharacter?.()
+      releaseWarning?.()
+      await loading?.catch(() => undefined)
+      localStorage.removeItem('insecureOriginWarned')
+      if (secureContextDescriptor) Object.defineProperty(window, 'isSecureContext', secureContextDescriptor)
+      else Reflect.deleteProperty(window, 'isSecureContext')
+    }
+  })
+
+  it('reports the selected-character dependency without blocking the readable shell', async () => {
+    characterHydrationApi.hydrateSelected.mockResolvedValueOnce(false)
+
+    await loadData()
+
+    expect(backgroundReady()).toBe(true)
+    expect(getStartupCoordinatorSnapshot()).toMatchObject({
+      capabilities: {
+        canRenderShell: true,
+        canMutate: true,
+        canGenerate: false,
+      },
+      failures: {
+        canGenerate: expect.objectContaining({ failureCode: 'selected-character-hydration-failed' }),
+      },
+    })
+    expect(hydrationApi.hydrateActiveChat).not.toHaveBeenCalled()
+
+    selectedCharID.set(0)
+    await vi.waitFor(() => expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true))
+    expect(getStartupCoordinatorSnapshot().failures.canGenerate).toBeUndefined()
+  })
+
+  it('loads the selected chat and prompt together while keeping generation gated until both settle', async () => {
+    let releaseChat!: (ready: boolean) => void
+    let releasePrompt!: (ready: boolean) => void
+    hydrationApi.hydrateActiveChat.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          releaseChat = resolve
+        }),
+    )
+    promptTemplateApi.ensure.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          releasePrompt = resolve
+        }),
+    )
+
+    const loading = loadData()
+    await vi.waitFor(() => expect(hydrationApi.hydrateActiveChat).toHaveBeenCalledOnce())
+    expect(promptTemplateApi.ensure).toHaveBeenCalledOnce()
+    releasePrompt(true)
+    await Promise.resolve()
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(false)
+    releaseChat(true)
+    await loading
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true)
+  })
+
+  it('fences same-character chat hydration and ignores an older target result', async () => {
+    await loadData()
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true)
+    hydrationApi.hydrateActiveChat.mockClear()
+
+    let releaseOlderChat!: (ready: boolean) => void
+    hydrationApi.hydrateActiveChat.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          releaseOlderChat = resolve
+        }),
+    )
+    withTestDatabaseWrite(() => {
+      const character = getDatabase().characters[1]
+      character.chats.push({ id: 'chat-b-new', message: [] } as never)
+      character.chatPage = 1
+    })
+    hydrationApi.readinessRefreshHook?.()
+
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(false)
+    await vi.waitFor(() => expect(hydrationApi.hydrateActiveChat).toHaveBeenCalledOnce())
+
+    withTestDatabaseWrite(() => {
+      getDatabase().characters[1].chatPage = 0
+    })
+    hydrationApi.readinessRefreshHook?.()
+    await vi.waitFor(() => expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true))
+
+    releaseOlderChat(false)
+    await Promise.resolve()
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true)
+    expect(getStartupCoordinatorSnapshot().failures.canGenerate).toBeUndefined()
+  })
+
+  it('fences same-chat prompt hydration and ignores an older owner result', async () => {
+    await loadData()
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true)
+    promptTemplateApi.ensure.mockClear()
+
+    let releaseOlderPrompt!: (ready: boolean) => void
+    promptTemplateApi.ensure.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          releaseOlderPrompt = resolve
+        }),
+    )
+    withTestDatabaseWrite(() => {
+      getDatabase().characters[1].chats[0].generationSettings = { promptPresetId: 'prompt-older' }
+    })
+    hydrationApi.readinessRefreshHook?.()
+
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(false)
+    await vi.waitFor(() =>
+      expect(promptTemplateApi.ensure).toHaveBeenCalledWith({
+        applyProjection: false,
+        promptPresetId: 'prompt-older',
+        minimumRevision: 5,
+      }),
+    )
+
+    withTestDatabaseWrite(() => {
+      getDatabase().characters[1].chats[0].generationSettings = { promptPresetId: 'prompt-newer' }
+    })
+    hydrationApi.readinessRefreshHook?.()
+    await vi.waitFor(() => expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true))
+    expect(promptTemplateApi.ensure).toHaveBeenCalledWith({
+      applyProjection: false,
+      promptPresetId: 'prompt-newer',
+      minimumRevision: 5,
+    })
+
+    releaseOlderPrompt(false)
+    await Promise.resolve()
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true)
+    expect(getStartupCoordinatorSnapshot().failures.canGenerate).toBeUndefined()
+  })
+
+  it('supersedes selected-chat readiness when only the route identity changes', async () => {
+    await loadData()
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true)
+    characterHydrationApi.hydrateSelected.mockClear()
+
+    let releaseOlderRoute!: (ready: boolean) => void
+    characterHydrationApi.hydrateSelected.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          releaseOlderRoute = resolve
+        }),
+    )
+    currentRoute.set({ kind: 'settings', path: '/settings/model', section: 'model', index: 17 })
+
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(false)
+    await vi.waitFor(() => expect(characterHydrationApi.hydrateSelected).toHaveBeenCalledOnce())
+
+    currentRoute.set({ kind: 'character', path: '/character/char-b/chat-b', chaId: 'char-b', chatId: 'chat-b' })
+    await vi.waitFor(() => expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true))
+
+    releaseOlderRoute(true)
+    await Promise.resolve()
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true)
+    expect(getStartupCoordinatorSnapshot().failures.canGenerate).toBeUndefined()
   })
 
   it('reconciles disabled device push state after the initial settings load', async () => {
@@ -443,7 +1426,7 @@ describe('API-backed client bootstrap', () => {
 
     const loading = loadData()
     await vi.waitFor(() => expect(loadPlugins).toHaveBeenCalledOnce())
-    expect(get(loadedStore)).toBe(false)
+    expect(backgroundReady()).toBe(false)
 
     expect(
       applySettingsGroupResource(
@@ -516,11 +1499,11 @@ describe('API-backed client bootstrap', () => {
       ),
     ).toBe(true)
 
-    expect(pushApi.reconcile).toHaveBeenCalledOnce()
+    await vi.waitFor(() => expect(pushApi.reconcile).toHaveBeenCalledOnce())
     expect(pushApi.reconcile).toHaveBeenCalledWith(true)
   })
 
-  it('loads resource APIs, seeds the resource revision, and starts runtime services', async () => {
+  it('loads resource APIs and writer runtime services without starting selected hydration owners', async () => {
     await loadWebInitialDatabase()
 
     expect(bootstrapApi.fetch).toHaveBeenCalledTimes(1)
@@ -532,6 +1515,7 @@ describe('API-backed client bootstrap', () => {
     })
     expect(pendingMutationApi.flushAcknowledgements).toHaveBeenCalledOnce()
     expect(pendingMutationApi.replay).toHaveBeenCalledOnce()
+    expect(runtimeApi.configureGenerationOperationProtocol).toHaveBeenCalledWith(undefined, 'database-a')
     expect(pendingMutationApi.prepare.mock.invocationCallOrder[0]).toBeLessThan(
       pendingMutationApi.replay.mock.invocationCallOrder[0],
     )
@@ -539,14 +1523,102 @@ describe('API-backed client bootstrap', () => {
       resourceApi.loadInitial.mock.invocationCallOrder[0],
     )
     expect(resourceApi.loadInitial).toHaveBeenCalledWith({ hooks: resourceApi.hooks })
+    expect(runtimeApi.applyGenerationOperationBootstrap).toHaveBeenCalledWith(runtimeBootstrap().bootstrap, 'startup')
+    expect(pendingMutationApi.replay.mock.invocationCallOrder[0]).toBeLessThan(
+      runtimeApi.applyGenerationOperationBootstrap.mock.invocationCallOrder[0],
+    )
+    expect(resourceApi.loadInitial.mock.invocationCallOrder[0]).toBeLessThan(
+      runtimeApi.applyGenerationOperationBootstrap.mock.invocationCallOrder[0],
+    )
+    expect(runtimeApi.setGenerationFinalizationPersistences).toHaveBeenCalledWith([
+      expect.objectContaining({ generationId: 'generation-a', state: 'queued' }),
+    ])
     expect(peekCachedServerCommandRevision()).toBe(5)
     expect(peekAppliedServerResourceRevision()).toBe(5)
     expect(get(selectedCharID)).toBe(1)
-    expect(runtimeApi.setActiveGenerationJobs).toHaveBeenCalledWith([{ chatId: 'chat-a', jobId: 'job-a' }])
     expect(runtimeApi.setActiveMessageTranslations).toHaveBeenCalledWith([{ chatId: 'chat-a', messageId: 'message-a' }])
-    expect(hydrationApi.startChatMessageHydration).toHaveBeenCalledTimes(1)
-    expect(promptTemplateApi.ensure).toHaveBeenCalledWith({ minimumRevision: 5 })
+    expect(runtimeApi.setActiveGreetingTranslations).toHaveBeenCalledWith([
+      {
+        characterId: 'char-a',
+        chatId: 'chat-a',
+        greetingIndex: -1,
+        settingsHash: 'settings-a',
+        jobId: 'greeting-job-a',
+      },
+    ])
+    expect(hydrationApi.startChatMessageHydration).not.toHaveBeenCalled()
+    expect(characterHydrationApi.startSelected).not.toHaveBeenCalled()
+    expect(promptTemplateApi.ensure).not.toHaveBeenCalled()
     expect(eventApi.subscriptions[0]?.sinceRevision).toBe(5)
+  })
+
+  it('preserves the owner, takeover, outbox, receipt, replay, projection, and event order', async () => {
+    pendingMutationApi.readOwner.mockResolvedValueOnce({
+      writerSessionId: 'recovered-writer',
+      writerEpoch: 1,
+      databaseLineage: 'database-a',
+    })
+    bootstrapApi.fetch
+      .mockResolvedValueOnce({ status: 'active-writer-connected', error: 'active_writer_connected' })
+      .mockResolvedValueOnce(runtimeBootstrap({ requestedWriterWasActive: false, writerEpoch: 2 }))
+
+    await loadWebInitialDatabase()
+
+    expect(pendingMutationApi.readOwner.mock.invocationCallOrder[0]).toBeLessThan(
+      activeWriterApi.adoptPendingOwner.mock.invocationCallOrder[0],
+    )
+    expect(activeWriterApi.adoptPendingOwner.mock.invocationCallOrder[0]).toBeLessThan(
+      bootstrapApi.fetch.mock.invocationCallOrder[0],
+    )
+    expect(bootstrapApi.fetch.mock.invocationCallOrder[1]).toBeLessThan(
+      pendingMutationApi.prepare.mock.invocationCallOrder[0],
+    )
+    expect(pendingMutationApi.prepare.mock.invocationCallOrder[0]).toBeLessThan(
+      pendingMutationApi.flushAcknowledgements.mock.invocationCallOrder[0],
+    )
+    expect(pendingMutationApi.flushAcknowledgements.mock.invocationCallOrder[0]).toBeLessThan(
+      pendingMutationApi.replay.mock.invocationCallOrder[0],
+    )
+    expect(pendingMutationApi.replay.mock.invocationCallOrder[0]).toBeLessThan(
+      resourceApi.loadInitial.mock.invocationCallOrder[0],
+    )
+    expect(resourceApi.loadInitial.mock.invocationCallOrder[0]).toBeLessThan(
+      eventApi.subscribe.mock.invocationCallOrder[0],
+    )
+  })
+
+  it('prompts before explicitly disconnecting a still-connected writer', async () => {
+    bootstrapApi.fetch
+      .mockResolvedValueOnce({ status: 'active-writer-connected', error: 'active_writer_connected' })
+      .mockResolvedValueOnce(runtimeBootstrap({ requestedWriterWasActive: false, writerEpoch: 2 }))
+
+    await loadWebInitialDatabase()
+
+    expect(alertRequiredSelect).toHaveBeenCalledWith(
+      [language.writerConnectDisconnectExisting, language.cancel],
+      language.writerConnectConflictBody,
+      language.writerConnectConflictTitle,
+    )
+    expect(bootstrapApi.fetch).toHaveBeenNthCalledWith(1)
+    expect(bootstrapApi.fetch).toHaveBeenNthCalledWith(2, null, { disconnectExistingWriter: true })
+    expect(pendingMutationApi.prepare).toHaveBeenCalledWith(
+      expect.objectContaining({ requestedWriterWasActive: false, writerEpoch: 2 }),
+    )
+  })
+
+  it('leaves the existing writer connected when the new client cancels', async () => {
+    bootstrapApi.fetch.mockResolvedValueOnce({
+      status: 'active-writer-connected',
+      error: 'active_writer_connected',
+    })
+    vi.mocked(alertRequiredSelect).mockResolvedValueOnce('1')
+
+    await expect(loadWebInitialDatabase()).rejects.toThrow(language.writerConnectCancelled)
+
+    expect(bootstrapApi.fetch).toHaveBeenCalledOnce()
+    expect(resourceApi.loadInitial).not.toHaveBeenCalled()
+    expect(pendingMutationApi.prepare).not.toHaveBeenCalled()
+    expect(get(observerShellLifecycleStore).mode).toBe('takeover-denied')
   })
 
   it('stops before hydration when transient failures leave encrypted changes queued', async () => {
@@ -556,6 +1628,22 @@ describe('API-backed client bootstrap', () => {
     await expect(loadWebInitialDatabase()).rejects.toThrow('pending changes')
 
     expect(resourceApi.loadInitial).not.toHaveBeenCalled()
+  })
+
+  it('hydrates with a retained Stop control so its retry UI can remain available', async () => {
+    pendingMutationApi.replay.mockResolvedValue({
+      attempted: 1,
+      controlRetained: 1,
+      discarded: 0,
+      retained: 0,
+      succeeded: 0,
+    })
+    pendingMutationApi.count.mockResolvedValue(0)
+
+    await loadWebInitialDatabase()
+
+    expect(resourceApi.loadInitial).toHaveBeenCalledOnce()
+    expect(runtimeApi.applyGenerationOperationBootstrap).toHaveBeenCalledOnce()
   })
 
   it.each([1, null])('stops before hydration when the raw pending-row count is %s', async (count) => {
@@ -582,8 +1670,20 @@ describe('API-backed client bootstrap', () => {
     expect(commandApi.initialize).toHaveBeenCalledTimes(1)
     expect(bootstrapApi.fetchReadOnly).not.toHaveBeenCalled()
     expect(resourceApi.loadInitial).toHaveBeenCalledTimes(1)
-    expect(runtimeApi.setActiveGenerationJobs).toHaveBeenCalledWith([{ chatId: 'chat-a', jobId: 'job-a' }])
+    expect(runtimeApi.applyGenerationOperationBootstrap).toHaveBeenCalledWith(
+      expect.objectContaining({ activeGenerationJobs: [{ chatId: 'chat-a', jobId: 'job-a' }] }),
+      'startup',
+    )
     expect(runtimeApi.setActiveMessageTranslations).toHaveBeenCalledWith([{ chatId: 'chat-a', messageId: 'message-a' }])
+    expect(runtimeApi.setActiveGreetingTranslations).toHaveBeenCalledWith([
+      {
+        characterId: 'char-a',
+        chatId: 'chat-a',
+        greetingIndex: -1,
+        settingsHash: 'settings-a',
+        jobId: 'greeting-job-a',
+      },
+    ])
   })
 
   it('refetches runtime metadata when another client wins initialization', async () => {
@@ -594,6 +1694,7 @@ describe('API-backed client bootstrap', () => {
         revision: 1,
         activeGenerationJobs: [{ chatId: 'chat-b', jobId: 'job-b' }],
         activeMessageTranslations: [],
+        activeGreetingTranslations: [],
       }),
     )
     commandApi.initialize.mockResolvedValue({ status: 'ok', revision: 1, initialized: false })
@@ -601,8 +1702,12 @@ describe('API-backed client bootstrap', () => {
     await loadWebInitialDatabase()
 
     expect(bootstrapApi.fetchReadOnly).toHaveBeenCalledTimes(1)
-    expect(runtimeApi.setActiveGenerationJobs).toHaveBeenCalledWith([{ chatId: 'chat-b', jobId: 'job-b' }])
+    expect(runtimeApi.applyGenerationOperationBootstrap).toHaveBeenCalledWith(
+      expect.objectContaining({ activeGenerationJobs: [{ chatId: 'chat-b', jobId: 'job-b' }] }),
+      'startup',
+    )
     expect(runtimeApi.setActiveMessageTranslations).toHaveBeenCalledWith([])
+    expect(runtimeApi.setActiveGreetingTranslations).toHaveBeenCalledWith([])
   })
 
   it('shows a fatal damaged-database alert and does not retry an initialize conflict', async () => {
@@ -619,7 +1724,7 @@ describe('API-backed client bootstrap', () => {
     expect(bootstrapApi.fetch).toHaveBeenCalledTimes(1)
     expect(bootstrapApi.fetchReadOnly).not.toHaveBeenCalled()
     expect(resourceApi.loadInitial).not.toHaveBeenCalled()
-    expect(get(loadedStore)).toBe(false)
+    expect(backgroundReady()).toBe(false)
     expect(alertError).toHaveBeenCalledTimes(1)
     expect(alertError).toHaveBeenCalledWith(
       expect.objectContaining({ message: expect.stringContaining('database appears damaged') }),
@@ -637,14 +1742,29 @@ describe('API-backed client bootstrap', () => {
     expect(eventApi.subscribe).not.toHaveBeenCalled()
   })
 
-  it('does not complete startup when the selected prompt-template owner cannot be hydrated', async () => {
+  it('keeps shell and mutation readiness when the selected prompt-template owner cannot be hydrated', async () => {
     promptTemplateApi.ensure.mockResolvedValueOnce(false)
 
-    await expect(loadWebInitialDatabase()).rejects.toThrow('Selected prompt-template owner hydration failed')
+    await loadData()
 
-    expect(peekCachedServerCommandRevision()).toBeNull()
-    expect(peekAppliedServerResourceRevision()).toBeNull()
-    expect(eventApi.subscribe).not.toHaveBeenCalled()
+    expect(peekCachedServerCommandRevision()).toBe(5)
+    expect(peekAppliedServerResourceRevision()).toBe(5)
+    expect(eventApi.subscribe).toHaveBeenCalledOnce()
+    expect(promptTemplateApi.ensure).toHaveBeenCalledWith({ promptPresetId: null, minimumRevision: 5 })
+    expect(getStartupCoordinatorSnapshot()).toMatchObject({
+      capabilities: {
+        canRenderShell: true,
+        canMutate: true,
+        canGenerate: false,
+      },
+      failures: {
+        canGenerate: expect.objectContaining({ failureCode: 'selected-prompt-template-hydration-failed' }),
+      },
+    })
+
+    selectedCharID.set(0)
+    await vi.waitFor(() => expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true))
+    expect(promptTemplateApi.ensure).toHaveBeenCalledTimes(2)
   })
 
   it('refreshes the targeted API resources for a contiguous command event', async () => {
@@ -685,11 +1805,26 @@ describe('API-backed client bootstrap', () => {
         order.push('refresh')
         return { status: 'ok', revision: 3 }
       })
+      let finishProjectionDiscard!: () => void
+      const projectionDiscard = new Promise<void>((resolve) => {
+        finishProjectionDiscard = resolve
+      })
+      projectionLifecycleApi.discard.mockImplementationOnce(async () => {
+        order.push('discard')
+        await projectionDiscard
+      })
 
       eventApi.subscriptions[0].onCommandEvent({ ...event, revision: 3 })
 
+      try {
+        await vi.waitFor(() => expect(projectionLifecycleApi.discard).toHaveBeenCalledExactlyOnceWith('lineage-change'))
+        expect(order).toEqual(['bootstrap', 'prepare', 'reset', 'discard'])
+        expect(resourceApi.forceReplacement).not.toHaveBeenCalled()
+      } finally {
+        finishProjectionDiscard()
+      }
       await vi.waitFor(() => expect(resourceApi.forceReplacement).toHaveBeenCalledOnce())
-      expect(order).toEqual(['bootstrap', 'prepare', 'reset', 'refresh'])
+      expect(order).toEqual(['bootstrap', 'prepare', 'reset', 'discard', 'refresh'])
       expect(bootstrapApi.fetchReadOnly).toHaveBeenCalledWith(null, { cacheRevision: false })
       expect(pendingMutationApi.prepare).toHaveBeenCalledWith({
         writerSessionId: getActiveWriterSessionId(),
@@ -919,7 +2054,7 @@ describe('API-backed client bootstrap', () => {
       jailbreakToggle: true,
       sidebarToggles: { mode: '1' },
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = attemptedB
     })
 
@@ -976,7 +2111,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges a contiguous settings patch without re-reading its group', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().theme = 'LIGHT'
     })
     const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('display')
@@ -1012,7 +2147,7 @@ describe('API-backed client bootstrap', () => {
   it('falls back when an authoritative settings apply supersedes an optimistic intent', async () => {
     await loadWebInitialDatabase()
     const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('display')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().theme = 'optimistic'
     })
     applySettingsGroupResource(
@@ -1057,7 +2192,7 @@ describe('API-backed client bootstrap', () => {
   it('falls back when a models read supersedes an optimistic provider-owned model profile intent', async () => {
     await loadWebInitialDatabase()
     const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('providers')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modelProfiles = [{ id: 'profile-optimistic', name: 'Optimistic Profile' }] as never
     })
     applySettingsGroupResource(
@@ -1107,7 +2242,7 @@ describe('API-backed client bootstrap', () => {
 
   it('authoritatively reconciles an accepted settings patch without an optimistic effect', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().theme = 'old-local-value'
     })
     const event = {
@@ -1140,7 +2275,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges an exact prompt settings patch only against its unchanged untainted projection', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().mainPrompt = 'optimistic'
     })
     const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('prompt')
@@ -1182,7 +2317,7 @@ describe('API-backed client bootstrap', () => {
     ['parent-scoped event', { parentId: 'unexpected' }],
   ])('falls back when a prompt settings acknowledgement has a %s', async (_label, eventOverride) => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().mainPrompt = 'optimistic'
     })
     const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('prompt')
@@ -1234,7 +2369,7 @@ describe('API-backed client bootstrap', () => {
       } else if (failure === 'tainted projection') {
         markSettingsGroupAcknowledgementTainted('prompt')
       }
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().mainPrompt = 'optimistic'
       })
       const event = {
@@ -1262,7 +2397,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges contiguous optimistic plugin storage without fetching the full map', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().pluginCustomStorage = { local: { nested: true } }
     })
     const event = {
@@ -1285,7 +2420,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges contiguous plugin mutations without fetching scripts or provider settings', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins = [
         { name: 'plugin-b', script: 'newer-b' },
         { name: 'plugin-a', script: 'newer-a' },
@@ -1331,7 +2466,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges contiguous optimistic module definitions and enablement without resource reads', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modules = [
         { id: 'mod-b', name: 'Newer B', description: '', cjs: 'newer-b' },
         { id: 'mod-a', name: 'Newer A', description: '', cjs: 'newer-a' },
@@ -1406,7 +2541,7 @@ describe('API-backed client bootstrap', () => {
     const legacyCollectionEpoch = captureCollectionProjectionEpoch('botPresets')
     const modelCollectionEpoch = captureCollectionProjectionEpoch('modelPresets')
     const settingsProjectionEpoch = captureSettingsProjectionEpoch()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().botPresets = [getDatabase().botPresets[1], getDatabase().botPresets[0]]
       getDatabase().botPresetsId = 1
       getDatabase().modelPresets = [
@@ -1486,7 +2621,7 @@ describe('API-backed client bootstrap', () => {
     const staleSettingsProjectionEpoch = captureSettingsProjectionEpoch()
     applySettingsResource({ revision: 5, settings: { modelPresetsId: 1 } })
     markSettingsAcknowledgementTainted()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modelPresets = [
         getDatabase().modelPresets[2],
         getDatabase().modelPresets[1],
@@ -1549,12 +2684,12 @@ describe('API-backed client bootstrap', () => {
     } else if (failure === 'settings taint') {
       markSettingsAcknowledgementTainted()
     } else if (failure === 'selection mismatch') {
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().botPresetsId = 0
       })
     } else if (failure === 'noncanonical pointer') {
       selectedPresetId = null
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().botPresetsId = -1
       })
     } else {
@@ -1603,7 +2738,7 @@ describe('API-backed client bootstrap', () => {
       { revision: 5, collections: { promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }] as never } },
       'promptPresets',
     )
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modelPresetsId = 0
       getDatabase().promptPresetsId = 0
       getDatabase().modelPresets[0].temperature = 0.6
@@ -1671,7 +2806,7 @@ describe('API-backed client bootstrap', () => {
       'botPresets',
     )
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('botPresets')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().botPresets[0].name = 'Newer local edit'
     })
     const event = {
@@ -1785,8 +2920,9 @@ describe('API-backed client bootstrap', () => {
       },
       'personas',
     )
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().selectedPersona = 0
+      getDatabase().selectedPersonaId = 'persona-a'
       getDatabase().username = 'Attempted name'
       getDatabase().userIcon = 'attempted-icon'
       getDatabase().personaPrompt = 'Attempted prompt'
@@ -1794,8 +2930,7 @@ describe('API-backed client bootstrap', () => {
     })
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('personas')
     const settingsProjectionEpoch = captureSettingsProjectionEpoch()
-    const resourceApplyEpoch = getServerResourceApplyEpoch()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().personas[0].name = 'Newer local name'
       getDatabase().username = 'Newer local name'
     })
@@ -1841,7 +2976,6 @@ describe('API-backed client bootstrap', () => {
     expect(getDatabase().personas[0].name).toBe('Newer local name')
     expect(getDatabase().username).toBe('Newer local name')
     expect(collectionsResourceState.revisions.personas).toBe(6)
-    expect(getServerResourceApplyEpoch()).toBe(resourceApplyEpoch)
     expect(peekAppliedServerResourceRevision()).toBe(6)
   })
 
@@ -1856,8 +2990,9 @@ describe('API-backed client bootstrap', () => {
       },
       'personas',
     )
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().selectedPersona = 0
+      getDatabase().selectedPersonaId = 'persona-b'
       getDatabase().username = 'B'
       getDatabase().userIcon = ''
       getDatabase().personaPrompt = 'B'
@@ -1865,7 +3000,6 @@ describe('API-backed client bootstrap', () => {
     })
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('personas')
     const settingsProjectionEpoch = captureSettingsProjectionEpoch()
-    const resourceApplyEpoch = getServerResourceApplyEpoch()
     const patchEvent = {
       type: 'persona.updated',
       revision: 6,
@@ -1927,7 +3061,6 @@ describe('API-backed client bootstrap', () => {
     expect(getDatabase().username).toBe('B')
     expect(collectionsResourceState.revisions.personas).toBe(7)
     expect(settingsResourceState.fullRevision).toBe(7)
-    expect(getServerResourceApplyEpoch()).toBe(resourceApplyEpoch)
     expect(peekAppliedServerResourceRevision()).toBe(7)
   })
 
@@ -1943,8 +3076,9 @@ describe('API-backed client bootstrap', () => {
         note: '',
       }
       applyCollectionsResource({ revision: 5, collections: { personas: [persona] as never } }, 'personas')
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().selectedPersona = 0
+        getDatabase().selectedPersonaId = 'persona-a'
         getDatabase().username = 'Attempted'
         getDatabase().userIcon = ''
         getDatabase().personaPrompt = ''
@@ -2021,8 +3155,9 @@ describe('API-backed client bootstrap', () => {
         },
         'personas',
       )
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().selectedPersona = 1
+        getDatabase().selectedPersonaId = 'persona-b'
         getDatabase().username = 'Newer B'
         getDatabase().userIcon = ''
         getDatabase().personaPrompt = 'Newer B prompt'
@@ -2030,7 +3165,6 @@ describe('API-backed client bootstrap', () => {
       })
       const collectionProjectionEpoch = captureCollectionProjectionEpoch('personas')
       const settingsProjectionEpoch = captureSettingsProjectionEpoch()
-      const resourceApplyEpoch = getServerResourceApplyEpoch()
       const event = {
         type: eventType,
         revision: 6,
@@ -2065,7 +3199,6 @@ describe('API-backed client bootstrap', () => {
         expect.objectContaining({ id: 'persona-b', name: 'Newer B' }),
       ])
       expect(getDatabase().username).toBe('Newer B')
-      expect(getServerResourceApplyEpoch()).toBe(resourceApplyEpoch)
       expect(peekAppliedServerResourceRevision()).toBe(6)
     },
   )
@@ -2079,8 +3212,9 @@ describe('API-backed client bootstrap', () => {
         { id: 'persona-b', name: 'B', icon: '', personaPrompt: 'B', note: '' },
       ]
       applyCollectionsResource({ revision: 5, collections: { personas: personas as never } }, 'personas')
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().selectedPersona = 1
+        getDatabase().selectedPersonaId = 'persona-b'
         getDatabase().username = 'B'
         getDatabase().userIcon = ''
         getDatabase().personaPrompt = 'B'
@@ -2095,6 +3229,7 @@ describe('API-backed client bootstrap', () => {
           revision: 5,
           settings: {
             selectedPersona: 1,
+            selectedPersonaId: 'persona-b',
             username: 'B',
             userIcon: '',
             personaPrompt: 'B',
@@ -2141,7 +3276,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges Agent Preset fields locally and notifies settlement only after the effect applies', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().agentPresets = [
         {
           id: 'ap_a',
@@ -2154,8 +3289,7 @@ describe('API-backed client bootstrap', () => {
       ]
     })
     const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('agents')
-    const resourceApplyEpoch = getServerResourceApplyEpoch()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().agentPresets[0].name = 'newer local name'
     })
     const event = {
@@ -2193,7 +3327,6 @@ describe('API-backed client bootstrap', () => {
     expect(getDatabase().agentPresets[0]).not.toHaveProperty('description')
     expect(settingsResourceState.groupRevisions.agents).toBe(6)
     expect(hasSettingsGroupProjectionEpochChanged('agents', settingsProjectionEpoch)).toBe(false)
-    expect(getServerResourceApplyEpoch()).toBe(resourceApplyEpoch)
     expect(peekAppliedServerResourceRevision()).toBe(6)
     expect(appliedEffects).toEqual([localEffect])
   })
@@ -2202,7 +3335,7 @@ describe('API-backed client bootstrap', () => {
     '%s forces an Agent Preset PATCH authoritative fallback without settling its local effect',
     async (failure) => {
       await loadWebInitialDatabase()
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().agentPresets = [{ id: 'ap_a', name: 'Attempted', enabled: true, version: 1, steps: [] }]
       })
       const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('agents')
@@ -2215,7 +3348,7 @@ describe('API-backed client bootstrap', () => {
               agentPresets: [{ id: 'ap_a', name: 'Attempted', enabled: true, version: 1, steps: [] }],
             },
           },
-          ['agentPresets', 'agentPresetDefaultId'],
+          ['agents', 'agentPresets', 'agentPresetDefaultId'],
         )
       } else if (failure === 'agents taint') {
         markSettingsGroupAcknowledgementTainted('agents')
@@ -2268,7 +3401,7 @@ describe('API-backed client bootstrap', () => {
 
   it('fences contiguous optimistic Agent Preset reorder/default writes without an agents read', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().agentPresets = [
         { id: 'ap_a', name: 'Preset A', enabled: true, version: 1, steps: [] },
         { id: 'ap_b', name: 'Preset B', enabled: true, version: 1, steps: [] },
@@ -2276,8 +3409,7 @@ describe('API-backed client bootstrap', () => {
       getDatabase().agentPresetDefaultId = 'ap_a'
     })
     const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('agents')
-    const resourceApplyEpoch = getServerResourceApplyEpoch()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().agentPresets = [getDatabase().agentPresets[1], getDatabase().agentPresets[0]]
     })
     const reorderEvent = {
@@ -2295,7 +3427,7 @@ describe('API-backed client bootstrap', () => {
 
     await commandApi.reconciler?.(reorderEvent, [reorderEvent], new Map([[6, reorderEffect]]))
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().agentPresetDefaultId = 'ap_b'
     })
     const defaultEvent = {
@@ -2319,7 +3451,6 @@ describe('API-backed client bootstrap', () => {
     expect(getDatabase().agentPresetDefaultId).toBe('ap_b')
     expect(settingsResourceState.groupRevisions.agents).toBe(7)
     expect(hasSettingsGroupProjectionEpochChanged('agents', settingsProjectionEpoch)).toBe(false)
-    expect(getServerResourceApplyEpoch()).toBe(resourceApplyEpoch)
     expect(peekAppliedServerResourceRevision()).toBe(7)
   })
 
@@ -2327,7 +3458,7 @@ describe('API-backed client bootstrap', () => {
     '%s forces Agent Preset reorder acknowledgement through authoritative reconciliation',
     async (failure) => {
       await loadWebInitialDatabase()
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().agentPresets = [
           { id: 'ap_b', name: 'Preset B', enabled: true, version: 1, steps: [] },
           { id: 'ap_a', name: 'Preset A', enabled: true, version: 1, steps: [] },
@@ -2348,12 +3479,12 @@ describe('API-backed client bootstrap', () => {
               agentPresetDefaultId: 'ap_a',
             },
           },
-          ['agentPresets', 'agentPresetDefaultId'],
+          ['agents', 'agentPresets', 'agentPresetDefaultId'],
         )
       } else if (failure === 'agents taint') {
         markSettingsGroupAcknowledgementTainted('agents')
       } else {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           getDatabase().agentPresets = [getDatabase().agentPresets[1], getDatabase().agentPresets[0]]
         })
       }
@@ -2401,15 +3532,14 @@ describe('API-backed client bootstrap', () => {
       },
       'translatorPresets',
     )
-    withTrustedResourceWrite(() => {
-      getDatabase().translatorPresetId = 0
+    withTestDatabaseWrite(() => {
+      getDatabase().translatorPresetId = 'translator-a'
       getDatabase().translatorPrompt = 'a prompt'
       getDatabase().translatorMaxResponse = 100
     })
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('translatorPresets')
     const languageSettingsProjectionEpoch = captureSettingsGroupProjectionEpoch('language')
-    const resourceApplyEpoch = getServerResourceApplyEpoch()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().translatorPresets[1].prompt = 'newer local prompt'
     })
     const event = {
@@ -2449,7 +3579,6 @@ describe('API-backed client bootstrap', () => {
     expect(settingsResourceState.groupRevisions.language).toBe(6)
     expect(hasCollectionProjectionEpochChanged('translatorPresets', collectionProjectionEpoch)).toBe(false)
     expect(hasSettingsGroupProjectionEpochChanged('language', languageSettingsProjectionEpoch)).toBe(false)
-    expect(getServerResourceApplyEpoch()).toBe(resourceApplyEpoch)
     expect(peekAppliedServerResourceRevision()).toBe(6)
   })
 
@@ -2469,8 +3598,8 @@ describe('API-backed client bootstrap', () => {
       { id: 'translator-b', name: 'B', prompt: 'attempted prompt', maxResponse: 200 },
     ]
     applyCollectionsResource({ revision: 5, collections: { translatorPresets: presets as never } }, 'translatorPresets')
-    withTrustedResourceWrite(() => {
-      getDatabase().translatorPresetId = 0
+    withTestDatabaseWrite(() => {
+      getDatabase().translatorPresetId = 'translator-a'
       getDatabase().translatorPrompt = 'a prompt'
       getDatabase().translatorMaxResponse = 100
     })
@@ -2486,7 +3615,11 @@ describe('API-backed client bootstrap', () => {
         {
           revision: 5,
           group: 'language',
-          settings: { translatorPresetId: 0, translatorPrompt: 'a prompt', translatorMaxResponse: 100 },
+          settings: {
+            translatorPresetId: 'translator-a',
+            translatorPrompt: 'a prompt',
+            translatorMaxResponse: 100,
+          },
         },
         ['translatorPresetId', 'translatorPrompt', 'translatorMaxResponse'],
       )
@@ -2497,8 +3630,8 @@ describe('API-backed client bootstrap', () => {
     } else if (failure === 'global settings taint') {
       markSettingsAcknowledgementTainted()
     } else if (failure === 'selection mismatch') {
-      withTrustedResourceWrite(() => {
-        getDatabase().translatorPresetId = 1
+      withTestDatabaseWrite(() => {
+        getDatabase().translatorPresetId = 'translator-b'
         getDatabase().translatorPrompt = 'attempted prompt'
         getDatabase().translatorMaxResponse = 200
       })
@@ -2545,7 +3678,7 @@ describe('API-backed client bootstrap', () => {
       { revision: 5, collections: { promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }] as never } },
       'promptPresets',
     )
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().promptPresetsId = 0
       getDatabase().promptPresets[0].name = 'Prompt renamed'
     })
@@ -2589,7 +3722,7 @@ describe('API-backed client bootstrap', () => {
     expect(peekAppliedServerResourceRevision()).toBe(6)
   })
 
-  it('canonicalizes both prompt owner and compatibility projections for a template-only PATCH', async () => {
+  it('canonicalizes the prompt owner without rewriting its compatibility projection', async () => {
     await loadWebInitialDatabase()
     const attemptedTemplate = [{ type: 'plain', text: 'Optimistic' }]
     const canonicalTemplate = [{ id: 'item-a', type: 'plain', text: 'Optimistic' }]
@@ -2606,7 +3739,7 @@ describe('API-backed client bootstrap', () => {
       { revision: 5, collections: { promptTemplate: attemptedTemplate as never } },
       'promptTemplate',
     )
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().promptPresetsId = 0
     })
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('promptPresets')
@@ -2645,7 +3778,7 @@ describe('API-backed client bootstrap', () => {
 
     expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
     expect(getDatabase().promptPresets[0].promptTemplate).toEqual(canonicalTemplate)
-    expect(getDatabase().promptTemplate).toEqual(canonicalTemplate)
+    expect(getDatabase().promptTemplate).toEqual(attemptedTemplate)
     expect(promptTemplateApi.markProjectionApplied).toHaveBeenCalledWith('prompt-a', 6, {
       advanceProjectionEpoch: false,
     })
@@ -2657,7 +3790,7 @@ describe('API-backed client bootstrap', () => {
       { revision: 5, collections: { modelPresets: [{ id: 'model-a', name: 'Model A' }] as never } },
       'modelPresets',
     )
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modelPresetsId = 0
       getDatabase().modelPresets[0].name = 'Model renamed'
     })
@@ -2704,7 +3837,7 @@ describe('API-backed client bootstrap', () => {
   it('acknowledges a contiguous exact preset-owned prompt item without fetching its owner', async () => {
     await loadWebInitialDatabase()
     const ownerItems = [{ id: 'prompt-item-a', type: 'plain', text: 'optimistic' }]
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().promptPresets = [{ id: 'prompt-preset-a', name: 'A', promptTemplate: ownerItems }] as never
       getDatabase().promptTemplate = ownerItems as never
     })
@@ -2750,7 +3883,7 @@ describe('API-backed client bootstrap', () => {
     await loadWebInitialDatabase()
     const firstOwnerItems = [{ id: 'prompt-item-a', type: 'plain', text: 'first accepted edit', role: 'system' }]
     const finalOwnerItems = [{ ...firstOwnerItems[0], role: 'user' }]
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().promptPresets = [{ id: 'prompt-preset-a', name: 'A', promptTemplate: finalOwnerItems }] as never
       getDatabase().promptTemplate = finalOwnerItems as never
     })
@@ -2818,7 +3951,7 @@ describe('API-backed client bootstrap', () => {
   ])('falls back for a prompt acknowledgement with an invalid %s', async (failure) => {
     await loadWebInitialDatabase()
     const ownerItems = [{ id: 'prompt-item-a', type: 'plain', text: 'optimistic' }]
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().promptPresets = [{ id: 'prompt-preset-a', name: 'A', promptTemplate: ownerItems }] as never
     })
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('promptPresets')
@@ -2878,7 +4011,7 @@ describe('API-backed client bootstrap', () => {
   it('keeps gapped and foreign prompt events on authoritative owner reconciliation', async () => {
     await loadWebInitialDatabase()
     const ownerItems = [{ id: 'prompt-item-a', type: 'plain', text: 'optimistic' }]
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().promptTemplate = ownerItems as never
     })
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('promptTemplate')
@@ -2934,7 +4067,7 @@ describe('API-backed client bootstrap', () => {
       alwaysActive: false,
       selective: false,
     })
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().loreBook = [
         { id: 'book-a', name: 'Book A', data: [entry('global-entry', 'global newer')] },
       ] as never
@@ -3012,7 +4145,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges contiguous top-level lorebook mutations without re-reading collection or settings', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().loreBook = [
         { id: 'book-b', name: 'Newer B', data: [] },
         { id: 'book-c', name: 'Newer C', data: [] },
@@ -3098,7 +4231,7 @@ describe('API-backed client bootstrap', () => {
 
   it('falls back when an authoritative lorebook collection supersedes a top-level local effect', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().loreBook = [{ id: 'book-a', name: 'Book A', data: [] }] as never
       getDatabase().loreBookPage = 0
     })
@@ -3136,7 +4269,7 @@ describe('API-backed client bootstrap', () => {
 
   it('falls back when authoritative settings supersede a top-level lorebook page effect', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().loreBook = [
         { id: 'book-a', name: 'Book A', data: [] },
         { id: 'book-b', name: 'Book B', data: [] },
@@ -3209,7 +4342,7 @@ describe('API-backed client bootstrap', () => {
   it('acknowledges contiguous optimistic loadout create and delete without resource reads', async () => {
     await loadWebInitialDatabase()
     const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().loadouts = [
         {
           ...getDatabase().loadouts[0],
@@ -3312,7 +4445,7 @@ describe('API-backed client bootstrap', () => {
     await loadWebInitialDatabase()
     const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
     const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('sidebar')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const loadout = getDatabase().loadouts[0]
       loadout.favorite = false
       loadout.lastUsed = 300
@@ -3425,7 +4558,7 @@ describe('API-backed client bootstrap', () => {
   it('acknowledges contiguous optimistic character definitions without reading the row', async () => {
     await loadWebInitialDatabase()
     const optimisticRowEpoch = captureCharacterRowProjectionEpoch('char-a')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].customscript = [{ id: 'script-newer', out: 'newer' }] as never
       getDatabase().characters[0].triggerscript = [{ id: 'trigger-newer', comment: 'newer' }] as never
     })
@@ -3511,7 +4644,7 @@ describe('API-backed client bootstrap', () => {
   it('acknowledges exact module definition writes while their collection projection is current', async () => {
     await loadWebInitialDatabase()
     const optimisticCollectionEpoch = captureCollectionProjectionEpoch('modules')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modules = [
         {
           id: 'mod-a',
@@ -3792,7 +4925,7 @@ describe('API-backed client bootstrap', () => {
     await loadWebInitialDatabase()
     const optimisticEpoch = captureDestructiveRefreshEpoch()
     const optimisticRowEpoch = captureCharacterRowProjectionEpoch('char-a')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats.unshift(
         { id: 'chat-created', message: [{ role: 'user', data: 'created', chatId: 'message-created' }] } as never,
         { id: 'chat-forked', message: [] } as never,
@@ -4077,7 +5210,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges a contiguous character patch without a resource read and preserves a newer edit', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].name = 'Newer queued edit'
     })
     const event = {
@@ -4109,7 +5242,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges contiguous optimistic character collection mutations without a collection read', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters.push({ chaId: 'char-c', name: 'Cora', chats: [] } as never)
       getDatabase().characters.push({ chaId: 'char-d', name: 'Dara', chats: [] } as never)
       getDatabase().characters.splice(1, 1)
@@ -4180,7 +5313,7 @@ describe('API-backed client bootstrap', () => {
 
   it('keeps unsafe character collection effects on authoritative reconciliation', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters.push({ chaId: 'char-c', name: 'Cora', chats: [] } as never)
     })
     const event = {
@@ -4231,7 +5364,7 @@ describe('API-backed client bootstrap', () => {
 
   it('does not apply a character collection effect across a revision gap', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters.push({ chaId: 'char-c', name: 'Cora', chats: [] } as never)
       getDatabase().characterOrder = ['char-a', 'char-b', 'char-c']
     })
@@ -4302,7 +5435,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges a contiguous character selection without replacing a newer selection', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].lastInteraction = 200
     })
     const event = {
@@ -4335,7 +5468,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges a contiguous chat selection without replacing a newer selection', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats.push({ id: 'chat-newer', message: [] } as never)
       getDatabase().characters[0].chatPage = 1
     })
@@ -4377,6 +5510,7 @@ describe('API-backed client bootstrap', () => {
     await vi.waitFor(() => expect(peekAppliedServerResourceRevision()).toBe(12))
     expect(hydrationApi.resetChatHydration).toHaveBeenCalledTimes(2)
     expect(hydrationApi.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
+    expect(hydrationApi.requestReadinessRefresh).toHaveBeenCalledOnce()
     expect(promptTemplateApi.ensure).toHaveBeenLastCalledWith({ force: true, minimumRevision: 12 })
     expect(runtimeApi.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
   })
@@ -4387,7 +5521,7 @@ describe('API-backed client bootstrap', () => {
     resourceApi.refreshInvalidated.mockResolvedValueOnce({ status: 'ok', revision: 12, scope: 'full' })
     eventApi.subscriptions[0].onCommandEvent({ type: 'state.changed', revision: 9, resource: 'state' })
 
-    await vi.waitFor(() => expect(promptTemplateApi.ensure).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(promptTemplateApi.ensure).toHaveBeenCalledOnce())
     expect(promptTemplateApi.ensure).toHaveBeenLastCalledWith({ force: true, minimumRevision: 12 })
     expect(peekAppliedServerResourceRevision()).toBe(5)
     expect(hydrationApi.resetChatHydration).toHaveBeenCalledTimes(2)
@@ -4438,14 +5572,46 @@ describe('API-backed client bootstrap', () => {
     await loadWebInitialDatabase()
     const event: TestMemoryEvent = {
       type: 'memory.job',
+      streamId: 'memory-stream-1',
+      version: 2,
       chatId: 'chat-a',
-      job: { id: 'job-a', kind: 'hypav3', status: 'running', attemptCount: 1, maxAttempts: 3 },
-      sideEffect: { kind: 'hypav3_progress', payload: { progress: 0.5 } },
+      job: {
+        id: 'job-a',
+        instanceId: 'job-instance-a',
+        kind: 'summarize',
+        status: 'running',
+        attemptCount: 1,
+        maxAttempts: 3,
+      },
     }
     eventApi.subscriptions[0].onMemoryEvent?.(event)
 
-    expect(memoryApi.applyProgress).toHaveBeenCalledWith({ progress: 0.5 })
+    expect(memoryApi.applyEvent).toHaveBeenCalledWith(event)
     expect(memoryApi.publish).toHaveBeenCalledWith(event)
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+  })
+
+  it('hydrates memory projection snapshots without refreshing durable resources', async () => {
+    await loadWebInitialDatabase()
+    const snapshot: TestMemorySnapshot = {
+      type: 'memory.snapshot',
+      streamId: 'memory-stream-1',
+      version: 1,
+      jobs: [
+        {
+          id: 'job-a',
+          instanceId: 'job-instance-a',
+          chatId: 'chat-a',
+          kind: 'summarize',
+          status: 'pending',
+          attemptCount: 0,
+          maxAttempts: 3,
+        },
+      ],
+    }
+    eventApi.subscriptions[0].onMemorySnapshot?.(snapshot)
+
+    expect(memoryApi.applySnapshot).toHaveBeenCalledWith(snapshot)
     expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
   })
 
@@ -4461,11 +5627,11 @@ describe('API-backed client bootstrap', () => {
     expect(activeWriterApi.enterTakeover).toHaveBeenCalledOnce()
   })
 
-  it('stops the resource event subscription and bridge flush', async () => {
+  it('stops the resource event subscription and owner mutation lifecycle', async () => {
     await loadWebInitialDatabase()
     stopServerResourceEvents()
     expect(eventApi.unsubscribe).toHaveBeenCalledTimes(1)
-    expect(bridgeApi.stop).toHaveBeenCalledTimes(1)
+    expect(ownerMutationLifecycleApi.stop).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -4498,7 +5664,7 @@ describe('resource event reconnect backoff', () => {
     expect(eventApi.subscribe).toHaveBeenCalledTimes(2)
   })
 
-  it('resubscribes when the browser comes online or returns to the foreground', async () => {
+  it('resubscribes on online, visibility, pageshow, and focus recovery', async () => {
     await loadWebInitialDatabase()
     expect(pendingMutationApi.replay).toHaveBeenCalledTimes(1)
 
@@ -4507,8 +5673,12 @@ describe('resource event reconnect backoff', () => {
     await vi.waitFor(() => expect(pendingMutationApi.replay).toHaveBeenCalledTimes(2))
     document.dispatchEvent(new Event('visibilitychange'))
     await vi.waitFor(() => expect(eventApi.subscribe).toHaveBeenCalledTimes(3))
+    window.dispatchEvent(new Event('pageshow'))
+    await vi.waitFor(() => expect(eventApi.subscribe).toHaveBeenCalledTimes(4))
+    window.dispatchEvent(new Event('focus'))
+    await vi.waitFor(() => expect(eventApi.subscribe).toHaveBeenCalledTimes(5))
 
-    expect(eventApi.unsubscribe).toHaveBeenCalledTimes(2)
+    expect(eventApi.unsubscribe).toHaveBeenCalledTimes(4)
   })
 
   it('refreshes and resubscribes when a conflict proves the applied projection is behind', async () => {
@@ -4535,7 +5705,7 @@ describe('resource event reconnect backoff', () => {
     await vi.waitFor(() => expect(eventApi.subscribe).toHaveBeenCalledTimes(2))
   })
 
-  it('L45: schedules increasing reconnect delays during a simulated outage', async () => {
+  it('schedules increasing reconnect delays during a simulated outage', async () => {
     vi.useFakeTimers()
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
     eventApi.subscribe.mockImplementation(async (input) => {
@@ -4559,7 +5729,7 @@ describe('resource event reconnect backoff', () => {
     expect(eventApi.subscribe).toHaveBeenCalledTimes(3)
   })
 
-  it('L45: keeps one pending reconnect timer for repeated stream failures', async () => {
+  it('keeps one pending reconnect timer for repeated stream failures', async () => {
     vi.useFakeTimers()
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
 
@@ -4571,7 +5741,7 @@ describe('resource event reconnect backoff', () => {
     expect(eventApi.subscribe).toHaveBeenCalledTimes(2)
   })
 
-  it('L45: resets reconnect backoff to the base delay after a successful subscribe', async () => {
+  it('resets reconnect backoff to the base delay after a successful subscribe', async () => {
     vi.useFakeTimers()
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
 
@@ -4587,7 +5757,7 @@ describe('resource event reconnect backoff', () => {
     expect(eventApi.subscribe).toHaveBeenCalledTimes(3)
   })
 
-  it('L45: stop clears pending reconnect and resets the next outage to base delay', async () => {
+  it('stop clears pending reconnect and resets the next outage to base delay', async () => {
     vi.useFakeTimers()
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
 
@@ -4616,7 +5786,7 @@ describe('resource event reconnect backoff', () => {
 })
 
 describe('global bootstrap error handlers', () => {
-  it('L37/I21: global handlers ignore null error events and undefined rejections without useless alerts', () => {
+  it('global handlers ignore null error events and undefined rejections without useless alerts', () => {
     const { errorHandler, rejectHandler } = createGlobalErrorHandlers()
 
     errorHandler(new ErrorEvent('error'))
@@ -4625,7 +5795,7 @@ describe('global bootstrap error handlers', () => {
     expect(alertError).not.toHaveBeenCalled()
   })
 
-  it('L37: resource-target global errors skip generic application alerts', () => {
+  it('resource-target global errors skip generic application alerts', () => {
     const { errorHandler } = createGlobalErrorHandlers()
     const event = new ErrorEvent('error', { error: new Error('asset failed') })
     Object.defineProperty(event, 'target', { value: document.createElement('img') })
@@ -4635,7 +5805,7 @@ describe('global bootstrap error handlers', () => {
     expect(alertError).not.toHaveBeenCalled()
   })
 
-  it('L37: useful global Error objects and message strings still alert', () => {
+  it('useful global Error objects and message strings still alert', () => {
     const { errorHandler, rejectHandler } = createGlobalErrorHandlers()
     const error = new Error('useful error')
 

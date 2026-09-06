@@ -12,6 +12,11 @@ const state = vi.hoisted(() => ({
   requestImageGeneration: vi.fn(),
   readImage: vi.fn(),
   requestChatData: vi.fn(),
+  settingsResourceState: {
+    value: {} as any,
+    status: 'idle' as 'idle' | 'loading' | 'ready' | 'error',
+    groupStatuses: {} as Record<string, 'idle' | 'loading' | 'ready' | 'error'>,
+  },
 }))
 
 vi.mock('../alert', () => ({
@@ -26,6 +31,10 @@ vi.mock('../globalApi.svelte', () => ({
 
 vi.mock('../storage/database.svelte', () => ({
   getDatabase: () => state.db,
+}))
+
+vi.mock('../server/resourceState.svelte', () => ({
+  settingsResourceState: state.settingsResourceState,
 }))
 
 vi.mock('../stores.svelte', () => ({
@@ -104,15 +113,61 @@ function seedNovelAiDb(extra: Record<string, unknown> = {}) {
       ...extra,
     },
   }
+  state.settingsResourceState.status = 'ready'
+  state.settingsResourceState.groupStatuses = { account: 'ready', media: 'ready', providers: 'ready' }
+  state.settingsResourceState.value = state.db
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
   state.charEmotionValue = {}
   state.db = {}
+  state.settingsResourceState.value = {}
+  state.settingsResourceState.status = 'idle'
+  state.settingsResourceState.groupStatuses = {}
 })
 
 describe('stableDiff image-generation hygiene', () => {
+  it('uses the ready image-settings owner instead of a stale aggregate provider', async () => {
+    const char = makeCharacter()
+    state.db = {
+      sdProvider: 'dalle',
+      openAIKey: 'stale-key',
+      dallEQuality: 'standard',
+    }
+    state.settingsResourceState.status = 'ready'
+    state.settingsResourceState.groupStatuses = { account: 'ready', media: 'ready', providers: 'ready' }
+    state.settingsResourceState.value = {
+      sdProvider: 'kei',
+      account: { token: '__RISU_SECRET_MASKED__' },
+    }
+    state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,owner')
+
+    await expect(generateAIImage('prompt', char, '', 'inlay')).resolves.toBe('data:image/png;base64,owner')
+    expect(state.requestImageGeneration).toHaveBeenCalledWith(
+      {
+        provider: 'kei',
+        credential: { source: 'stored' },
+        prompt: 'prompt',
+      },
+      expect.any(AbortSignal),
+    )
+  })
+
+  it('fails closed instead of using the aggregate after a settings owner error', async () => {
+    const char = makeCharacter()
+    state.db = {
+      sdProvider: 'dalle',
+      openAIKey: 'stale-key',
+      dallEQuality: 'standard',
+    }
+    state.settingsResourceState.status = 'ready'
+    state.settingsResourceState.groupStatuses = { media: 'error' }
+
+    await expect(generateAIImage('prompt', char, '', 'inlay')).resolves.toBe(false)
+    expect(state.requestImageGeneration).not.toHaveBeenCalled()
+  })
+
   it('resolves a saved NovelAI I2I asset only when constructing the provider request', async () => {
     const char = makeCharacter()
     seedNovelAiDb({
@@ -210,7 +265,9 @@ describe('stableDiff image-generation hygiene', () => {
     state.readImage.mockResolvedValueOnce(new Uint8Array([4, 5, 6]))
     state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,BwgJ')
 
-    await expect(generateAIImage('prompt', char, 'negative', 'inlay')).resolves.toBe('data:image/png;base64,BwgJ')
+    await expect(generateAIImage('prompt', char, 'negative', 'inlay', { database: state.db })).resolves.toBe(
+      'data:image/png;base64,BwgJ',
+    )
 
     expect(state.readImage).toHaveBeenCalledTimes(1)
     expect(state.readImage).toHaveBeenCalledWith('saved-wavespeed-asset')
@@ -249,7 +306,10 @@ describe('stableDiff image-generation hygiene', () => {
     state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,dalle-image')
 
     await expect(
-      stableDiff(char, 'User asks for a moonlit character image.', { signal: abortController.signal }),
+      stableDiff(char, 'User asks for a moonlit character image.', {
+        signal: abortController.signal,
+        database: state.db,
+      }),
     ).resolves.toBe('')
 
     expect(state.requestChatData).toHaveBeenCalledTimes(1)
@@ -271,6 +331,7 @@ describe('stableDiff image-generation hygiene', () => {
         bias: {},
         useStreaming: false,
         noMultiGen: true,
+        database: state.db,
       },
       'otherAx',
       abortController.signal,
@@ -316,8 +377,8 @@ describe('stableDiff image-generation hygiene', () => {
         }),
     )
 
-    const first = generateAIImage('first', char, '', '')
-    const second = generateAIImage('second', char, '', '')
+    const first = generateAIImage('first', char, '', '', { database: state.db })
+    const second = generateAIImage('second', char, '', '', { database: state.db })
     expect(pending).toHaveLength(2)
     expect(pending[0].signal.aborted).toBe(true)
 
@@ -343,7 +404,7 @@ describe('stableDiff image-generation hygiene', () => {
     }
     state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,imagen')
 
-    await expect(generateAIImage('prompt', char, '', '')).resolves.toBe('')
+    await expect(generateAIImage('prompt', char, '', '', { database: state.db })).resolves.toBe('')
     expect(state.charEmotionValue[char.chaId]).toEqual([
       ['data:image/png;base64,imagen', 'data:image/png;base64,imagen', expect.any(Number)],
     ])
@@ -367,7 +428,7 @@ describe('stableDiff image-generation hygiene', () => {
     )
     const controller = new AbortController()
 
-    const pending = generateAIImage('prompt', char, '', '', { signal: controller.signal })
+    const pending = generateAIImage('prompt', char, '', '', { signal: controller.signal, database: state.db })
     controller.abort()
     expect(forwardedSignal.aborted).toBe(true)
     resolveRequest('data:image/png;base64,cancelled')
@@ -398,7 +459,10 @@ describe('stableDiff image-generation hygiene', () => {
     )
     const controller = new AbortController()
 
-    const pending = generateAIImage('prompt', char, '', 'inlay', { signal: controller.signal })
+    const pending = generateAIImage('prompt', char, '', 'inlay', {
+      signal: controller.signal,
+      database: state.db,
+    })
     controller.abort()
 
     expect(forwardedSignal.aborted).toBe(true)
@@ -414,7 +478,9 @@ describe('stableDiff image-generation hygiene', () => {
     }
     state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,kei')
 
-    await expect(generateAIImage('prompt', char, '', 'inlay')).resolves.toBe('data:image/png;base64,kei')
+    await expect(generateAIImage('prompt', char, '', 'inlay', { database: state.db })).resolves.toBe(
+      'data:image/png;base64,kei',
+    )
     expect(state.requestImageGeneration).toHaveBeenCalledWith(
       {
         provider: 'kei',
@@ -425,7 +491,7 @@ describe('stableDiff image-generation hygiene', () => {
     )
   })
 
-  it('L50: image generation providers do not console-log payloads or poll bodies', async () => {
+  it('image generation providers do not console-log payloads or poll bodies', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     const char = makeCharacter()
     try {
@@ -439,7 +505,9 @@ describe('stableDiff image-generation hygiene', () => {
         dallEQuality: 'standard',
       }
       state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,dalle-image')
-      await expect(generateAIImage('prompt', char, 'neg', 'inlay')).resolves.toBe('data:image/png;base64,dalle-image')
+      await expect(generateAIImage('prompt', char, 'neg', 'inlay', { database: state.db })).resolves.toBe(
+        'data:image/png;base64,dalle-image',
+      )
 
       state.db = {
         sdProvider: 'comfyui',
@@ -475,7 +543,9 @@ describe('stableDiff image-generation hygiene', () => {
           arrayBuffer: vi.fn(async () => new Uint8Array([9, 8, 7]).buffer),
         })
 
-      await expect(generateAIImage('prompt', char, 'neg', 'inlay')).resolves.toMatch(/^data:image\/png;base64,/)
+      await expect(generateAIImage('prompt', char, 'neg', 'inlay', { database: state.db })).resolves.toMatch(
+        /^data:image\/png;base64/,
+      )
 
       expect(logSpy).not.toHaveBeenCalled()
     } finally {
@@ -483,7 +553,7 @@ describe('stableDiff image-generation hygiene', () => {
     }
   })
 
-  it('K4: reference image loading rejects onerror and timeout instead of hanging', async () => {
+  it('reference image loading rejects onerror and timeout instead of hanging', async () => {
     class ErrorImage {
       onerror: ((event: Event) => void) | null = null
       onload: (() => void) | null = null

@@ -1,4 +1,4 @@
-import type { character } from '../../storage/database.svelte'
+import type { Database, character } from '../../storage/database.svelte'
 import type { OpenAIChat } from '../index.svelte'
 import { tokenizeNum } from '../../tokenizer'
 import { requestChatData } from '../request/request'
@@ -6,6 +6,7 @@ import { language } from '../../../lang'
 import { pushCharEmotionEntry, type CharEmotionEntry, type CharEmotionMap } from './charEmotionStore'
 
 export interface RunEmotionLlmFallbackOptions {
+  database: Database
   result: string
   currentChar: character
   abortSignal: AbortSignal
@@ -33,7 +34,7 @@ export async function runEmotionLlmFallback(opts: RunEmotionLlmFallbackOptions):
   const emobias: { [key: number]: number } = {}
 
   for (const emo of emotionList) {
-    const tokens = await tokenizeNum(emo)
+    const tokens = await tokenizeNum(emo, opts.database)
     for (const token of tokens) {
       emobias[token] = 10
     }
@@ -42,7 +43,7 @@ export async function runEmotionLlmFallback(opts: RunEmotionLlmFallbackOptions):
   for (let i = 0; i < opts.tempEmotion.length; i++) {
     const emo = opts.tempEmotion[i]
 
-    const tokens = await tokenizeNum(emo[0])
+    const tokens = await tokenizeNum(emo[0], opts.database)
     const modifier = 20 - (opts.tempEmotion.length - (i + 1)) * (20 / 4)
 
     for (const token of tokens) {
@@ -74,6 +75,7 @@ export async function runEmotionLlmFallback(opts: RunEmotionLlmFallbackOptions):
 
   const rq = await requestChatData(
     {
+      database: opts.database,
       formated: promptbody,
       bias: emobias,
       currentChar: opts.currentChar,

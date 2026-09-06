@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-vi.mock('./stores.svelte', () => ({}))
+vi.mock('./stores/coreStores.svelte', () => ({}))
 vi.mock('./storage/database.svelte', () => ({}))
 vi.mock('../lang', () => ({ language: {} }))
 

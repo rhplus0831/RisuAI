@@ -57,11 +57,8 @@ vi.mock('src/ts/alert', async (importActual) => {
 })
 
 import { clearCachedServerCommandRevision, type CommandEvent } from '../../server/commands'
-import { setResourceWriteGuardEnabled } from '../../server/resourceWriteGuard.svelte'
-import {
-  getResourceDatabase as getDatabase,
-  replaceResourceDatabase as setDatabaseLite,
-} from '../../server/resourceState.svelte'
+
+import { replaceResourceDatabase as setDatabaseLite } from '../../server/resourceState.svelte'
 import {
   callMCPTool,
   callMCPToolFrom,
@@ -80,6 +77,7 @@ import { MCPClient, type MCPTool } from './mcplib'
 import { registeredCustomPluginMCPs, registerMCPModule, unregisterMCPModule } from './pluginmcp'
 import { requestChatData } from '../request/request'
 import { language } from 'src/lang'
+import { getResourceDatabase as getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface CapturedFetch {
   url: string
@@ -114,6 +112,8 @@ function configureServerCompletionDb() {
     aiModel: 'echo_model',
     subModel: 'echo_model',
     fallbackModels: {},
+    modelProfiles: [{ id: 'mcp-test-profile', name: 'MCP test profile', modelId: 'echo_model' }],
+    modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'mcp-test-profile' } },
     maxResponse: 64,
     temperature: 40,
     useStreaming: false,
@@ -288,7 +288,6 @@ beforeEach(() => {
   moduleCommandMocks.createGlobalModule.mockResolvedValue(null)
   mcpOAuthMocks.requestStoredMcpOAuthRefresh.mockClear()
   clearMCPRuntimeState()
-  setResourceWriteGuardEnabled(false)
   setDatabaseLite({
     authRefreshes: [],
   } as any)
@@ -296,7 +295,6 @@ beforeEach(() => {
 
 afterEach(() => {
   clearMCPRuntimeState()
-  setResourceWriteGuardEnabled(false)
 })
 
 describe('MCP remembered tool calls', () => {
@@ -313,7 +311,7 @@ describe('MCP remembered tool calls', () => {
 })
 
 describe('MCP request discovery', () => {
-  it('L45: skips MCP tool discovery for Fastify server completions that discard tools', async () => {
+  it('skips MCP tool discovery for Fastify server completions that discard tools', async () => {
     const identifier = 'plugin:l45-server-skip'
     const getToolList = vi.fn(async () => [toolFixture('discarded_tool')])
     await registerMCPModule(
@@ -358,7 +356,7 @@ describe('MCP request discovery', () => {
 })
 
 describe('MCP client initialization lifecycle', () => {
-  it('L46: shares concurrent first construction for one remote MCP key', async () => {
+  it('shares concurrent first construction for one remote MCP key', async () => {
     const mcpUrl = 'https://mcp.example/messages'
     const handshake = createDeferred<MCPClient['serverInfo']>()
     const constructedUrls: string[] = []
@@ -387,7 +385,7 @@ describe('MCP client initialization lifecycle', () => {
     expect(MCPs[mcpUrl]).toBeDefined()
   })
 
-  it('L46: clears a failed in-flight remote construction so a later call can retry', async () => {
+  it('clears a failed in-flight remote construction so a later call can retry', async () => {
     const mcpUrl = 'https://mcp-retry.example/messages'
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {
       /* expected first failure */
@@ -587,15 +585,8 @@ describe('MCP runtime persistence', () => {
     })
   })
 
-  it('does not throw and still dispatches the command when the resource guard is active', async () => {
+  it('dispatches the owner command when persistence is active', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
-    // Baseline: the guard is active, so a raw projection write throws.
-    expect(() => {
-      getDatabase().authRefreshes.push({ url: 'raw' } as any)
-    }).toThrow(/resource database compatibility view is read-only/)
-
     expect(() =>
       persistMCPRefreshToken('https://mcp.example', {
         clientId: 'client-id',
@@ -649,7 +640,7 @@ describe('MCP runtime persistence', () => {
     })
   })
 
-  it('I-12: failed refresh-token rollback removes only the unchanged appended token after newer edits', async () => {
+  it('failed refresh-token rollback removes only the unchanged appended token after newer edits', async () => {
     const { calls, failProviderSettings } = stubDeferredProviderSettingsFailure()
     const existingToken = {
       url: 'https://existing.example',
@@ -1048,7 +1039,7 @@ describe('MCP indexed tool dispatch', () => {
     expect(callTool).toHaveBeenCalledTimes(1)
   })
 
-  it('L55: dispatch builds the tool-name index once and reuses it for later calls', async () => {
+  it('dispatch builds the tool-name index once and reuses it for later calls', async () => {
     const firstIdentifier = 'plugin:l55-index-first'
     const secondIdentifier = 'plugin:l55-index-second'
     const firstGetToolList = vi.fn(async () => [toolFixture('shared_tool'), toolFixture('first_only')])
@@ -1087,7 +1078,7 @@ describe('MCP indexed tool dispatch', () => {
     expect(secondCallTool).toHaveBeenCalledTimes(1)
   })
 
-  it('L55: rebuilds the dispatch index when MCP initialization inputs change', async () => {
+  it('rebuilds the dispatch index when MCP initialization inputs change', async () => {
     const firstIdentifier = 'plugin:l55-rebuild-first'
     const secondIdentifier = 'plugin:l55-rebuild-second'
     const firstGetToolList = vi.fn(async () => [toolFixture('first_tool')])
@@ -1129,7 +1120,7 @@ describe('MCP indexed tool dispatch', () => {
     expect(secondCallTool).toHaveBeenCalledTimes(2)
   })
 
-  it('L55: ignores a stale in-flight dispatch index build before initialization cleanup', async () => {
+  it('ignores a stale in-flight dispatch index build before initialization cleanup', async () => {
     const oldIdentifier = 'plugin:l55-stale-old'
     const newIdentifier = 'plugin:l55-stale-new'
     const oldToolList = createDeferred<MCPTool[]>()
@@ -1195,7 +1186,7 @@ describe('MCP indexed tool dispatch', () => {
     expect(newCallTool).toHaveBeenCalledTimes(2)
   })
 
-  it('v4-L33: isolates a failing internal handshake while keeping other MCP tools usable', async () => {
+  it('isolates a failing internal handshake while keeping other MCP tools usable', async () => {
     const pluginIdentifier = 'plugin:v4-l33-survivor'
     const pluginToolList = vi.fn(async () => [toolFixture('survivor_tool')])
     const pluginCallTool = vi.fn(async (toolName: string) => [{ type: 'text' as const, text: `survivor:${toolName}` }])

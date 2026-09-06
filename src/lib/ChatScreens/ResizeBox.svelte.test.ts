@@ -2,20 +2,30 @@ import { get } from 'svelte/store'
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const resizeBoxMocks = vi.hoisted(() => ({
+  charactersResourceState: {
+    status: 'ready',
+    rowStatuses: {} as Record<string, string>,
+  },
+  selectedCharacter: { chaId: 'owner-character', name: 'Owner character' },
+  getEmotionForCharacter: vi.fn(() => []),
+}))
+
 vi.mock('../../ts/stores.svelte', async () => {
   const { writable } = await import('svelte/store')
   return {
-    CharEmotion: writable([]),
+    CharEmotion: writable({}),
     ViewBoxsize: writable({ width: 200, height: 180 }),
   }
 })
 
-vi.mock('src/ts/storage/database.svelte', () => ({
-  getDatabase: () => ({}),
+vi.mock('src/ts/server/resourceState.svelte', () => ({
+  charactersResourceState: resizeBoxMocks.charactersResourceState,
 }))
 
 vi.mock('../../ts/characterState', () => ({
-  getEmotion: () => [],
+  getSelectedCharacterOwner: () => resizeBoxMocks.selectedCharacter,
+  getEmotionForCharacter: resizeBoxMocks.getEmotionForCharacter,
 }))
 
 import { language } from 'src/lang'
@@ -29,6 +39,9 @@ let target: HTMLDivElement
 
 beforeEach(() => {
   ViewBoxsize.set({ width: 200, height: 180 })
+  resizeBoxMocks.charactersResourceState.status = 'ready'
+  resizeBoxMocks.charactersResourceState.rowStatuses = {}
+  resizeBoxMocks.getEmotionForCharacter.mockClear()
   target = document.createElement('div')
   document.body.appendChild(target)
 })
@@ -42,6 +55,26 @@ afterEach(() => {
 })
 
 describe('ResizeBox keyboard controls', () => {
+  it('renders from the selected character owner and fails closed on resource errors', async () => {
+    component = mount(ResizeBox, { target })
+    await tick()
+
+    expect(resizeBoxMocks.getEmotionForCharacter).toHaveBeenLastCalledWith(
+      resizeBoxMocks.selectedCharacter,
+      {},
+      'plain',
+    )
+
+    unmount(component)
+    component = undefined
+    resizeBoxMocks.charactersResourceState.status = 'error'
+    resizeBoxMocks.getEmotionForCharacter.mockClear()
+    component = mount(ResizeBox, { target })
+    await tick()
+
+    expect(resizeBoxMocks.getEmotionForCharacter).toHaveBeenLastCalledWith(undefined, {}, 'plain')
+  })
+
   it('names the resize handle and changes both dimensions with arrow keys', async () => {
     component = mount(ResizeBox, { target })
     await tick()

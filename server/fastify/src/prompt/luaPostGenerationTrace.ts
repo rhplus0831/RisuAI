@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { Chat, Message } from '../../../../src/ts/storage/database.svelte'
+import type { FastifyChat as Chat, FastifyMessage as Message } from './serverTypes.js'
 import type { TriggerSourceAttribution } from './triggerSource.js'
 
 export type PostGenerationLuaTracePhase = 'editOutput' | 'onOutput'
@@ -206,7 +206,7 @@ export function summarizeLuaTraceMessage(message: Message | undefined): TraceMes
 }
 
 function cloneChatBody(chat: Chat): TraceMessageBody[] {
-  return (chat.message ?? []).map((message, index) => ({
+  return (chat.message ?? []).map((message: Message, index: number) => ({
     index,
     role: message.role,
     body: message.data ?? '',

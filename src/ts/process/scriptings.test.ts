@@ -12,6 +12,7 @@ const luaMock = vi.hoisted(() => {
     closedEngineIds: [] as number[],
     lastAccessKey: '',
     rejectDispatch: false,
+    nextRunError: null as Error | null,
     dispatchArgs: new Map<string, unknown[]>(),
     callListenAction: null as null | ((engine: any, accessKey: string) => void | Promise<void>),
   }
@@ -54,6 +55,11 @@ const luaMock = vi.hoisted(() => {
             }),
             run: vi.fn(async (_argCount: number, options?: { timeout?: number }) => {
               state.runTimeouts.push(options?.timeout ?? 0)
+              if (state.nextRunError) {
+                const error = state.nextRunError
+                state.nextRunError = null
+                throw error
+              }
               if (loadedCode.includes('while true do end')) {
                 throw new Error('thread timeout exceeded')
               }
@@ -98,6 +104,7 @@ const luaMock = vi.hoisted(() => {
       state.closedEngineIds.length = 0
       state.lastAccessKey = ''
       state.rejectDispatch = false
+      state.nextRunError = null
       state.dispatchArgs.clear()
       state.callListenAction = null
       state.createEngine.mockClear()
@@ -105,6 +112,9 @@ const luaMock = vi.hoisted(() => {
     },
     setRejectDispatch(value: boolean) {
       state.rejectDispatch = value
+    },
+    failNextRun(error: Error) {
+      state.nextRunError = error
     },
     setDispatchArgs(name: string, args: unknown[]) {
       state.dispatchArgs.set(name, args)
@@ -124,6 +134,13 @@ const mediaMock = vi.hoisted(() => ({
   getUserName: vi.fn(() => 'User'),
   readImage: vi.fn(async () => new Uint8Array([1, 2, 3])),
   writeInlayImage: vi.fn(async () => 'inlay-id'),
+}))
+const requestChatData = vi.hoisted(() => vi.fn(async () => ({ type: 'success', result: 'ok' })))
+const lorebookMock = vi.hoisted(() => ({
+  loadLoreBookV3Prompt: vi.fn(async () => ({ actives: [] as Array<{ prompt: string; role: string }> })),
+}))
+const tokenizerMock = vi.hoisted(() => ({
+  tokenize: vi.fn(async (text: string) => text.length),
 }))
 
 vi.mock('wasmoon', () => ({
@@ -160,6 +177,26 @@ vi.mock('./files/inlays', () => ({
 
 vi.mock('./stableDiff', () => ({
   generateAIImage: mediaMock.generateAIImage,
+}))
+
+vi.mock('./lorebook.svelte', async (importActual) => {
+  const actual = await importActual<typeof import('./lorebook.svelte')>()
+  return {
+    ...actual,
+    loadLoreBookV3Prompt: lorebookMock.loadLoreBookV3Prompt,
+  }
+})
+
+vi.mock('../tokenizer', async (importActual) => {
+  const actual = await importActual<typeof import('../tokenizer')>()
+  return {
+    ...actual,
+    tokenize: tokenizerMock.tokenize,
+  }
+})
+
+vi.mock('./request/request', () => ({
+  requestChatData,
 }))
 
 vi.mock('../util', async (importActual) => {
@@ -205,9 +242,10 @@ import {
   clearCachedServerCommandRevision,
   setServerCommandSuccessReconciler,
 } from '../server/commands'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
+
+import { replaceResourceDatabase } from '../server/resourceState.svelte'
 import { selectedCharID } from '../stores.svelte'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 function makeChat(): Chat {
   return {
@@ -355,7 +393,6 @@ function stubLuaEditTriggerCommandFetch(): CapturedCommandFetch[] {
 
 function seedLuaEditTriggerDatabase(): character {
   selectedCharID.set(0)
-  setResourceWriteGuardEnabled(false)
   replaceResourceDatabase({
     characters: [
       {
@@ -419,6 +456,9 @@ beforeEach(() => {
   mediaMock.getUserName.mockReturnValue('User')
   mediaMock.readImage.mockResolvedValue(new Uint8Array([1, 2, 3]))
   mediaMock.writeInlayImage.mockResolvedValue('inlay-id')
+  lorebookMock.loadLoreBookV3Prompt.mockResolvedValue({ actives: [] })
+  tokenizerMock.tokenize.mockClear()
+  requestChatData.mockClear()
   vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 200 })) as unknown as typeof fetch)
   vi.spyOn(console, 'log').mockImplementation(() => {})
   vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -426,12 +466,146 @@ beforeEach(() => {
 
 afterEach(() => {
   resetScriptingEngineCacheForTests()
+  vi.useRealTimers()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 
-describe('client scripting media cleanup (L51)', () => {
-  it('L51: getPersonaImageMain revokes its object URL when inlay writing fails', async () => {
+describe('client scripting lightweight chat and changed-setter APIs', () => {
+  it('exposes scalar chat reads and normalized recent chat JSON', async () => {
+    const chat = makeChat()
+    chat.message = [
+      { role: 'user', data: 'older', time: 12 },
+      { role: 'char', data: 'latest' },
+    ] as Chat['message']
+
+    await runScripted('-- lightweight chat hosts', {
+      char: makeCharacter(chat),
+      chat,
+      mode: 'start',
+    })
+
+    const hostFns = luaMock.engines[0].hostFns
+    expect(hostFns.get('getChatData')?.('id', 0)).toBe('older')
+    expect(hostFns.get('getChatData')?.('id', 99)).toBe('')
+    expect(hostFns.get('getChatRole')?.('id', -1)).toBe('char')
+    expect(hostFns.get('getChatRole')?.('id', 99)).toBe('')
+    expect(JSON.parse(hostFns.get('getRecentChatsMain')?.('id', 1.9) as string)).toEqual([
+      { role: 'char', data: 'latest', time: 0 },
+    ])
+    expect(luaMock.loadedCodes[0]).toContain('function getRecentChats(id, count)')
+    expect(luaMock.loadedCodes[0]).toContain('function setStateChanged(id, name, value)')
+  })
+
+  it('keeps legacy setters returnless and reports true only for changed writes', async () => {
+    const chat = makeChat()
+    const setVar = vi
+      .fn<() => boolean>()
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true)
+    let legacyResult: unknown
+    let unchangedResult: unknown
+    let changedResult: unknown
+    luaMock.setCallListenAction((engine, accessKey) => {
+      legacyResult = engine.hostFns.get('setChatVar')?.(accessKey, 'same', 'value')
+      unchangedResult = engine.hostFns.get('setChatVarChanged')?.(accessKey, 'same', 'value')
+      changedResult = engine.hostFns.get('setChatVarChanged')?.(accessKey, 'new', 'value')
+    })
+
+    const result = await runScripted('-- changed setter hosts', {
+      char: makeCharacter(chat),
+      chat,
+      data: 'body',
+      mode: 'editDisplay',
+      setVar,
+    })
+
+    expect(legacyResult).toBeUndefined()
+    expect(unchangedResult).toBeUndefined()
+    expect(changedResult).toBe(true)
+    expect(result.stopSending).toBe(false)
+  })
+})
+
+describe('client scripting lorebook loading', () => {
+  it('uses the scriptMain profile context budget instead of the conflicting chat and flat budgets', async () => {
+    const chat = makeChat()
+    const char = makeCharacter(chat)
+    selectedCharID.set(0)
+    replaceResourceDatabase({
+      currentChar: 0,
+      characters: [char],
+      maxContext: 100,
+      modelProfiles: [
+        {
+          id: 'chat-profile',
+          name: 'Chat profile',
+          providerId: 'debug-echo',
+          modelId: 'debug-echo',
+          runtimeOptions: { maxContext: 100 },
+        },
+        {
+          id: 'script-profile',
+          name: 'Script profile',
+          providerId: 'debug-echo',
+          modelId: 'debug-echo',
+          runtimeOptions: { maxContext: 2 },
+        },
+      ],
+      modelRoleProfiles: {
+        chatMain: { mode: 'profile', profileId: 'chat-profile' },
+        scriptMain: { mode: 'profile', profileId: 'script-profile' },
+      },
+    } as any)
+    lorebookMock.loadLoreBookV3Prompt.mockResolvedValueOnce({
+      actives: [
+        { prompt: 'aa', role: 'system' },
+        { prompt: 'bb', role: 'user' },
+      ],
+    })
+    luaMock.setDispatchArgs('loadLoreBooksMain', [0])
+
+    const result = await runScripted('-- script-owned lore budget', {
+      char,
+      chat,
+      mode: 'loadLoreBooksMain',
+      lowLevelAccess: true,
+    })
+
+    expect(JSON.parse(result.res)).toEqual([{ data: 'aa', role: 'system' }])
+    expect(tokenizerMock.tokenize).toHaveBeenCalledTimes(2)
+  })
+
+  it('retains the resolver-owned flat maxContext compatibility fallback when no durable script budget exists', async () => {
+    const chat = makeChat()
+    const char = makeCharacter(chat)
+    selectedCharID.set(0)
+    replaceResourceDatabase({
+      currentChar: 0,
+      characters: [char],
+      maxContext: 2,
+      modelProfiles: [],
+      modelRoleProfiles: {},
+    } as any)
+    lorebookMock.loadLoreBookV3Prompt.mockResolvedValueOnce({
+      actives: [{ prompt: 'aa', role: 'system' }],
+    })
+    luaMock.setDispatchArgs('loadLoreBooksMain', [0])
+
+    const result = await runScripted('-- legacy lore budget', {
+      char,
+      chat,
+      mode: 'loadLoreBooksMain',
+      lowLevelAccess: true,
+    })
+
+    expect(JSON.parse(result.res)).toEqual([{ data: 'aa', role: 'system' }])
+  })
+})
+
+describe('client scripting media cleanup', () => {
+  it('getPersonaImageMain revokes its object URL when inlay writing fails', async () => {
     const chat = makeChat()
     const char = makeCharacter(chat)
     mediaMock.writeInlayImage.mockRejectedValueOnce(new Error('inlay failed'))
@@ -459,7 +633,55 @@ describe('client scripting media cleanup (L51)', () => {
   })
 })
 
-describe('client scripting Lua budgets and cache (L39-L41)', () => {
+describe('client scripting Lua budgets and cache', () => {
+  it('uses the current script owner profile overrides with a cached Lua engine', async () => {
+    const chat = makeChat()
+    const char = makeCharacter(chat)
+    char.scriptModelOverrides = { llmProfileId: 'character-main' }
+    luaMock.setDispatchArgs('LLMMain', [JSON.stringify([{ role: 'user', content: 'prompt' }]), false, ''])
+    const code = '-- cached owner-aware LLM handler'
+
+    await runScripted(code, { char, chat, mode: 'LLMMain', lowLevelAccess: true })
+    await runScripted(code, {
+      char,
+      chat,
+      mode: 'LLMMain',
+      lowLevelAccess: true,
+      scriptModelOverrides: { llmProfileId: 'module-main' },
+    })
+
+    expect(luaMock.createEngine).toHaveBeenCalledTimes(1)
+    expect(requestChatData).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ profileIdOverride: 'character-main', strictProfileIdOverride: true }),
+      'scriptMain',
+    )
+    expect(requestChatData).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ profileIdOverride: 'module-main', strictProfileIdOverride: true }),
+      'scriptMain',
+    )
+  })
+
+  it('uses the axLLM override for scriptAux calls', async () => {
+    const chat = makeChat()
+    const char = makeCharacter(chat)
+    luaMock.setDispatchArgs('axLLMMain', [JSON.stringify([{ role: 'user', content: 'prompt' }]), false, ''])
+
+    await runScripted('-- owner-aware axLLM handler', {
+      char,
+      chat,
+      mode: 'axLLMMain',
+      lowLevelAccess: true,
+      scriptModelOverrides: { axLlmProfileId: 'module-aux' },
+    })
+
+    expect(requestChatData).toHaveBeenCalledWith(
+      expect.objectContaining({ profileIdOverride: 'module-aux', strictProfileIdOverride: true }),
+      'scriptAux',
+    )
+  })
+
   it('keeps readonly character trigger rows immutable before Lua edit-display dispatch', async () => {
     const chat = makeChat()
     const char = makeCharacter(chat)
@@ -517,7 +739,7 @@ describe('client scripting Lua budgets and cache (L39-L41)', () => {
     expect(getScriptingEngineCacheSnapshotForTests().accessSetSizes.editDisplay).toBe(0)
   })
 
-  it('L39: client Lua while true loads through the timeout-bound thread', async () => {
+  it('client Lua while true loads through the timeout-bound thread', async () => {
     const chat = makeChat()
     const char = makeCharacter(chat)
 
@@ -537,7 +759,55 @@ describe('client scripting Lua budgets and cache (L39-L41)', () => {
     expect(luaMock.runTimeouts).toContain(25)
   })
 
-  it('L40: same-mode Lua code hash cache reuses alternating bodies and evicts by LRU', async () => {
+  it('evicts a Lua engine whose wrapper load times out before retrying identical code', async () => {
+    const chat = makeChat()
+    const char = makeCharacter(chat)
+    const code = '-- retry after timeout'
+    luaMock.failNextRun(new Error('thread timeout exceeded'))
+
+    await expect(
+      runScripted(code, {
+        char,
+        chat,
+        mode: 'editDisplay',
+        data: 'first',
+        luaExecTimeoutMs: 25,
+      }),
+    ).rejects.toThrow(/timeout/)
+
+    expect(luaMock.closedEngineIds).toEqual([0])
+    expect(getScriptingEngineCacheSnapshotForTests().keys).not.toContainEqual(
+      expect.stringMatching(/^lua:editDisplay:/),
+    )
+
+    await expect(
+      runScripted(code, {
+        char,
+        chat,
+        mode: 'editDisplay',
+        data: 'second',
+        luaExecTimeoutMs: 25,
+      }),
+    ).resolves.toEqual(expect.objectContaining({ res: 'second' }))
+
+    expect(luaMock.createEngine).toHaveBeenCalledTimes(2)
+    expect(luaMock.engines[1].closed).toBe(false)
+  })
+
+  it('does not cache a Lua state whose engine creation fails', async () => {
+    const chat = makeChat()
+    const char = makeCharacter(chat)
+    const code = '-- retry engine creation'
+    luaMock.createEngine.mockRejectedValueOnce(new Error('engine init failed'))
+
+    await expect(runScripted(code, { char, chat, mode: 'start' })).rejects.toThrow('engine init failed')
+    expect(getScriptingEngineCacheSnapshotForTests().keys).not.toContainEqual(expect.stringMatching(/^lua:start:/))
+
+    await expect(runScripted(code, { char, chat, mode: 'start' })).resolves.toBeDefined()
+    expect(luaMock.createEngine).toHaveBeenCalledTimes(2)
+  })
+
+  it('same-mode Lua code hash cache reuses alternating bodies and evicts by LRU', async () => {
     const chat = makeChat()
     const char = makeCharacter(chat)
 
@@ -650,7 +920,7 @@ describe('client scripting Lua budgets and cache (L39-L41)', () => {
     )
   })
 
-  it('L41: editDisplay access key is removed after Lua success and rejection', async () => {
+  it('editDisplay access key is removed after Lua success and rejection', async () => {
     const chat = makeChat()
     const char = makeCharacter(chat)
     const setVar = vi.fn()
@@ -693,7 +963,6 @@ describe('Fastify Lua edit-trigger chat mutation', () => {
   })
 
   afterEach(() => {
-    setResourceWriteGuardEnabled(false)
     selectedCharID.set(-1)
     clearAppliedServerResourceRevision()
     clearCachedServerCommandRevision()
@@ -703,7 +972,6 @@ describe('Fastify Lua edit-trigger chat mutation', () => {
   it('applies a Lua host chat mutation through the scoped message command', async () => {
     const calls = stubLuaEditTriggerCommandFetch()
     const char = seedLuaEditTriggerDatabase()
-    setResourceWriteGuardEnabled(true)
     luaMock.setCallListenAction((engine, accessKey) => {
       engine.hostFns.get('addChat')?.(accessKey, 'char', 'from Lua')
     })
@@ -732,10 +1000,9 @@ describe('Fastify Lua edit-trigger chat mutation', () => {
   it('discards detached Lua chat changes when the active chat changes during the trigger', async () => {
     const calls = stubLuaEditTriggerCommandFetch()
     const char = seedLuaEditTriggerDatabase()
-    setResourceWriteGuardEnabled(true)
     luaMock.setCallListenAction((engine, accessKey) => {
       engine.hostFns.get('addChat')?.(accessKey, 'char', 'stale Lua mutation')
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getResourceDatabase().characters[0].chatPage = 1
       })
     })
@@ -756,7 +1023,6 @@ describe('Fastify Lua edit-trigger chat mutation', () => {
   it('persists Lua edit-display chat variables through the scriptstate command', async () => {
     const calls = stubLuaEditTriggerCommandFetch()
     const char = seedLuaEditTriggerDatabase()
-    setResourceWriteGuardEnabled(true)
     luaMock.setCallListenAction((engine, accessKey) => {
       engine.hostFns.get('setChatVar')?.(accessKey, 'choice', 'updated')
     })
@@ -786,7 +1052,6 @@ describe('client scripting description host API', () => {
   })
 
   afterEach(() => {
-    setResourceWriteGuardEnabled(false)
     selectedCharID.set(-1)
     clearAppliedServerResourceRevision()
     clearCachedServerCommandRevision()
@@ -973,5 +1238,97 @@ describe('client Python worker protocol', () => {
 
     await rejection
     expect(worker.terminate).toHaveBeenCalledOnce()
+  })
+
+  it('times out Python initialization and recreates a clean context for identical code', async () => {
+    vi.useFakeTimers()
+    const chat = makeChat()
+    const char = makeCharacter(chat)
+    const code = 'def start(*args): return "ready"'
+    const firstRun = runScripted(code, {
+      char,
+      chat,
+      mode: 'start',
+      type: 'py',
+      pythonExecTimeoutMs: 25,
+      pythonInitTimeoutMs: 25,
+    })
+    const firstRejection = expect(firstRun).rejects.toThrow('Python scripting worker timed out after 25ms.')
+    const firstWorker = await waitForFakePythonWorker()
+    await waitForPythonRequest(firstWorker, 'init')
+
+    await vi.advanceTimersByTimeAsync(25)
+    await firstRejection
+
+    expect(firstWorker.terminate).toHaveBeenCalledOnce()
+    expect(getScriptingEngineCacheSnapshotForTests().accessSetSizes.safe).toBe(0)
+
+    FakePythonWorker.onPostMessage = (worker, message) => {
+      if (message.type === 'init') {
+        worker.respond({ type: 'result', id: message.id, result: null })
+      } else if (message.type === 'python') {
+        worker.respond({ type: 'result', id: message.id, result: 'ready' })
+      }
+    }
+    await expect(
+      runScripted(code, {
+        char,
+        chat,
+        mode: 'start',
+        type: 'py',
+        pythonExecTimeoutMs: 25,
+        pythonInitTimeoutMs: 25,
+      }),
+    ).resolves.toEqual(expect.objectContaining({ res: 'ready' }))
+
+    expect(FakePythonWorker.instances).toHaveLength(2)
+  })
+
+  it('times out a Python call, terminates its worker, and cleans the run access key', async () => {
+    vi.useFakeTimers()
+    FakePythonWorker.onPostMessage = (worker, message) => {
+      if (message.type === 'init') {
+        worker.respond({ type: 'result', id: message.id, result: null })
+      }
+    }
+    const chat = makeChat()
+    const run = runScripted('def pendingCall(*args): return None', {
+      char: makeCharacter(chat),
+      chat,
+      mode: 'pendingCall',
+      type: 'py',
+      pythonExecTimeoutMs: 40,
+    })
+    const rejection = expect(run).rejects.toThrow('Python scripting worker timed out after 40ms.')
+    const worker = await waitForFakePythonWorker()
+    await waitForPythonRequest(worker, 'python')
+
+    await vi.advanceTimersByTimeAsync(40)
+    await rejection
+
+    expect(worker.terminate).toHaveBeenCalledOnce()
+    expect(getScriptingEngineCacheSnapshotForTests().accessSetSizes).toEqual({
+      safe: 0,
+      editDisplay: 0,
+      lowLevel: 0,
+    })
+
+    FakePythonWorker.onPostMessage = (retryWorker, message) => {
+      if (message.type === 'init') {
+        retryWorker.respond({ type: 'result', id: message.id, result: null })
+      } else if (message.type === 'python') {
+        retryWorker.respond({ type: 'result', id: message.id, result: 'recovered' })
+      }
+    }
+    await expect(
+      runScripted('def pendingCall(*args): return None', {
+        char: makeCharacter(chat),
+        chat,
+        mode: 'pendingCall',
+        type: 'py',
+        pythonExecTimeoutMs: 40,
+      }),
+    ).resolves.toEqual(expect.objectContaining({ res: 'recovered' }))
+    expect(FakePythonWorker.instances).toHaveLength(2)
   })
 })

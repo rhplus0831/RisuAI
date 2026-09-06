@@ -36,13 +36,14 @@ import {
 import { SERVER_UNLOADED_CHAT_MESSAGE_MARKER } from './server/chatMessagePlaceholders'
 import { resetWriterAccessLostForTests } from './server/activeWriterSession'
 import { createDestructiveRefreshToken } from './server/staleStateGuards'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
+
 import { setChatVar } from './parser/chatVar.svelte'
 import { selectedCharID } from './stores.svelte'
 import {
   applyCharacterResource,
+  applyChatMetadataOwnerPatch,
+  applyChatFolderMetadataOwnerPatch,
   applyCharactersResource,
-  getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
 } from './server/resourceState.svelte'
 // Import the heavy database module AFTER stores.svelte: importing it first
@@ -61,10 +62,23 @@ import {
   applyOptimisticCreatedChat,
   applyOptimisticCreatedChatFolder,
   applyOptimisticDeletedChat,
+  applyOptimisticResetChats,
   applyChatNoteValueLocally,
   appendCurrentChatEmptyCharMessage,
   appendCurrentChatUserMessageForSend,
   changedChatMetadata,
+  captureChatMetadataPatch,
+  captureChatCreateSnapshot,
+  captureChatFolderCreateSnapshot,
+  captureChatDeleteSnapshot,
+  captureChatFolderDeleteSnapshot,
+  captureChatOrderSnapshot,
+  captureChatForkSnapshot,
+  captureChatResetSnapshot,
+  dispatchReorderChatsByIdsWithOutcome,
+  captureChatFolderMetadataPatch,
+  dispatchChatMetadataPatchWithOutcome,
+  dispatchChatFolderMetadataPatchWithOutcome,
   captureActiveChatTarget,
   CHAT_PATCH_ALLOWED_KEYS,
   currentChatScopedSnapshot,
@@ -80,6 +94,7 @@ import {
   dispatchCreateChatFolder,
   dispatchCompatibleChatUpdateScoped,
   dispatchDeleteChat,
+  dispatchDeleteChatWithOutcome,
   dispatchDeleteChatFolder,
   dispatchDeleteMessageScoped,
   dispatchForkChat,
@@ -88,6 +103,7 @@ import {
   dispatchReorderChatFoldersAndChatsByIdsWithOutcome,
   dispatchReorderChatFoldersByIds,
   dispatchReorderChatsByIds,
+  dispatchResetChatsWithOutcome,
   dispatchReplaceTailMessagesScoped,
   dispatchReplaceMessagesScoped,
   dispatchSaveChatGenerationSettings,
@@ -119,6 +135,8 @@ import {
   sanitizeChatPatch,
   setChatNoteValue,
   setChatScriptstateValue,
+  setCurrentChatPinnedWithOutcome,
+  setCurrentChatGreetingIndex,
   setCurrentChatSelectedDraftHookId,
   setCurrentChatTranslationSettingWithOutcome,
   stageChatNoteMutation,
@@ -144,12 +162,12 @@ import {
 } from './server/pendingMutationOutbox'
 import { replayPendingMutations } from './server/pendingMutationReplay'
 import { dispatchDurableMutation } from './server/durableMutationDispatch'
-import { registerPendingBridgePatchFlusher } from './server/pendingBridgeFlushRegistry'
-import { syncServerBackedChatMetadataBaselines, watchServerBackedChatMetadata } from './server/chatBridge.svelte'
+import { registerPendingOwnerMutationFlusher } from './server/pendingOwnerMutationRegistry'
 import { PERSONA_SELECTION_MUTATION_KEY } from './server/personaMutationKeys'
 import { reapplyRetainedChatBodyProjections } from './server/chatRetainedProjection'
 import { acknowledgeCreatedChatTranscriptLocalEffect, resetChatHydration } from './server/chatMessageHydration.svelte'
 import { language } from '../lang'
+import { getResourceDatabase as getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface CapturedFetch {
   url: string
@@ -639,7 +657,7 @@ function orderedChatMetadata(values: Record<string, unknown>): Chat {
 }
 
 function seedReadyActiveChatGenerationSettings(): void {
-  withTrustedResourceWrite(() => {
+  withTestDatabaseWrite(() => {
     getDatabase().personas = [
       {
         id: 'persona-a',
@@ -670,12 +688,12 @@ beforeEach(() => {
   clearAppliedServerResourceRevision()
   clearCachedServerCommandRevision()
   resetChatHydration()
-  setResourceWriteGuardEnabled(false)
   selectedCharID.set(0)
   setDatabaseLite({
     enabledModules: [],
     moduleIntergration: '',
     modules: [],
+    currentChar: 0,
     characters: [
       {
         chaId: 'char-a',
@@ -700,14 +718,12 @@ beforeEach(() => {
 afterEach(() => {
   clearAppliedServerResourceRevision()
   setServerCommandSuccessReconciler(null)
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
   resetChatHydration()
 })
 
 describe('chat command projection helpers', () => {
   it('rolls back and fails loudly when a latched translation setting write is attempted', async () => {
-    setResourceWriteGuardEnabled(true)
     writerAccessMocks.lost = true
 
     const persistence = setCurrentChatTranslationSettingWithOutcome('autoTranslate', true)
@@ -721,7 +737,6 @@ describe('chat command projection helpers', () => {
   })
 
   it('does not apply chat generation settings locally after writer access is lost', async () => {
-    setResourceWriteGuardEnabled(true)
     writerAccessMocks.lost = true
 
     const operation = dispatchSaveChatGenerationSettingsWithOutcome('chat-a', {
@@ -740,8 +755,6 @@ describe('chat command projection helpers', () => {
 
   it('patches the selected draft hook through the chat-scoped command path', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     expect(setCurrentChatSelectedDraftHookId('draft-hook-a')).toBe(true)
     expect(getDatabase().characters[0].chats[0].selectedDraftHookId).toBe('draft-hook-a')
 
@@ -757,11 +770,47 @@ describe('chat command projection helpers', () => {
     })
   })
 
+  it('keeps an unrelated sibling chat byte-identical across greeting rollback', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
+    })
+    withTestDatabaseWrite(() => {
+      getDatabase().characters[0].chats[0].fmIndex = 4
+      getDatabase().characters[0].chats[1] = {
+        id: 'chat-b',
+        name: 'Sibling with legacy metadata',
+        folderId: 'folder-a',
+        opaqueField: { keep: 'exactly-as-written' },
+        generationSettings: { legacyShape: ['preserve', 7] },
+        message: [],
+      } as any
+    })
+    const sibling = getDatabase().characters[0].chats[1]
+    const siblingBytes = JSON.stringify(sibling)
+
+    expect(setCurrentChatGreetingIndex(7)).toBe(true)
+    expect(getDatabase().characters[0].chats[0].fmIndex).toBe(7)
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(getDatabase().characters[0].chats[0].fmIndex).toBe(4)
+    })
+
+    expect(getDatabase().characters[0].chats[1]).toBe(sibling)
+    expect(JSON.stringify(getDatabase().characters[0].chats[1])).toBe(siblingBytes)
+  })
+
+  it('fails closed when a folder owner is not unique in the captured character rows', () => {
+    const calls = stubCommandFetch()
+    const previous = currentChatStateSnapshot()
+    previous.characters[0].chatFolders.push({ id: 'folder-a', name: 'Duplicate folder', folded: false } as any)
+
+    expect(dispatchUpdateChatFolderWithOutcome('folder-a', { name: 'Should not dispatch' }, previous)).toBeUndefined()
+    expect(calls).toHaveLength(0)
+  })
+
   it('clears the selected draft hook with a nullable chat patch', async () => {
     setCurrentChatSelectedDraftHookId('draft-hook-a', { dispatch: false })
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     expect(setCurrentChatSelectedDraftHookId(null)).toBe(true)
     expect(getDatabase().characters[0].chats[0]).not.toHaveProperty('selectedDraftHookId')
 
@@ -779,8 +828,6 @@ describe('chat command projection helpers', () => {
 
   it('patches sparse per-chat translation settings through the guarded chat-scoped path', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const persistence = setCurrentChatTranslationSettingWithOutcome('autoTranslate', true)
     expect(getDatabase().characters[0].chats[0].autoTranslate).toBe(true)
     await expect(persistence).resolves.toMatchObject({ status: 'accepted' })
@@ -797,12 +844,14 @@ describe('chat command projection helpers', () => {
     })
     expect(
       sanitizeChatPatch({
+        translatorPresetId: 'translator-preset-a',
         autoTranslate: false,
         autoTranslateBotOnly: true,
         bilingualDisplay: true,
         bilingualEmphasis: 'translation',
       }),
     ).toEqual({
+      translatorPresetId: 'translator-preset-a',
       autoTranslate: false,
       autoTranslateBotOnly: true,
       bilingualDisplay: true,
@@ -810,10 +859,57 @@ describe('chat command projection helpers', () => {
     })
   })
 
+  it('sets and clears a stable chat translator preset binding', async () => {
+    const calls = stubCommandFetch()
+    const selected = setCurrentChatTranslationSettingWithOutcome('translatorPresetId', 'translator-preset-a')
+    expect(getDatabase().characters[0].chats[0].translatorPresetId).toBe('translator-preset-a')
+    await expect(selected).resolves.toMatchObject({ status: 'accepted' })
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a',
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: { translatorPresetId: 'translator-preset-a' },
+        select: false,
+      },
+    })
+
+    const cleared = setCurrentChatTranslationSettingWithOutcome('translatorPresetId', null)
+    expect(getDatabase().characters[0].chats[0]).not.toHaveProperty('translatorPresetId')
+    await expect(cleared).resolves.toMatchObject({ status: 'accepted' })
+    await waitForCallCount(calls, 3)
+    expect(calls[2]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a',
+      method: 'PATCH',
+      body: {
+        baseRevision: expect.any(Number),
+        patch: { translatorPresetId: null },
+        select: false,
+      },
+    })
+  })
+
+  it('persists the selected chat pin through the guarded chat-scoped path', async () => {
+    const calls = stubCommandFetch()
+    const persistence = setCurrentChatPinnedWithOutcome(true)
+    expect(getDatabase().characters[0].chats[0].pinned).toBe(true)
+    await expect(persistence).resolves.toMatchObject({ status: 'accepted' })
+
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a',
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: { pinned: true },
+        select: false,
+      },
+    })
+  })
+
   it('patches the string-valued bilingual emphasis through the guarded chat-scoped path', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const persistence = setCurrentChatTranslationSettingWithOutcome('bilingualEmphasis', 'translation')
     expect(getDatabase().characters[0].chats[0].bilingualEmphasis).toBe('translation')
     await expect(persistence).resolves.toMatchObject({ status: 'accepted' })
@@ -830,8 +926,7 @@ describe('chat command projection helpers', () => {
     })
   })
 
-  it('optimistically inserts and selects a command-created chat under the resource guard', () => {
-    setResourceWriteGuardEnabled(true)
+  it('optimistically inserts and selects a command-created chat through its owner', () => {
     const previous = currentChatStateSnapshot()
     const chat = {
       id: 'chat-c',
@@ -851,8 +946,26 @@ describe('chat command projection helpers', () => {
     expect(getDatabase().characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-a', 'chat-b'])
   })
 
-  it('optimistically inserts a command-created chat folder under the resource guard', () => {
-    setResourceWriteGuardEnabled(true)
+  it('optimistically replaces every chat with one empty Chat 1 through its owner', () => {
+    const previous = currentChatStateSnapshot()
+    const chat = {
+      id: 'chat-new',
+      name: 'Chat 1',
+      note: '',
+      message: [],
+      localLore: [],
+      fmIndex: -1,
+    } as Chat
+
+    expect(applyOptimisticResetChats('char-a', chat, previous)).toBe(true)
+    expect(getDatabase().characters[0].chats).toEqual([chat])
+    expect(getDatabase().characters[0].chatPage).toBe(0)
+
+    restoreChatState(previous)
+    expect(getDatabase().characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-a', 'chat-b'])
+  })
+
+  it('optimistically inserts a command-created chat folder through its owner', () => {
     const previous = currentChatStateSnapshot()
     const folder = {
       id: 'folder-b',
@@ -868,8 +981,7 @@ describe('chat command projection helpers', () => {
     expect(getDatabase().characters[0].chatFolders.map((candidate) => candidate.id)).toEqual(['folder-a'])
   })
 
-  it('optimistically removes a command-deleted chat under the resource guard', () => {
-    setResourceWriteGuardEnabled(true)
+  it('optimistically removes a command-deleted chat through its owner', () => {
     const previous = currentChatStateSnapshot()
 
     expect(applyOptimisticDeletedChat('char-a', 'chat-a', previous)).toEqual({
@@ -888,8 +1000,6 @@ describe('chat command projection helpers', () => {
     getDatabase().characters[0].chats.push({ id: 'chat-c', name: 'Chat C', message: [] } as Chat)
     getDatabase().characters[0].chatPage = 1
     const previous = currentChatStateSnapshot()
-    setResourceWriteGuardEnabled(true)
-
     expect(applyOptimisticDeletedChat('char-a', 'chat-a', previous)).toEqual({
       applied: true,
       selectedChatId: 'chat-b',
@@ -899,14 +1009,8 @@ describe('chat command projection helpers', () => {
     expect(getDatabase().characters[0].chatPage).toBe(0)
   })
 
-  it('routes SideChatList chat and folder flows through commands under the resource guard', async () => {
+  it('routes SideChatList chat and folder flows through owner commands', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      getDatabase().characters[0].chats.unshift({ id: 'direct', name: 'Direct', message: [] } as any)
-    }).toThrow()
-
     const createChat: ChatSnapshot = {
       id: 'chat-c',
       name: 'Chat C',
@@ -942,9 +1046,6 @@ describe('chat command projection helpers', () => {
     dispatchDeleteChat('chat-a', previous)
 
     await waitForCallCount(calls, 7)
-    expect(() => {
-      getDatabase().characters[0].chatFolders.push({ id: 'direct-folder', name: 'Direct' } as any)
-    }).toThrow()
     expect(calls).toEqual([
       {
         url: '/api/v1/bootstrap',
@@ -1047,16 +1148,14 @@ describe('chat command projection helpers', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chat-folders/folder-a' && init.method === 'PATCH',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           const folder = getDatabase().characters[0].chatFolders[0]
           folder.name = 'Newer folder name'
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const folder = getDatabase().characters[0].chatFolders[0]
       folder.name = 'Attempted folder name'
       folder.folded = true
@@ -1074,118 +1173,130 @@ describe('chat command projection helpers', () => {
     })
   })
 
-  it('removes only an unchanged attempted folder after a failed create and keeps newer siblings', async () => {
-    const calls = stubFailingCommandFetch({
-      matches: (url, init) => url === '/api/v1/commands/characters/char-a/chat-folders' && init.method === 'POST',
-      onCommand: () => {
-        withTrustedResourceWrite(() => {
-          getDatabase().characters[0].chatFolders.push({
-            id: 'folder-c',
-            name: 'Newer sibling folder',
-            folded: false,
+  it.each(['legacy', 'scoped'] as const)(
+    'removes only an unchanged attempted folder after a failed create and keeps newer siblings (%s snapshot)',
+    async (snapshotMode) => {
+      const calls = stubFailingCommandFetch({
+        matches: (url, init) => url === '/api/v1/commands/characters/char-a/chat-folders' && init.method === 'POST',
+        onCommand: () => {
+          withTestDatabaseWrite(() => {
+            getDatabase().characters[0].chatFolders.push({
+              id: 'folder-c',
+              name: 'Newer sibling folder',
+              folded: false,
+            })
           })
-        })
-      },
-    })
-    setResourceWriteGuardEnabled(true)
+        },
+      })
+      const attemptedFolder = {
+        id: 'folder-b',
+        name: 'Attempted Folder',
+        folded: false,
+      }
 
-    const previous = currentChatStateSnapshot()
-    const attemptedFolder = {
-      id: 'folder-b',
-      name: 'Attempted Folder',
-      folded: false,
-    }
-    withTrustedResourceWrite(() => {
-      getDatabase().characters[0].chatFolders.unshift(attemptedFolder)
-    })
+      const previous =
+        snapshotMode === 'scoped'
+          ? captureChatFolderCreateSnapshot('char-a', attemptedFolder)!
+          : currentChatStateSnapshot()
+      withTestDatabaseWrite(() => {
+        getDatabase().characters[0].chatFolders.unshift(attemptedFolder)
+      })
 
-    dispatchCreateChatFolder('char-a', attemptedFolder, previous)
+      dispatchCreateChatFolder('char-a', attemptedFolder, previous)
 
-    await waitForCallCount(calls, 2)
-    await vi.waitFor(() => {
-      expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-a', 'folder-c'])
-    })
-    expect(getDatabase().characters[0].chatFolders[1]).toMatchObject({
-      id: 'folder-c',
-      name: 'Newer sibling folder',
-    })
-  })
+      await waitForCallCount(calls, 2)
+      await vi.waitFor(() => {
+        expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-a', 'folder-c'])
+      })
+      expect(getDatabase().characters[0].chatFolders[1]).toMatchObject({
+        id: 'folder-c',
+        name: 'Newer sibling folder',
+      })
+    },
+  )
 
-  it('keeps a failed attempted folder when newer chats were moved into it', async () => {
-    const calls = stubFailingCommandFetch({
-      matches: (url, init) => url === '/api/v1/commands/characters/char-a/chat-folders' && init.method === 'POST',
-      onCommand: () => {
-        withTrustedResourceWrite(() => {
-          getDatabase().characters[0].chats[0].folderId = 'folder-b'
-        })
-      },
-    })
-    setResourceWriteGuardEnabled(true)
+  it.each(['legacy', 'scoped'] as const)(
+    'keeps a failed attempted folder when newer chats were moved into it (%s snapshot)',
+    async (snapshotMode) => {
+      const calls = stubFailingCommandFetch({
+        matches: (url, init) => url === '/api/v1/commands/characters/char-a/chat-folders' && init.method === 'POST',
+        onCommand: () => {
+          withTestDatabaseWrite(() => {
+            getDatabase().characters[0].chats[0].folderId = 'folder-b'
+          })
+        },
+      })
+      const attemptedFolder = {
+        id: 'folder-b',
+        name: 'Attempted Folder',
+        folded: false,
+      }
 
-    const previous = currentChatStateSnapshot()
-    const attemptedFolder = {
-      id: 'folder-b',
-      name: 'Attempted Folder',
-      folded: false,
-    }
-    withTrustedResourceWrite(() => {
-      getDatabase().characters[0].chatFolders.unshift(attemptedFolder)
-    })
+      const previous =
+        snapshotMode === 'scoped'
+          ? captureChatFolderCreateSnapshot('char-a', attemptedFolder)!
+          : currentChatStateSnapshot()
+      withTestDatabaseWrite(() => {
+        getDatabase().characters[0].chatFolders.unshift(attemptedFolder)
+      })
 
-    dispatchCreateChatFolder('char-a', attemptedFolder, previous)
+      dispatchCreateChatFolder('char-a', attemptedFolder, previous)
 
-    await waitForCallCount(calls, 2)
-    await vi.waitFor(() => {
-      expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-b', 'folder-a'])
-      expect(getDatabase().characters[0].chats[0].folderId).toBe('folder-b')
-    })
-  })
+      await waitForCallCount(calls, 2)
+      await vi.waitFor(() => {
+        expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-b', 'folder-a'])
+        expect(getDatabase().characters[0].chats[0].folderId).toBe('folder-b')
+      })
+    },
+  )
 
-  it('rolls back an optimistic folder delete while preserving newer chat changes', async () => {
-    getDatabase().characters[0].chatFolders = [
-      { id: 'folder-a', name: 'Latest optimistic folder child edit', folded: false },
-      { id: 'folder-b', name: 'Folder B', folded: false },
-    ]
-    getDatabase().characters[0].chats = [
-      { id: 'chat-a', name: 'Chat A', folderId: null, message: [] },
-      { id: 'chat-b', name: 'Chat B', folderId: 'folder-a', message: [] },
-      { id: 'chat-c', name: 'Chat C', folderId: 'folder-a', message: [] },
-    ] as any
-    const calls = stubFailingCommandFetch({
-      matches: (url, init) => url === '/api/v1/commands/chat-folders/folder-a' && init.method === 'DELETE',
-      onCommand: () => {
-        withTrustedResourceWrite(() => {
-          getDatabase().characters[0].chats[0].name = 'Newer unrelated chat name'
-          getDatabase().characters[0].chats[1].name = 'Newer affected chat name'
-          getDatabase().characters[0].chats[2].name = 'Moved affected chat'
-          getDatabase().characters[0].chats[2].folderId = 'folder-b'
-        })
-      },
-    })
-    setResourceWriteGuardEnabled(true)
+  it.each(['legacy', 'scoped'] as const)(
+    'rolls back an optimistic folder delete while preserving newer chat changes (%s snapshot)',
+    async (snapshotMode) => {
+      getDatabase().characters[0].chatFolders = [
+        { id: 'folder-a', name: 'Latest optimistic folder child edit', folded: false },
+        { id: 'folder-b', name: 'Folder B', folded: false },
+      ]
+      getDatabase().characters[0].chats = [
+        { id: 'chat-a', name: 'Chat A', folderId: null, message: [] },
+        { id: 'chat-b', name: 'Chat B', folderId: 'folder-a', message: [] },
+        { id: 'chat-c', name: 'Chat C', folderId: 'folder-a', message: [] },
+      ] as any
+      const calls = stubFailingCommandFetch({
+        matches: (url, init) => url === '/api/v1/commands/chat-folders/folder-a' && init.method === 'DELETE',
+        onCommand: () => {
+          withTestDatabaseWrite(() => {
+            getDatabase().characters[0].chats[0].name = 'Newer unrelated chat name'
+            getDatabase().characters[0].chats[1].name = 'Newer affected chat name'
+            getDatabase().characters[0].chats[2].name = 'Moved affected chat'
+            getDatabase().characters[0].chats[2].folderId = 'folder-b'
+          })
+        },
+      })
+      const previous =
+        snapshotMode === 'scoped' ? captureChatFolderDeleteSnapshot('folder-a', 'char-a')! : currentChatStateSnapshot()
+      dispatchDeleteChatFolder('folder-a', previous)
 
-    const previous = currentChatStateSnapshot()
-    dispatchDeleteChatFolder('folder-a', previous)
+      expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-b'])
+      expect(getDatabase().characters[0].chats.map((chat) => chat.folderId)).toEqual([null, null, null])
 
-    expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-b'])
-    expect(getDatabase().characters[0].chats.map((chat) => chat.folderId)).toEqual([null, null, null])
-
-    await waitForCallCount(calls, 2)
-    await vi.waitFor(() => {
-      expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-a', 'folder-b'])
-      expect(getDatabase().characters[0].chats[1].folderId).toBe('folder-a')
-    })
-    expect(getDatabase().characters[0].chats[0].name).toBe('Newer unrelated chat name')
-    expect(getDatabase().characters[0].chats[1]).toMatchObject({
-      name: 'Newer affected chat name',
-      folderId: 'folder-a',
-    })
-    expect(getDatabase().characters[0].chatFolders[0].name).toBe('Latest optimistic folder child edit')
-    expect(getDatabase().characters[0].chats[2]).toMatchObject({
-      name: 'Moved affected chat',
-      folderId: 'folder-b',
-    })
-  })
+      await waitForCallCount(calls, 2)
+      await vi.waitFor(() => {
+        expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-a', 'folder-b'])
+        expect(getDatabase().characters[0].chats[1].folderId).toBe('folder-a')
+      })
+      expect(getDatabase().characters[0].chats[0].name).toBe('Newer unrelated chat name')
+      expect(getDatabase().characters[0].chats[1]).toMatchObject({
+        name: 'Newer affected chat name',
+        folderId: 'folder-a',
+      })
+      expect(getDatabase().characters[0].chatFolders[0].name).toBe('Latest optimistic folder child edit')
+      expect(getDatabase().characters[0].chats[2]).toMatchObject({
+        name: 'Moved affected chat',
+        folderId: 'folder-b',
+      })
+    },
+  )
 
   it('does not corrupt chat or folder rows for duplicate reorder ids', async () => {
     getDatabase().characters[0].chatFolders = [
@@ -1198,8 +1309,6 @@ describe('chat command projection helpers', () => {
           url === '/api/v1/commands/characters/char-a/chat-folders/reorder') &&
         init.method === 'POST',
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     dispatchReorderChatsByIds('char-a', ['chat-a', 'chat-a'], {}, previous)
     await waitForCallCount(calls, 2)
@@ -1213,7 +1322,7 @@ describe('chat command projection helpers', () => {
   })
 
   it('keeps an unchanged omitted folder assignment omitted during optimistic reorder', async () => {
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const omittedFolderChat = { ...getDatabase().characters[0].chats[0] }
       delete omittedFolderChat.folderId
       getDatabase().characters[0].chats[0] = omittedFolderChat
@@ -1222,8 +1331,6 @@ describe('chat command projection helpers', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats/reorder' && init.method === 'POST',
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     dispatchReorderChatsByIds(
       'char-a',
@@ -1241,733 +1348,820 @@ describe('chat command projection helpers', () => {
     expect(Object.prototype.hasOwnProperty.call(restoredChat, 'folderId')).toBe(false)
   })
 
-  it('restores a failed chat folder reorder only when live order still equals the attempted order', async () => {
-    getDatabase().characters[0].chatFolders = [
-      { id: 'folder-a', name: 'Folder A', folded: false },
-      { id: 'folder-b', name: 'Folder B', folded: false },
-      { id: 'folder-c', name: 'Folder C', folded: false },
-    ]
-    const calls = stubFailingCommandFetch({
-      matches: (url, init) =>
-        url === '/api/v1/commands/characters/char-a/chat-folders/reorder' && init.method === 'POST',
-      onCommand: () => {
-        withTrustedResourceWrite(() => {
-          const folder = getDatabase().characters[0].chatFolders.find((candidate) => candidate.id === 'folder-c')
-          if (folder) folder.name = 'Newer Folder C'
-        })
-      },
-    })
-    setResourceWriteGuardEnabled(true)
-
-    const previous = currentChatStateSnapshot()
-    const attemptedIds = ['folder-c', 'folder-a', 'folder-b']
-    withTrustedResourceWrite(() => {
-      const foldersById = new Map(getDatabase().characters[0].chatFolders.map((folder) => [folder.id, folder]))
-      getDatabase().characters[0].chatFolders = attemptedIds.map((id) => foldersById.get(id)!)
-    })
-
-    dispatchReorderChatFoldersByIds('char-a', attemptedIds, previous)
-
-    await waitForCallCount(calls, 2)
-    await vi.waitFor(() => {
-      expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual([
-        'folder-a',
-        'folder-b',
-        'folder-c',
-      ])
-    })
-    expect(getDatabase().characters[0].chatFolders[2].name).toBe('Newer Folder C')
-  })
-
-  it('skips failed chat folder reorder rollback after a newer reorder', async () => {
-    getDatabase().characters[0].chatFolders = [
-      { id: 'folder-a', name: 'Folder A', folded: false },
-      { id: 'folder-b', name: 'Folder B', folded: false },
-      { id: 'folder-c', name: 'Folder C', folded: false },
-    ]
-    const newerIds = ['folder-b', 'folder-c', 'folder-a']
-    const calls = stubFailingCommandFetch({
-      matches: (url, init) =>
-        url === '/api/v1/commands/characters/char-a/chat-folders/reorder' && init.method === 'POST',
-      onCommand: () => {
-        withTrustedResourceWrite(() => {
-          const foldersById = new Map(getDatabase().characters[0].chatFolders.map((folder) => [folder.id, folder]))
-          getDatabase().characters[0].chatFolders = newerIds.map((id) => foldersById.get(id)!)
-        })
-      },
-    })
-    setResourceWriteGuardEnabled(true)
-
-    const previous = currentChatStateSnapshot()
-    const attemptedIds = ['folder-c', 'folder-a', 'folder-b']
-    withTrustedResourceWrite(() => {
-      const foldersById = new Map(getDatabase().characters[0].chatFolders.map((folder) => [folder.id, folder]))
-      getDatabase().characters[0].chatFolders = attemptedIds.map((id) => foldersById.get(id)!)
-    })
-
-    dispatchReorderChatFoldersByIds('char-a', attemptedIds, previous)
-
-    await waitForCallCount(calls, 2)
-    await vi.waitFor(() => {
-      expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(newerIds)
-    })
-  })
-
-  it('keeps an accepted folder reorder when the combined chat reorder fails', async () => {
-    getDatabase().characters[0].chatFolders = [
-      { id: 'folder-a', name: 'Folder A', folded: false },
-      { id: 'folder-b', name: 'Folder B', folded: false },
-      { id: 'folder-c', name: 'Folder C', folded: false },
-    ]
-    getDatabase().characters[0].chats = [
-      { id: 'chat-a', name: 'Chat A', folderId: null, message: [] },
-      { id: 'chat-b', name: 'Chat B', folderId: 'folder-a', message: [] },
-      { id: 'chat-c', name: 'Chat C', folderId: 'folder-b', message: [] },
-    ] as any
-    const calls = stubCombinedReorderCommandFetch({
-      fail: 'chats',
-      onChatCommand: () => {
-        withTrustedResourceWrite(() => {
-          const folder = getDatabase().characters[0].chatFolders.find((candidate) => candidate.id === 'folder-c')
-          const chat = getDatabase().characters[0].chats.find((candidate) => candidate.id === 'chat-c')
-          if (folder) folder.name = 'Newer Folder C'
-          if (chat) chat.name = 'Newer Chat C'
-        })
-      },
-    })
-    setResourceWriteGuardEnabled(true)
-
-    const previous = currentChatStateSnapshot()
-    const attemptedFolderIds = ['folder-c', 'folder-a', 'folder-b']
-    const attemptedChatIds = ['chat-c', 'chat-a', 'chat-b']
-    const attemptedFolderByChatId = {
-      'chat-a': 'folder-c',
-      'chat-b': null,
-      'chat-c': 'folder-a',
-    }
-    withTrustedResourceWrite(() => {
-      const foldersById = new Map(getDatabase().characters[0].chatFolders.map((folder) => [folder.id, folder]))
-      const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
-      getDatabase().characters[0].chatFolders = attemptedFolderIds.map((id) => foldersById.get(id)!)
-      getDatabase().characters[0].chats = attemptedChatIds.map((id) => chatsById.get(id)!)
-      for (const chat of getDatabase().characters[0].chats) {
-        chat.folderId = attemptedFolderByChatId[chat.id]
-      }
-      getDatabase().characters[0].chatPage = 1
-    })
-
-    dispatchReorderChatFoldersAndChatsByIds(
-      'char-a',
-      attemptedFolderIds,
-      attemptedChatIds,
-      attemptedFolderByChatId,
-      previous,
-      'chat-a',
-    )
-
-    await waitForCallCount(calls, 3)
-    await vi.waitFor(() => {
-      expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(attemptedFolderIds)
-      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
-    })
-    expect(getDatabase().characters[0].chatFolders[0]).toMatchObject({
-      id: 'folder-c',
-      name: 'Newer Folder C',
-    })
-    expect(getDatabase().characters[0].chats.map((chat) => chat.folderId)).toEqual([null, 'folder-a', 'folder-b'])
-    expect(getDatabase().characters[0].chats[2].name).toBe('Newer Chat C')
-    expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-a')
-  })
-
-  it('sends only changed folder assignments in a combined folder and chat reorder', async () => {
-    const calls = stubCombinedReorderCommandFetch({ fail: 'chats' })
-    const previous = currentChatStateSnapshot()
-
-    dispatchReorderChatFoldersAndChatsByIds(
-      'char-a',
-      ['folder-a'],
-      ['chat-b', 'chat-a'],
-      {
-        'chat-a': 'folder-a',
-        'chat-b': 'folder-a',
-      },
-      previous,
-      'chat-a',
-    )
-
-    await waitForCallCount(calls, 3)
-    expect(calls[2]).toMatchObject({
-      url: '/api/v1/commands/characters/char-a/chats/reorder',
-      method: 'POST',
-      body: {
-        baseRevision: 11,
-        chatIds: ['chat-b', 'chat-a'],
-        folderByChatId: { 'chat-a': 'folder-a' },
-        selectedChatId: 'chat-a',
-      },
-    })
-  })
-
-  it('rolls back both attempted orders narrowly when the combined folder reorder fails first', async () => {
-    getDatabase().characters[0].chatFolders = [
-      { id: 'folder-a', name: 'Folder A', folded: false },
-      { id: 'folder-b', name: 'Folder B', folded: false },
-      { id: 'folder-c', name: 'Folder C', folded: false },
-    ]
-    getDatabase().characters[0].chats = [
-      { id: 'chat-a', name: 'Chat A', folderId: null, message: [] },
-      { id: 'chat-b', name: 'Chat B', folderId: 'folder-a', message: [] },
-      { id: 'chat-c', name: 'Chat C', folderId: 'folder-b', message: [] },
-    ] as any
-    const calls = stubCombinedReorderCommandFetch({
-      fail: 'folders',
-      onFolderCommand: () => {
-        withTrustedResourceWrite(() => {
-          const folder = getDatabase().characters[0].chatFolders.find((candidate) => candidate.id === 'folder-c')
-          const chat = getDatabase().characters[0].chats.find((candidate) => candidate.id === 'chat-c')
-          if (folder) folder.name = 'Newer Folder C'
-          if (chat) chat.name = 'Newer Chat C'
-        })
-      },
-    })
-    setResourceWriteGuardEnabled(true)
-
-    const previous = currentChatStateSnapshot()
-    const attemptedFolderIds = ['folder-c', 'folder-a', 'folder-b']
-    const attemptedChatIds = ['chat-c', 'chat-a', 'chat-b']
-    const attemptedFolderByChatId = {
-      'chat-a': 'folder-c',
-      'chat-b': null,
-      'chat-c': 'folder-a',
-    }
-    withTrustedResourceWrite(() => {
-      const foldersById = new Map(getDatabase().characters[0].chatFolders.map((folder) => [folder.id, folder]))
-      const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
-      getDatabase().characters[0].chatFolders = attemptedFolderIds.map((id) => foldersById.get(id)!)
-      getDatabase().characters[0].chats = attemptedChatIds.map((id) => chatsById.get(id)!)
-      for (const chat of getDatabase().characters[0].chats) {
-        chat.folderId = attemptedFolderByChatId[chat.id]
-      }
-      getDatabase().characters[0].chatPage = 1
-    })
-
-    dispatchReorderChatFoldersAndChatsByIds(
-      'char-a',
-      attemptedFolderIds,
-      attemptedChatIds,
-      attemptedFolderByChatId,
-      previous,
-      'chat-a',
-    )
-
-    await waitForCallCount(calls, 2)
-    expect(calls.map((call) => call.url)).toEqual([
-      '/api/v1/bootstrap',
-      '/api/v1/commands/characters/char-a/chat-folders/reorder',
-    ])
-    await vi.waitFor(() => {
-      expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual([
-        'folder-a',
-        'folder-b',
-        'folder-c',
-      ])
-      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
-    })
-    expect(getDatabase().characters[0].chatFolders[2]).toMatchObject({
-      id: 'folder-c',
-      name: 'Newer Folder C',
-    })
-    expect(getDatabase().characters[0].chats.map((chat) => chat.folderId)).toEqual([null, 'folder-a', 'folder-b'])
-    expect(getDatabase().characters[0].chats[2].name).toBe('Newer Chat C')
-    expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-a')
-  })
-
-  it('keeps a pre-existing same-id chat after a failed create rollback', async () => {
-    const calls = stubFailingCommandFetch({
-      matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
-    })
-    setResourceWriteGuardEnabled(true)
-
-    const previous = currentChatStateSnapshot()
-    const attemptedChat = jsonClone(getDatabase().characters[0].chats[1])
-
-    expect(applyOptimisticCreatedChat('char-a', attemptedChat, previous)).toBe(true)
-    expect(getDatabase().characters[0].chatPage).toBe(1)
-
-    dispatchCreateChat('char-a', attemptedChat, previous)
-
-    await waitForCallCount(calls, 2)
-    await vi.waitFor(() => {
-      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
-    })
-    expect(getDatabase().characters[0].chats[1]).toMatchObject({
-      id: 'chat-b',
-      name: 'Chat B',
-    })
-  })
-
-  it('removes only an unchanged attempted chat after a failed create and keeps newer siblings', async () => {
-    const calls = stubFailingCommandFetch({
-      matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
-      onCommand: () => {
-        withTrustedResourceWrite(() => {
-          getDatabase().characters[0].chats[2].name = 'Newer sibling name'
-          getDatabase().characters[0].chats.push({
-            id: 'chat-d',
-            name: 'Newer appended chat',
-            folderId: null,
-            message: [],
-            note: '',
-            localLore: [],
+  it.each(['legacy', 'scoped'] as const)(
+    'restores a failed chat folder reorder only when live order still equals the attempted order (%s snapshot)',
+    async (snapshotMode) => {
+      getDatabase().characters[0].chatFolders = [
+        { id: 'folder-a', name: 'Folder A', folded: false },
+        { id: 'folder-b', name: 'Folder B', folded: false },
+        { id: 'folder-c', name: 'Folder C', folded: false },
+      ]
+      const calls = stubFailingCommandFetch({
+        matches: (url, init) =>
+          url === '/api/v1/commands/characters/char-a/chat-folders/reorder' && init.method === 'POST',
+        onCommand: () => {
+          withTestDatabaseWrite(() => {
+            const folder = getDatabase().characters[0].chatFolders.find((candidate) => candidate.id === 'folder-c')
+            if (folder) folder.name = 'Newer Folder C'
           })
-        })
-      },
-    })
-    setResourceWriteGuardEnabled(true)
-
-    const previous = currentChatStateSnapshot()
-    const attemptedChat = {
-      id: 'chat-c',
-      name: 'Attempted Chat',
-      note: '',
-      folderId: null,
-      message: [],
-      localLore: [],
-      fmIndex: -1,
-    } as Chat
-    withTrustedResourceWrite(() => {
-      getDatabase().characters[0].chats.unshift(attemptedChat)
-      getDatabase().characters[0].chatPage = 0
-    })
-
-    dispatchCreateChat('char-a', attemptedChat, previous)
-
-    await waitForCallCount(calls, 2)
-    await vi.waitFor(() => {
-      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-d'])
-    })
-    expect(getDatabase().characters[0].chats[1].name).toBe('Newer sibling name')
-    expect(getDatabase().characters[0].chats[2].name).toBe('Newer appended chat')
-    expect(getDatabase().characters[0].chatPage).toBe(0)
-  })
-
-  it('removes a failed created-chat ghost even after a dependent row edit', async () => {
-    const calls = stubFailingCommandFetch({
-      matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
-      onCommand: () => {
-        withTrustedResourceWrite(() => {
-          getDatabase().characters[0].chats[0].name = 'Newer attempted chat name'
-          getDatabase().characters[0].chats[2].name = 'Newer sibling name'
-        })
-      },
-    })
-    setResourceWriteGuardEnabled(true)
-
-    const previous = currentChatStateSnapshot()
-    const attemptedChat = {
-      id: 'chat-c',
-      name: 'Attempted Chat',
-      note: '',
-      folderId: null,
-      message: [],
-      localLore: [],
-      fmIndex: -1,
-    } as Chat
-    withTrustedResourceWrite(() => {
-      getDatabase().characters[0].chats.unshift(attemptedChat)
-      getDatabase().characters[0].chatPage = 0
-    })
-
-    dispatchCreateChat('char-a', attemptedChat, previous)
-
-    await waitForCallCount(calls, 2)
-    await vi.waitFor(() => {
-      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
-    })
-    expect(getDatabase().characters[0].chats[1].name).toBe('Newer sibling name')
-    expect(getDatabase().characters[0].chatPage).toBe(0)
-  })
-
-  it('keeps an authoritative targeted row when a create response fails after the row arrives', async () => {
-    const calls = stubFailingCommandFetch({
-      matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
-      onCommand: () => {
-        withTrustedResourceWrite(() => {
-          const authoritativeCharacter = jsonClone(getDatabase().characters[0])
-          const createdChat = authoritativeCharacter.chats.find((chat) => chat.id === 'chat-c')
-          if (createdChat) createdChat.name = 'Canonical created chat'
-          applyCharacterResource({ revision: 11, character: authoritativeCharacter })
-        })
-      },
-    })
-    setResourceWriteGuardEnabled(true)
-
-    const previous = currentChatStateSnapshot()
-    const attemptedChat = {
-      id: 'chat-c',
-      name: 'Attempted Chat',
-      note: '',
-      folderId: null,
-      message: [],
-      localLore: [],
-      fmIndex: -1,
-    } as Chat
-    withTrustedResourceWrite(() => {
-      getDatabase().characters[0].chats.unshift(attemptedChat)
-      getDatabase().characters[0].chatPage = 0
-    })
-
-    dispatchCreateChat('char-a', attemptedChat, previous)
-
-    await waitForCallCount(calls, 2)
-    await vi.waitFor(() => {
-      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-c', 'chat-a', 'chat-b'])
-    })
-    expect(getDatabase().characters[0].chats[0].name).toBe('Canonical created chat')
-    expect(getDatabase().characters[0].chatPage).toBe(0)
-  })
-
-  it('rolls back an optimistic fork while preserving a newer sibling chat edit', async () => {
-    const calls = stubFailingCommandFetch({
-      matches: (url, init) => url === '/api/v1/commands/chats/chat-a/fork' && init.method === 'POST',
-      onCommand: () => {
-        withTrustedResourceWrite(() => {
-          const attemptedFork = getDatabase().characters[0].chats.find((chat) => chat.id === 'chat-c')
-          const sibling = getDatabase().characters[0].chats.find((chat) => chat.id === 'chat-b')
-          if (attemptedFork) attemptedFork.name = 'Newer dependent fork edit'
-          if (sibling) sibling.name = 'Newer sibling name'
-        })
-      },
-    })
-    setResourceWriteGuardEnabled(true)
-
-    const previous = currentChatStateSnapshot()
-    const forkedChat = {
-      id: 'chat-c',
-      name: 'Chat A Copy',
-      folderId: null,
-      message: [],
-    } as Chat
-
-    dispatchForkChat('chat-a', previous, { chat: forkedChat })
-
-    await waitForCallCount(calls, 2)
-    await vi.waitFor(() => {
-      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
-    })
-    expect(getDatabase().characters[0].chats[1]).toMatchObject({
-      id: 'chat-b',
-      name: 'Newer sibling name',
-    })
-  })
-
-  it('failed branch fork removes unchanged forked chat, restores source folder, and removes created folder', async () => {
-    const calls = stubFailingCommandFetch({
-      matches: (url, init) => url === '/api/v1/commands/chats/chat-a/fork' && init.method === 'POST',
-      onCommand: () => {
-        withTrustedResourceWrite(() => {
-          getDatabase().characters[0].chats[2].name = 'Newer sibling name'
-          getDatabase().characters[0].chatFolders[1].name = 'Newer folder name'
-        })
-      },
-    })
-    setResourceWriteGuardEnabled(true)
-
-    const previous = currentChatStateSnapshot()
-    const branchFolder = {
-      id: 'folder-branch',
-      name: 'Branches of Chat A',
-      folded: false,
-    }
-    const forkedChat = {
-      id: 'chat-branch',
-      name: 'Chat A Branch',
-      folderId: branchFolder.id,
-      message: [],
-    } as Chat
-    withTrustedResourceWrite(() => {
-      getDatabase().characters[0].chatFolders.unshift(branchFolder)
-      getDatabase().characters[0].chats[0].folderId = branchFolder.id
-      getDatabase().characters[0].chats.unshift(forkedChat)
-      getDatabase().characters[0].chatPage = 0
-    })
-
-    dispatchForkChat('chat-a', previous, {
-      chat: forkedChat,
-      sourcePatch: { folderId: branchFolder.id },
-      folder: branchFolder,
-    })
-
-    await waitForCallCount(calls, 2)
-    await vi.waitFor(() => {
-      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
-      expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-a'])
-    })
-    expect(getDatabase().characters[0].chats[0]).toMatchObject({
-      id: 'chat-a',
-      folderId: null,
-    })
-    expect(getDatabase().characters[0].chats[1]).toMatchObject({
-      id: 'chat-b',
-      name: 'Newer sibling name',
-    })
-    expect(getDatabase().characters[0].chatFolders[0]).toMatchObject({
-      id: 'folder-a',
-      name: 'Newer folder name',
-    })
-    expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-a')
-  })
-
-  it('removes a failed fork ghost even after a dependent row edit', async () => {
-    const calls = stubFailingCommandFetch({
-      matches: (url, init) => url === '/api/v1/commands/chats/chat-a/fork' && init.method === 'POST',
-      onCommand: () => {
-        withTrustedResourceWrite(() => {
-          getDatabase().characters[0].chats[0].name = 'Newer forked chat name'
-        })
-      },
-    })
-    setResourceWriteGuardEnabled(true)
-
-    const previous = currentChatStateSnapshot()
-    const forkedChat = {
-      id: 'chat-branch',
-      name: 'Chat A Branch',
-      folderId: null,
-      message: [],
-    } as Chat
-    withTrustedResourceWrite(() => {
-      getDatabase().characters[0].chats.unshift(forkedChat)
-      getDatabase().characters[0].chatPage = 0
-    })
-
-    dispatchForkChat('chat-a', previous, { chat: forkedChat })
-
-    await waitForCallCount(calls, 2)
-    await vi.waitFor(() => {
-      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
-    })
-    expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-a')
-  })
-
-  it('reinserts only a still-missing deleted chat after a failed delete and preserves sibling edits', async () => {
-    const calls = stubFailingCommandFetch({
-      matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'DELETE',
-      onCommand: () => {
-        withTrustedResourceWrite(() => {
-          getDatabase().characters[0].chats[0].name = 'Newer sibling name'
-          getDatabase().characters[0].chats.push({
-            id: 'chat-c',
-            name: 'Newer appended chat',
-            folderId: null,
-            message: [],
-            note: '',
-            localLore: [],
-          })
-        })
-      },
-    })
-    setResourceWriteGuardEnabled(true)
-
-    expect(applyChatNoteValueLocally('chat-a', 'latest optimistic note')).toMatchObject({ note: '' })
-    const previous = currentChatStateSnapshot()
-    expect(applyOptimisticDeletedChat('char-a', 'chat-a', previous)).toEqual({
-      applied: true,
-      selectedChatId: 'chat-b',
-    })
-
-    dispatchDeleteChat('chat-a', previous)
-
-    await waitForCallCount(calls, 2)
-    await vi.waitFor(() => {
-      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
-    })
-    expect(getDatabase().characters[0].chats[0].note).toBe('latest optimistic note')
-    expect(getDatabase().characters[0].chats[1].name).toBe('Newer sibling name')
-    expect(getDatabase().characters[0].chats[2].name).toBe('Newer appended chat')
-    expect(getDatabase().characters[0].chatPage).toBe(0)
-  })
-
-  it('preserves newer user selection instead of restoring old selection after a failed delete', async () => {
-    getDatabase().characters[0].chats.push({
-      id: 'chat-c',
-      name: 'Chat C',
-      folderId: null,
-      message: [],
-    } as Chat)
-    const calls = stubFailingCommandFetch({
-      matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'DELETE',
-      onCommand: () => {
-        withTrustedResourceWrite(() => {
-          getDatabase().characters[0].chatPage = 1
-        })
-      },
-    })
-    setResourceWriteGuardEnabled(true)
-
-    const previous = currentChatStateSnapshot()
-    expect(applyOptimisticDeletedChat('char-a', 'chat-a', previous)).toEqual({
-      applied: true,
-      selectedChatId: 'chat-b',
-    })
-
-    dispatchDeleteChat('chat-a', previous)
-
-    await waitForCallCount(calls, 2)
-    await vi.waitFor(() => {
-      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
-    })
-    expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-c')
-  })
-
-  it('restores failed chat reorder order and folder assignments only when live state still equals the attempt', async () => {
-    getDatabase().characters[0].chatFolders = [
-      { id: 'folder-a', name: 'Folder A', folded: false },
-      { id: 'folder-b', name: 'Folder B', folded: false },
-    ]
-    getDatabase().characters[0].chats = [
-      { id: 'chat-a', name: 'Chat A', folderId: null, message: [] },
-      { id: 'chat-b', name: 'Chat B', folderId: 'folder-a', message: [] },
-      { id: 'chat-c', name: 'Chat C', folderId: 'folder-b', message: [] },
-    ] as any
-    const calls = stubFailingCommandFetch({
-      matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats/reorder' && init.method === 'POST',
-      onCommand: () => {
-        withTrustedResourceWrite(() => {
-          const chat = getDatabase().characters[0].chats.find((candidate) => candidate.id === 'chat-c')
-          if (chat) chat.name = 'Newer Chat C'
-        })
-      },
-    })
-    setResourceWriteGuardEnabled(true)
-
-    const previous = currentChatStateSnapshot()
-    const attemptedIds = ['chat-c', 'chat-a', 'chat-b']
-    const attemptedFolderByChatId = {
-      'chat-a': null,
-      'chat-b': null,
-      'chat-c': 'folder-a',
-    }
-    withTrustedResourceWrite(() => {
-      const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
-      getDatabase().characters[0].chats = attemptedIds.map((id) => chatsById.get(id)!)
-      for (const chat of getDatabase().characters[0].chats) {
-        chat.folderId = attemptedFolderByChatId[chat.id]
-      }
-      getDatabase().characters[0].chatPage = 1
-    })
-
-    dispatchReorderChatsByIds('char-a', attemptedIds, attemptedFolderByChatId, previous, 'chat-a')
-
-    await waitForCallCount(calls, 2)
-    expect(calls[1]).toMatchObject({
-      url: '/api/v1/commands/characters/char-a/chats/reorder',
-      method: 'POST',
-      body: {
-        chatIds: attemptedIds,
-        folderByChatId: {
-          'chat-b': null,
-          'chat-c': 'folder-a',
         },
-        selectedChatId: 'chat-a',
-      },
-    })
-    await vi.waitFor(() => {
-      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
-    })
-    expect(getDatabase().characters[0].chats.map((chat) => chat.folderId)).toEqual([null, 'folder-a', 'folder-b'])
-    expect(getDatabase().characters[0].chats[2].name).toBe('Newer Chat C')
-    expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-a')
-  })
+      })
+      const previous = snapshotMode === 'scoped' ? captureChatOrderSnapshot('char-a')! : currentChatStateSnapshot()
+      const attemptedIds = ['folder-c', 'folder-a', 'folder-b']
+      withTestDatabaseWrite(() => {
+        const foldersById = new Map(getDatabase().characters[0].chatFolders.map((folder) => [folder.id, folder]))
+        getDatabase().characters[0].chatFolders = attemptedIds.map((id) => foldersById.get(id)!)
+      })
 
-  it('skips failed chat reorder rollback after a newer reorder', async () => {
-    getDatabase().characters[0].chats.push({
-      id: 'chat-c',
-      name: 'Chat C',
-      folderId: null,
-      message: [],
-    } as Chat)
-    const newerIds = ['chat-b', 'chat-c', 'chat-a']
-    const calls = stubFailingCommandFetch({
-      matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats/reorder' && init.method === 'POST',
-      onCommand: () => {
-        withTrustedResourceWrite(() => {
-          const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
-          getDatabase().characters[0].chats = newerIds.map((id) => chatsById.get(id)!)
-        })
-      },
-    })
-    setResourceWriteGuardEnabled(true)
+      dispatchReorderChatFoldersByIds('char-a', attemptedIds, previous)
 
-    const previous = currentChatStateSnapshot()
-    const attemptedIds = ['chat-c', 'chat-a', 'chat-b']
-    const attemptedFolderByChatId = {
-      'chat-a': null,
-      'chat-b': 'folder-a',
-      'chat-c': null,
-    }
-    withTrustedResourceWrite(() => {
-      const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
-      getDatabase().characters[0].chats = attemptedIds.map((id) => chatsById.get(id)!)
-    })
+      await waitForCallCount(calls, 2)
+      await vi.waitFor(() => {
+        expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual([
+          'folder-a',
+          'folder-b',
+          'folder-c',
+        ])
+      })
+      expect(getDatabase().characters[0].chatFolders[2].name).toBe('Newer Folder C')
+    },
+  )
 
-    dispatchReorderChatsByIds('char-a', attemptedIds, attemptedFolderByChatId, previous, 'chat-a')
+  it.each(['legacy', 'scoped'] as const)(
+    'skips failed chat folder reorder rollback after a newer reorder (%s snapshot)',
+    async (snapshotMode) => {
+      getDatabase().characters[0].chatFolders = [
+        { id: 'folder-a', name: 'Folder A', folded: false },
+        { id: 'folder-b', name: 'Folder B', folded: false },
+        { id: 'folder-c', name: 'Folder C', folded: false },
+      ]
+      const newerIds = ['folder-b', 'folder-c', 'folder-a']
+      const calls = stubFailingCommandFetch({
+        matches: (url, init) =>
+          url === '/api/v1/commands/characters/char-a/chat-folders/reorder' && init.method === 'POST',
+        onCommand: () => {
+          withTestDatabaseWrite(() => {
+            const foldersById = new Map(getDatabase().characters[0].chatFolders.map((folder) => [folder.id, folder]))
+            getDatabase().characters[0].chatFolders = newerIds.map((id) => foldersById.get(id)!)
+          })
+        },
+      })
+      const previous = snapshotMode === 'scoped' ? captureChatOrderSnapshot('char-a')! : currentChatStateSnapshot()
+      const attemptedIds = ['folder-c', 'folder-a', 'folder-b']
+      withTestDatabaseWrite(() => {
+        const foldersById = new Map(getDatabase().characters[0].chatFolders.map((folder) => [folder.id, folder]))
+        getDatabase().characters[0].chatFolders = attemptedIds.map((id) => foldersById.get(id)!)
+      })
 
-    await waitForCallCount(calls, 2)
-    await vi.waitFor(() => {
-      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(newerIds)
-    })
-  })
+      dispatchReorderChatFoldersByIds('char-a', attemptedIds, previous)
 
-  it('skips failed chat reorder rollback after a newer folder move', async () => {
-    getDatabase().characters[0].chatFolders = [
-      { id: 'folder-a', name: 'Folder A', folded: false },
-      { id: 'folder-b', name: 'Folder B', folded: false },
-    ]
-    getDatabase().characters[0].chats.push({
-      id: 'chat-c',
-      name: 'Chat C',
-      folderId: null,
-      message: [],
-    } as Chat)
-    const calls = stubFailingCommandFetch({
-      matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats/reorder' && init.method === 'POST',
-      onCommand: () => {
-        withTrustedResourceWrite(() => {
-          const chat = getDatabase().characters[0].chats.find((candidate) => candidate.id === 'chat-c')
-          if (chat) chat.folderId = 'folder-b'
-        })
-      },
-    })
-    setResourceWriteGuardEnabled(true)
+      await waitForCallCount(calls, 2)
+      await vi.waitFor(() => {
+        expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(newerIds)
+      })
+    },
+  )
 
-    const previous = currentChatStateSnapshot()
-    const attemptedIds = ['chat-c', 'chat-a', 'chat-b']
-    const attemptedFolderByChatId = {
-      'chat-a': null,
-      'chat-b': 'folder-a',
-      'chat-c': null,
-    }
-    withTrustedResourceWrite(() => {
-      const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
-      getDatabase().characters[0].chats = attemptedIds.map((id) => chatsById.get(id)!)
-    })
+  it.each(['legacy', 'scoped'] as const)(
+    'keeps an accepted folder reorder when the combined chat reorder fails (%s snapshot)',
+    async (snapshotMode) => {
+      getDatabase().characters[0].chatFolders = [
+        { id: 'folder-a', name: 'Folder A', folded: false },
+        { id: 'folder-b', name: 'Folder B', folded: false },
+        { id: 'folder-c', name: 'Folder C', folded: false },
+      ]
+      getDatabase().characters[0].chats = [
+        { id: 'chat-a', name: 'Chat A', folderId: null, message: [] },
+        { id: 'chat-b', name: 'Chat B', folderId: 'folder-a', message: [] },
+        { id: 'chat-c', name: 'Chat C', folderId: 'folder-b', message: [] },
+      ] as any
+      const calls = stubCombinedReorderCommandFetch({
+        fail: 'chats',
+        onChatCommand: () => {
+          withTestDatabaseWrite(() => {
+            const folder = getDatabase().characters[0].chatFolders.find((candidate) => candidate.id === 'folder-c')
+            const chat = getDatabase().characters[0].chats.find((candidate) => candidate.id === 'chat-c')
+            if (folder) folder.name = 'Newer Folder C'
+            if (chat) chat.name = 'Newer Chat C'
+          })
+        },
+      })
+      const previous = snapshotMode === 'scoped' ? captureChatOrderSnapshot('char-a')! : currentChatStateSnapshot()
+      const attemptedFolderIds = ['folder-c', 'folder-a', 'folder-b']
+      const attemptedChatIds = ['chat-c', 'chat-a', 'chat-b']
+      const attemptedFolderByChatId = {
+        'chat-a': 'folder-c',
+        'chat-b': null,
+        'chat-c': 'folder-a',
+      }
+      withTestDatabaseWrite(() => {
+        const foldersById = new Map(getDatabase().characters[0].chatFolders.map((folder) => [folder.id, folder]))
+        const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
+        getDatabase().characters[0].chatFolders = attemptedFolderIds.map((id) => foldersById.get(id)!)
+        getDatabase().characters[0].chats = attemptedChatIds.map((id) => chatsById.get(id)!)
+        for (const chat of getDatabase().characters[0].chats) {
+          chat.folderId = attemptedFolderByChatId[chat.id]
+        }
+        getDatabase().characters[0].chatPage = 1
+      })
 
-    dispatchReorderChatsByIds('char-a', attemptedIds, attemptedFolderByChatId, previous, 'chat-a')
+      dispatchReorderChatFoldersAndChatsByIds(
+        'char-a',
+        attemptedFolderIds,
+        attemptedChatIds,
+        attemptedFolderByChatId,
+        previous,
+        'chat-a',
+      )
 
-    await waitForCallCount(calls, 2)
-    await vi.waitFor(() => {
-      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(attemptedIds)
-    })
-    expect(getDatabase().characters[0].chats[0]).toMatchObject({
-      id: 'chat-c',
-      folderId: 'folder-b',
-    })
-  })
+      await waitForCallCount(calls, 3)
+      await vi.waitFor(() => {
+        expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(attemptedFolderIds)
+        expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
+      })
+      expect(getDatabase().characters[0].chatFolders[0]).toMatchObject({
+        id: 'folder-c',
+        name: 'Newer Folder C',
+      })
+      expect(getDatabase().characters[0].chats.map((chat) => chat.folderId)).toEqual([null, 'folder-a', 'folder-b'])
+      expect(getDatabase().characters[0].chats[2].name).toBe('Newer Chat C')
+      expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-a')
+    },
+  )
+
+  it.each(['legacy', 'scoped'] as const)(
+    'sends only changed folder assignments in a combined folder and chat reorder (%s snapshot)',
+    async (snapshotMode) => {
+      const calls = stubCombinedReorderCommandFetch({ fail: 'chats' })
+      const previous = snapshotMode === 'scoped' ? captureChatOrderSnapshot('char-a')! : currentChatStateSnapshot()
+
+      dispatchReorderChatFoldersAndChatsByIds(
+        'char-a',
+        ['folder-a'],
+        ['chat-b', 'chat-a'],
+        {
+          'chat-a': 'folder-a',
+          'chat-b': 'folder-a',
+        },
+        previous,
+        'chat-a',
+      )
+
+      await waitForCallCount(calls, 3)
+      expect(calls[2]).toMatchObject({
+        url: '/api/v1/commands/characters/char-a/chats/reorder',
+        method: 'POST',
+        body: {
+          baseRevision: 11,
+          chatIds: ['chat-b', 'chat-a'],
+          folderByChatId: { 'chat-a': 'folder-a' },
+          selectedChatId: 'chat-a',
+        },
+      })
+    },
+  )
+
+  it.each(['legacy', 'scoped'] as const)(
+    'rolls back both attempted orders narrowly when the combined folder reorder fails first (%s snapshot)',
+    async (snapshotMode) => {
+      getDatabase().characters[0].chatFolders = [
+        { id: 'folder-a', name: 'Folder A', folded: false },
+        { id: 'folder-b', name: 'Folder B', folded: false },
+        { id: 'folder-c', name: 'Folder C', folded: false },
+      ]
+      getDatabase().characters[0].chats = [
+        { id: 'chat-a', name: 'Chat A', folderId: null, message: [] },
+        { id: 'chat-b', name: 'Chat B', folderId: 'folder-a', message: [] },
+        { id: 'chat-c', name: 'Chat C', folderId: 'folder-b', message: [] },
+      ] as any
+      const calls = stubCombinedReorderCommandFetch({
+        fail: 'folders',
+        onFolderCommand: () => {
+          withTestDatabaseWrite(() => {
+            const folder = getDatabase().characters[0].chatFolders.find((candidate) => candidate.id === 'folder-c')
+            const chat = getDatabase().characters[0].chats.find((candidate) => candidate.id === 'chat-c')
+            if (folder) folder.name = 'Newer Folder C'
+            if (chat) chat.name = 'Newer Chat C'
+          })
+        },
+      })
+      const previous = snapshotMode === 'scoped' ? captureChatOrderSnapshot('char-a')! : currentChatStateSnapshot()
+      const attemptedFolderIds = ['folder-c', 'folder-a', 'folder-b']
+      const attemptedChatIds = ['chat-c', 'chat-a', 'chat-b']
+      const attemptedFolderByChatId = {
+        'chat-a': 'folder-c',
+        'chat-b': null,
+        'chat-c': 'folder-a',
+      }
+      withTestDatabaseWrite(() => {
+        const foldersById = new Map(getDatabase().characters[0].chatFolders.map((folder) => [folder.id, folder]))
+        const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
+        getDatabase().characters[0].chatFolders = attemptedFolderIds.map((id) => foldersById.get(id)!)
+        getDatabase().characters[0].chats = attemptedChatIds.map((id) => chatsById.get(id)!)
+        for (const chat of getDatabase().characters[0].chats) {
+          chat.folderId = attemptedFolderByChatId[chat.id]
+        }
+        getDatabase().characters[0].chatPage = 1
+      })
+
+      dispatchReorderChatFoldersAndChatsByIds(
+        'char-a',
+        attemptedFolderIds,
+        attemptedChatIds,
+        attemptedFolderByChatId,
+        previous,
+        'chat-a',
+      )
+
+      await waitForCallCount(calls, 2)
+      expect(calls.map((call) => call.url)).toEqual([
+        '/api/v1/bootstrap',
+        '/api/v1/commands/characters/char-a/chat-folders/reorder',
+      ])
+      await vi.waitFor(() => {
+        expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual([
+          'folder-a',
+          'folder-b',
+          'folder-c',
+        ])
+        expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
+      })
+      expect(getDatabase().characters[0].chatFolders[2]).toMatchObject({
+        id: 'folder-c',
+        name: 'Newer Folder C',
+      })
+      expect(getDatabase().characters[0].chats.map((chat) => chat.folderId)).toEqual([null, 'folder-a', 'folder-b'])
+      expect(getDatabase().characters[0].chats[2].name).toBe('Newer Chat C')
+      expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-a')
+    },
+  )
+
+  it.each(['legacy', 'scoped'] as const)(
+    'keeps a pre-existing same-id chat after a failed create rollback (%s snapshot)',
+    async (snapshotMode) => {
+      const calls = stubFailingCommandFetch({
+        matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
+      })
+      const attemptedChat = jsonClone(getDatabase().characters[0].chats[1])
+
+      const previous =
+        snapshotMode === 'scoped' ? captureChatCreateSnapshot('char-a', attemptedChat)! : currentChatStateSnapshot()
+
+      expect(applyOptimisticCreatedChat('char-a', attemptedChat, previous)).toBe(true)
+      expect(getDatabase().characters[0].chatPage).toBe(1)
+
+      dispatchCreateChat('char-a', attemptedChat, previous)
+
+      await waitForCallCount(calls, 2)
+      await vi.waitFor(() => {
+        expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
+      })
+      expect(getDatabase().characters[0].chats[1]).toMatchObject({
+        id: 'chat-b',
+        name: 'Chat B',
+      })
+    },
+  )
+
+  it.each(['legacy', 'scoped'] as const)(
+    'restores every previous chat when an optimistic reset fails (%s snapshot)',
+    async (snapshotMode) => {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+      const calls = stubFailingCommandFetch({
+        matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'PUT',
+      })
+      const previous = snapshotMode === 'scoped' ? captureChatResetSnapshot('char-a')! : currentChatStateSnapshot()
+      const attemptedChat = {
+        id: 'chat-new',
+        name: 'Chat 1',
+        note: '',
+        message: [],
+        localLore: [],
+        fmIndex: -1,
+      } as Chat
+
+      expect(applyOptimisticResetChats('char-a', attemptedChat, previous)).toBe(true)
+      await expect(dispatchResetChatsWithOutcome('char-a', attemptedChat, previous)).resolves.toMatchObject({
+        status: 'failed',
+      })
+
+      expect(calls.at(-1)).toMatchObject({
+        url: '/api/v1/commands/characters/char-a/chats',
+        method: 'PUT',
+        body: {
+          baseRevision: 10,
+          chat: {
+            id: 'chat-new',
+            name: 'Chat 1',
+            note: '',
+            message: [],
+            localLore: [],
+            fmIndex: -1,
+          },
+        },
+      })
+      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
+      expect(getDatabase().characters[0].chatPage).toBe(0)
+    },
+  )
+
+  it.each(['legacy', 'scoped'] as const)(
+    'removes only an unchanged attempted chat after a failed create and keeps newer siblings (%s snapshot)',
+    async (snapshotMode) => {
+      const calls = stubFailingCommandFetch({
+        matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
+        onCommand: () => {
+          withTestDatabaseWrite(() => {
+            getDatabase().characters[0].chats[2].name = 'Newer sibling name'
+            getDatabase().characters[0].chats.push({
+              id: 'chat-d',
+              name: 'Newer appended chat',
+              folderId: null,
+              message: [],
+              note: '',
+              localLore: [],
+            })
+          })
+        },
+      })
+      const attemptedChat = {
+        id: 'chat-c',
+        name: 'Attempted Chat',
+        note: '',
+        folderId: null,
+        message: [],
+        localLore: [],
+        fmIndex: -1,
+      } as Chat
+
+      const previous =
+        snapshotMode === 'scoped' ? captureChatCreateSnapshot('char-a', attemptedChat)! : currentChatStateSnapshot()
+      withTestDatabaseWrite(() => {
+        getDatabase().characters[0].chats.unshift(attemptedChat)
+        getDatabase().characters[0].chatPage = 0
+      })
+
+      dispatchCreateChat('char-a', attemptedChat, previous)
+
+      await waitForCallCount(calls, 2)
+      await vi.waitFor(() => {
+        expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-d'])
+      })
+      expect(getDatabase().characters[0].chats[1].name).toBe('Newer sibling name')
+      expect(getDatabase().characters[0].chats[2].name).toBe('Newer appended chat')
+      expect(getDatabase().characters[0].chatPage).toBe(0)
+    },
+  )
+
+  it.each(['legacy', 'scoped'] as const)(
+    'removes a failed created-chat ghost even after a dependent row edit (%s snapshot)',
+    async (snapshotMode) => {
+      const calls = stubFailingCommandFetch({
+        matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
+        onCommand: () => {
+          withTestDatabaseWrite(() => {
+            getDatabase().characters[0].chats[0].name = 'Newer attempted chat name'
+            getDatabase().characters[0].chats[2].name = 'Newer sibling name'
+          })
+        },
+      })
+      const attemptedChat = {
+        id: 'chat-c',
+        name: 'Attempted Chat',
+        note: '',
+        folderId: null,
+        message: [],
+        localLore: [],
+        fmIndex: -1,
+      } as Chat
+
+      const previous =
+        snapshotMode === 'scoped' ? captureChatCreateSnapshot('char-a', attemptedChat)! : currentChatStateSnapshot()
+      withTestDatabaseWrite(() => {
+        getDatabase().characters[0].chats.unshift(attemptedChat)
+        getDatabase().characters[0].chatPage = 0
+      })
+
+      dispatchCreateChat('char-a', attemptedChat, previous)
+
+      await waitForCallCount(calls, 2)
+      await vi.waitFor(() => {
+        expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
+      })
+      expect(getDatabase().characters[0].chats[1].name).toBe('Newer sibling name')
+      expect(getDatabase().characters[0].chatPage).toBe(0)
+    },
+  )
+
+  it.each(['legacy', 'scoped'] as const)(
+    'keeps an authoritative targeted row when a create response fails after the row arrives (%s snapshot)',
+    async (snapshotMode) => {
+      const calls = stubFailingCommandFetch({
+        matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
+        onCommand: () => {
+          withTestDatabaseWrite(() => {
+            const authoritativeCharacter = jsonClone(getDatabase().characters[0])
+            const createdChat = authoritativeCharacter.chats.find((chat) => chat.id === 'chat-c')
+            if (createdChat) createdChat.name = 'Canonical created chat'
+            applyCharacterResource({ revision: 11, character: authoritativeCharacter })
+          })
+        },
+      })
+      const attemptedChat = {
+        id: 'chat-c',
+        name: 'Attempted Chat',
+        note: '',
+        folderId: null,
+        message: [],
+        localLore: [],
+        fmIndex: -1,
+      } as Chat
+
+      const previous =
+        snapshotMode === 'scoped' ? captureChatCreateSnapshot('char-a', attemptedChat)! : currentChatStateSnapshot()
+      withTestDatabaseWrite(() => {
+        getDatabase().characters[0].chats.unshift(attemptedChat)
+        getDatabase().characters[0].chatPage = 0
+      })
+
+      dispatchCreateChat('char-a', attemptedChat, previous)
+
+      await waitForCallCount(calls, 2)
+      await vi.waitFor(() => {
+        expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-c', 'chat-a', 'chat-b'])
+      })
+      expect(getDatabase().characters[0].chats[0].name).toBe('Canonical created chat')
+      expect(getDatabase().characters[0].chatPage).toBe(0)
+    },
+  )
+
+  it.each(['legacy', 'scoped'] as const)(
+    'rolls back an optimistic fork while preserving a newer sibling chat edit (%s snapshot)',
+    async (snapshotMode) => {
+      const calls = stubFailingCommandFetch({
+        matches: (url, init) => url === '/api/v1/commands/chats/chat-a/fork' && init.method === 'POST',
+        onCommand: () => {
+          withTestDatabaseWrite(() => {
+            const attemptedFork = getDatabase().characters[0].chats.find((chat) => chat.id === 'chat-c')
+            const sibling = getDatabase().characters[0].chats.find((chat) => chat.id === 'chat-b')
+            if (attemptedFork) attemptedFork.name = 'Newer dependent fork edit'
+            if (sibling) sibling.name = 'Newer sibling name'
+          })
+        },
+      })
+      const forkedChat = {
+        id: 'chat-c',
+        name: 'Chat A Copy',
+        folderId: null,
+        message: [],
+      } as Chat
+
+      const previous =
+        snapshotMode === 'scoped'
+          ? captureChatForkSnapshot('chat-a', { chat: forkedChat })!
+          : currentChatStateSnapshot()
+
+      dispatchForkChat('chat-a', previous, { chat: forkedChat })
+
+      await waitForCallCount(calls, 2)
+      await vi.waitFor(() => {
+        expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
+      })
+      expect(getDatabase().characters[0].chats[1]).toMatchObject({
+        id: 'chat-b',
+        name: 'Newer sibling name',
+      })
+    },
+  )
+
+  it.each(['legacy', 'scoped'] as const)(
+    'failed branch fork removes unchanged forked chat, restores source folder, and removes created folder (%s snapshot)',
+    async (snapshotMode) => {
+      const calls = stubFailingCommandFetch({
+        matches: (url, init) => url === '/api/v1/commands/chats/chat-a/fork' && init.method === 'POST',
+        onCommand: () => {
+          withTestDatabaseWrite(() => {
+            getDatabase().characters[0].chats[2].name = 'Newer sibling name'
+            getDatabase().characters[0].chatFolders[1].name = 'Newer folder name'
+          })
+        },
+      })
+      const branchFolder = {
+        id: 'folder-branch',
+        name: 'Branches of Chat A',
+        folded: false,
+      }
+      const forkedChat = {
+        id: 'chat-branch',
+        name: 'Chat A Branch',
+        folderId: branchFolder.id,
+        message: [],
+      } as Chat
+
+      const previous =
+        snapshotMode === 'scoped'
+          ? captureChatForkSnapshot('chat-a', {
+              chat: forkedChat,
+              sourcePatch: { folderId: branchFolder.id },
+              folder: branchFolder,
+            })!
+          : currentChatStateSnapshot()
+      withTestDatabaseWrite(() => {
+        getDatabase().characters[0].chatFolders.unshift(branchFolder)
+        getDatabase().characters[0].chats[0].folderId = branchFolder.id
+        getDatabase().characters[0].chats.unshift(forkedChat)
+        getDatabase().characters[0].chatPage = 0
+      })
+
+      dispatchForkChat('chat-a', previous, {
+        chat: forkedChat,
+        sourcePatch: { folderId: branchFolder.id },
+        folder: branchFolder,
+      })
+
+      await waitForCallCount(calls, 2)
+      await vi.waitFor(() => {
+        expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
+        expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-a'])
+      })
+      expect(getDatabase().characters[0].chats[0]).toMatchObject({
+        id: 'chat-a',
+        folderId: null,
+      })
+      expect(getDatabase().characters[0].chats[1]).toMatchObject({
+        id: 'chat-b',
+        name: 'Newer sibling name',
+      })
+      expect(getDatabase().characters[0].chatFolders[0]).toMatchObject({
+        id: 'folder-a',
+        name: 'Newer folder name',
+      })
+      expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-a')
+    },
+  )
+
+  it.each(['legacy', 'scoped'] as const)(
+    'removes a failed fork ghost even after a dependent row edit (%s snapshot)',
+    async (snapshotMode) => {
+      const calls = stubFailingCommandFetch({
+        matches: (url, init) => url === '/api/v1/commands/chats/chat-a/fork' && init.method === 'POST',
+        onCommand: () => {
+          withTestDatabaseWrite(() => {
+            getDatabase().characters[0].chats[0].name = 'Newer forked chat name'
+          })
+        },
+      })
+      const forkedChat = {
+        id: 'chat-branch',
+        name: 'Chat A Branch',
+        folderId: null,
+        message: [],
+      } as Chat
+
+      const previous =
+        snapshotMode === 'scoped'
+          ? captureChatForkSnapshot('chat-a', { chat: forkedChat })!
+          : currentChatStateSnapshot()
+      withTestDatabaseWrite(() => {
+        getDatabase().characters[0].chats.unshift(forkedChat)
+        getDatabase().characters[0].chatPage = 0
+      })
+
+      dispatchForkChat('chat-a', previous, { chat: forkedChat })
+
+      await waitForCallCount(calls, 2)
+      await vi.waitFor(() => {
+        expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
+      })
+      expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-a')
+    },
+  )
+
+  it.each(['legacy', 'scoped'] as const)(
+    'reinserts only a still-missing deleted chat after a failed delete and preserves sibling edits (%s snapshot)',
+    async (snapshotMode) => {
+      const calls = stubFailingCommandFetch({
+        matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'DELETE',
+        onCommand: () => {
+          withTestDatabaseWrite(() => {
+            getDatabase().characters[0].chats[0].name = 'Newer sibling name'
+            getDatabase().characters[0].chats.push({
+              id: 'chat-c',
+              name: 'Newer appended chat',
+              folderId: null,
+              message: [],
+              note: '',
+              localLore: [],
+            })
+          })
+        },
+      })
+      expect(applyChatNoteValueLocally('chat-a', 'latest optimistic note')).toMatchObject({ note: '' })
+      const previous =
+        snapshotMode === 'scoped' ? captureChatDeleteSnapshot('chat-a', 'char-a')! : currentChatStateSnapshot()
+      expect(applyOptimisticDeletedChat('char-a', 'chat-a', previous)).toEqual({
+        applied: true,
+        selectedChatId: 'chat-b',
+      })
+
+      dispatchDeleteChat('chat-a', previous)
+
+      await waitForCallCount(calls, 2)
+      await vi.waitFor(() => {
+        expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
+      })
+      expect(getDatabase().characters[0].chats[0].note).toBe('latest optimistic note')
+      expect(getDatabase().characters[0].chats[1].name).toBe('Newer sibling name')
+      expect(getDatabase().characters[0].chats[2].name).toBe('Newer appended chat')
+      expect(getDatabase().characters[0].chatPage).toBe(0)
+    },
+  )
+
+  it.each(['legacy', 'scoped'] as const)(
+    'preserves newer user selection instead of restoring old selection after a failed delete (%s snapshot)',
+    async (snapshotMode) => {
+      getDatabase().characters[0].chats.push({
+        id: 'chat-c',
+        name: 'Chat C',
+        folderId: null,
+        message: [],
+      } as Chat)
+      const calls = stubFailingCommandFetch({
+        matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'DELETE',
+        onCommand: () => {
+          withTestDatabaseWrite(() => {
+            getDatabase().characters[0].chatPage = 1
+          })
+        },
+      })
+      const previous =
+        snapshotMode === 'scoped' ? captureChatDeleteSnapshot('chat-a', 'char-a')! : currentChatStateSnapshot()
+      expect(applyOptimisticDeletedChat('char-a', 'chat-a', previous)).toEqual({
+        applied: true,
+        selectedChatId: 'chat-b',
+      })
+
+      dispatchDeleteChat('chat-a', previous)
+
+      await waitForCallCount(calls, 2)
+      await vi.waitFor(() => {
+        expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
+      })
+      expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-c')
+    },
+  )
+
+  it.each(['legacy', 'scoped'] as const)(
+    'restores failed chat reorder order and folder assignments only when live state still equals the attempt (%s snapshot)',
+    async (snapshotMode) => {
+      getDatabase().characters[0].chatFolders = [
+        { id: 'folder-a', name: 'Folder A', folded: false },
+        { id: 'folder-b', name: 'Folder B', folded: false },
+      ]
+      getDatabase().characters[0].chats = [
+        { id: 'chat-a', name: 'Chat A', folderId: null, message: [] },
+        { id: 'chat-b', name: 'Chat B', folderId: 'folder-a', message: [] },
+        { id: 'chat-c', name: 'Chat C', folderId: 'folder-b', message: [] },
+      ] as any
+      const calls = stubFailingCommandFetch({
+        matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats/reorder' && init.method === 'POST',
+        onCommand: () => {
+          withTestDatabaseWrite(() => {
+            const chat = getDatabase().characters[0].chats.find((candidate) => candidate.id === 'chat-c')
+            if (chat) chat.name = 'Newer Chat C'
+          })
+        },
+      })
+      const previous = snapshotMode === 'scoped' ? captureChatOrderSnapshot('char-a')! : currentChatStateSnapshot()
+      const attemptedIds = ['chat-c', 'chat-a', 'chat-b']
+      const attemptedFolderByChatId = {
+        'chat-a': null,
+        'chat-b': null,
+        'chat-c': 'folder-a',
+      }
+      withTestDatabaseWrite(() => {
+        const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
+        getDatabase().characters[0].chats = attemptedIds.map((id) => chatsById.get(id)!)
+        for (const chat of getDatabase().characters[0].chats) {
+          chat.folderId = attemptedFolderByChatId[chat.id]
+        }
+        getDatabase().characters[0].chatPage = 1
+      })
+
+      dispatchReorderChatsByIds('char-a', attemptedIds, attemptedFolderByChatId, previous, 'chat-a')
+
+      await waitForCallCount(calls, 2)
+      expect(calls[1]).toMatchObject({
+        url: '/api/v1/commands/characters/char-a/chats/reorder',
+        method: 'POST',
+        body: {
+          chatIds: attemptedIds,
+          folderByChatId: {
+            'chat-b': null,
+            'chat-c': 'folder-a',
+          },
+          selectedChatId: 'chat-a',
+        },
+      })
+      await vi.waitFor(() => {
+        expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
+      })
+      expect(getDatabase().characters[0].chats.map((chat) => chat.folderId)).toEqual([null, 'folder-a', 'folder-b'])
+      expect(getDatabase().characters[0].chats[2].name).toBe('Newer Chat C')
+      expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-a')
+    },
+  )
+
+  it.each(['legacy', 'scoped'] as const)(
+    'skips failed chat reorder rollback after a newer reorder (%s snapshot)',
+    async (snapshotMode) => {
+      getDatabase().characters[0].chats.push({
+        id: 'chat-c',
+        name: 'Chat C',
+        folderId: null,
+        message: [],
+      } as Chat)
+      const newerIds = ['chat-b', 'chat-c', 'chat-a']
+      const calls = stubFailingCommandFetch({
+        matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats/reorder' && init.method === 'POST',
+        onCommand: () => {
+          withTestDatabaseWrite(() => {
+            const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
+            getDatabase().characters[0].chats = newerIds.map((id) => chatsById.get(id)!)
+          })
+        },
+      })
+      const previous = snapshotMode === 'scoped' ? captureChatOrderSnapshot('char-a')! : currentChatStateSnapshot()
+      const attemptedIds = ['chat-c', 'chat-a', 'chat-b']
+      const attemptedFolderByChatId = {
+        'chat-a': null,
+        'chat-b': 'folder-a',
+        'chat-c': null,
+      }
+      withTestDatabaseWrite(() => {
+        const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
+        getDatabase().characters[0].chats = attemptedIds.map((id) => chatsById.get(id)!)
+      })
+
+      dispatchReorderChatsByIds('char-a', attemptedIds, attemptedFolderByChatId, previous, 'chat-a')
+
+      await waitForCallCount(calls, 2)
+      await vi.waitFor(() => {
+        expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(newerIds)
+      })
+    },
+  )
+
+  it.each(['legacy', 'scoped'] as const)(
+    'skips failed chat reorder rollback after a newer folder move (%s snapshot)',
+    async (snapshotMode) => {
+      getDatabase().characters[0].chatFolders = [
+        { id: 'folder-a', name: 'Folder A', folded: false },
+        { id: 'folder-b', name: 'Folder B', folded: false },
+      ]
+      getDatabase().characters[0].chats.push({
+        id: 'chat-c',
+        name: 'Chat C',
+        folderId: null,
+        message: [],
+      } as Chat)
+      const calls = stubFailingCommandFetch({
+        matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats/reorder' && init.method === 'POST',
+        onCommand: () => {
+          withTestDatabaseWrite(() => {
+            const chat = getDatabase().characters[0].chats.find((candidate) => candidate.id === 'chat-c')
+            if (chat) chat.folderId = 'folder-b'
+          })
+        },
+      })
+      const previous = snapshotMode === 'scoped' ? captureChatOrderSnapshot('char-a')! : currentChatStateSnapshot()
+      const attemptedIds = ['chat-c', 'chat-a', 'chat-b']
+      const attemptedFolderByChatId = {
+        'chat-a': null,
+        'chat-b': 'folder-a',
+        'chat-c': null,
+      }
+      withTestDatabaseWrite(() => {
+        const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
+        getDatabase().characters[0].chats = attemptedIds.map((id) => chatsById.get(id)!)
+      })
+
+      dispatchReorderChatsByIds('char-a', attemptedIds, attemptedFolderByChatId, previous, 'chat-a')
+
+      await waitForCallCount(calls, 2)
+      await vi.waitFor(() => {
+        expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(attemptedIds)
+      })
+      expect(getDatabase().characters[0].chats[0]).toMatchObject({
+        id: 'chat-c',
+        folderId: 'folder-b',
+      })
+    },
+  )
 
   it('saves chat generation settings through the dedicated command helper', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
     const generationSettings = {
       configured: true,
       personaId: 'persona-a',
@@ -2007,7 +2201,6 @@ describe('chat command projection helpers', () => {
   })
 
   it('reserves a generation-settings save before a synchronously dispatched structural command', async () => {
-    setResourceWriteGuardEnabled(true)
     const settingsResponse = createDeferred<Response>()
     const commandUrls: string[] = []
     vi.stubGlobal(
@@ -2064,7 +2257,6 @@ describe('chat command projection helpers', () => {
       databaseLineage: 'lineage-chat-generation',
       requestedWriterWasActive: true,
     })
-    setResourceWriteGuardEnabled(true)
     const initial = {
       configured: true,
       personaId: 'persona-a',
@@ -2075,7 +2267,7 @@ describe('chat command projection helpers', () => {
       ...initial,
       sidebarToggles: { notes: 'durable' },
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
     const response = createDeferred<Response>()
@@ -2154,7 +2346,6 @@ describe('chat command projection helpers', () => {
       databaseLineage: 'lineage-chat-generation-queue',
       requestedWriterWasActive: true,
     })
-    setResourceWriteGuardEnabled(true)
     const initial = {
       configured: true,
       personaId: 'persona-initial',
@@ -2166,7 +2357,7 @@ describe('chat command projection helpers', () => {
       ...firstTarget,
       sidebarToggles: { notes: 'queued' },
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
     const firstResponse = createDeferred<Response>()
@@ -2229,8 +2420,6 @@ describe('chat command projection helpers', () => {
       requestedWriterWasActive: true,
     })
     setCachedServerCommandRevision(10)
-    setResourceWriteGuardEnabled(true)
-
     const initial = {
       configured: true,
       personaId: 'persona-survivor',
@@ -2245,7 +2434,7 @@ describe('chat command projection helpers', () => {
       modelPresetId: 'model-doomed',
       promptPresetId: 'prompt-doomed',
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
 
@@ -2338,7 +2527,6 @@ describe('chat command projection helpers', () => {
       databaseLineage: 'lineage-chat-generation-predecessor',
       requestedWriterWasActive: true,
     })
-    setResourceWriteGuardEnabled(true)
     const initial = {
       configured: true,
       personaId: 'persona-initial',
@@ -2347,7 +2535,7 @@ describe('chat command projection helpers', () => {
     }
     const firstTarget = { ...initial, personaId: 'persona-first' }
     const correctiveTarget = { ...initial, sidebarToggles: { notes: 'corrective' } }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
     const olderCharacter = jsonClone(getDatabase().characters[0])
@@ -2430,7 +2618,6 @@ describe('chat command projection helpers', () => {
       databaseLineage: 'lineage-chat-generation-retained-head',
       requestedWriterWasActive: true,
     })
-    setResourceWriteGuardEnabled(true)
     const initial = {
       configured: true,
       personaId: 'persona-initial',
@@ -2439,7 +2626,7 @@ describe('chat command projection helpers', () => {
     }
     const firstTarget = { ...initial, personaId: 'persona-first' }
     const secondTarget = { ...firstTarget, sidebarToggles: { notes: 'second' } }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
     const predecessor = stagePendingMutation('character-owner:char-a', {
@@ -2520,7 +2707,6 @@ describe('chat command projection helpers', () => {
 
   it('sends a full idempotent correction when a queued edit rebases to a no-op', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
-    setResourceWriteGuardEnabled(true)
     const initial = {
       configured: true,
       personaId: 'persona-initial',
@@ -2528,7 +2714,7 @@ describe('chat command projection helpers', () => {
       sidebarToggles: {},
     }
     const attempted = { ...initial, personaId: 'persona-attempted' }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
 
@@ -2556,7 +2742,6 @@ describe('chat command projection helpers', () => {
       databaseLineage: 'lineage-chat-generation-marker',
       requestedWriterWasActive: true,
     })
-    setResourceWriteGuardEnabled(true)
     const initial = {
       configured: true,
       personaId: 'persona-initial',
@@ -2580,7 +2765,7 @@ describe('chat command projection helpers', () => {
       ...canonicalFirst,
       sidebarToggles: { notes: 'queued' },
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
     const firstResponse = createDeferred<Response>()
@@ -2673,8 +2858,6 @@ describe('chat command projection helpers', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
-
     const nextGenerationSettings = {
       configured: true,
       personaId: 'persona-a',
@@ -2691,7 +2874,7 @@ describe('chat command projection helpers', () => {
     expect(operation).not.toBeNull()
     expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(nextGenerationSettings)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].message.push({
         role: 'char',
         data: 'concurrent same-chat message',
@@ -2758,8 +2941,6 @@ describe('chat command projection helpers', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
-
     expect(
       dispatchSaveChatGenerationSettings('chat-a', {
         configured: true,
@@ -2779,7 +2960,6 @@ describe('chat command projection helpers', () => {
 
   it('keeps newer generation settings through an older successful character-row projection', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
-    setResourceWriteGuardEnabled(true)
     const generationSettingsA = {
       configured: true,
       personaId: 'persona-a',
@@ -2901,8 +3081,6 @@ describe('chat command projection helpers', () => {
       // active global batch before the sparse command promise resumed.
       setAppliedServerResourceRevision(12)
     })
-    setResourceWriteGuardEnabled(true)
-
     expect(dispatchSaveChatGenerationSettings('chat-a', sparseTarget)).toBe(true)
     await waitForCallCount(calls, 2)
     sparseResponse.resolve(successfulChatGenerationSettingsResponse(11, sparseTarget))
@@ -2955,8 +3133,6 @@ describe('chat command projection helpers', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
-
     expect(
       dispatchSaveChatGenerationSettings('chat-a', {
         configured: true,
@@ -2966,7 +3142,7 @@ describe('chat command projection helpers', () => {
       }),
     ).toBe(true)
     await waitForCallCount(calls, 2)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(newerFullTarget)
     })
     setAppliedServerResourceRevision(12)
@@ -2979,7 +3155,6 @@ describe('chat command projection helpers', () => {
 
   it('preserves a newer generation settings save when an older save fails from no initial settings', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
-    setResourceWriteGuardEnabled(true)
     const generationSettingsA = {
       configured: false,
       personaId: 'persona-a',
@@ -3037,7 +3212,6 @@ describe('chat command projection helpers', () => {
 
   it('preserves a newer generation settings save when an older save fails from configured settings', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
-    setResourceWriteGuardEnabled(true)
     const initialGenerationSettings = {
       configured: true,
       personaId: 'persona-initial',
@@ -3068,7 +3242,7 @@ describe('chat command projection helpers', () => {
         mode: 'b',
       },
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initialGenerationSettings)
     })
 
@@ -3103,7 +3277,6 @@ describe('chat command projection helpers', () => {
 
   it('drops only a failed older field intent before sending a disjoint queued edit', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
-    setResourceWriteGuardEnabled(true)
     const initial = {
       configured: true,
       personaId: 'persona-initial',
@@ -3121,7 +3294,7 @@ describe('chat command projection helpers', () => {
       ...initial,
       sidebarToggles: { notes: 'queued' },
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
 
@@ -3146,7 +3319,6 @@ describe('chat command projection helpers', () => {
 
   it('keeps an accepted value when a newer queued edit to the same field fails', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
-    setResourceWriteGuardEnabled(true)
     const initial = {
       configured: true,
       personaId: 'persona-initial',
@@ -3155,7 +3327,7 @@ describe('chat command projection helpers', () => {
     }
     const firstTarget = { ...initial, personaId: 'persona-a' }
     const secondTarget = { ...initial, personaId: 'persona-b' }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
 
@@ -3172,14 +3344,13 @@ describe('chat command projection helpers', () => {
 
   it('restores the original value when overlapping queued edits both fail', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
-    setResourceWriteGuardEnabled(true)
     const initial = {
       configured: true,
       personaId: 'persona-initial',
       jailbreakToggle: false,
       sidebarToggles: {},
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
 
@@ -3196,12 +3367,6 @@ describe('chat command projection helpers', () => {
 
   it('sets DevTool-style scriptstate values through the chat scriptstate command helper', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      getDatabase().characters[0].chats[0].scriptstate!.$score = 'direct'
-    }).toThrow()
-
     expect(setChatScriptstateValue('chat-a', '$score', '9')).toBe(true)
     expect(getDatabase().characters[0].chats[0].scriptstate).toMatchObject({ $score: '9' })
 
@@ -3227,14 +3392,8 @@ describe('chat command projection helpers', () => {
     expect(getDatabase().characters[0].chats[0].scriptstate).toMatchObject({ $score: '9' })
   })
 
-  it('sets parser chat variables through the resource guard for Lua edit-display hooks', async () => {
+  it('sets parser chat variables through the chat owner for Lua edit-display hooks', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      getDatabase().characters[0].chats[0].scriptstate!.$outfit = 'direct'
-    }).toThrow()
-
     setChatVar('outfit', 'date_a')
     expect(getDatabase().characters[0].chats[0].scriptstate).toMatchObject({ $outfit: 'date_a' })
 
@@ -3253,8 +3412,6 @@ describe('chat command projection helpers', () => {
 
   it('creates scriptstate when setting a value on a chat without one', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     expect(getDatabase().characters[0].chats[1]).not.toHaveProperty('scriptstate')
 
     expect(setChatScriptstateValue('chat-b', '$enabled', true)).toBe(true)
@@ -3275,7 +3432,6 @@ describe('chat command projection helpers', () => {
 
   it('rejects missing or invalid DevTool-style scriptstate targets without mutating or dispatching', () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
     const before = jsonClone(getDatabase().characters[0].chats[0].scriptstate)
 
     expect(setChatScriptstateValue(undefined, '$score', '2')).toBe(false)
@@ -3292,12 +3448,6 @@ describe('chat command projection helpers', () => {
   it('appends DevTool Autopilot user messages through an awaited message command', async () => {
     const calls = stubCommandFetch()
     seedReadyActiveChatGenerationSettings()
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      getDatabase().characters[0].chats[0].message.push({ role: 'user', data: 'direct' })
-    }).toThrow()
-
     const result = await appendCurrentChatUserMessageForSend('autopilot row')
 
     expect(result.status).toBe('ok')
@@ -3336,13 +3486,12 @@ describe('chat command projection helpers', () => {
   it('rejects a captured active-chat target after chatPage changes without mutating or dispatching', async () => {
     const calls = stubCommandFetch()
     seedReadyActiveChatGenerationSettings()
-    setResourceWriteGuardEnabled(true)
     const target = captureActiveChatTarget()
 
     expect(target).toMatchObject({ characterId: 'char-a', chatId: 'chat-a' })
     expect(isActiveChatTargetFresh(target)).toBe(true)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatPage = 1
     })
 
@@ -3362,7 +3511,7 @@ describe('chat command projection helpers', () => {
 
   it('rejects a captured active-chat target after selectedCharID changes without mutating or dispatching', async () => {
     const calls = stubCommandFetch()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters.push({
         chaId: 'char-b',
         name: 'Character B',
@@ -3370,7 +3519,6 @@ describe('chat command projection helpers', () => {
         chats: [{ id: 'chat-c', name: 'Chat C', message: [] }],
       } as any)
     })
-    setResourceWriteGuardEnabled(true)
     const target = captureActiveChatTarget()
 
     expect(target).toMatchObject({ characterId: 'char-a', chatId: 'chat-a' })
@@ -3392,8 +3540,6 @@ describe('chat command projection helpers', () => {
 
   it('blocks direct send appends when active-chat generation settings are incomplete', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const result = await appendCurrentChatUserMessageForSend('autopilot row')
 
     expect(result).toEqual({
@@ -3408,7 +3554,6 @@ describe('chat command projection helpers', () => {
   it('appends prepared plain-send user messages through one-message POST bodies', async () => {
     const calls = stubCommandFetch()
     seedReadyActiveChatGenerationSettings()
-    setResourceWriteGuardEnabled(true)
     const prepared: Message = {
       role: 'user',
       data: 'prepared plain send',
@@ -3457,7 +3602,6 @@ describe('chat command projection helpers', () => {
     })
     setCachedServerCommandRevision(10)
     seedReadyActiveChatGenerationSettings()
-    setResourceWriteGuardEnabled(true)
     let liveBody: Record<string, unknown> | undefined
 
     vi.stubGlobal(
@@ -3481,7 +3625,11 @@ describe('chat command projection helpers', () => {
         name: null,
       })
 
-      expect(result).toEqual({ status: 'queued', messageId: expect.any(String) })
+      expect(result).toMatchObject({
+        status: 'queued',
+        messageId: expect.any(String),
+        settlement: expect.any(Promise),
+      })
       const projectedMessage = getDatabase().characters[0].chats[0].message.at(-1)
       expect(projectedMessage).toEqual({
         role: 'user',
@@ -3532,7 +3680,7 @@ describe('chat command projection helpers', () => {
       localLore: [],
       message: [{ role: 'user', data: 'imported row', chatId: 'message-imported' }],
     } as Chat
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats.unshift(importedChat)
       getDatabase().characters[0].chatPage = 0
     })
@@ -3602,7 +3750,7 @@ describe('chat command projection helpers', () => {
         message: [{ role: 'user', data: 'batch row', chatId: 'message-batch' }],
       },
     ] as Chat[]
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatFolders.push(folder)
       getDatabase().characters[0].chats.unshift(...chats)
     })
@@ -3701,7 +3849,7 @@ describe('chat command projection helpers', () => {
       folderId: folder.id,
       message: [],
     } as Chat
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatFolders.push(folder)
       getDatabase().characters[0].chats.unshift(importedChat)
     })
@@ -3802,7 +3950,7 @@ describe('chat command projection helpers', () => {
       localLore: [],
       message: [],
     })) as Chat[]
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats.unshift(...chats)
     })
     let createCalls = 0
@@ -3838,86 +3986,6 @@ describe('chat command projection helpers', () => {
     }
   })
 
-  it('chunks an oversized multi-message transcript into durable ordered tail rows', async () => {
-    vi.stubGlobal('indexedDB', new IDBFactory())
-    resetPendingMutationOutboxForTests()
-    await preparePendingMutationOutbox({
-      writerSessionId: 'writer-chat-chunked-import',
-      writerEpoch: 38,
-      databaseLineage: 'lineage-chat-chunked-import',
-      requestedWriterWasActive: true,
-    })
-    setCachedServerCommandRevision(10)
-    const previous = currentChatStateSnapshot()
-    const messageSize = Math.ceil(MAX_DURABLE_MUTATION_PAYLOAD_BYTES / 2)
-    const chunkedChat = {
-      id: 'chat-chunked-import',
-      name: 'Chunked import',
-      note: '',
-      localLore: [],
-      message: [
-        { role: 'user', data: 'a'.repeat(messageSize), chatId: 'message-chunk-a' },
-        { role: 'char', data: 'b'.repeat(messageSize), chatId: 'message-chunk-b' },
-      ],
-    } as Chat
-    withTrustedResourceWrite(() => {
-      getDatabase().characters[0].chats.unshift(chunkedChat)
-    })
-
-    const commandBodies: Array<Record<string, unknown>> = []
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
-        const url = String(input)
-        if (url === '/api/v1/commands/characters/char-a/chats') {
-          commandBodies.push(typeof init.body === 'string' ? JSON.parse(init.body) : {})
-          return jsonResponse({ error: 'temporarily unavailable' }, 503)
-        }
-        return jsonResponse({ error: `unexpected ${url}` }, 404)
-      }) as unknown as typeof fetch,
-    )
-
-    try {
-      await expect(dispatchCreateImportedChats('char-a', [], [chunkedChat], previous)).resolves.toEqual({
-        status: 'ok',
-      })
-      expect(commandBodies).toHaveLength(1)
-      expect(commandBodies[0]).toMatchObject({ chat: { id: chunkedChat.id, message: [] }, select: false })
-      expect(getDatabase().characters[0].chats[0].message).toHaveLength(2)
-
-      const pending = await listPendingMutations()
-      expect(pending).toHaveLength(3)
-      expect(pending.map((entry) => entry.handle.key)).toEqual([
-        'character-owner:char-a',
-        'character-owner:char-a',
-        'character-owner:char-a',
-      ])
-      expect(pending[0].intent.requests[0]).toMatchObject({
-        method: 'POST',
-        path: '/characters/char-a/chats',
-        body: { chat: { id: chunkedChat.id, message: [] }, select: false },
-      })
-      expect(pending[1].intent.requests[0]).toMatchObject({
-        method: 'POST',
-        path: '/chats/chat-chunked-import/messages/tail',
-        body: { afterMessageId: null, messages: [{ chatId: 'message-chunk-a' }] },
-      })
-      expect(pending[2].intent.requests[0]).toMatchObject({
-        method: 'POST',
-        path: '/chats/chat-chunked-import/messages/tail',
-        body: { afterMessageId: 'message-chunk-a', messages: [{ chatId: 'message-chunk-b' }] },
-      })
-      expect(
-        pending.every(
-          (entry) => pendingMutationIntentPayloadByteLength(entry.intent) <= MAX_DURABLE_MUTATION_PAYLOAD_BYTES,
-        ),
-      ).toBe(true)
-    } finally {
-      await clearPendingMutationOutbox()
-      resetPendingMutationOutboxForTests()
-    }
-  })
-
   it('keeps an accepted chunked-import prefix when a later tail is terminally rejected', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
@@ -3940,13 +4008,18 @@ describe('chat command projection helpers', () => {
         { role: 'char', data: 'b'.repeat(messageSize), chatId: 'message-terminal-b' },
       ],
     } as Chat
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats.unshift(chunkedChat)
     })
 
     let revision = 10
     let tailCalls = 0
     const commandPaths: string[] = []
+    const commandRequests: Array<{
+      method: 'POST'
+      path: string
+      body: Record<string, unknown>
+    }> = []
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -3954,6 +4027,11 @@ describe('chat command projection helpers', () => {
         if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
         if (url === '/api/v1/commands/characters/char-a/chats') {
           commandPaths.push('/characters/char-a/chats')
+          commandRequests.push({
+            method: 'POST',
+            path: '/characters/char-a/chats',
+            body: typeof init.body === 'string' ? JSON.parse(init.body) : {},
+          })
           revision += 1
           return jsonResponse({
             revision,
@@ -3972,8 +4050,13 @@ describe('chat command projection helpers', () => {
         if (url === '/api/v1/commands/chats/chat-chunked-terminal/messages/tail') {
           commandPaths.push('/chats/chat-chunked-terminal/messages/tail')
           tailCalls += 1
-          if (tailCalls === 2) return jsonResponse({ error: 'invalid second tail' }, 400)
           const body = typeof init.body === 'string' ? JSON.parse(init.body) : {}
+          commandRequests.push({
+            method: 'POST',
+            path: '/chats/chat-chunked-terminal/messages/tail',
+            body,
+          })
+          if (tailCalls === 2) return jsonResponse({ error: 'invalid second tail' }, 400)
           revision += 1
           return jsonResponse({
             revision,
@@ -4003,6 +4086,27 @@ describe('chat command projection helpers', () => {
         '/chats/chat-chunked-terminal/messages/tail',
         '/chats/chat-chunked-terminal/messages/tail',
       ])
+      expect(commandRequests[0]).toMatchObject({
+        body: { chat: { id: chunkedChat.id, message: [] }, select: false },
+      })
+      expect(commandRequests[1]).toMatchObject({
+        body: { afterMessageId: null, messages: [{ chatId: 'message-terminal-a' }] },
+      })
+      expect(commandRequests[2]).toMatchObject({
+        body: { afterMessageId: 'message-terminal-a', messages: [{ chatId: 'message-terminal-b' }] },
+      })
+      expect(MAX_DURABLE_MUTATION_PAYLOAD_BYTES).toBe(16 * 1024 * 1024)
+      expect(
+        commandRequests.every((request) => {
+          const { baseRevision: _baseRevision, ...body } = request.body
+          return (
+            pendingMutationIntentPayloadByteLength({
+              version: 1,
+              requests: [{ ...request, body }],
+            }) <= MAX_DURABLE_MUTATION_PAYLOAD_BYTES
+          )
+        }),
+      ).toBe(true)
       const imported = getDatabase().characters[0].chats.find((chat) => chat.id === chunkedChat.id)
       expect(imported?.message).toHaveLength(1)
       expect(imported?.message[0].chatId).toBe('message-terminal-a')
@@ -4037,7 +4141,7 @@ describe('chat command projection helpers', () => {
         },
       ],
     } as Chat
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats.unshift(oversizedChat)
     })
     let mutationIdHeader: string | undefined
@@ -4156,7 +4260,7 @@ describe('chat command projection helpers', () => {
         chatId: 'message-after-create',
         time: 555,
       } as Message
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].message.push(message)
       })
       dispatchAppendMessage('chat-created-queued', message, appendPrevious)
@@ -4211,7 +4315,7 @@ describe('chat command projection helpers', () => {
 
         if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
         if (url === '/api/v1/commands/chats/chat-a/scriptstate') {
-          withTrustedResourceWrite(() => {
+          withTestDatabaseWrite(() => {
             getDatabase().characters[0].chats[0].message.push({
               role: 'char',
               data: 'concurrent same-chat message',
@@ -4224,8 +4328,6 @@ describe('chat command projection helpers', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
-
     expect(setChatScriptstateValue('chat-a', '$score', 'failed')).toBe(true)
     expect(getDatabase().characters[0].chats[0].scriptstate).toEqual({ $score: 'failed', $old: 'gone' })
 
@@ -4259,7 +4361,7 @@ describe('chat command projection helpers', () => {
 
         if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
         if (url === '/api/v1/commands/chats/chat-a/messages') {
-          withTrustedResourceWrite(() => {
+          withTestDatabaseWrite(() => {
             getDatabase().characters[0].chats[0].message.push({
               role: 'char',
               data: 'later projection message',
@@ -4271,9 +4373,8 @@ describe('chat command projection helpers', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
     seedReadyActiveChatGenerationSettings()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].message.push({
         role: 'char',
         data: 'pre-existing',
@@ -4312,7 +4413,7 @@ describe('chat command projection helpers', () => {
 
         if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
         if (url === '/api/v1/commands/chats/chat-a/messages') {
-          withTrustedResourceWrite(() => {
+          withTestDatabaseWrite(() => {
             const character = getDatabase().characters[0]
             const siblingChat = character.chats.find((chat: Chat) => chat.id === 'chat-b')
             if (!siblingChat) throw new Error('missing sibling chat')
@@ -4324,9 +4425,8 @@ describe('chat command projection helpers', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
     seedReadyActiveChatGenerationSettings()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[1].message.push({
         role: 'char',
         data: 'same id on active sibling',
@@ -4361,7 +4461,7 @@ describe('chat command projection helpers', () => {
   })
 })
 
-describe('Phase 0 chat-scoped snapshot kit', () => {
+describe('chat-scoped snapshot kit', () => {
   it('captures only the active chat, never the whole characters array', () => {
     setDatabaseLite(seedCloneCostDb() as any)
     selectedCharID.set(0)
@@ -4378,6 +4478,33 @@ describe('Phase 0 chat-scoped snapshot kit', () => {
     const charactersSize = JSON.stringify(getDatabase().characters).length
     const instrumented = withCloneInstrumentation(() => currentChatScopedSnapshot())
     expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
+  })
+
+  it('fails closed when a ready character id is ambiguous', () => {
+    const database = seedCloneCostDb() as any
+    database.characters.push({ ...database.characters[0] })
+    setDatabaseLite(database)
+    selectedCharID.set(0)
+
+    const snapshot = currentChatScopedSnapshot()
+
+    expect(snapshot.characterId).toBe('char-0')
+    expect(snapshot.chatId).toBe('chat-0')
+    expect(snapshot.chat).toBeUndefined()
+  })
+
+  it('fails closed when a stable chat id has multiple global owners', () => {
+    const database = seedCloneCostDb() as any
+    database.characters[1].chats[0].id = database.characters[0].chats[0].id
+    setDatabaseLite(database)
+    selectedCharID.set(0)
+
+    const snapshot = currentChatScopedSnapshot()
+
+    expect(snapshot.characterId).toBe('char-0')
+    expect(snapshot.chatId).toBe('chat-0')
+    expect(snapshot.chat).toBeUndefined()
+    expect(captureActiveChatTarget()).toBeNull()
   })
 
   it('restores only the active chat, preserving concurrent edits to other chats', () => {
@@ -4427,7 +4554,7 @@ describe('Phase 0 chat-scoped snapshot kit', () => {
   })
 })
 
-describe('Phase 0 chat-scriptstate snapshot kit', () => {
+describe('chat-scriptstate snapshot kit', () => {
   it('captures only the scriptstate map and an optional note, never a chat or the collection', () => {
     setDatabaseLite(seedCloneCostDb() as any)
     selectedCharID.set(0)
@@ -4484,7 +4611,7 @@ describe('Phase 0 chat-scriptstate snapshot kit', () => {
 })
 
 // Chat selection rollback restores only `chatPage`, not the full character collection.
-describe('H2 chat-selection snapshot', () => {
+describe('chat-selection snapshot', () => {
   it('captures only selection scalars and performs zero clone work', () => {
     setDatabaseLite(seedCloneCostDb() as any)
     selectedCharID.set(0)
@@ -4556,8 +4683,6 @@ describe('H2 chat-selection snapshot', () => {
 
   it('dispatchSelectChat sends the empty-patch select command', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     dispatchSelectChat('chat-a', currentChatSelectionSnapshot())
     await waitForCallCount(calls, 2)
 
@@ -4596,13 +4721,12 @@ describe('H2 chat-selection snapshot', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
     })
-    setResourceWriteGuardEnabled(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].bindedPersona = 'persona-old'
     })
 
     const previous = currentChatStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].bindedPersona = ''
     })
 
@@ -4619,8 +4743,6 @@ describe('H2 chat-selection snapshot', () => {
 
   it('dispatchSelectChat optimistically updates chatPage before the PATCH resolves', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     dispatchSelectChat('chat-b', currentChatSelectionSnapshot())
 
     expect(getDatabase().characters[0].chatPage).toBe(1)
@@ -4656,8 +4778,6 @@ describe('H2 chat-selection snapshot', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
-
     dispatchSelectChat('chat-b', currentChatSelectionSnapshot())
 
     expect(getDatabase().characters[0].chatPage).toBe(1)
@@ -4672,13 +4792,11 @@ describe('H2 chat-selection snapshot', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-b' && init.method === 'PATCH',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           getDatabase().characters[0].chatPage = 2
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     dispatchSelectChat('chat-b', currentChatSelectionSnapshot())
 
     expect(getDatabase().characters[0].chatPage).toBe(1)
@@ -4689,21 +4807,259 @@ describe('H2 chat-selection snapshot', () => {
   })
 })
 
-describe('Phase 5 chat metadata dispatch rollback', () => {
+describe('scoped chat organization ownership', () => {
+  it.each(['delete', 'reset'] as const)(
+    'restores newer edits on a detached removed row when scoped %s fails',
+    async (operation) => {
+      const response = createDeferred<Response>()
+      const sent = createDeferred<void>()
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL) => {
+          if (String(input) === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+          sent.resolve()
+          return response.promise
+        }),
+      )
+      const owner = getDatabase().characters[0]
+      const removedChat = owner.chats[0]
+      removedChat.message.push({ role: 'char', data: 'started before removal', chatId: 'removed-message' })
+      const removedMessage = removedChat.message[0]
+      let mutation: ReturnType<typeof dispatchDeleteChatWithOutcome>
+      if (operation === 'delete') {
+        const previous = captureChatDeleteSnapshot('chat-a', 'char-a')!
+        expect(applyOptimisticDeletedChat('char-a', 'chat-a', previous).applied).toBe(true)
+        mutation = dispatchDeleteChatWithOutcome('chat-a', previous)
+      } else {
+        const previous = captureChatResetSnapshot('char-a')!
+        const chat = { id: 'chat-reset', name: 'Chat 1', note: '', message: [], localLore: [], fmIndex: -1 } as Chat
+        expect(applyOptimisticResetChats('char-a', chat, previous)).toBe(true)
+        mutation = dispatchResetChatsWithOutcome('char-a', chat, previous)
+      }
+      try {
+        await sent.promise
+        expect(owner.chats.some((chat) => chat.id === 'chat-a')).toBe(false)
+        removedMessage.data = 'finished while removal was pending'
+        removedChat.note = 'newer detached draft'
+        response.resolve(jsonResponse({ error: 'removal rejected' }, 500))
+        await expect(mutation).resolves.toMatchObject({ status: 'failed' })
+        const restored = owner.chats.find((chat) => chat.id === 'chat-a')!
+        expect(restored.message[0].data).toBe('finished while removal was pending')
+        expect(restored.note).toBe('newer detached draft')
+      } finally {
+        response.resolve(jsonResponse({ error: 'cleanup' }, 500))
+        await mutation
+      }
+    },
+  )
+
+  it.each(['accepted', 'failed'] as const)(
+    'keeps resident message identities through a held reorder that is %s',
+    async (status) => {
+      const response = createDeferred<Response>()
+      const sent = createDeferred<void>()
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL) => {
+          if (String(input) === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+          sent.resolve()
+          return response.promise
+        }),
+      )
+      const owner = getDatabase().characters[0]
+      const first = owner.chats[0]
+      const second = owner.chats[1]
+      second.message.push({ role: 'char', data: 'pending generation', chatId: 'background' })
+      const messages = second.message
+      const message = messages[0]
+      const previous = captureChatOrderSnapshot('char-a')!
+      const mutation = dispatchReorderChatsByIdsWithOutcome(
+        'char-a',
+        ['chat-b', 'chat-a'],
+        { 'chat-a': null, 'chat-b': 'folder-a' },
+        previous,
+        'chat-a',
+      )
+      try {
+        expect(owner.chats).toEqual([second, first])
+        expect(owner.chats[0]).toBe(second)
+        expect(second.message).toBe(messages)
+        expect(messages[0]).toBe(message)
+        await sent.promise
+        message.data = 'background generation completed'
+        response.resolve(
+          status === 'accepted'
+            ? jsonResponse({
+                revision: 11,
+                event: { type: 'chat.reordered', revision: 11, resource: 'chat' },
+                selectedChatId: 'chat-a',
+              })
+            : jsonResponse({ error: 'reorder rejected' }, 500),
+        )
+        await expect(mutation).resolves.toMatchObject({ status })
+        expect(owner.chats.map((chat) => chat.id)).toEqual(
+          status === 'accepted' ? ['chat-b', 'chat-a'] : ['chat-a', 'chat-b'],
+        )
+        expect(owner.chats.find((chat) => chat.id === 'chat-b')).toBe(second)
+        expect(second.message).toBe(messages)
+        expect(messages[0]).toBe(message)
+        expect(message.data).toBe('background generation completed')
+      } finally {
+        response.resolve(jsonResponse({ error: 'cleanup' }, 500))
+        await mutation
+      }
+    },
+  )
+
+  it('does not resurrect reset chats after an authoritative replacement arrives while the command is held', async () => {
+    const response = createDeferred<Response>()
+    const sent = createDeferred<void>()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        sent.resolve()
+        return response.promise
+      }),
+    )
+    const previous = captureChatResetSnapshot('char-a')!
+    const chat = { id: 'chat-new', name: 'Chat 1', note: '', message: [], localLore: [], fmIndex: -1 } as Chat
+    expect(applyOptimisticResetChats('char-a', chat, previous)).toBe(true)
+    const mutation = dispatchResetChatsWithOutcome('char-a', chat, previous)
+    try {
+      await sent.promise
+      const authoritative = jsonClone(getDatabase().characters[0])
+      expect(applyCharacterResource({ revision: 11, character: authoritative })).toBe(true)
+      response.resolve(jsonResponse({ error: 'old reset failed' }, 500))
+      await expect(mutation).resolves.toMatchObject({ status: 'failed' })
+      expect(getDatabase().characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-new'])
+    } finally {
+      response.resolve(jsonResponse({ error: 'cleanup' }, 500))
+      await mutation
+    }
+  })
+})
+
+describe('chat metadata dispatch rollback', () => {
+  it.each(['chat', 'folder'] as const)(
+    'rebases overlapping narrow %s failures without losing newer names or background message identities',
+    async (kind) => {
+      const firstRequest = createDeferred<Response>()
+      const secondRequest = createDeferred<Response>()
+      const requests: Record<string, unknown>[] = []
+      const path = kind === 'chat' ? '/api/v1/commands/chats/chat-a' : '/api/v1/commands/chat-folders/folder-a'
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          if (String(input) === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+          if (String(input) === path) {
+            requests.push(JSON.parse(init.body as string))
+            return requests.length === 1 ? firstRequest.promise : secondRequest.promise
+          }
+          return jsonResponse({ error: `unexpected ${String(input)}` }, 404)
+        }),
+      )
+      const owner = getDatabase().characters[0]
+      const sibling = owner.chats[1]
+      sibling.message.push({ role: 'char', data: 'generating', chatId: 'background-message' })
+      const messages = sibling.message
+      const message = messages[0]
+      const row = kind === 'chat' ? owner.chats[0] : owner.chatFolders[0]
+      const originalName = row.name
+      const rename = (name: string) => {
+        if (kind === 'chat') {
+          const snapshot = captureChatMetadataPatch('chat-a', { name }, 'char-a')!
+          expect(applyChatMetadataOwnerPatch('char-a', 'chat-a', { name })).toBe(true)
+          return dispatchChatMetadataPatchWithOutcome(snapshot)
+        }
+        const snapshot = captureChatFolderMetadataPatch('folder-a', { name }, 'char-a')!
+        expect(applyChatFolderMetadataOwnerPatch('char-a', 'folder-a', { name })).toBe(true)
+        return dispatchChatFolderMetadataPatchWithOutcome(snapshot)
+      }
+      const first = rename('Older optimistic name')
+      await vi.waitFor(() => expect(requests).toHaveLength(1))
+      const second = rename('Newer optimistic name')
+      message.data = 'background generation continued'
+      firstRequest.resolve(jsonResponse({ error: 'older rename rejected' }, 400))
+      // Command promises wait for the shared reconciliation batch, so observe
+      // the second request to know the older command already rolled back.
+      await vi.waitFor(() => expect(requests).toHaveLength(2))
+      expect(row.name).toBe('Newer optimistic name')
+      expect(requests.map((request) => request.patch)).toEqual([
+        { name: 'Older optimistic name' },
+        { name: 'Newer optimistic name' },
+      ])
+      secondRequest.resolve(jsonResponse({ error: 'newer rename rejected' }, 400))
+      await expect(first).resolves.toMatchObject({ status: 'failed' })
+      await expect(second).resolves.toMatchObject({ status: 'failed' })
+      expect(row.name).toBe(originalName)
+      expect(getDatabase().characters[0]).toBe(owner)
+      expect(owner.chats[1]).toBe(sibling)
+      expect(sibling.message).toBe(messages)
+      expect(messages[0]).toBe(message)
+      expect(message.data).toBe('background generation continued')
+    },
+  )
+
+  it.each(['chat', 'folder'] as const)(
+    'rolls back a narrow %s patch if writer access is lost after capture',
+    async (kind) => {
+      const fetch = vi.fn()
+      vi.stubGlobal('fetch', fetch)
+      const owner = getDatabase().characters[0]
+      const row = kind === 'chat' ? owner.chats[0] : owner.chatFolders[0]
+      const originalName = row.name
+      let mutation: ReturnType<typeof dispatchChatMetadataPatchWithOutcome>
+      if (kind === 'chat') {
+        const snapshot = captureChatMetadataPatch('chat-a', { name: 'Attempted name' }, 'char-a')!
+        applyChatMetadataOwnerPatch('char-a', 'chat-a', snapshot.attempted)
+        writerAccessMocks.lost = true
+        mutation = dispatchChatMetadataPatchWithOutcome(snapshot)
+      } else {
+        const snapshot = captureChatFolderMetadataPatch('folder-a', { name: 'Attempted name' }, 'char-a')!
+        applyChatFolderMetadataOwnerPatch('char-a', 'folder-a', snapshot.attempted)
+        writerAccessMocks.lost = true
+        mutation = dispatchChatFolderMetadataPatchWithOutcome(snapshot)
+      }
+      await expect(mutation).resolves.toMatchObject({ status: 'failed' })
+      expect(row.name).toBe(originalName)
+      expect(fetch).not.toHaveBeenCalled()
+    },
+  )
+
+  it('captures only requested allowed fields and refuses missing, ambiguous, or mismatched metadata owners', () => {
+    const patch = { name: 'Captured name', message: [{ data: 'must not be captured' }] }
+    const snapshot = captureChatMetadataPatch('chat-a', patch, 'char-a')!
+    patch.name = 'Caller edited the patch'
+    expect(snapshot).toEqual({
+      selectedCharID: 0,
+      characterId: 'char-a',
+      chatId: 'chat-a',
+      metadata: { name: 'Chat A' },
+      attempted: { name: 'Captured name' },
+    })
+    expect(captureChatMetadataPatch('chat-a', { name: 'name' }, 'other-owner')).toBeNull()
+    expect(captureChatFolderMetadataPatch('folder-a', { name: 'name' }, 'other-owner')).toBeNull()
+    expect(captureChatMetadataPatch('missing', { name: 'name' })).toBeNull()
+    expect(captureChatFolderMetadataPatch('missing', { name: 'name' })).toBeNull()
+    getDatabase().characters[0].chats.push({ id: 'chat-a', name: 'Duplicate', message: [] } as Chat)
+    getDatabase().characters[0].chatFolders.push({ id: 'folder-a', name: 'Duplicate', folded: false })
+    expect(captureChatMetadataPatch('chat-a', { name: 'name' })).toBeNull()
+    expect(captureChatFolderMetadataPatch('folder-a', { name: 'name' })).toBeNull()
+  })
+
   it('restores the original folder name when overlapping broad folder updates both fail', async () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chat-folders/folder-a' && init.method === 'PATCH',
     })
-    setResourceWriteGuardEnabled(true)
-
     const firstPrevious = currentChatStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatFolders[0].name = 'First folder rename'
     })
     dispatchUpdateChatFolder('folder-a', { name: 'First folder rename' }, firstPrevious)
 
     const secondPrevious = currentChatStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatFolders[0].name = 'Second folder rename'
     })
     dispatchUpdateChatFolder('folder-a', { name: 'Second folder rename' }, secondPrevious)
@@ -4718,9 +5074,7 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chat-folders/folder-a' && init.method === 'PATCH',
     })
-    setResourceWriteGuardEnabled(true)
-
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatFolders[0].color = 'blue'
     })
     dispatchUpdateChatFolderRow(
@@ -4734,7 +5088,7 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
       },
     )
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatFolders[0].color = 'red'
     })
     dispatchUpdateChatFolderRow(
@@ -4758,16 +5112,14 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
     })
-    setResourceWriteGuardEnabled(true)
-
     const firstPrevious = currentChatStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].name = 'First rename'
     })
     dispatchUpdateChat('chat-a', { name: 'First rename' }, firstPrevious)
 
     const secondPrevious = currentChatStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].name = 'Second rename'
     })
     dispatchUpdateChat('chat-a', { name: 'Second rename' }, secondPrevious)
@@ -4783,9 +5135,7 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
     })
-    setResourceWriteGuardEnabled(true)
-
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].suggestMessages = []
     })
     dispatchUpdateChatRow(
@@ -4799,7 +5149,7 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
       },
     )
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].suggestMessages = ['New suggestion']
     })
     dispatchUpdateChatRow(
@@ -4825,17 +5175,15 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
     })
-    setResourceWriteGuardEnabled(true)
-
     const firstPrevious = currentChatScopedSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].bookmarks = ['msg-one']
       getDatabase().characters[0].chats[0].bookmarkNames = { 'msg-one': 'One' }
     })
     dispatchUpdateChatScoped('chat-a', { bookmarks: ['msg-one'], bookmarkNames: { 'msg-one': 'One' } }, firstPrevious)
 
     const secondPrevious = currentChatScopedSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].bookmarks = ['msg-one', 'msg-two']
       getDatabase().characters[0].chats[0].bookmarkNames = { 'msg-one': 'One', 'msg-two': 'Two' }
     })
@@ -4862,7 +5210,7 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           const chat = getDatabase().characters[0].chats[0]
           chat.bookmarkNames = { 'msg-newer': 'Newer bookmark' }
           chat.note = 'newer note'
@@ -4871,11 +5219,10 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
     const previous = currentChatScopedSnapshot()
     const attemptedBookmarks = ['msg-attempted']
     const attemptedBookmarkNames = { 'msg-attempted': 'Attempted bookmark' }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].bookmarks = jsonClone(attemptedBookmarks)
       getDatabase().characters[0].chats[0].bookmarkNames = jsonClone(attemptedBookmarkNames)
     })
@@ -4903,17 +5250,15 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           getDatabase().characters[0].chats[1].name = 'Newer sibling name'
           getDatabase().characters[0].chatFolders[0].name = 'Newer folder name'
           getDatabase().characters[0].chatPage = 1
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].name = 'Attempted rename'
     })
 
@@ -4932,15 +5277,13 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           getDatabase().characters[0].chats[0].name = 'Newer live rename'
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].name = 'Attempted rename'
     })
 
@@ -4959,17 +5302,15 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           getDatabase().characters[0].chats[0].bookmarkNames = { 'msg-newer': 'Newer bookmark' }
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     const attemptedBookmarks = ['msg-new']
     const attemptedBookmarkNames: Record<string, string> = { 'msg-new': 'New bookmark' }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].bookmarks = jsonClone(attemptedBookmarks)
       getDatabase().characters[0].chats[0].bookmarkNames = jsonClone(attemptedBookmarkNames)
     })
@@ -5002,14 +5343,12 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           getDatabase().characters[0].chats[1].name = 'Newer sibling name'
           getDatabase().characters[0].chatPage = 1
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     dispatchUpdateChat('chat-a', {}, previous, true)
 
@@ -5021,7 +5360,7 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
   })
 })
 
-describe('Phase 2 chat-metadata-row rollback', () => {
+describe('chat-metadata-row rollback', () => {
   function scalarMetadata(chatIndex: number): ChatSnapshot {
     const chat = getDatabase().characters[0].chats[chatIndex] as unknown as Record<string, unknown>
     const metadata: Record<string, unknown> = {}
@@ -5159,7 +5498,7 @@ describe('Phase 2 chat-metadata-row rollback', () => {
   })
 })
 
-describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
+describe('chat metadata allowed-key diff', () => {
   it('keeps generationSettings out of generic chat metadata patching', () => {
     const previous = orderedChatMetadata({
       name: 'Same chat',
@@ -5188,7 +5527,7 @@ describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
     expect(changedChatMetadata(previous, current)).toEqual({})
   })
 
-  it('M9: allowed metadata diffs match the previous clone-sanitize patch bytes', () => {
+  it('allowed metadata diffs match the previous clone-sanitize patch bytes', () => {
     const previous = orderedChatMetadata({
       name: 'Old chat',
       note: 'same note',
@@ -5200,6 +5539,7 @@ describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
       bookmarks: ['msg-old'],
       bookmarkNames: { 'msg-old': 'Old bookmark' },
       modules: ['module-a'],
+      pinned: false,
     })
     const current = orderedChatMetadata({
       name: 'New chat',
@@ -5212,6 +5552,7 @@ describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
       bookmarks: ['msg-new'],
       bookmarkNames: { 'msg-new': 'New bookmark' },
       modules: ['module-a', 'module-b'],
+      pinned: true,
     })
     current.message = [{ role: 'char', data: 'ignored transcript change', chatId: 'msg-new' }]
     current.localLore = [{ id: 'ignored-lore-new', key: 'y', content: 'ignored changed lore' }] as any
@@ -5230,7 +5571,7 @@ describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
     expect(patch).not.toHaveProperty('hypaV3Data')
   })
 
-  it('M9: message-only changes produce an empty patch without serializing message arrays', () => {
+  it('message-only changes produce an empty patch without serializing message arrays', () => {
     const body = 'x'.repeat(1200)
     const previous = orderedChatMetadata({ name: 'Same chat', note: 'same note' })
     previous.message = Array.from({ length: 120 }, (_unused, index) => ({
@@ -5258,7 +5599,7 @@ describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
     expect(instrumented.maxClonedSize).toBeLessThan(messageSize)
   })
 
-  it('M9: changed object metadata is detached from the current chat record', () => {
+  it('changed object metadata is detached from the current chat record', () => {
     const previous = orderedChatMetadata({
       name: 'Same chat',
       bookmarks: ['msg-old'],
@@ -5301,7 +5642,7 @@ describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
   })
 })
 
-describe('Phase 2 chat-scoped message dispatch', () => {
+describe('chat-scoped message dispatch', () => {
   it('dispatchReplaceMessagesScoped rolls back only the active chat on failure', async () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a/messages' && init.method === 'PUT',
@@ -5750,7 +6091,7 @@ describe('Phase 2 chat-scoped message dispatch', () => {
     expect(getDatabase().characters[0].chats[0].message).toEqual(previousChat.message)
   })
 
-  it('P5: scoped compatible chat preparation preserves accepted metadata when message persistence fails', async () => {
+  it('scoped compatible chat preparation preserves accepted metadata when message persistence fails', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
       'fetch',
@@ -5800,7 +6141,7 @@ describe('Phase 2 chat-scoped message dispatch', () => {
   })
 })
 
-describe('Phase 4 chat-scoped message attempt rollback', () => {
+describe('chat-scoped message attempt rollback', () => {
   function seedActiveMessages(messages: Message[]): void {
     getDatabase().characters[0].chats[0].message = jsonClone(messages)
   }
@@ -5810,8 +6151,6 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
       matches: (url, init) => url === '/api/v1/commands/messages/m-1' && init.method === 'PATCH',
     })
     seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
-    setResourceWriteGuardEnabled(true)
-
     const firstPrevious = currentChatScopedSnapshot()
     dispatchUpdateMessageScoped('m-1', { data: 'first edit' }, firstPrevious)
     const secondPrevious = currentChatScopedSnapshot()
@@ -5827,8 +6166,6 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
   it('keeps a duplicate stale-snapshot patch when the first request succeeds and the second fails', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledMessagePatchFetch()
     seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
-    setResourceWriteGuardEnabled(true)
-
     const stalePrevious = currentChatScopedSnapshot()
     dispatchUpdateMessageScoped('m-1', { data: 'same' }, stalePrevious)
     dispatchUpdateMessageScoped('m-1', { data: 'same' }, stalePrevious)
@@ -5851,8 +6188,6 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
   it('repaints a duplicate stale-snapshot patch when the first request fails and the second succeeds', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledMessagePatchFetch()
     seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
-    setResourceWriteGuardEnabled(true)
-
     const stalePrevious = currentChatScopedSnapshot()
     dispatchUpdateMessageScoped('m-1', { data: 'same' }, stalePrevious)
     dispatchUpdateMessageScoped('m-1', { data: 'same' }, stalePrevious)
@@ -5871,14 +6206,12 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
   it('retains an optimistic edit while its transport is still queued', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledMessagePatchFetch()
     seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
-    setResourceWriteGuardEnabled(true)
-
     dispatchUpdateMessageScoped('m-1', { data: 'first edit' }, currentChatScopedSnapshot())
     await waitForCallCount(calls, 2)
     dispatchUpdateMessageScoped('m-1', { data: 'queued edit' }, currentChatScopedSnapshot())
 
     expect(calls).toHaveLength(2)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].message = [{ role: 'char', data: 'before', chatId: 'm-1' }]
     })
     reapplyRetainedChatBodyProjections('chat-a')
@@ -5899,8 +6232,7 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     })
     seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
     const previous = currentChatScopedSnapshot()
-    setResourceWriteGuardEnabled(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].message[0].data = 'pre-applied'
     })
 
@@ -5922,8 +6254,6 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
       { role: 'user', data: 'three', chatId: 'm-3' },
     ]
     seedActiveMessages(previousMessages)
-    setResourceWriteGuardEnabled(true)
-
     const firstPrevious = currentChatScopedSnapshot()
     dispatchDeleteMessageScoped('m-1', firstPrevious)
     const secondPrevious = currentChatScopedSnapshot()
@@ -5943,8 +6273,6 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     })
     const previousMessages: Message[] = [{ role: 'char', data: 'before', chatId: 'm-1' }]
     seedActiveMessages(previousMessages)
-    setResourceWriteGuardEnabled(true)
-
     dispatchUpdateMessageScoped('m-1', { data: 'after' }, currentChatScopedSnapshot())
     dispatchDeleteMessageScoped('m-1', currentChatScopedSnapshot())
 
@@ -5965,8 +6293,6 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
       { role: 'char', data: 'two', chatId: 'm-2' },
     ]
     seedActiveMessages(previousMessages)
-    setResourceWriteGuardEnabled(true)
-
     dispatchDeleteMessageScoped('m-1', currentChatScopedSnapshot())
     dispatchUpdateMessageScoped('m-2', { data: 'changed' }, currentChatScopedSnapshot())
 
@@ -5987,10 +6313,8 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
       { role: 'char', data: 'two', chatId: 'm-2' },
     ]
     seedActiveMessages(initialMessages)
-    setResourceWriteGuardEnabled(true)
-
     const stalePatchSnapshot = currentChatScopedSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].message[0].data = 'newer'
     })
     dispatchUpdateMessageScoped('m-1', { disabled: true }, stalePatchSnapshot)
@@ -6005,7 +6329,7 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     })
   })
 
-  it('keeps an accepted scoped delete optimistically applied under the resource guard', async () => {
+  it('keeps an accepted scoped delete optimistically applied in its owner', async () => {
     const calls = stubMessagePersistenceFetch()
     const previousMessages: Message[] = [
       { role: 'user', data: 'one', chatId: 'm-1' },
@@ -6015,8 +6339,6 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     getDatabase().characters[0].chats[0].bookmarks = ['m-1', 'm-2']
     getDatabase().characters[0].chats[0].bookmarkNames = { 'm-1': 'One', 'm-2': 'Two' }
     const previous = currentChatScopedSnapshot()
-    setResourceWriteGuardEnabled(true)
-
     const deletion = dispatchDeleteMessageScoped('m-1', previous)
 
     expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[1]])
@@ -6055,8 +6377,6 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
       { role: 'char', data: 'reply', chatId: 'm-2' },
     ]
     seedActiveMessages(previousMessages)
-    setResourceWriteGuardEnabled(true)
-
     const deletion = dispatchDeleteMessageScoped('m-1', currentChatScopedSnapshot())
     expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[1]])
 
@@ -6094,8 +6414,6 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
       { role: 'char', data: 'reply', chatId: 'm-2' },
     ]
     seedActiveMessages(previousMessages)
-    setResourceWriteGuardEnabled(true)
-
     try {
       const queued = await dispatchDeleteMessageScoped('m-1', currentChatScopedSnapshot())
       expect(queued).toMatchObject({ status: 'queued', mutationId: expect.any(String) })
@@ -6144,8 +6462,6 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
       { role: 'char', data: 'reply', chatId: 'm-2' },
     ]
     seedActiveMessages(previousMessages)
-    setResourceWriteGuardEnabled(true)
-
     try {
       const queued = await dispatchDeleteMessageScoped('m-1', currentChatScopedSnapshot())
       expect(queued.status).toBe('queued')
@@ -6163,12 +6479,10 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     }
   })
 
-  it('keeps an accepted scoped message update optimistically applied under the resource guard', async () => {
+  it('keeps an accepted scoped message update optimistically applied in its owner', async () => {
     const calls = stubMessagePersistenceFetch()
     seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
     const previous = currentChatScopedSnapshot()
-    setResourceWriteGuardEnabled(true)
-
     dispatchUpdateMessageScoped('m-1', { role: 'user', data: 'after', disabled: true }, previous)
 
     expect(getDatabase().characters[0].chats[0].message).toEqual([
@@ -6481,7 +6795,7 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
   })
 })
 
-describe('Phase 2 scriptstate-scoped var dispatch', () => {
+describe('scriptstate-scoped var dispatch', () => {
   it('dispatchPatchChatScriptstateScoped restores only the chat scriptstate on failure', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
@@ -6592,7 +6906,7 @@ describe('Phase 2 scriptstate-scoped var dispatch', () => {
     expect(getDatabase().characters[0].chats[0].scriptstate!.$score).toBe('newer score')
   })
 
-  it('setChatNoteValue applies the author note under the resource guard and rolls back on failure', async () => {
+  it('setChatNoteValue applies the author note through its owner and rolls back on failure', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
       'fetch',
@@ -6610,12 +6924,6 @@ describe('Phase 2 scriptstate-scoped var dispatch', () => {
       }) as unknown as typeof fetch,
     )
     delete (getDatabase().characters[0].chats[0] as { note?: string }).note
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      getDatabase().characters[0].chats[0].note = 'direct note'
-    }).toThrow()
-
     expect(setChatNoteValue('chat-a', 'draft note')).toBe(true)
     expect(getDatabase().characters[0].chats[0].note).toBe('draft note')
 
@@ -6671,7 +6979,7 @@ describe('Phase 2 scriptstate-scoped var dispatch', () => {
       requestedWriterWasActive: true,
     })
     setCachedServerCommandRevision(10)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].note = 'initial note'
     })
 
@@ -6825,33 +7133,84 @@ describe('Phase 2 scriptstate-scoped var dispatch', () => {
     }
   })
 
-  it('flushes note and chat metadata PATCHes before DELETE when durable storage is unavailable', async () => {
+  it.each(['helper', 'direct'] as const)(
+    'preserves a newer selection made during the held note flush before a failed scoped delete (%s projection)',
+    async (projection) => {
+      resetPendingMutationOutboxForTests()
+      setCachedServerCommandRevision(30)
+      const owner = getDatabase().characters[0]
+      owner.chats.push({ id: 'chat-c', name: 'Chat C', message: [], note: '', localLore: [] } as Chat)
+      expect(applyChatNoteValueLocally('chat-a', 'pending author note')).not.toBeNull()
+      stageChatNoteMutation({ chatId: 'chat-a', characterId: 'char-a', note: 'pending author note' })
+      const previous = captureChatDeleteSnapshot('chat-a', 'char-a')!
+      if (projection === 'helper') {
+        expect(applyOptimisticDeletedChat('char-a', 'chat-a', previous)).toMatchObject({
+          applied: true,
+          selectedChatId: 'chat-b',
+        })
+      } else {
+        owner.chats.splice(0, 1)
+        owner.chatPage = 0
+      }
+      const noteStarted = createDeferred<void>()
+      const noteResponse = createDeferred<Response>()
+      const methods: string[] = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          if (String(input) !== '/api/v1/commands/chats/chat-a') {
+            return jsonResponse({ error: `unexpected ${String(input)}` }, 404)
+          }
+          methods.push(init.method ?? 'GET')
+          if (init.method === 'PATCH') {
+            noteStarted.resolve()
+            return noteResponse.promise
+          }
+          return jsonResponse({ error: 'delete rejected' }, 500)
+        }),
+      )
+      const mutation = dispatchDeleteChatWithOutcome('chat-a', previous)
+      try {
+        await noteStarted.promise
+        expect(methods).toEqual(['PATCH'])
+        owner.chatPage = owner.chats.findIndex((chat) => chat.id === 'chat-c')
+        noteResponse.resolve(
+          jsonResponse({
+            revision: 31,
+            event: { type: 'chat.updated', revision: 31, resource: 'chat', id: 'chat-a' },
+          }),
+        )
+        await expect(mutation).resolves.toMatchObject({ status: 'failed' })
+        expect(methods).toEqual(['PATCH', 'DELETE'])
+        expect(owner.chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
+        expect(owner.chats[owner.chatPage].id).toBe('chat-c')
+      } finally {
+        noteResponse.resolve(jsonResponse({ error: 'cleanup' }, 500))
+        await mutation
+        await clearPendingMutationOutbox()
+        resetPendingMutationOutboxForTests()
+      }
+    },
+  )
+
+  it('flushes an owned note PATCH before DELETE without walking unrelated flushers', async () => {
     resetPendingMutationOutboxForTests()
     setCachedServerCommandRevision(30)
-    setResourceWriteGuardEnabled(true)
-    const stopWatcher = watchServerBackedChatMetadata({ delayMs: 60_000 })
-    flushSync()
-
     const noteRollback = applyChatNoteValueLocally('chat-a', 'fallback note')
     expect(noteRollback).not.toBeNull()
-    syncServerBackedChatMetadataBaselines()
     const noteMutation = stageChatNoteMutation({
       chatId: 'chat-a',
       characterId: 'char-a',
       note: 'fallback note',
     })
     let pendingNote = true
-    const unregisterNoteFlusher = registerPendingBridgePatchFlusher('test-author-note-fallback', (options) => {
+    const unregisterNoteFlusher = registerPendingOwnerMutationFlusher('test-author-note-fallback', (options) => {
       if (!pendingNote) return
       pendingNote = false
       void dispatchStagedChatNoteMutation(noteMutation, noteRollback!, options)
     })
 
     try {
-      withTrustedResourceWrite(() => {
-        getDatabase().characters[0].chats[0].name = 'Fallback rename'
-      })
-      flushSync()
       const previous = currentChatStateSnapshot()
       expect(applyOptimisticDeletedChat('char-a', 'chat-a', previous)).toMatchObject({ applied: true })
 
@@ -6883,22 +7242,21 @@ describe('Phase 2 scriptstate-scoped var dispatch', () => {
       )
 
       dispatchDeleteChat('chat-a', previous)
-      await vi.waitFor(() => expect(commands).toHaveLength(3))
+      await vi.waitFor(() => expect(commands).toHaveLength(2))
 
       expect(commands).toEqual([
-        { method: 'PATCH', patch: { name: 'Fallback rename' } },
         { method: 'PATCH', patch: { note: 'fallback note' } },
         { method: 'DELETE', patch: undefined },
       ])
+      expect(pendingNote).toBe(true)
     } finally {
       unregisterNoteFlusher()
-      stopWatcher()
       resetPendingMutationOutboxForTests()
     }
   })
 })
 
-describe('Phase 3 runner rejection rollback (L36)', () => {
+describe('runner rejection rollback', () => {
   it('reconciles all successful optimistic sequence steps once through the async wrapper', async () => {
     setCachedServerCommandRevision(70)
     const bases: number[] = []
@@ -6967,7 +7325,7 @@ describe('Phase 3 runner rejection rollback (L36)', () => {
     expect(rollback).not.toHaveBeenCalled()
   })
 
-  it('L36: a rejecting factory in runOptimisticCommandSequence rolls back instead of silently diverging', async () => {
+  it('a rejecting factory in runOptimisticCommandSequence rolls back instead of silently diverging', async () => {
     stubCommandFetch()
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     const rollback = vi.fn()
@@ -6987,7 +7345,7 @@ describe('Phase 3 runner rejection rollback (L36)', () => {
     consoleError.mockRestore()
   })
 
-  it('L36: a mid-sequence rejection rolls back once and skips the remaining commands', async () => {
+  it('a mid-sequence rejection rolls back once and skips the remaining commands', async () => {
     stubCommandFetch()
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     const rollback = vi.fn()
@@ -7011,8 +7369,8 @@ describe('Phase 3 runner rejection rollback (L36)', () => {
   })
 })
 
-describe('Phase 3 setCurrentChat scoped snapshot (U4)', () => {
-  it('U4: replacing the active chat captures a chat-scoped baseline, never the whole characters array', async () => {
+describe('setCurrentChat scoped snapshot', () => {
+  it('replacing the active chat captures a chat-scoped baseline, never the whole characters array', async () => {
     setDatabaseLite(seedCloneCostDb() as any) // char-0 large (40 messages), siblings small
     selectedCharID.set(1)
     const charactersSize = JSON.stringify(getDatabase().characters).length
@@ -7034,7 +7392,7 @@ describe('Phase 3 setCurrentChat scoped snapshot (U4)', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
 
-  it('U4: a failed update rolls back only the active chat row, preserving sibling edits', async () => {
+  it('a failed update rolls back only the active chat row, preserving sibling edits', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
       'fetch',
@@ -7089,7 +7447,6 @@ describe('durable chat and folder structure dispatch', () => {
     stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
     })
-    setResourceWriteGuardEnabled(true)
     const previous = currentChatStateSnapshot()
     const attemptedChat = {
       id: 'chat-created',
@@ -7215,7 +7572,7 @@ describe('durable chat and folder structure dispatch', () => {
 
     try {
       const previous = currentChatScopedSnapshot()
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].bookmarks = ['message-a']
         getDatabase().characters[0].chats[0].bookmarkNames = { 'message-a': 'Queued bookmark' }
       })
@@ -7429,11 +7786,11 @@ describe('durable chat and folder structure dispatch', () => {
     )
 
     try {
-      const previous = currentChatStateSnapshot()
-      withTrustedResourceWrite(() => {
+      const previous = captureChatMetadataPatch('chat-a', { name: 'Durable rename' }, 'char-a')!
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].name = 'Durable rename'
       })
-      const mutation = dispatchUpdateChatWithOutcome('chat-a', { name: 'Durable rename' }, previous)
+      const mutation = dispatchChatMetadataPatchWithOutcome(previous)
 
       await vi.waitFor(() => expect(liveBody).toBeDefined())
       await expect(mutation).resolves.toMatchObject({ status: 'queued' })
@@ -7464,6 +7821,7 @@ describe('durable chat and folder structure dispatch', () => {
 
       expect(
         applyCharactersResource({
+          version: 1,
           revision: 12,
           characters: [authoritativeCharacter],
           characterOrder: ['char-a'],
@@ -7492,7 +7850,7 @@ describe('durable chat and folder structure dispatch', () => {
     )
 
     try {
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].message = [
           { role: 'char', data: 'persisted', chatId: 'message-a' } as Message,
         ]
@@ -7502,7 +7860,7 @@ describe('durable chat and folder structure dispatch', () => {
       dispatchUpdateMessageScoped('message-a', { data: 'newest retained edit' }, currentChatScopedSnapshot())
       await vi.waitFor(() => expect(commandCalls).toBe(2))
 
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].message = [
           { role: 'char', data: 'persisted', chatId: 'message-a' } as Message,
         ]
@@ -7534,7 +7892,7 @@ describe('durable chat and folder structure dispatch', () => {
 
     try {
       const previous = currentChatStateSnapshot()
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].name = 'Rejected rename'
       })
       const result = dispatchUpdateChatAsync('chat-a', { name: 'Rejected rename' }, previous)
@@ -7550,6 +7908,69 @@ describe('durable chat and folder structure dispatch', () => {
       await clearDurableOutbox()
     }
   })
+
+  it.each(['accepted', 'failed'] as const)(
+    'settles a retained narrow folder patch as %s after authoritative refresh',
+    async (finalStatus) => {
+      await prepareDurableOutbox(`narrow-folder-${finalStatus}`)
+      let replay = false
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+          if (url === '/api/v1/commands/chat-folders/folder-a' && init.method === 'PATCH') {
+            if (!replay) return jsonResponse({ error: 'temporarily unavailable' }, 503)
+            return finalStatus === 'failed'
+              ? jsonResponse({ error: 'folder rename rejected' }, 400)
+              : jsonResponse({
+                  revision: 12,
+                  event: {
+                    type: 'chatFolder.updated',
+                    revision: 12,
+                    resource: 'chatFolder',
+                    id: 'folder-a',
+                    parentId: 'char-a',
+                  },
+                })
+          }
+          return jsonResponse({ error: `unexpected ${url}` }, 404)
+        }),
+      )
+      try {
+        const snapshot = captureChatFolderMetadataPatch('folder-a', { name: 'Queued folder' }, 'char-a')!
+        applyChatFolderMetadataOwnerPatch('char-a', 'folder-a', snapshot.attempted)
+        const mutation = await dispatchChatFolderMetadataPatchWithOutcome(snapshot)
+        expect(mutation).toMatchObject({ status: 'queued' })
+        if (mutation?.status !== 'queued') throw new Error('Expected a queued folder patch')
+        getDatabase().characters[0].chats[1].message.push({
+          role: 'char',
+          data: 'background generation',
+          chatId: 'background',
+        })
+        const authoritativeCharacter = jsonClone(getDatabase().characters[0])
+        authoritativeCharacter.chatFolders[0].name = 'Folder'
+        authoritativeCharacter.chatFolders[0].color = 'blue'
+        expect(applyCharacterResource({ revision: 11, character: authoritativeCharacter })).toBe(true)
+        const owner = getDatabase().characters[0]
+        const sibling = owner.chats[1]
+        const message = sibling.message[0]
+        expect(owner.chatFolders[0].name).toBe('Queued folder')
+        expect(owner.chatFolders[0].color).toBe('blue')
+        replay = true
+        await replayPendingMutations()
+        await expect(mutation.settlement).resolves.toMatchObject({ status: finalStatus })
+        expect(owner.chatFolders[0].name).toBe(finalStatus === 'accepted' ? 'Queued folder' : 'Folder')
+        expect(owner.chatFolders[0].color).toBe('blue')
+        expect(getDatabase().characters[0]).toBe(owner)
+        expect(owner.chats[1]).toBe(sibling)
+        expect(sibling.message[0]).toBe(message)
+        expect(message.data).toBe('background generation')
+      } finally {
+        await clearDurableOutbox()
+      }
+    },
+  )
 
   it('retains optimistic chat selection and folder metadata edits on retryable failures', async () => {
     await prepareDurableOutbox('selection')
@@ -7608,7 +8029,7 @@ describe('durable chat and folder structure dispatch', () => {
 
     try {
       const previous = currentChatStateSnapshot()
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chatFolders[0].name = 'Durable folder rename'
       })
       const mutation = dispatchUpdateChatFolderWithOutcome('folder-a', { name: 'Durable folder rename' }, previous)
@@ -7655,7 +8076,7 @@ describe('durable chat and folder structure dispatch', () => {
 
     try {
       const previous = currentChatScriptstateSnapshot()
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].scriptstate = { $score: 'durable' }
       })
       dispatchPatchChatScriptstateScoped('chat-a', { $score: 'durable' }, ['$old'], previous)
@@ -7699,7 +8120,7 @@ describe('durable chat and folder structure dispatch', () => {
 
     try {
       const previous = currentChatScriptstateSnapshot(true)
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].note = 'Durable trigger note'
       })
       const result = dispatchUpdateChatNoteScoped('chat-a', 'Durable trigger note', previous)
@@ -7768,7 +8189,7 @@ describe('durable chat and folder structure dispatch', () => {
     )
 
     try {
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].suggestMessages = ['durable suggestion']
       })
       const rollback = {
@@ -7795,7 +8216,7 @@ describe('durable chat and folder structure dispatch', () => {
 
   it('pre-stages combined folder and chat reorders and replays them in owner order', async () => {
     await prepareDurableOutbox('combined-reorder')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatFolders.push({ id: 'folder-b', name: 'Folder B', folded: false })
     })
     const previous = currentChatStateSnapshot()
@@ -7881,7 +8302,7 @@ describe('durable chat and folder structure dispatch', () => {
 
   it('keeps an accepted folder reorder when the later chat reorder is terminally rejected', async () => {
     await prepareDurableOutbox('combined-terminal')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatFolders.push({ id: 'folder-b', name: 'Folder B', folded: false })
     })
     const previous = currentChatStateSnapshot()
@@ -7944,7 +8365,7 @@ describe('durable chat and folder structure dispatch', () => {
     nextChat.name = 'Compatible durable rename'
     nextChat.message = [{ role: 'user', data: 'compatible append', chatId: 'message-compatible' }]
     nextChat.scriptstate = { $score: 'compatible', $old: 'gone' }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0] = jsonClone(nextChat)
     })
 
@@ -8006,7 +8427,7 @@ describe('durable chat and folder structure dispatch', () => {
     nextChat.name = 'Accepted compatible rename'
     nextChat.message = [{ role: 'user', data: 'rejected append', chatId: 'message-rejected' }]
     nextChat.scriptstate = { $score: 'unaccepted scriptstate', $old: 'gone' }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0] = jsonClone(nextChat)
     })
 

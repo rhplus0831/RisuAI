@@ -50,7 +50,7 @@ describe('prompt template tokenization memo', () => {
     vi.useRealTimers()
   })
 
-  it('M13: memoized prompt token totals match tokenizePreset for supported prompt item types', async () => {
+  it('memoized prompt token totals match tokenizePreset for supported prompt item types', async () => {
     const template: PromptItem[] = [
       plainPrompt('main', 'main {{slot}} prompt'),
       {
@@ -91,7 +91,7 @@ describe('prompt template tokenization memo', () => {
     expect(tokenizeAccurateMock).not.toHaveBeenCalled()
   })
 
-  it('M13: unchanged prompt items hit cached token totals for both consti variants', async () => {
+  it('unchanged prompt items hit cached token totals for both consti variants', async () => {
     const memo = createPromptTokenizeMemo()
     const template: PromptItem[] = [
       plainPrompt('edited', 'alpha'),
@@ -113,7 +113,7 @@ describe('prompt template tokenization memo', () => {
     ])
   })
 
-  it('M13: rapid prompt edits debounce to the newest token total', async () => {
+  it('rapid prompt edits debounce to the newest token total', async () => {
     vi.useFakeTimers()
     const tokenizeText = vi.fn(async (text: string, consti: boolean) => {
       return text.length + (consti ? 100 : 0)
@@ -143,7 +143,7 @@ describe('prompt template tokenization memo', () => {
     debouncer.cancel()
   })
 
-  it('M13: stale in-flight prompt tokenization results cannot overwrite newer edits', async () => {
+  it('stale in-flight prompt tokenization results cannot overwrite newer edits', async () => {
     vi.useFakeTimers()
     const tokenizeText = vi.fn(async (text: string, consti: boolean) => {
       if (text === 'old') {
@@ -194,7 +194,7 @@ describe('prompt template tokenization memo', () => {
     debouncer.cancel()
   })
 
-  it('M13: reorder delete and add preserve memoized token totals', async () => {
+  it('reorder delete and add preserve memoized token totals', async () => {
     const memo = createPromptTokenizeMemo()
     const alpha = plainPrompt('alpha', 'alpha')
     const betaWithoutId = plainPrompt(undefined, 'beta {{slot}}')

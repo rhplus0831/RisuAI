@@ -7,13 +7,18 @@ const refreshApi = vi.hoisted(() => ({
 }))
 const bootstrapApi = vi.hoisted(() => ({ fetchReadOnly: vi.fn() }))
 const sideEffects = vi.hoisted(() => ({
+  discardObserverProjection: vi.fn(async () => undefined),
   hydrateActiveChat: vi.fn(async () => undefined),
+  hydrateSelectedCharacter: vi.fn(async () => true),
   resetChatHydration: vi.fn(),
   recordLorebooks: vi.fn(),
   resetLorebooks: vi.fn(),
-  setGenerationJobs: vi.fn(),
+  applyGenerationBootstrap: vi.fn(() => true),
   triggerReattach: vi.fn(),
   setTranslations: vi.fn(),
+  setGreetingTranslations: vi.fn(),
+  clearGreetingTranslations: vi.fn(),
+  refreshGreetingTranslations: vi.fn(async () => ({ status: 'ok' })),
   recordRefresh: vi.fn(),
   hydratePromptTemplate: vi.fn(async () => true),
 }))
@@ -30,15 +35,23 @@ vi.mock('./resourceInvalidation', () => ({
   refreshAllServerResources: refreshApi.refreshAll,
   refreshInvalidatedServerResources: refreshApi.refreshInvalidated,
 }))
+vi.mock('../observerProjectionLifecycle', () => ({
+  discardObserverProjectionState: sideEffects.discardObserverProjection,
+}))
 vi.mock('./bootstrap', () => ({ fetchServerBootstrapReadOnly: bootstrapApi.fetchReadOnly }))
 vi.mock('./chatMessageHydration.svelte', () => ({
   applyServerChatMessagesResource: vi.fn(() => true),
   hydrateActiveChat: sideEffects.hydrateActiveChat,
   resetChatHydration: sideEffects.resetChatHydration,
 }))
-vi.mock('./lorebookBridge.svelte', () => ({
+vi.mock('./characterShellHydration.svelte', () => ({
+  hydrateSelectedCharacterShell: sideEffects.hydrateSelectedCharacter,
+}))
+vi.mock('./lorebookOwner.svelte', () => ({
   applyServerCharacterLorebookResource: vi.fn(() => true),
   markCharacterLorebookHydrated: vi.fn(),
+  recordCanonicalCharacterLorebookScopes: vi.fn(),
+  recordCanonicalLorebookCollections: vi.fn(),
   recordHydratedCharacterLorebooks: sideEffects.recordLorebooks,
   resetLorebookHydration: sideEffects.resetLorebooks,
 }))
@@ -53,12 +66,19 @@ vi.mock('../agentPresets', () => ({
   mergePendingAgentPresetCharactersResource: vi.fn((value) => value),
 }))
 vi.mock('../process/reattach', () => ({
-  setActiveGenerationJobs: sideEffects.setGenerationJobs,
   triggerOpenChatGenerationReattach: sideEffects.triggerReattach,
+}))
+vi.mock('./generationOperations', () => ({
+  applyGenerationOperationBootstrap: sideEffects.applyGenerationBootstrap,
 }))
 vi.mock('./messageTranslationJobs', () => ({
   clearActiveMessageTranslation: vi.fn(),
   setActiveMessageTranslations: sideEffects.setTranslations,
+}))
+vi.mock('./greetingTranslations.svelte', () => ({
+  clearGreetingTranslationProjection: sideEffects.clearGreetingTranslations,
+  refreshGreetingTranslationProjection: sideEffects.refreshGreetingTranslations,
+  setActiveGreetingTranslations: sideEffects.setGreetingTranslations,
 }))
 vi.mock('./protocolDiagnostics', () => ({ recordFullResourceRefresh: sideEffects.recordRefresh }))
 vi.mock('./promptTemplateHydration', () => ({
@@ -69,6 +89,7 @@ import {
   forceServerDatabaseReplacementRefresh,
   forceServerResourceRefresh,
   refreshServerRealmImportResources,
+  serverResourceInvalidationHooks,
 } from './resourceRefresh'
 import {
   clearAppliedServerResourceRevision,
@@ -78,9 +99,10 @@ import {
   setAppliedServerResourceRevision,
   setCachedServerCommandRevision,
 } from './commands'
-import { getResourceDatabase, replaceResourceDatabase, resetServerResourceState } from './resourceState.svelte'
-import { setResourceWriteGuardEnabled } from '../storage/database.svelte'
+import { charactersResourceState, replaceResourceDatabase, resetServerResourceState } from './resourceState.svelte'
+
 import { selectedCharID } from '../stores.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 function database(characters: Array<{ chaId: string; name: string }>, currentChar = 0) {
   return {
@@ -100,7 +122,6 @@ function database(characters: Array<{ chaId: string; name: string }>, currentCha
 
 beforeEach(() => {
   vi.clearAllMocks()
-  setResourceWriteGuardEnabled(false)
   resetServerResourceState()
   replaceResourceDatabase(
     database(
@@ -129,6 +150,17 @@ beforeEach(() => {
     },
   })
 })
+
+it.each(['idle', 'loading', 'error'] as const)(
+  'does not refresh greeting translations through retained characters while the owner is %s',
+  async (status) => {
+    charactersResourceState.status = status
+
+    await expect(serverResourceInvalidationHooks.refreshGreetingTranslations!('char-a', 5)).resolves.toBe(true)
+
+    expect(sideEffects.refreshGreetingTranslations).not.toHaveBeenCalled()
+  },
+)
 
 describe('Realm import resource refresh', () => {
   it('applies a contiguous character-created event without destructive refresh side effects', async () => {
@@ -170,6 +202,7 @@ describe('Realm import resource refresh', () => {
     expect(sideEffects.resetChatHydration).not.toHaveBeenCalled()
     expect(sideEffects.resetLorebooks).not.toHaveBeenCalled()
     expect(sideEffects.hydrateActiveChat).not.toHaveBeenCalled()
+    expect(sideEffects.hydrateSelectedCharacter).toHaveBeenCalledWith({ supersede: true })
     expect(sideEffects.triggerReattach).not.toHaveBeenCalled()
     expect(sideEffects.recordLorebooks).toHaveBeenCalledTimes(1)
     expect(peekCachedServerCommandRevision()).toBe(21)
@@ -209,12 +242,16 @@ describe('complete server resource refresh', () => {
     expect(get(selectedCharID)).toBe(1)
     expect(sideEffects.resetChatHydration).toHaveBeenCalledTimes(1)
     expect(sideEffects.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
+    expect(sideEffects.hydrateSelectedCharacter).toHaveBeenCalledWith({ supersede: true })
     expect(sideEffects.hydratePromptTemplate).toHaveBeenCalledWith({ force: true, minimumRevision: 5 })
-    expect(sideEffects.setGenerationJobs).toHaveBeenCalledWith([{ chatId: 'chat-b', jobId: 'job-b' }])
+    expect(sideEffects.applyGenerationBootstrap).toHaveBeenCalledWith(
+      expect.objectContaining({ activeGenerationJobs: [{ chatId: 'chat-b', jobId: 'job-b' }] }),
+      'full_resource_refresh',
+    )
     expect(sideEffects.setTranslations).toHaveBeenCalledWith([
       { chatId: 'chat-b', messageId: 'message-b', jobId: 'translation-b', status: 'running' },
     ])
-    expect(sideEffects.setGenerationJobs.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(sideEffects.applyGenerationBootstrap.mock.invocationCallOrder[0]).toBeLessThan(
       sideEffects.triggerReattach.mock.invocationCallOrder[0],
     )
     expect(sideEffects.recordRefresh).toHaveBeenCalledWith('backup-restore', undefined)
@@ -232,6 +269,8 @@ describe('complete server resource refresh', () => {
 
     expect(peekCachedServerCommandRevision()).toBe(3)
     expect(peekAppliedServerResourceRevision()).toBe(3)
+    expect(sideEffects.discardObserverProjection).toHaveBeenCalledOnce()
+    expect(sideEffects.discardObserverProjection).toHaveBeenCalledWith('database-replacement')
   })
 
   it('resets replacement fences after an older in-flight full refresh drains', async () => {
@@ -325,6 +364,7 @@ describe('complete server resource refresh', () => {
     expect(peekAppliedServerResourceRevision()).toBeNull()
     expect(sideEffects.resetChatHydration).not.toHaveBeenCalled()
     expect(sideEffects.hydratePromptTemplate).not.toHaveBeenCalled()
+    expect(sideEffects.hydrateSelectedCharacter).not.toHaveBeenCalled()
     expect(bootstrapApi.fetchReadOnly).not.toHaveBeenCalled()
   })
 

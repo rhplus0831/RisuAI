@@ -22,6 +22,31 @@ describe('parseProxyJobWsEvent', () => {
   it('returns null for invalid input', () => {
     expect(parseProxyJobWsEvent('not-json')).toBeNull()
     expect(parseProxyJobWsEvent(JSON.stringify({ nope: 1 }))).toBeNull()
+    expect(parseProxyJobWsEvent(JSON.stringify({ type: 'unknown' }))).toBeNull()
+  })
+
+  it.each([
+    { type: 'job_accepted', jobId: '' },
+    { type: 'upstream_headers', status: 99, headers: {} },
+    { type: 'upstream_headers', status: 200, headers: { 'x-invalid': 1 } },
+    { type: 'chunk', dataBase64: 'not base64' },
+    { type: 'error', status: '500', message: 'failed' },
+    { type: 'error', status: 500, message: { text: 'failed' } },
+    { type: 'ping', ts: 'now' },
+  ])('rejects malformed $type payloads', (event) => {
+    expect(parseProxyJobWsEvent(JSON.stringify(event))).toBeNull()
+  })
+
+  it('normalizes valid event payloads by discriminator', () => {
+    expect(
+      parseProxyJobWsEvent(
+        JSON.stringify({ type: 'upstream_headers', status: 206, headers: { 'content-type': 'text/plain' } }),
+      ),
+    ).toEqual({ type: 'upstream_headers', status: 206, headers: { 'content-type': 'text/plain' } })
+    expect(parseProxyJobWsEvent(JSON.stringify({ type: 'error', message: 'failed' }))).toEqual({
+      type: 'error',
+      message: 'failed',
+    })
   })
 })
 

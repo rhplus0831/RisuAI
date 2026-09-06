@@ -1,14 +1,14 @@
-import type { Database } from '../../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type { FastifyDatabase as Database } from './serverTypes.js'
 import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
+import type { PromptMessage } from './promptMessage.js'
 
 /**
  * Request budget finalization ported from the SPA's
  * `finalizeRequestBudget.ts`. Re-tokenizes the flattened `OpenAIChat[]`, trims
- * `removable` rows front-to-back until the request fits under `maxContextTokens`,
+ * `removable` rows front-to-back until the request leaves room for `maxResponse`,
  * drops now-empty rows while keeping multimodal-only rows, and clamps the response
- * budget.
+ * budget only when pinned rows prevent reserving it in full.
  *
  * `finalizeRequestBudget` re-tokenizes from scratch; it does **not**
  * consume `preflightTemplateTokens`' output. Finalize is the independent final
@@ -18,17 +18,19 @@ import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
  * history rows `removable: true` in `buildMemoryWindow.ts`). Non-removable
  * rows are pinned and can force an `overflow` result.
  *
- * Divergence from the SPA: the server's `tokenizeChat` is text-only
- * so multimodal rows contribute only their content + overhead here. The
- * multimodal-only survival filter still applies.
+ * `tokenizeChat` includes the baseline's per-attachment multimodal charge. The
+ * multimodal-only survival filter still applies after a removable row's text is
+ * blanked, matching the baseline final re-check.
  */
 
 export type FinalizeRequestBudgetResult =
   | {
       ok: true
-      formated: OpenAIChat[]
+      formated: PromptMessage[]
       inputTokens: number
       outputTokens: number
+      /** True when final-budget trimming omitted a durable chat message. */
+      historyTruncated?: true
     }
   | {
       ok: false
@@ -39,13 +41,15 @@ export type FinalizeRequestBudgetResult =
 export interface FinalizeRequestBudgetInput {
   /** Read for `db.aiModel` → tokenizer config; finalize never expands variables. */
   db: Database
-  formated: OpenAIChat[]
+  formated: PromptMessage[]
   maxContextTokens: number
   maxResponse: number
+  /** Stable message ids belonging to the target chat transcript. */
+  historyMessageIds?: ReadonlySet<string>
 }
 
 export function finalizeRequestBudget(input: FinalizeRequestBudgetInput): FinalizeRequestBudgetResult {
-  const { db, formated, maxContextTokens, maxResponse } = input
+  const { db, formated, maxContextTokens, maxResponse, historyMessageIds } = input
   const { encoding, options } = tokenizerOptionsFromDb(db)
 
   let inputTokens = 0
@@ -54,17 +58,29 @@ export function finalizeRequestBudget(input: FinalizeRequestBudgetInput): Finali
   }
 
   let trimmed = formated
-  if (inputTokens > maxContextTokens) {
+  let historyTruncated = false
+  const targetInputTokens = maxContextTokens - maxResponse
+  if (inputTokens > targetInputTokens) {
     let pointer = 0
-    while (inputTokens > maxContextTokens) {
-      if (pointer >= trimmed.length) {
-        return { ok: false, reason: 'overflow', inputTokens }
-      }
-      if (trimmed[pointer].removable) {
-        inputTokens -= tokenizeChat(trimmed[pointer], encoding, options)
-        trimmed[pointer].content = ''
+    while (inputTokens > targetInputTokens && pointer < trimmed.length) {
+      const candidate = trimmed[pointer]
+      if (candidate.removable) {
+        if (typeof candidate.memo === 'string' && historyMessageIds?.has(candidate.memo)) {
+          historyTruncated = true
+        }
+        const tokensBeforeTrim = tokenizeChat(candidate, encoding, options)
+        candidate.content = ''
+        if (candidate.multimodals?.length) {
+          const tokensAfterTrim = tokenizeChat(candidate, encoding, options)
+          inputTokens -= tokensBeforeTrim - tokensAfterTrim
+        } else {
+          inputTokens -= tokensBeforeTrim
+        }
       }
       pointer++
+    }
+    if (inputTokens > maxContextTokens) {
+      return { ok: false, reason: 'overflow', inputTokens }
     }
     trimmed = trimmed.filter((v) => {
       return v.content !== '' || (v.multimodals && v.multimodals.length > 0)
@@ -76,5 +92,11 @@ export function finalizeRequestBudget(input: FinalizeRequestBudgetInput): Finali
     outputTokens = maxContextTokens - inputTokens
   }
 
-  return { ok: true, formated: trimmed, inputTokens, outputTokens }
+  return {
+    ok: true,
+    formated: trimmed,
+    inputTokens,
+    outputTokens,
+    ...(historyTruncated ? { historyTruncated: true as const } : {}),
+  }
 }

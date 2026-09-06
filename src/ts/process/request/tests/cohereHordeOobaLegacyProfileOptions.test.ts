@@ -25,10 +25,11 @@ vi.mock('../../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {}, getModuleToggles: () => '', getModuleTriggers: () => [] }
 })
 
-import { LLMFormat } from '../../../model/types'
+import { LLMFlags, LLMFormat } from '../../../model/types'
 import { setDatabase, type Database } from '../../../storage/database.svelte'
 import { selectedCharID } from '../../../stores.svelte'
-import { requestChatDataMain } from '../request'
+import { reformater, requestChatDataMain } from '../request'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface PreviewPayload {
   url: string
@@ -196,8 +197,16 @@ function db(overrides: Partial<Database> = {}): Database {
   } as unknown as Database
 }
 
+function staticCompatibilityDb(overrides: Partial<Database>): Database {
+  // Cohere, Horde, and OobaLegacy are retained browser-only provider formats,
+  // so their focused wire fixtures enter through request.ts's named static seam.
+  return db(overrides)
+}
+
 function makeRequest(overrides: Record<string, unknown> = {}) {
   return {
+    // Bypass strict durable-role resolution only for this compatibility suite.
+    staticModel: getDatabase().aiModel,
     formated: [
       { role: 'system' as const, content: 'profile system' },
       { role: 'user' as const, content: 'hello profile' },
@@ -218,7 +227,7 @@ function switchActiveDbDuringRoute(overrides: Partial<Database>): void {
 
 async function preview(overrides: Record<string, unknown> = {}): Promise<PreviewPayload> {
   const result = await requestChatDataMain(makeRequest({ previewBody: true, ...overrides }), 'model')
-  expect(result.type).toBe('success')
+  expect(result.type, JSON.stringify(result)).toBe('success')
   if (typeof result.result !== 'string') throw new Error('Expected preview body string')
   return JSON.parse(result.result) as PreviewPayload
 }
@@ -276,10 +285,21 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+describe('client system-role replacement', () => {
+  it('falls back to user when the configured replacement is empty', () => {
+    const database = db({ systemRoleReplacement: '' as never })
+    setDatabase(database)
+
+    const result = reformater([{ role: 'system', content: 'profile system' }], [] as LLMFlags[], database)
+
+    expect(result).toEqual([{ role: 'user', content: 'system: profile system' }])
+  })
+})
+
 describe('requestCohere profile provider options through requestChatDataMain', () => {
   it('uses reverse_proxy profile URL, key, model, headers, and additional params over flat conflicts', async () => {
     setDatabase(
-      db({
+      staticCompatibilityDb({
         aiModel: 'reverse_proxy',
         subModel: 'reverse_proxy',
         customAPIFormat: LLMFormat.Cohere,
@@ -320,7 +340,7 @@ describe('requestCohere profile provider options through requestChatDataMain', (
 
   it('derives newer Command R safety mode from the profile model id instead of flat aiModel', async () => {
     setDatabase(
-      db({
+      staticCompatibilityDb({
         aiModel: 'cohere-command-r-03-2024',
         subModel: 'cohere-command-r-03-2024',
         cohereAPIKey: 'sk-profile-command-r',
@@ -344,7 +364,7 @@ describe('requestCohere profile provider options through requestChatDataMain', (
 describe('requestOobaLegacy profile provider options through requestChatDataMain', () => {
   it('uses profile URL, key, and runtime fields over flat conflicts', async () => {
     setDatabase(
-      db({
+      staticCompatibilityDb({
         aiModel: 'mancer',
         subModel: 'mancer',
         textgenWebUIBlockingURL: 'https://profile.ooba.example/root/api/v1/blocking',
@@ -377,7 +397,7 @@ describe('requestOobaLegacy profile provider options through requestChatDataMain
 
   it('fails without falling back or fetching when the profile URL is missing', async () => {
     setDatabase(
-      db({
+      staticCompatibilityDb({
         aiModel: 'mancer',
         subModel: 'mancer',
         textgenWebUIBlockingURL: '',
@@ -404,7 +424,7 @@ describe('requestOobaLegacy profile provider options through requestChatDataMain
 
   it('omits X-API-KEY for a blank profile key despite a flat key conflict', async () => {
     setDatabase(
-      db({
+      staticCompatibilityDb({
         aiModel: 'mancer',
         subModel: 'mancer',
         textgenWebUIBlockingURL: 'https://profile-blank-key.ooba.example',
@@ -430,7 +450,7 @@ describe('requestOobaLegacy WebSocket lifecycle', () => {
     FakeWebSocket.instances = []
     vi.stubGlobal('WebSocket', FakeWebSocket)
     setDatabase(
-      db({
+      staticCompatibilityDb({
         aiModel: 'mancer',
         subModel: 'mancer',
         useStreaming: true,
@@ -495,7 +515,7 @@ describe('requestOobaLegacy WebSocket lifecycle', () => {
 describe('requestHorde profile provider options through requestChatDataMain', () => {
   it('uses profile request model and API key over flat conflicts', async () => {
     setDatabase(
-      db({
+      staticCompatibilityDb({
         aiModel: 'horde:::profile/model',
         subModel: 'horde:::profile/model',
         hordeConfig: { apiKey: 'sk-profile-horde', model: '', softPrompt: '' },
@@ -537,7 +557,7 @@ describe('requestHorde profile provider options through requestChatDataMain', ()
 
   it('uses anonymous 0000000000 for a blank profile key despite a flat key conflict', async () => {
     setDatabase(
-      db({
+      staticCompatibilityDb({
         aiModel: 'horde:::blank-key/model',
         subModel: 'horde:::blank-key/model',
         hordeConfig: { apiKey: '', model: '', softPrompt: '' },

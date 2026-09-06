@@ -4,16 +4,27 @@
   import NumberInput from '../UI/GUI/NumberInput.svelte'
   import Button from '../UI/GUI/Button.svelte'
   import { getRequestLog } from 'src/ts/globalApi.svelte'
-  import { alertError, alertMd, alertNormal, alertWait } from 'src/ts/alert'
+  import { alertError, alertMd, beginAlertWait, clearAlertWait } from 'src/ts/alert'
   import Accordion from '../UI/Accordion.svelte'
-  import { getCharToken, getChatToken } from 'src/ts/tokenizer'
+  import DevToolChatTokens from './DevToolChatTokens.svelte'
+  import { getCharToken } from 'src/ts/tokenizer'
+  import { ensureCharacterLorebookHydrated } from 'src/ts/server/chatMessageHydration.svelte'
+  import { isCharacterLorebookMutationReady } from 'src/ts/server/lorebookOwner.svelte'
   import { tokenizePreset } from 'src/ts/process/prompt'
+  import { resolveEffectivePromptTemplate } from '@risuai/shared-core/effective-prompt-template'
 
-  import { getDatabase, type Chat } from 'src/ts/storage/database.svelte'
+  import type { Chat, Database } from 'src/ts/storage/database.svelte'
+  import { getSelectedCharacterOwner, selectCharacterOwner } from 'src/ts/characterState'
+  import {
+    charactersResourceState,
+    collectionsResourceState,
+    getChatMetadataOwnerState,
+    settingsResourceState,
+  } from 'src/ts/server/resourceState.svelte'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import { HardDriveUploadIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
   import { selectSingleFile } from 'src/ts/filePicker'
-  import { doingChat, previewFormated, previewBody, sendChat } from 'src/ts/process/index.svelte'
+  import { previewFormated, previewBody, sendChat } from 'src/ts/process/index.svelte'
   import SelectInput from '../UI/GUI/SelectInput.svelte'
   import { applyChatTemplate, chatTemplates } from 'src/ts/process/templates/chatTemplate'
   import OptionInput from '../UI/GUI/OptionInput.svelte'
@@ -28,21 +39,45 @@
   import CheckInput from '../UI/GUI/CheckInput.svelte'
   import { language } from 'src/lang'
   import { parseDevToolAutopilotImport } from './devToolAutopilotImport'
+  import { findChatGenerationActivity } from 'src/ts/process/generationActivity.svelte'
+  import { coordinateAcceptedChatSend } from 'src/ts/process/acceptedSendCoordinator.svelte'
+  import { canUseGenerationOperationProtocol } from 'src/ts/server/generationOperations'
 
   let previewMode = $state('chat')
   let previewJoin = $state('yes')
   let instructType = $state('chatml')
   let instructCustom = $state('')
+  let promptTemplate = $derived.by(() => {
+    const settings = settingsResourceState.value as Partial<Database>
+    return resolveEffectivePromptTemplate({
+      promptPresets:
+        collectionsResourceState.statuses.promptPresets === 'ready'
+          ? collectionsResourceState.values.promptPresets
+          : [],
+      promptPresetsId:
+        settingsResourceState.standaloneStatuses.promptPresetsId === 'ready' ? settings.promptPresetsId : -1,
+      promptTemplate:
+        collectionsResourceState.statuses.promptTemplate === 'ready'
+          ? collectionsResourceState.values.promptTemplate
+          : undefined,
+    }).promptTemplate
+  })
 
   const preview = async () => {
-    if ($doingChat) {
-      return false
+    const target = captureActiveChatTarget()
+    if (!target || findChatGenerationActivity(target)) return false
+    const waitOwner = beginAlertWait('Loading...')
+    let generated = false
+    try {
+      generated = await sendChat(-1, {
+        preview: previewJoin !== 'prompt',
+        previewPrompt: previewJoin === 'prompt',
+        expectedTarget: target,
+      })
+    } finally {
+      clearAlertWait(waitOwner)
     }
-    alertWait('Loading...')
-    await sendChat(-1, {
-      preview: previewJoin !== 'prompt',
-      previewPrompt: previewJoin === 'prompt',
-    })
+    if (!generated || !isActiveChatTargetFresh(target)) return false
 
     let md = ''
     const styledRole = {
@@ -112,9 +147,30 @@
 
   let autopilot = $state([])
 
+  function currentDevToolCharacter() {
+    const owner = getSelectedCharacterOwner()
+    if (owner || charactersResourceState.status === 'ready') return owner
+    return selectCharacterOwner(charactersResourceState.characters, $selectedCharID)
+  }
+
   function currentDevToolChat(): Chat | undefined {
-    const character = getDatabase().characters?.[$selectedCharID]
-    return character?.chats?.[character.chatPage]
+    const character = currentDevToolCharacter()
+    const chat = character?.chats?.[character.chatPage]
+    if (!chat?.id) return undefined
+
+    return getChatMetadataOwnerState(chat.id)?.chatId === chat.id ? chat : undefined
+  }
+
+  async function currentDevToolCharacterTokens() {
+    const character = currentDevToolCharacter()
+    if (!character) return { persistant: 0, dynamic: 0 }
+    // Capture all text dependencies synchronously for Svelte's await block.
+    const tokenCharacter = { ...character, globalLore: character.globalLore?.map((entry) => ({ ...entry })) ?? [] }
+    if (!isCharacterLorebookMutationReady(character.chaId)) {
+      if (!(await ensureCharacterLorebookHydrated(character.chaId))) throw new Error('Character lore unavailable')
+      tokenCharacter.globalLore = character.globalLore?.map((entry) => ({ ...entry })) ?? []
+    }
+    return getCharToken(tokenCharacter)
   }
 
   function currentScriptstateEntries(): Array<[string, unknown]> {
@@ -151,37 +207,39 @@
   </div>
 </Accordion>
 
-<Accordion styled name={'Tokens'}>
+<Accordion styled name={language.tokens}>
   <div class="rounded-md border border-darkborderc grid grid-cols-2 gap-2 p-2">
-    {#await getCharToken(getDatabase().characters[$selectedCharID])}
-      <span>Character Persistant</span>
-      <div class="p-2 text-center">Loading...</div>
-      <span>Character Dynamic</span>
-      <div class="p-2 text-center">Loading...</div>
+    {#await currentDevToolCharacterTokens()}
+      <span>{language.tokenCounts.characterPersistent}</span>
+      <div class="p-2 text-center">{language.loading}...</div>
+      <span>{language.tokenCounts.characterAll}</span>
+      <div class="p-2 text-center">{language.loading}...</div>
     {:then token}
-      <span>Character Persistant</span>
-      <div class="p-2 text-center">{token.persistant} Tokens</div>
-      <span>Character Dynamic</span>
-      <div class="p-2 text-center">{token.dynamic} Tokens</div>
+      <span>{language.tokenCounts.characterPersistent}</span>
+      <div class="p-2 text-center">{token.persistant} {language.tokens}</div>
+      <span>{language.tokenCounts.characterAll}</span>
+      <div class="p-2 text-center">{token.dynamic} {language.tokens}</div>
+    {:catch}
+      <span>{language.tokenCounts.characterPersistent}</span>
+      <div class="p-2 text-center">{language.tokenCounts.unavailable}</div>
+      <span>{language.tokenCounts.characterAll}</span>
+      <div class="p-2 text-center">{language.tokenCounts.unavailable}</div>
     {/await}
-    {#await getChatToken(getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage])}
-      <span>Current Chat</span>
-      <div class="p-2 text-center">Loading...</div>
-    {:then token}
-      <span>Current Chat</span>
-      <div class="p-2 text-center">{token} Tokens</div>
-    {/await}
-    {#if getDatabase().promptTemplate}
-      {#await tokenizePreset(getDatabase().promptTemplate)}
-        <span>Prompt Template</span>
-        <div class="p-2 text-center">Loading...</div>
+    <DevToolChatTokens character={currentDevToolCharacter()} chat={currentDevToolChat()} />
+    {#if promptTemplate}
+      {#await tokenizePreset(promptTemplate)}
+        <span>{language.tokenCounts.promptTemplate}</span>
+        <div class="p-2 text-center">{language.loading}...</div>
       {:then token}
-        <span>Prompt Template</span>
-        <div class="p-2 text-center">{token} Tokens</div>
+        <span>{language.tokenCounts.promptTemplate}</span>
+        <div class="p-2 text-center">{token} {language.tokens}</div>
+      {:catch}
+        <span>{language.tokenCounts.promptTemplate}</span>
+        <div class="p-2 text-center">{language.tokenCounts.unavailable}</div>
       {/await}
     {/if}
   </div>
-  <span class="text-sm text-textcolor2">This is a estimate. The actual token count may be different.</span>
+  <span class="text-sm text-textcolor2">{language.tokenCounts.estimate}</span>
 </Accordion>
 
 <Accordion styled name={'Autopilot'}>
@@ -234,35 +292,25 @@
   <Button
     className="mt-2"
     onclick={async () => {
-      if ($doingChat) {
-        return
-      }
       const activeTarget = captureActiveChatTarget()
-      if (!activeTarget) {
-        return
-      }
+      if (!activeTarget || findChatGenerationActivity(activeTarget)) return
       for (let i = 0; i < autopilot.length; i++) {
-        if ($doingChat || !isActiveChatTargetFresh(activeTarget)) {
+        if (findChatGenerationActivity(activeTarget) || !isActiveChatTargetFresh(activeTarget)) {
           return
         }
-        const appended = await appendCurrentChatUserMessageForSend(autopilot[i], {
-          expectedTarget: activeTarget,
-        })
-        if (!isActiveChatTargetFresh(activeTarget)) {
-          return
-        }
-        if (appended.status === 'queued') {
-          alertNormal(language.pendingChatMessageQueued)
-          return
-        }
-        if (appended.status !== 'ok') {
-          alertError(appended.error)
-          return
-        }
-        if (!isActiveChatTargetFresh(activeTarget)) {
-          return
-        }
-        await sendChat(i)
+        const outcome = canUseGenerationOperationProtocol()
+          ? await coordinateAcceptedChatSend({ target: activeTarget, message: autopilot[i] })
+          : await (async () => {
+              const appended = await appendCurrentChatUserMessageForSend(autopilot[i], {
+                expectedTarget: activeTarget,
+              })
+              if (appended.status === 'error') {
+                alertError(appended.error)
+                return { status: 'append_failed' as const }
+              }
+              return coordinateAcceptedChatSend({ target: activeTarget, append: appended })
+            })()
+        if (outcome.status !== 'generated') return
         if (!isActiveChatTargetFresh(activeTarget)) {
           return
         }

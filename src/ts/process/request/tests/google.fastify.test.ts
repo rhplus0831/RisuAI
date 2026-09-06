@@ -26,10 +26,11 @@ vi.mock('../../modules', async (importActual) => {
 })
 
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../model/modelProfileResolver'
-import { LLMFormat, LLMProvider, LLMTokenizer, type LLMModel } from '../../../model/types'
-import { getDatabase, setDatabase, type Database } from '../../../storage/database.svelte'
+import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, type LLMModel } from '../../../model/types'
+import { setDatabase, type Database } from '../../../storage/database.svelte'
 import type { RequestDataArgumentExtended } from '../request'
 import { requestGoogleCloudVertex } from '../google'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const originalWindowCrypto = window.crypto
 
@@ -172,6 +173,7 @@ function geminiModelInfo(overrides: Partial<LLMModel> = {}): LLMModel {
 
 function makeVertexArg(): RequestDataArgumentExtended {
   return {
+    database: getDatabase(),
     bias: {},
     formated: [{ role: 'user', content: 'hello' }],
     aiModel: 'gemini-1.5-pro',
@@ -186,6 +188,7 @@ function makeVertexArg(): RequestDataArgumentExtended {
 
 function makeProfileArg(profile: ResolvedModelProfile, modelInfo: Partial<LLMModel> = {}): RequestDataArgumentExtended {
   return {
+    database: getDatabase(),
     bias: {},
     formated: [{ role: 'user', content: 'hello' }],
     aiModel: profile.modelId,
@@ -225,6 +228,119 @@ describe('requestGoogleCloudVertex in Fastify mode', () => {
     expect(db.vertexAccessTokenExpires).toBe(0)
   })
 
+  it.each([
+    {
+      model: 'gemini-3.6-flash',
+      reasoningEffort: -1,
+      flags: [LLMFlags.geminiThinking],
+      expectedLevel: 'minimal',
+    },
+    {
+      model: 'gemini-3.1-pro-preview',
+      reasoningEffort: -1,
+      flags: [LLMFlags.geminiThinking, LLMFlags.geminiThinkingNoMinimal],
+      expectedLevel: 'low',
+    },
+    {
+      model: 'gemini-3-flash-preview',
+      reasoningEffort: 1,
+      flags: [LLMFlags.geminiThinking],
+      expectedLevel: 'medium',
+    },
+  ])('maps $model reasoning effort to thinkingLevel $expectedLevel', async (testCase) => {
+    seedDb({
+      aiModel: testCase.model,
+      reasoningEffort: testCase.reasoningEffort,
+      google: { accessToken: 'studio-key', projectId: 'studio-project' },
+    } as Partial<Database>)
+
+    const result = await requestGoogleCloudVertex({
+      database: getDatabase(),
+      bias: {},
+      formated: [{ role: 'user', content: 'hello' }],
+      aiModel: testCase.model,
+      key: 'studio-key',
+      maxTokens: 32,
+      useStreaming: false,
+      previewBody: true,
+      mode: 'model',
+      modelInfo: geminiModelInfo({
+        id: testCase.model,
+        internalID: testCase.model,
+        flags: testCase.flags,
+        parameters: ['reasoning_effort'],
+      }) as RequestDataArgumentExtended['modelInfo'],
+    } as RequestDataArgumentExtended)
+
+    expect(result.type).toBe('success')
+    if (result.type !== 'success' || typeof result.result !== 'string') throw new Error('Expected preview payload')
+    const payload = JSON.parse(result.result) as { body: { generation_config: Record<string, unknown> } }
+    expect(payload.body.generation_config.thinkingConfig).toEqual({
+      thinkingLevel: testCase.expectedLevel,
+      includeThoughts: true,
+    })
+    expect(payload.body.generation_config).not.toHaveProperty('thinkingBudget')
+  })
+
+  it('keeps Gemini 2.5 thinking tokens as a wrapped thinkingBudget', async () => {
+    seedDb({
+      aiModel: 'gemini-2.5-flash',
+      thinkingTokens: 256,
+      google: { accessToken: 'studio-key', projectId: 'studio-project' },
+    } as Partial<Database>)
+
+    const result = await requestGoogleCloudVertex({
+      database: getDatabase(),
+      bias: {},
+      formated: [{ role: 'user', content: 'hello' }],
+      aiModel: 'gemini-2.5-flash',
+      key: 'studio-key',
+      maxTokens: 32,
+      useStreaming: false,
+      previewBody: true,
+      mode: 'model',
+      modelInfo: geminiModelInfo({
+        id: 'gemini-2.5-flash',
+        internalID: 'gemini-2.5-flash',
+        flags: [LLMFlags.geminiThinking],
+        parameters: ['thinking_tokens'],
+      }) as RequestDataArgumentExtended['modelInfo'],
+    } as RequestDataArgumentExtended)
+
+    expect(result.type).toBe('success')
+    if (result.type !== 'success' || typeof result.result !== 'string') throw new Error('Expected preview payload')
+    const payload = JSON.parse(result.result) as { body: { generation_config: Record<string, unknown> } }
+    expect(payload.body.generation_config.thinkingConfig).toEqual({
+      thinkingBudget: 256,
+      includeThoughts: true,
+    })
+    expect(payload.body.generation_config).not.toHaveProperty('thinkingBudget')
+  })
+
+  it.each(['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.6-flash'])(
+    'routes %s through the global Vertex endpoint',
+    async (model) => {
+      seedDb({ aiModel: model, vertexRegion: 'us-central1' } as Partial<Database>)
+
+      const result = await requestGoogleCloudVertex({
+        ...makeVertexArg(),
+        aiModel: model,
+        previewBody: true,
+        modelInfo: geminiModelInfo({
+          id: model,
+          internalID: model,
+          provider: LLMProvider.VertexAI,
+          format: LLMFormat.VertexAIGemini,
+        }) as RequestDataArgumentExtended['modelInfo'],
+      } as RequestDataArgumentExtended)
+
+      expect(result.type).toBe('success')
+      if (result.type !== 'success' || typeof result.result !== 'string') throw new Error('Expected preview payload')
+      const payload = JSON.parse(result.result) as { url: string }
+      expect(payload.url).toContain('https://aiplatform.googleapis.com/v1/projects/vertex-project/locations/global/')
+    },
+  )
+
   it('uses Google AI Studio profile API key and stripped request model over conflicting flat values', async () => {
     seedDb({
       aiModel: 'gemini-flat-model',
@@ -237,6 +353,21 @@ describe('requestGoogleCloudVertex in Fastify mode', () => {
         ...getDatabase(),
         aiModel: 'gemini-profile-model',
         google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
+        providerCredentials: [
+          { id: 'google-profile-credential', name: 'Google profile', type: 'apiKey', apiKey: 'profile-google-key' },
+        ],
+        modelProfiles: [
+          {
+            id: 'google-profile',
+            name: 'Google profile',
+            modelId: 'gemini-profile-model',
+            providerOptions: {
+              credentialId: 'google-profile-credential',
+              requestModel: 'gemini-profile-wire-model',
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'google-profile' } },
       } as Database,
       lookupModelInfo: (_database, id) =>
         geminiModelInfo({
@@ -287,6 +418,30 @@ describe('requestGoogleCloudVertex in Fastify mode', () => {
         vertexClientEmail: 'svc@profile-project.iam.gserviceaccount.com',
         vertexPrivateKey: '-----BEGIN PRIVATE KEY-----AQID-----END PRIVATE KEY-----',
         vertexAccessToken: 'profile-cached-token-not-a-credential',
+        providerCredentials: [
+          {
+            id: 'vertex-profile-credential',
+            name: 'Vertex profile',
+            type: 'vertexServiceAccount',
+            vertex: {
+              clientEmail: 'svc@profile-project.iam.gserviceaccount.com',
+              privateKey: '-----BEGIN PRIVATE KEY-----AQID-----END PRIVATE KEY-----',
+            },
+          },
+        ],
+        modelProfiles: [
+          {
+            id: 'vertex-profile',
+            name: 'Vertex profile',
+            modelId: 'gemini-profile-vertex',
+            providerOptions: {
+              credentialId: 'vertex-profile-credential',
+              requestModel: 'gemini-profile-vertex-wire-model',
+              vertex: { projectId: 'profile-project', region: 'us-central1' },
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'vertex-profile' } },
       } as Database,
       lookupModelInfo: (_database, id) =>
         geminiModelInfo({

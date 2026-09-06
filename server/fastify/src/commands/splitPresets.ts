@@ -10,21 +10,23 @@ import {
   type ModelPresetRecord,
   type PromptPresetRecord,
   databaseKeyForModelPresetField,
+  promptPresetRecommendedModelPresetId,
   promptPresetOverridesModelParameters,
   resolvePromptPresetRegexField,
-} from '../../../../src/ts/presetSplit.js'
+} from '@risuai/shared-core/preset-split'
 import { MASKED_PROVIDER_SECRET } from '../providerSecrets.js'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 import {
   normalizeLegacyFallbackModels,
   normalizeLegacySeperateModels,
   normalizeModelRoleOverrides,
-} from '../../../../src/ts/model/modelRoles.js'
+} from '@risuai/shared-core/model-roles'
 import {
+  normalizeModelProfileOrder,
   normalizeModelRuntimeDefaults,
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
-} from '../../../../src/ts/model/modelProfileRecords.js'
+} from '@risuai/shared-core/model-profile-records'
 import { normalizePromptTemplateValue } from './prompts.js'
 
 type JsonRecord = Record<string, unknown>
@@ -95,8 +97,24 @@ export function readModelPresetPatch(input: JsonRecord): JsonRecord {
 
 export function readPromptPresetPatch(input: JsonRecord): JsonRecord {
   const patch = readSplitPresetPatch(input, 'promptPreset')
+  validatePromptPresetArchived(patch)
+  validatePromptPresetRecommendedModelPresetField(patch)
   normalizePromptPresetPatchAliases(patch)
   return patch
+}
+
+export function validatePromptPresetRecommendedModelPreset(
+  preset: JsonRecord,
+  modelPresets: readonly ModelPresetRecord[],
+  label = 'promptPreset',
+): void {
+  validatePromptPresetRecommendedModelPresetField(preset, label)
+  const recommendedModelPresetId = promptPresetRecommendedModelPresetId(preset)
+  if (recommendedModelPresetId && !modelPresets.some((modelPreset) => modelPreset.id === recommendedModelPresetId)) {
+    throw new ValidationError(
+      `Unknown model preset id in ${label}.recommendedModelPresetId: ${recommendedModelPresetId}`,
+    )
+  }
 }
 
 export function readModelPresetId(value: unknown, label = 'modelPresetId'): string {
@@ -304,6 +322,10 @@ function createSplitPresetRecord(
   preset.name ??= fallbackName
   normalizeSplitPresetRoleAdjacentFields(preset)
   normalizePromptPresetPromptTemplate(label, preset)
+  if (label === 'promptPreset') {
+    validatePromptPresetArchived(preset)
+    validatePromptPresetRecommendedModelPresetField(preset)
+  }
   validateJsonValue(label, preset)
   return preset
 }
@@ -328,6 +350,25 @@ function normalizePromptPresetPromptTemplate(
 function normalizePromptPresetPatchAliases(patch: JsonRecord): void {
   if (Object.prototype.hasOwnProperty.call(patch, 'presetRegex')) {
     patch.regex = []
+  }
+}
+
+function validatePromptPresetArchived(record: JsonRecord): void {
+  if (record.archived !== undefined && typeof record.archived !== 'boolean') {
+    throw new ValidationError('promptPreset.archived must be a boolean')
+  }
+}
+
+function validatePromptPresetRecommendedModelPresetField(record: JsonRecord, label = 'promptPreset'): void {
+  if (
+    Object.prototype.hasOwnProperty.call(record, 'recommendedModelPresetId') &&
+    record.recommendedModelPresetId !== null &&
+    typeof record.recommendedModelPresetId !== 'string'
+  ) {
+    throw new ValidationError(`${label}.recommendedModelPresetId must be a string or null`)
+  }
+  if (typeof record.recommendedModelPresetId === 'string' && record.recommendedModelPresetId.trim() === '') {
+    throw new ValidationError(`${label}.recommendedModelPresetId must be non-empty or null`)
   }
 }
 
@@ -370,7 +411,11 @@ function validateFullSplitPresetIdList<T extends { id: string }>(
 function applySplitPreset(database: JsonRecord, preset: JsonRecord, keys: ReadonlyArray<[string, string]>): void {
   for (const [presetKey, databaseKey] of keys) {
     if (Object.prototype.hasOwnProperty.call(preset, presetKey)) {
-      database[databaseKey] = normalizeSplitPresetAppliedValue(databaseKey, cloneJson(preset[presetKey]))
+      database[databaseKey] = normalizeSplitPresetAppliedValue(
+        databaseKey,
+        cloneJson(preset[presetKey]),
+        normalizeModelProfiles(database.modelProfiles),
+      )
     }
   }
 }
@@ -379,6 +424,7 @@ function normalizeSplitPresetRoleAdjacentFields(record: JsonRecord): void {
   for (const key of [
     'modelRoles',
     'modelProfiles',
+    'modelProfileOrder',
     'modelRoleProfiles',
     'modelRuntimeDefaults',
     'seperateModels',
@@ -386,14 +432,19 @@ function normalizeSplitPresetRoleAdjacentFields(record: JsonRecord): void {
     'seperateParameters',
   ]) {
     if (Object.prototype.hasOwnProperty.call(record, key)) {
-      record[key] = normalizeSplitPresetAppliedValue(key, record[key])
+      record[key] = normalizeSplitPresetAppliedValue(key, record[key], normalizeModelProfiles(record.modelProfiles))
     }
   }
 }
 
-function normalizeSplitPresetAppliedValue(databaseKey: string, value: unknown): unknown {
+function normalizeSplitPresetAppliedValue(
+  databaseKey: string,
+  value: unknown,
+  profiles = normalizeModelProfiles(undefined),
+): unknown {
   if (databaseKey === 'modelRoles') return normalizeModelRoleOverrides(value)
   if (databaseKey === 'modelProfiles') return normalizeModelProfiles(value)
+  if (databaseKey === 'modelProfileOrder') return normalizeModelProfileOrder(value, profiles)
   if (databaseKey === 'modelRoleProfiles') return normalizeModelRoleProfiles(value)
   if (databaseKey === 'modelRuntimeDefaults') return normalizeModelRuntimeDefaults(value)
   if (databaseKey === 'seperateModels') return normalizeLegacySeperateModels(value)

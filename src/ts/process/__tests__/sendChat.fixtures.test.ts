@@ -19,6 +19,10 @@ vi.mock('../request/durableGeneration', async (importActual) => {
     resolveDurableGeneration: () => ({ type: 'non-durable' as const, reason: 'test' }),
   }
 })
+vi.mock('../../server/commands', async (importActual) => {
+  const actual = await importActual<typeof import('../../server/commands')>()
+  return { ...actual, canUseServerCommands: () => false }
+})
 
 // fastifyStorage.getNodeServerProxyAuth touches indexedDB which is unavailable
 // in the jsdom test environment. Stub it to prevent the ReferenceError.
@@ -49,69 +53,66 @@ vi.mock('../memory/hypav3', async (importActual) => {
 // editRequest marker hook.
 vi.mock('../scriptings', () => import('../__fixtures__/mocks/scriptings'))
 
-// triggers.runTrigger gets called with mode='start' at the top of the
-// history window. Existing fixtures have either no triggerscript or one
-// targeting 'editRequest', so the real impl correctly returns null for
-// them and they're unaffected. The start-trigger-control + start-trigger-stop
-// fixtures use a marker in triggerscript[0].comment to dispatch through the
-// override below. Other runTrigger call sites (output, manual, display,
-// request, editRequest) also flow through here; they continue to hit the
-// real impl whenever the marker check misses.
-vi.mock('../triggers', async (importActual) => {
-  const actual = await importActual<typeof import('../triggers')>()
-  return {
-    ...actual,
-    runTrigger: async (
-      char: { triggerscript?: Array<{ type?: string; comment?: string }> },
-      mode: string,
-      arg: { chat?: { message?: Array<unknown>; [k: string]: unknown } },
-    ) => {
-      const scripts = (char.triggerscript ?? []).filter((s) => s.type === mode)
-      if (scripts.length === 0) return null
-      const marker = scripts[0]?.comment ?? ''
-      if (mode === 'start' && marker === '__test_start_mutate') {
-        const baseChat = (arg.chat ?? { message: [] }) as {
-          message: unknown[]
-          [k: string]: unknown
-        }
-        const mutatedChat = {
-          ...baseChat,
-          message: [
-            ...(baseChat.message ?? []),
-            {
-              role: 'user',
-              data: '[trigger-injected]',
-              chatId: 'msg-trigger-injected',
-              time: 0,
-            },
-          ],
-        }
-        return {
-          additonalSysPrompt: { start: '', historyend: '', promptend: '' },
-          chat: mutatedChat,
-          tokens: 25,
-          stopSending: false,
-          sendAIprompt: false,
-        }
+// Importing the real trigger module from this mock re-enters the sendChat module
+// graph through command.ts before Vitest can install the override. Keep the
+// fixture double self-contained: only the two marker scenarios need a result;
+// all other runTrigger modes are inert in this corpus.
+vi.mock('../triggers', () => ({
+  clearManualTriggerAbortController: () => {},
+  createManualTriggerAbortController: () => new AbortController(),
+  runTrigger: async (
+    char: { triggerscript?: Array<{ type?: string; comment?: string }> },
+    mode: string,
+    arg: { chat?: { message?: Array<unknown>; [k: string]: unknown } },
+  ) => {
+    const scripts = (char.triggerscript ?? []).filter((s) => s.type === mode)
+    if (scripts.length === 0) return null
+    const marker = scripts[0]?.comment ?? ''
+    if (mode === 'start' && marker === '__test_start_mutate') {
+      const baseChat = (arg.chat ?? { message: [] }) as {
+        message: unknown[]
+        [k: string]: unknown
       }
-      if (mode === 'start' && marker === '__test_start_stop') {
-        return {
-          additonalSysPrompt: { start: '', historyend: '', promptend: '' },
-          chat: arg.chat,
-          tokens: 0,
-          stopSending: true,
-          sendAIprompt: false,
-        }
+      baseChat.message.push({
+        role: 'user',
+        data: '[trigger-injected]',
+        chatId: 'msg-trigger-injected',
+        time: 0,
+      })
+      return {
+        additonalSysPrompt: { start: '', historyend: '', promptend: '' },
+        chat: baseChat,
+        tokens: 25,
+        stopSending: false,
+        sendAIprompt: false,
       }
-      return null
-    },
-  }
+    }
+    if (mode === 'start' && marker === '__test_start_stop') {
+      return {
+        additonalSysPrompt: { start: '', historyend: '', promptend: '' },
+        chat: arg.chat,
+        tokens: 0,
+        stopSending: true,
+        sendAIprompt: false,
+      }
+    }
+    return null
+  },
+}))
+
+// The package's Node entry eagerly loads onnxruntime-node, whose native addon
+// cannot self-register in a second worker thread when the warm Vitest context
+// reruns this suite. The fixtures only need the browser-safe Gemma tokenizer,
+// so expose that implementation without evaluating the Node entrypoint.
+vi.mock('@huggingface/transformers', async () => {
+  const packageEntry = import.meta.resolve('@huggingface/transformers')
+  const browserEntryUrl = new URL('./transformers.web.js', packageEntry).href
+  const { GemmaTokenizer } = await import(/* @vite-ignore */ browserEntryUrl)
+  return { GemmaTokenizer }
 })
 
-// transformers.runImageEmbedding lazily imports @huggingface/transformers,
-// which we don't want vitest to pull in. The history-media-fallback fixture
-// exercises the no-image-input caption path, so we replace just that export
-// and preserve everything else via importActual.
+// The history-media-fallback fixture exercises the no-image-input caption
+// path, so replace runImageEmbedding and preserve the remaining local module.
 vi.mock('../transformers', async (importActual) => {
   const actual = await importActual<typeof import('../transformers')>()
   return {

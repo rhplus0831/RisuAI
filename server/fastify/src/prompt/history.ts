@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto'
-import type { Chat, Message, character } from '../../../../src/ts/storage/database.svelte'
-import type { MultiModal, OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type { FastifyChat as Chat, FastifyCharacter as character, FastifyMessage as Message } from './serverTypes.js'
 import { expandVariables, type ExpandContext } from './variables.js'
-import { processScriptAsync } from './scripts.js'
+import { processScriptAsync, type ScriptInjectMutation, type ScriptMutationHooks } from './scripts.js'
 import { getDepthPrompts, resolvePosition, type LoreEntryActive, type LorebookActivationReport } from './lorebook.js'
 import { tokenizeChat } from './tokens.js'
-import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
+import { ensureTokenizerLoadedForDb, tokenizerOptionsFromDb } from './tokenizerConfig.js'
 import { runStartTrigger, type TriggerRunResult } from './triggers.js'
 import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
 import { buildPromptAssetTable, type PromptAssetTable } from './promptAssets.js'
+import type { PromptMessage, PromptMultimodal } from './promptMessage.js'
 
 type MaybePromise<T> = T | Promise<T>
 
@@ -30,9 +30,10 @@ type MaybePromise<T> = T | Promise<T>
  *   - First message and per-message `sendName` wrapper (gated by
  *     `usingPromptTemplate && db.promptSettings.sendName`). The first
  *     message gets a `${char.name}: ` prefix and `attr: ['nameAdded']`.
- *     Per-message bodies get wrapped in
- *     `<{{char}}'s Message>\n{{slot}}\n</{{char}}'s Message>` with
- *     `{{char}}` resolved against the active `currentChar` (matches the
+ *     Per-message bodies use `db.groupTemplate` when present, otherwise
+ *     `<{{char}}'s Message>\n{{slot}}\n</{{char}}'s Message>`, and every
+ *     wrapped row uses `db.groupOtherBotRole` (normally defaulted to `user`).
+ *     `{{char}}` is resolved against the active `currentChar` (matches the
  *     SPA's effective behavior — the `chara: msg.saying` override at
  *     formatHistoryMessage.ts is shadowed by the cbs `char` callback
  *     reading currentChar from scope first; see cbs.ts).
@@ -81,8 +82,8 @@ type MaybePromise<T> = T | Promise<T>
  * config (encoding, per-message overhead, name accounting) is derived
  * from `db.aiModel` the same way `sendChatContext.ts` does:
  * `gpt*` → overhead 5, `useName: 'noName'`; everything else → overhead
- * 3, `useName: 'name'`. `encodingForModel` then picks `o200k_base` vs
- * `cl100k_base`.
+ * 3, `useName: 'name'`. `tokenizerOptionsFromDb` resolves the portable
+ * tokenizer family through the server-safe model catalog.
  *
  * Start-trigger handoff. After the first-message
  * push, `buildHistoryWindow` runs `runStartTrigger` (the `triggers.ts`
@@ -104,14 +105,20 @@ export interface AssetLookup {
   /** Char + module asset rows built for this assembly/history walk. */
   assetTable?: PromptAssetTable
   /** Resolves an inlay id from `{{inlay/inlayed/inlayeddata::id}}`. */
-  getInlay?(id: string): MaybePromise<MultiModal | undefined>
+  getInlay?(id: string): MaybePromise<PromptMultimodal | undefined>
   /** Resolves an `{{asset_prompt::name}}` against char + module assets. */
-  getAsset?(name: string): MaybePromise<MultiModal | undefined>
+  getAsset?(name: string): MaybePromise<PromptMultimodal | undefined>
   /** Resolves the `{{asset_prompt::icon}}` fallback. */
-  getCharIcon?(): MaybePromise<MultiModal | undefined>
+  getCharIcon?(): MaybePromise<PromptMultimodal | undefined>
 }
 
 export const NO_ASSETS: AssetLookup = {}
+
+export interface PromptAssetDropDiagnostic {
+  name: string
+  reference?: string
+  reason: 'metadata_missing' | 'bytes_missing'
+}
 
 /**
  * The `editprocess` history-edit seam. Runs over each first-message /
@@ -134,7 +141,7 @@ const ASSET_PROMPT_RE = /\{\{asset_?prompt::(.+?)\}\}/gimsu
  * `video` and `audio` inlays cap at one entry total
  * (`formatHistoryMessage.ts`). Other types append freely.
  */
-function pushMultimodal(arr: MultiModal[], m: MultiModal): void {
+function pushMultimodal(arr: PromptMultimodal[], m: PromptMultimodal): void {
   if (m.type === 'video' || m.type === 'audio') {
     if (arr.length === 0) arr.push(m)
     return
@@ -143,15 +150,15 @@ function pushMultimodal(arr: MultiModal[], m: MultiModal): void {
 }
 
 const SEND_NAME_WRAPPER = `<{{char}}'s Message>\n{{slot}}\n</{{char}}'s Message>`
-const THOUGHTS_RE = /<Thoughts>(.+?)<\/Thoughts>/gms
+const THOUGHTS_RE = /<Thoughts>(.+)<\/Thoughts>/gms
 
-export function exampleMessage(ctx: ExpandContext, char: character): OpenAIChat[] {
+export function exampleMessage(ctx: ExpandContext, char: character): PromptMessage[] {
   const raw = char.exampleMessage ?? ''
   if (raw === '') return []
 
   const lines = raw.split('\n')
-  const collected: OpenAIChat[] = []
-  let current: OpenAIChat | null = null
+  const collected: PromptMessage[] = []
+  let current: PromptMessage | null = null
 
   const flush = () => {
     if (current) collected.push(current)
@@ -190,7 +197,7 @@ export function exampleMessage(ctx: ExpandContext, char: character): OpenAIChat[
   flush()
 
   return collected.map((entry) => {
-    const expanded: OpenAIChat = {
+    const expanded: PromptMessage = {
       role: entry.role,
       content: expandVariables(entry.content, { ...ctx, chara: char }).text,
     }
@@ -220,9 +227,9 @@ async function processInlays(
   text: string,
   role: Message['role'],
   lookup: AssetLookup,
-): Promise<{ text: string; multimodals: MultiModal[] }> {
+): Promise<{ text: string; multimodals: PromptMultimodal[] }> {
   let formatted = text
-  const multimodals: MultiModal[] = []
+  const multimodals: PromptMultimodal[] = []
 
   if (role === 'char') {
     const ids: string[] = []
@@ -251,18 +258,34 @@ async function processAssetPrompts(
   text: string,
   assetTable: PromptAssetTable,
   lookup: AssetLookup,
-): Promise<{ text: string; multimodals: MultiModal[] }> {
-  const multimodals: MultiModal[] = []
+  iconReference: string | undefined,
+  diagnostics: PromptAssetDropDiagnostic[],
+): Promise<{ text: string; multimodals: PromptMultimodal[] }> {
+  const multimodals: PromptMultimodal[] = []
   const matches = Array.from(text.matchAll(ASSET_PROMPT_RE))
   for (const match of matches) {
     const name = match[1]
     const asset = assetTable.find((v) => v[0] === name)
     if (asset) {
       const resolved = await lookup.getAsset?.(name)
-      if (resolved) multimodals.push(resolved)
+      if (resolved) {
+        multimodals.push(resolved)
+      } else {
+        diagnostics.push({ name, reference: asset[1], reason: 'bytes_missing' })
+      }
     } else if (name === 'icon') {
       const resolved = await lookup.getCharIcon?.()
-      if (resolved) multimodals.push(resolved)
+      if (resolved) {
+        multimodals.push(resolved)
+      } else {
+        diagnostics.push({
+          name,
+          ...(iconReference ? { reference: iconReference } : {}),
+          reason: iconReference ? 'bytes_missing' : 'metadata_missing',
+        })
+      }
+    } else {
+      diagnostics.push({ name, reason: 'metadata_missing' })
     }
   }
   const formatted = text.replace(ASSET_PROMPT_RE, '')
@@ -280,8 +303,11 @@ async function formatHistoryMessage(
   assetLookup: AssetLookup,
   assetTable: PromptAssetTable,
   editProcess: EditProcessHook,
+  assetDiagnostics: PromptAssetDropDiagnostic[],
   preparedSendNameWrapper?: string,
-): Promise<OpenAIChat> {
+  sendNameRole?: PromptMessage['role'],
+  scriptMutationHooks?: ScriptMutationHooks,
+): Promise<PromptMessage> {
   const db = ctx.database
   const maxThoughtDepth = db.promptSettings?.maxThoughtTagDepth ?? -1
 
@@ -290,6 +316,7 @@ async function formatHistoryMessage(
     ? rawData
     : expandVariables(rawData, {
         ...ctx,
+        chatID: index,
         chara: currentChar,
         role: msg.role,
       }).text
@@ -306,11 +333,12 @@ async function formatHistoryMessage(
     { chatRole: msg.role },
     index,
     currentChat,
+    scriptMutationHooks,
   )
 
   const memo = msg.chatId || randomUUID()
 
-  const multimodals: MultiModal[] = []
+  const multimodals: PromptMultimodal[] = []
 
   const inlayResult = await processInlays(formatted, msg.role, assetLookup)
   formatted = inlayResult.text
@@ -323,12 +351,12 @@ async function formatHistoryMessage(
   const { content: postThoughts, thoughts } = extractThoughts(formatted, index, totalCount, maxThoughtDepth)
   formatted = postThoughts
 
-  const assetResult = await processAssetPrompts(formatted, assetTable, assetLookup)
+  const assetResult = await processAssetPrompts(formatted, assetTable, assetLookup, currentChar.image, assetDiagnostics)
   formatted = assetResult.text
   for (const m of assetResult.multimodals) pushMultimodal(multimodals, m)
 
-  const chat: OpenAIChat = {
-    role: msg.role === 'user' ? 'user' : 'assistant',
+  const chat: PromptMessage = {
+    role: sendNameRole ?? (msg.role === 'user' ? 'user' : 'assistant'),
     content: formatted,
     memo,
   }
@@ -338,7 +366,7 @@ async function formatHistoryMessage(
 }
 
 export interface HistoryWindowResult {
-  messages: OpenAIChat[]
+  messages: PromptMessage[]
   /**
    * Sum of `tokenizeChat` over every emitted row plus the depth-prompt
    * preflight when `report` is provided and the start trigger's
@@ -377,6 +405,17 @@ export interface HistoryWindowResult {
    * message array.
    */
   preparedDepthPrompts: PreparedDepthPrompt[]
+  /** Prompt assets omitted while preserving the text-only history row. */
+  assetDiagnostics: PromptAssetDropDiagnostic[]
+  /** Identity-addressed transcript rewrites caused only by matched `@@inject` scripts. */
+  injectMutations: ScriptInjectMutation[]
+}
+
+function groupOtherBotRole(value: unknown): PromptMessage['role'] {
+  if (value === 'user' || value === 'assistant' || value === 'system') return value
+  if (value === undefined || value === null || value === '') return 'user'
+  // Baseline's switch fell back to assistant for an invalid persisted value.
+  return 'assistant'
 }
 
 export interface PreparedDepthPrompt {
@@ -411,19 +450,23 @@ export async function buildHistoryWindow(
   editProcess: EditProcessHook = IDENTITY_EDIT_PROCESS,
   promptAssetTable?: PromptAssetTable,
 ): Promise<HistoryWindowResult> {
+  await ensureTokenizerLoadedForDb(ctx.database)
   const db = ctx.database
-  const messages: OpenAIChat[] = []
+  const messages: PromptMessage[] = []
   const assetTable =
     promptAssetTable ?? assetLookup.assetTable ?? buildPromptAssetTable({ database: db, currentChar, currentChat })
   const { encoding, options } = tokenizerOptionsFromDb(db)
   let addedTokens = 0
+  const assetDiagnostics: PromptAssetDropDiagnostic[] = []
+  const injectMutations = new Map<string, ScriptInjectMutation>()
   const preparedSendNameWrapper =
     usingPromptTemplate && db.promptSettings?.sendName
-      ? expandVariables(SEND_NAME_WRAPPER, {
+      ? expandVariables(db.groupTemplate || SEND_NAME_WRAPPER, {
           ...ctx,
           chara: currentChar,
         }).text
       : undefined
+  const sendNameRole = preparedSendNameWrapper ? groupOtherBotRole(db.groupOtherBotRole) : undefined
   let preparedDepthPrompts: PreparedDepthPrompt[] = []
 
   for (const example of exampleMessage(ctx, currentChar)) {
@@ -434,7 +477,7 @@ export async function buildHistoryWindow(
   const aiModel = db.aiModel ?? ''
   const trimStart = db.promptSettings?.trimStartNewChat ?? false
   if (!aiModel.startsWith('novelai') && !trimStart) {
-    const marker: OpenAIChat = {
+    const marker: PromptMessage = {
       role: 'system',
       content: '[Start a new chat]',
       memo: 'NewChat',
@@ -477,7 +520,7 @@ export async function buildHistoryWindow(
     // `processScript` with `chatID = -1`, so `runLuaEditTrigger` sees `{ index: -1 }`.
     const luaProcessed = await editProcess(preExpanded, -1)
     let content = await processScriptAsync(ctx, currentChar, luaProcessed, 'editprocess')
-    const firstMessage: OpenAIChat = { role: 'assistant', content }
+    const firstMessage: PromptMessage = { role: 'assistant', content }
     if (usingPromptTemplate && db.promptSettings?.sendName) {
       firstMessage.content = `${currentChar.name}: ${content}`
       firstMessage.attr = ['nameAdded']
@@ -489,8 +532,12 @@ export async function buildHistoryWindow(
   // Start-trigger handoff (SPA `buildHistoryWindow.ts`). The
   // trigger may mutate the chat, so re-run `makeMs` and add its token
   // contribution; on `stopSending` the assemble root aborts the send.
-  const triggerResult = await runStartTrigger(ctx, currentChar, currentChat)
+  const rawTriggerResult = await runStartTrigger(ctx, currentChar, currentChat)
+  const triggerResult = rawTriggerResult?.aborted ? null : rawTriggerResult
   let varChanged = false
+  if (rawTriggerResult?.aborted) {
+    varChanged = rawTriggerResult.varChanged
+  }
   if (triggerResult) {
     currentChat = triggerResult.chat
     ms = makeMs(currentChat)
@@ -505,6 +552,8 @@ export async function buildHistoryWindow(
         triggerResult,
         varChanged,
         preparedDepthPrompts,
+        assetDiagnostics,
+        injectMutations: [],
       }
     }
   }
@@ -521,7 +570,16 @@ export async function buildHistoryWindow(
       assetLookup,
       assetTable,
       editProcess,
+      assetDiagnostics,
       preparedSendNameWrapper,
+      sendNameRole,
+      {
+        injectTarget: ms[i],
+        onInject(mutation) {
+          const previous = injectMutations.get(mutation.messageId)
+          injectMutations.set(mutation.messageId, previous ? { ...mutation, before: previous.before } : mutation)
+        },
+      },
     )
     messages.push(formatted)
     addedTokens += tokenizeChat(formatted, encoding, options)
@@ -546,6 +604,8 @@ export async function buildHistoryWindow(
     triggerResult,
     varChanged,
     preparedDepthPrompts,
+    assetDiagnostics,
+    injectMutations: [...injectMutations.values()],
   }
 }
 
@@ -579,12 +639,12 @@ export async function buildHistoryWindow(
  * walker or the assemble root.
  */
 export function applyDepthPrompts(
-  messages: OpenAIChat[],
+  messages: PromptMessage[],
   ctx: ExpandContext,
   currentChar: character,
   report: LorebookActivationReport,
   preparedDepthPrompts?: PreparedDepthPrompt[],
-): OpenAIChat[] {
+): PromptMessage[] {
   const rows = preparedDepthPrompts ?? prepareDepthPrompts(ctx, currentChar, report)
   for (const { active: dp, content } of rows) {
     const idx = dp.pos === 'depth' ? dp.depth : messages.length - dp.depth

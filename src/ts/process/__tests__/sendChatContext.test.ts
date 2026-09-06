@@ -33,7 +33,7 @@ import {
 } from '../../server/commands'
 import { setDatabase, type Database, type character } from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
+import { charactersResourceState, replaceResourceDatabase } from '../../server/resourceState.svelte'
 import { setupSendChatContext } from '../sendChatContext'
 import { seedCloneCostDb, withCloneInstrumentation } from '../../__tests__/cloneCostHarness'
 import {
@@ -42,6 +42,7 @@ import {
   preparePendingMutationOutbox,
   resetPendingMutationOutboxForTests,
 } from '../../server/pendingMutationOutbox'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {
@@ -93,6 +94,7 @@ function seedDb(extra: Partial<Database> = {}) {
     aiModel: 'gpt-4o',
     subModel: 'gpt-4o',
     characters: [makeChar()],
+    currentChar: 0,
     maxContext: 4000,
     botPresetsId: 0,
     statics: { messages: 0 } as unknown as Database['statics'],
@@ -582,6 +584,7 @@ describe('setupSendChatContext - promptInfo seed', () => {
         makeChar({
           chats: [
             makeChat({
+              id: 'chat-prompt-name',
               generationSettings: {
                 configured: true,
                 personaId: 'persona-a',
@@ -653,6 +656,7 @@ describe('setupSendChatContext - promptInfo seed', () => {
           modules: ['character-module'],
           chats: [
             makeChat({
+              id: 'chat-prompt-toggles',
               modules: ['chat-module'],
               generationSettings: {
                 configured: true,
@@ -718,26 +722,124 @@ describe('setupSendChatContext - tokenizer + maxContextTokens', () => {
     })
     expect(ctx.tokenizer).toBeDefined()
   })
+
+  it('uses the selected durable model profile for tokenizer shape and context budget', () => {
+    seedDb({
+      aiModel: 'gpt-4o',
+      maxContext: 4000,
+      modelProfiles: [
+        {
+          id: 'durable-main',
+          name: 'Durable Main',
+          modelId: 'claude-sonnet-4-6',
+          runtimeOptions: { maxContext: 24000 },
+        },
+      ],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'durable-main' } },
+    } as Partial<Database>)
+
+    const ctx = setupSendChatContext({ chatProcessIndex: -1 })
+
+    expect(ctx.maxContextTokens).toBe(24000)
+    expect(ctx.tokenizer).toMatchObject({
+      chatAdditionalTokens: 3,
+      useName: 'name',
+      profile: { modelId: 'claude-sonnet-4-6' },
+    })
+  })
+
+  it('pins an explicit generation database snapshot into the chat tokenizer', () => {
+    seedDb()
+    const database = {
+      ...testDatabaseState.db,
+      maxContext: 7000,
+      modelProfiles: [
+        {
+          id: 'captured-main',
+          name: 'Captured Main',
+          modelId: 'google-a',
+          runtimeOptions: { maxContext: 18000 },
+        },
+      ],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'captured-main' } },
+    } as Database
+
+    const ctx = setupSendChatContext({ chatProcessIndex: -1, database })
+
+    expect(ctx.maxContextTokens).toBe(18000)
+    expect(ctx.tokenizer).toMatchObject({
+      database,
+      profile: { modelId: 'google-a' },
+    })
+  })
 })
 
 describe('setupSendChatContext - selectedChar / selectedChat', () => {
-  it('returns selectedChar from the store and selectedChat from chatPage', () => {
+  it('returns selectedChar from the selection owner and selectedChat from chatPage', () => {
     seedDb({
       characters: [makeChar({ name: 'A' }), makeChar({ name: 'B', chatPage: 0 })],
     })
     selectedCharID.set(1)
+    charactersResourceState.currentChar = 1
     const ctx = setupSendChatContext({ chatProcessIndex: -1 })
     expect(ctx.selectedChar).toBe(1)
     expect(ctx.selectedChat).toBe(0)
     expect(ctx.nowChatroom.name).toBe('B')
   })
+
+  it.each(['idle', 'loading', 'error'] as const)(
+    'does not build context from retained character rows while the owner is %s',
+    (status) => {
+      seedDb()
+      charactersResourceState.status = status
+
+      expect(() => setupSendChatContext({ chatProcessIndex: -1, writeMaintenance: false })).toThrow(
+        'Missing character owner for send context',
+      )
+    },
+  )
+
+  it('resolves an explicit target by stable ids after another chat becomes active', () => {
+    seedDb({
+      characters: [
+        makeChar({
+          name: 'A',
+          chaId: 'character-a',
+          chats: [makeChat({ id: 'chat-a', name: 'A chat' })],
+        }),
+        makeChar({
+          name: 'B',
+          chaId: 'character-b',
+          chats: [makeChat({ id: 'chat-b', name: 'B chat' })],
+        }),
+      ],
+    })
+    selectedCharID.set(1)
+
+    const ctx = setupSendChatContext({
+      chatProcessIndex: -1,
+      writeMaintenance: false,
+      target: {
+        selectedCharID: 0,
+        chatPage: 0,
+        characterId: 'character-a',
+        chatId: 'chat-a',
+      },
+    })
+
+    expect(ctx.selectedChar).toBe(0)
+    expect(ctx.selectedChat).toBe(0)
+    expect(ctx.nowChatroom.name).toBe('A')
+    expect(ctx.nowChatroom.chats[ctx.selectedChat].name).toBe('A chat')
+  })
 })
 
-describe('setupSendChatContext - M5 field-scoped send rollback', () => {
-  it('M14: the send-context rollback captures one character row, never the whole corpus / M5: steady-state send rollback captures no character row or message payload', async () => {
+describe('setupSendChatContext - field-scoped send rollback', () => {
+  it('send-context rollback captures one character row while steady-state rollback captures no character or message payload', async () => {
     const seeded = seedCloneCostDb() // char-0 large (40 messages), siblings small
     seedDb({ characters: seeded.characters as unknown as Database['characters'] })
     selectedCharID.set(1)
+    charactersResourceState.currentChar = 1
     const calls = stubCommandFetch()
 
     // Messages already carry chatIds, so the only optimistic write is the
@@ -752,10 +854,11 @@ describe('setupSendChatContext - M5 field-scoped send rollback', () => {
     await expect(instrumented.result.persistence).resolves.toMatchObject({ status: 'ok', acceptedCount: 1 })
   })
 
-  it('M5: failed lastInteraction rollback restores only that field', async () => {
+  it('failed lastInteraction rollback restores only that field', async () => {
     const seeded = seedCloneCostDb({ characterCount: 4 })
     seedDb({ characters: seeded.characters as unknown as Database['characters'] })
     selectedCharID.set(2)
+    charactersResourceState.currentChar = 2
     const originalLastInteraction = testDatabaseState.db.characters[2].lastInteraction
     const patchResponse = deferredResponse()
 
@@ -799,7 +902,36 @@ describe('setupSendChatContext - M5 field-scoped send rollback', () => {
     expect(testDatabaseState.db.characters[3].name).toBe('Concurrent sibling edit')
   })
 
-  it('M5: a failed tail restores only backfilled IDs after the character timestamp was accepted', async () => {
+  it('does not roll back through an ambiguous character owner', async () => {
+    const patchResponse = deferredResponse()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 21 })
+        if (url === '/api/v1/commands/characters/duplicate-character') return patchResponse.promise
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    seedDb({
+      characters: [
+        makeChar({ chaId: 'duplicate-character', lastInteraction: 123 }),
+        makeChar({ chaId: 'duplicate-character', name: 'Ambiguous duplicate' }),
+      ],
+    })
+    selectedCharID.set(0)
+    const ctx = setupSendChatContext({ chatProcessIndex: -1 })
+    const attempted = testDatabaseState.db.characters[0].lastInteraction
+    expect(attempted).not.toBe(123)
+
+    patchResponse.resolve(jsonResponse({ error: 'nope' }, 500))
+    await expect(ctx.persistence).resolves.toMatchObject({ status: 'failure', acceptedCount: 0 })
+    // The stable-id owner is ambiguous, so rollback must not guess by index.
+    expect(testDatabaseState.db.characters[0].lastInteraction).toBe(attempted)
+  })
+
+  it('a failed tail restores only backfilled IDs after the character timestamp was accepted', async () => {
     const replaceResponse = deferredResponse()
     const calls: CapturedFetch[] = []
     vi.stubGlobal(

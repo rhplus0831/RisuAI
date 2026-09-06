@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as fflate from 'fflate'
 
-const MAX_ASSET_SIZE_BYTES = 50 * 1024 * 1024
 const ONE_MIB = 1024 * 1024
 
 const globalApiState = vi.hoisted(() => ({
@@ -77,6 +76,7 @@ vi.mock('../globalApi.svelte', () => {
 
   return {
     AppendableBuffer: TestAppendableBuffer,
+    SERVER_ASSET_EXISTS_MAX_IDS: 1024,
     saveAsset: globalApiState.saveAsset,
     saveAssets: globalApiState.saveAssets,
   }
@@ -100,7 +100,9 @@ vi.mock('../util', () => ({
   asBuffer: (data: Uint8Array) => data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
 }))
 
-import { CharXImporter, CharXWriter } from './processzip'
+import { CharXImporter, CharXWriter, DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES } from './processzip'
+
+const MAX_ASSET_SIZE_BYTES = DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES
 
 const encoder = new TextEncoder()
 
@@ -199,6 +201,24 @@ function streamFromChunks(chunks: Uint8Array[]) {
   })
 }
 
+function trackedStreamFromChunks(chunks: Uint8Array[]) {
+  let index = 0
+  let pulls = 0
+  return {
+    stream: new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1
+        controller.enqueue(chunks[index])
+        index += 1
+        if (index >= chunks.length) {
+          controller.close()
+        }
+      },
+    }),
+    pulls: () => pulls,
+  }
+}
+
 function repeatedChunks(count: number, size = ONE_MIB) {
   const chunk = new Uint8Array(size)
   chunk.fill(7)
@@ -216,7 +236,60 @@ function appendedTotalsByBuffer() {
 beforeEach(resetMocks)
 
 describe('CharXImporter stream caps', () => {
-  it('M21: skips a known oversized CharX asset before allocating a buffer', async () => {
+  it('rejects done() with the original per-entry decompression error and terminates that entry', async () => {
+    const importer = new CharXImporter()
+    const entryError = Object.assign(new Error('corrupt CharX entry'), {
+      code: fflate.FlateErrorCode.InvalidZipData,
+    })
+    const terminate = vi.fn()
+    const file = {
+      name: 'assets/broken.png',
+      compression: 8,
+      originalSize: 1,
+      ondata: vi.fn(),
+      start: vi.fn(),
+      terminate,
+    } as unknown as fflate.UnzipFile
+    file.start = vi.fn(() => file.ondata(entryError, new Uint8Array(), false))
+    let injected = false
+    vi.spyOn(importer.unzip, 'push').mockImplementation((_data, final) => {
+      if (final || injected) return
+      injected = true
+      importer.unzip.onfile(file)
+    })
+
+    const parsing = importer.parse(new Uint8Array([1]))
+    const completion = expect(importer.done()).rejects.toBe(entryError)
+    await parsing
+    await completion
+
+    expect(terminate).toHaveBeenCalledOnce()
+    expect(Object.keys(importer.assetBuffers)).toEqual([])
+    expect(globalApiState.saveAssets).not.toHaveBeenCalled()
+  })
+
+  it('supports a small injected entry bound without allocating a production-sized fixture', async () => {
+    const cardJson = '{"spec":"chara_card_v3","data":{"name":"Known"}}'
+    const maxEntrySizeBytes = encoder.encode(cardJson).byteLength
+    const zipData = fflate.zipSync(
+      {
+        'card.json': encoder.encode(cardJson),
+        'module.risum': new Uint8Array(maxEntrySizeBytes + 1),
+      },
+      { level: 0 },
+    )
+    const importer = new CharXImporter({ maxEntrySizeBytes })
+
+    await importer.parse(zipData)
+    await importer.done()
+
+    expect(importer.maxEntrySizeBytes).toBe(maxEntrySizeBytes)
+    expect(importer.cardData).toBe(cardJson)
+    expect(importer.moduleData).toBeUndefined()
+    expect(importer.excludedFiles).toEqual(['module.risum'])
+  })
+
+  it('skips a known oversized CharX asset before allocating a buffer', async () => {
     const cardJson = '{"spec":"chara_card_v3","data":{"name":"Known"}}'
     const zipData = concatBytes([
       storedLocalFile('assets/huge.bin', new Uint8Array(), MAX_ASSET_SIZE_BYTES + 1, 0),
@@ -236,7 +309,7 @@ describe('CharXImporter stream caps', () => {
     expect(globalApiState.saveAssets).not.toHaveBeenCalled()
   })
 
-  it('M21: abandons an unknown-size CharX asset mid-stream and discards partial bytes', async () => {
+  it('abandons an unknown-size CharX asset mid-stream and discards partial bytes', async () => {
     const oversizedChunkCount = 52
     const chunks = streamingZipChunks([
       {
@@ -260,7 +333,7 @@ describe('CharXImporter stream caps', () => {
     expect(globalApiState.appendable.bufferReads).toEqual([])
   }, 15_000)
 
-  it('M21: ignores completion callbacks after terminating an oversized CharX asset', async () => {
+  it('ignores completion callbacks after terminating an oversized CharX asset', async () => {
     const afterAsset = new Uint8Array([9, 8, 7, 6])
     const chunks = streamingZipChunks([
       {
@@ -289,7 +362,7 @@ describe('CharXImporter stream caps', () => {
     expect(globalApiState.appendable.bufferReads.map((read) => read.id)).not.toContain(oversizedBufferId)
   }, 15_000)
 
-  it('M21: preserves representative valid CharX import output', async () => {
+  it('preserves representative valid CharX import output', async () => {
     const cardJson = JSON.stringify({
       spec: 'chara_card_v3',
       data: {
@@ -325,10 +398,61 @@ describe('CharXImporter stream caps', () => {
       'assets/voice.bin': 'saved-1-3-9',
     })
   })
+
+  it('keeps high-asset-count CharX save batches small even though existence probes accept more ids', async () => {
+    const assetCount = 4_361
+    const entries = Object.fromEntries(
+      Array.from({ length: assetCount }, (_, index) => [`assets/${index}.png`, new Uint8Array([index & 0xff])]),
+    )
+    const importer = new CharXImporter()
+
+    await importer.parse(fflate.zipSync(entries, { level: 0 }))
+    await importer.done()
+
+    expect(globalApiState.saveAssets.mock.calls.map(([assets]) => assets.length)).toEqual([
+      ...Array.from({ length: 136 }, () => 32),
+      9,
+    ])
+    expect(Object.keys(importer.assets)).toHaveLength(assetCount)
+  })
+
+  it('pauses ZIP reads while retained decoded asset bytes exceed the queue budget', async () => {
+    const assetSize = ONE_MIB
+    const entries = Array.from({ length: 40 }, (_, index) => ({
+      name: `assets/${index}.png`,
+      chunks: [new Uint8Array(assetSize)],
+    }))
+    const chunks = streamingZipChunks(entries)
+    const tracked = trackedStreamFromChunks(chunks)
+    let releaseFirstSave: (() => void) | undefined
+    globalApiState.saveAssets.mockImplementationOnce(
+      async (assets: readonly { data: Uint8Array }[]) =>
+        new Promise<string[]>((resolve) => {
+          releaseFirstSave = () => resolve(assets.map((_, index) => `first-${index}`))
+        }),
+    )
+    const importer = new CharXImporter()
+
+    const parsing = importer.parse(tracked.stream)
+    await vi.waitFor(() => expect(releaseFirstSave).toBeTypeOf('function'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(tracked.pulls()).toBeLessThan(chunks.length)
+    const decodedBytesBeforeRelease = globalApiState.appendable.bufferReads.reduce(
+      (total, read) => total + read.byteLength,
+      0,
+    )
+    expect(decodedBytesBeforeRelease).toBeLessThanOrEqual(33 * ONE_MIB)
+
+    releaseFirstSave?.()
+    await parsing
+    await importer.done()
+    expect(Object.keys(importer.assets)).toHaveLength(entries.length)
+  })
 })
 
 describe('CharXWriter media cleanup', () => {
-  it('L51: writeJpeg revokes the temporary object URL after decode and append', async () => {
+  it('writeJpeg revokes the temporary object URL after decode and append', async () => {
     const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:charx-jpeg')
     const revokeUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
     const originalCreateElement = document.createElement.bind(document)

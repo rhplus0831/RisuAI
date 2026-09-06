@@ -1,6 +1,6 @@
 import localforage from 'localforage'
 import { toGetter } from '../globalApi.svelte'
-import { getResourceDatabase as getDatabase } from '../server/resourceState.svelte'
+import { settingsResourceState } from '../server/resourceState.svelte'
 
 const pluginStorage = localforage.createInstance({
   name: 'plugin',
@@ -42,7 +42,7 @@ export const SafePluginLocation = Object.freeze({
 })
 
 export function isDeviceLocalPluginStorageEnabled(): boolean {
-  return getDatabase().pluginCompatibilityMode === true
+  return (settingsResourceState.value as Record<string, unknown>).pluginCompatibilityMode === true
 }
 
 export function assertDeviceLocalPluginStorageEnabled(): void {

@@ -190,7 +190,7 @@ afterEach(async () => {
   await stopHarness(harness)
 })
 
-describe('Phase 3B-2 POST /api/v1/proxy/stream-jobs', () => {
+describe('POST /api/v1/proxy/stream-jobs', () => {
   it('returns 401 before password setup', async () => {
     const res = await harness.app.inject({
       method: 'POST',
@@ -281,7 +281,7 @@ describe('Phase 3B-2 POST /api/v1/proxy/stream-jobs', () => {
   })
 })
 
-describe('Phase 3B-2 DELETE /api/v1/proxy/stream-jobs/:id', () => {
+describe('DELETE /api/v1/proxy/stream-jobs/:id', () => {
   it('cancels an existing job and is idempotent for unknown ids', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     echo.setResponder((_req, res) => {
@@ -317,7 +317,7 @@ describe('Phase 3B-2 DELETE /api/v1/proxy/stream-jobs/:id', () => {
   })
 })
 
-describe('Phase 3B-2 WebSocket /api/v1/proxy/stream-jobs/:id/ws', () => {
+describe('WebSocket /api/v1/proxy/stream-jobs/:id/ws', () => {
   it('streams job_accepted, upstream_headers, chunk, done in order', async () => {
     echo.setResponder((_req, res) => {
       res.writeHead(200, {
@@ -445,7 +445,7 @@ describe('Phase 3B-2 WebSocket /api/v1/proxy/stream-jobs/:id/ws', () => {
     expect(events.at(-1)?.type).toBe('done')
   })
 
-  it('closes a viewer that attaches to an already-done job instead of pinning it (L12)', async () => {
+  it('closes a viewer that attaches to an already-done job instead of pinning it', async () => {
     echo.setResponder((_req, res) => {
       res.writeHead(200, { 'content-type': 'text/plain' })
       res.end('hello')

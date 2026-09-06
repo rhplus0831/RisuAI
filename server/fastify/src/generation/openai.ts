@@ -1,4 +1,4 @@
-import { applyAdditionalParameters } from './additionalParams.js'
+import { applyAdditionalParameters, setCanonicalHeader } from './additionalParams.js'
 import { emitProtocolMetric } from '../protocolMetrics.js'
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
 import { providerBodyMetricFields, summarizeOpenAIProviderBody } from './providerBodySummary.js'
@@ -15,14 +15,18 @@ import {
   writeGenerationTraceSidecar,
   type GenerationTraceContext,
 } from './generationTraceSidecar.js'
-import type { ServerToolDefinition } from '../../../../src/ts/process/request/serverToolProtocol.js'
+import type { ServerToolDefinition } from '@risuai/protocol/server-tool'
 import { openAIToolDefinitions, parseOpenAIToolCalls } from './serverTools.js'
+import { extractApiResponseMetadata, mergeApiResponseMetadata } from './apiMetadata.js'
+import { normalizeLegacyOpenAIModelId } from '@risuai/shared-core/legacy-openai-model-aliases'
 
 export interface OpenAIRequest {
   model: string
   messages: unknown[]
   apiKey?: string
   baseUrl: string
+  /** Exact Chat Completions endpoint for custom URLs that must not be autofilled. */
+  endpointUrl?: string
   maxTokens?: number
   temperature?: number
   topP?: number
@@ -34,6 +38,8 @@ export interface OpenAIRequest {
   presencePenalty?: number
   reasoningEffort?: string
   verbosity?: string
+  serviceTier?: string
+  routing?: string
   seed?: number
   responseFormat?: Record<string, unknown>
   prediction?: string
@@ -45,6 +51,7 @@ export interface OpenAIRequest {
   n?: number
   useCompletionTokens?: boolean
   thinking?: Record<string, unknown>
+  deepSeekThinkingOutput?: boolean
   logitBias?: Record<string, number>
   extraHeaders?: Record<string, string>
   /**
@@ -62,6 +69,8 @@ export interface OpenAIRequest {
    * reverse_proxy route today.
    */
   oobaSystemHoist?: boolean
+  /** Non-null Ooba WebUI chat arguments overlaid in persisted key order. */
+  oobaArgs?: Record<string, unknown>
   trace?: GenerationTraceContext
   tools?: ServerToolDefinition[]
   signal: AbortSignal
@@ -72,6 +81,7 @@ interface OpenAIResolveInput {
   messages?: unknown
   apiKey?: unknown
   baseUrl?: unknown
+  endpointUrl?: unknown
   maxTokens?: unknown
   temperature?: unknown
   topP?: unknown
@@ -83,6 +93,9 @@ interface OpenAIResolveInput {
   presencePenalty?: unknown
   reasoningEffort?: unknown
   verbosity?: unknown
+  serviceTier?: unknown
+  flexProcessing?: unknown
+  routing?: unknown
   seed?: unknown
   responseFormat?: unknown
   prediction?: unknown
@@ -90,16 +103,26 @@ interface OpenAIResolveInput {
   n?: unknown
   useCompletionTokens?: unknown
   thinking?: unknown
+  deepSeekThinkingOutput?: unknown
   logitBias?: unknown
   extraHeaders?: Record<string, string>
   additionalParams?: Array<[string, string]>
   oobaSystemHoist?: boolean
+  oobaArgs?: unknown
   trace?: GenerationTraceContext
   tools?: ServerToolDefinition[]
   signal: AbortSignal
 }
 
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1'
+
+function isOfficialOpenAIUrl(rawUrl: string): boolean {
+  try {
+    return new URL(rawUrl).hostname === 'api.openai.com'
+  } catch {
+    return false
+  }
+}
 
 export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest | null {
   if (typeof input.model !== 'string' || input.model.length === 0) return null
@@ -113,6 +136,14 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
       : undefined
   const temperature =
     typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
+  const endpointUrl =
+    typeof input.endpointUrl === 'string' && input.endpointUrl.length > 0 ? input.endpointUrl : undefined
+  const serviceTier =
+    typeof input.serviceTier === 'string'
+      ? input.serviceTier
+      : input.flexProcessing === true && isOfficialOpenAIUrl(endpointUrl ?? baseUrl)
+        ? 'flex'
+        : undefined
 
   const numeric = (value: unknown): number | undefined =>
     typeof value === 'number' && Number.isFinite(value) ? value : undefined
@@ -120,10 +151,11 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
     value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
 
   return {
-    model: input.model,
+    model: normalizeLegacyOpenAIModelId(input.model),
     messages: input.messages,
     apiKey,
     baseUrl,
+    endpointUrl,
     maxTokens,
     temperature,
     topP: numeric(input.topP),
@@ -135,6 +167,8 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
     presencePenalty: numeric(input.presencePenalty),
     reasoningEffort: typeof input.reasoningEffort === 'string' ? input.reasoningEffort : undefined,
     verbosity: typeof input.verbosity === 'string' ? input.verbosity : undefined,
+    serviceTier,
+    routing: typeof input.routing === 'string' ? input.routing : undefined,
     seed: numeric(input.seed),
     responseFormat: record(input.responseFormat),
     prediction: typeof input.prediction === 'string' && input.prediction.length > 0 ? input.prediction : undefined,
@@ -142,10 +176,12 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
     n: typeof input.n === 'number' && Number.isInteger(input.n) && input.n > 1 ? Math.min(input.n, 20) : undefined,
     useCompletionTokens: input.useCompletionTokens === true ? true : undefined,
     thinking: record(input.thinking),
+    deepSeekThinkingOutput: input.deepSeekThinkingOutput === true,
     logitBias: record(input.logitBias) as Record<string, number> | undefined,
     extraHeaders: input.extraHeaders,
     additionalParams: input.additionalParams,
     oobaSystemHoist: input.oobaSystemHoist === true ? true : undefined,
+    oobaArgs: record(input.oobaArgs),
     trace: input.trace,
     tools: input.tools,
     signal: input.signal,
@@ -198,6 +234,8 @@ function buildPayload(req: OpenAIRequest, stream: boolean): Record<string, unkno
   if (req.presencePenalty !== undefined) body.presence_penalty = req.presencePenalty
   if (req.reasoningEffort !== undefined) body.reasoning_effort = req.reasoningEffort
   if (req.verbosity !== undefined) body.verbosity = req.verbosity
+  if (req.serviceTier !== undefined) body.service_tier = req.serviceTier
+  if (req.routing !== undefined) body.routing = req.routing
   if (req.seed !== undefined && req.seed > 0) body.seed = req.seed
   if (req.responseFormat !== undefined) body.response_format = req.responseFormat
   if (req.prediction !== undefined) body.prediction = { type: 'content', content: req.prediction }
@@ -223,8 +261,20 @@ function buildPayload(req: OpenAIRequest, stream: boolean): Record<string, unkno
 }
 
 function endpoint(req: OpenAIRequest): string {
-  const base = req.baseUrl.endsWith('/') ? req.baseUrl.slice(0, -1) : req.baseUrl
-  return `${base}/chat/completions`
+  if (req.endpointUrl !== undefined) return req.endpointUrl
+  try {
+    const url = new URL(req.baseUrl)
+    const trimmedPath = url.pathname.replace(/\/+$/u, '')
+    if (!trimmedPath.endsWith('/chat/completions')) {
+      url.pathname = `${trimmedPath}/chat/completions`
+    } else {
+      url.pathname = trimmedPath
+    }
+    return url.toString()
+  } catch {
+    const base = req.baseUrl.endsWith('/') ? req.baseUrl.slice(0, -1) : req.baseUrl
+    return `${base}/chat/completions`
+  }
 }
 
 function buildHeaders(req: OpenAIRequest): Record<string, string> {
@@ -249,9 +299,19 @@ function buildRequestInit(
 } {
   const body = buildPayload(req, stream)
   const headers = buildHeaders(req)
+  if (req.oobaSystemHoist === true && req.oobaArgs !== undefined) {
+    for (const key of Object.keys(req.oobaArgs)) {
+      const value = req.oobaArgs[key]
+      if (value !== undefined && value !== null) body[key] = value
+    }
+  }
   if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
     applyAdditionalParameters(body, headers, req.additionalParams)
   }
+  if (req.apiKey) setCanonicalHeader(headers, 'authorization', `Bearer ${req.apiKey}`)
+  // Streaming is selected by dispatch and determines the response parser.
+  // Custom parameters must not change the upstream wire format underneath it.
+  body.stream = stream
   // Tool definitions are caller-scoped capabilities. A persisted
   // additionalParams entry must not replace them with unrelated functions.
   if (req.tools !== undefined && req.tools.length > 0) body.tools = openAIToolDefinitions(req.tools)
@@ -298,6 +358,15 @@ interface OpenAINonStreamResponse {
   choices?: OpenAINonStreamChoice[]
   model?: unknown
   error?: { message?: unknown }
+}
+
+function normalizeDeepSeekThinking(content: string): string {
+  let reasoning = ''
+  const visible = content.replace(/^(.*)<\/think>/su, (_match, prefix: string) => {
+    reasoning = prefix.replace(/<think>/gu, '')
+    return ''
+  })
+  return reasoning.length > 0 ? `<Thoughts>\n${reasoning}\n</Thoughts>\n${visible}` : visible
 }
 
 export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
@@ -364,6 +433,8 @@ export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
     return { type: 'fail', result: `invalid upstream JSON: ${msg}` }
   }
 
+  const apiMetadata = extractApiResponseMetadata(body, ['choices', 'error', 'model'])
+
   const choices = Array.isArray(body.choices) ? body.choices : []
   const choiceText = (choice: OpenAINonStreamChoice | undefined): string | null => {
     if (!choice) return null
@@ -377,6 +448,9 @@ export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
             ? choice.message.reasoning
             : ''
     if (content.length === 0 && reasoning.length === 0) return null
+    if (req.deepSeekThinkingOutput && reasoning.length === 0) {
+      return normalizeDeepSeekThinking(content)
+    }
     return reasoning.length > 0 && !content.startsWith('<Thoughts>')
       ? `<Thoughts>\n${reasoning}\n</Thoughts>\n${content}`
       : content
@@ -394,6 +468,7 @@ export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
       toolCalls: parsed.value,
     }
     if (typeof body.model === 'string') result.model = body.model
+    if (apiMetadata) result.apiMetadata = apiMetadata
     return result
   }
   const content = choiceText(choices[0])
@@ -408,6 +483,7 @@ export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
     .filter((text): text is string => text !== null)
   if (alternates.length > 0) result.alternates = alternates
   if (typeof body.model === 'string') result.model = body.model
+  if (apiMetadata) result.apiMetadata = apiMetadata
   return result
 }
 
@@ -522,6 +598,11 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
   let buf = ''
   let finishReason: CompletionStreamFrame['finishReason'] = 'stop'
   let reasoningOpen = false
+  let accumulatedContent = ''
+  let structuredReasoningSeen = false
+  let embeddedThinkingPending = req.deepSeekThinkingOutput === true
+  let embeddedThinkingBuffer = ''
+  let apiMetadata: Record<string, unknown> | undefined
 
   try {
     while (true) {
@@ -547,8 +628,11 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
         evt = popSseEventBlock(buf)
         if (data === null) continue
         if (data.trim() === '[DONE]') {
+          if (embeddedThinkingPending && embeddedThinkingBuffer.length > 0) {
+            yield { kind: 'token', content: normalizeDeepSeekThinking(embeddedThinkingBuffer) }
+          }
           if (reasoningOpen) yield { kind: 'token', content: '\n</Thoughts>\n' }
-          yield { kind: 'done', finishReason }
+          yield { kind: 'done', finishReason, ...(apiMetadata ? { apiMetadata } : {}) }
           return
         }
         let frame: OpenAIStreamFrame
@@ -559,9 +643,16 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
           yield { kind: 'error', error: `invalid upstream stream JSON: ${msg}` }
           return
         }
+        apiMetadata = mergeApiResponseMetadata(apiMetadata, extractApiResponseMetadata(frame, ['choices', 'error']))
         const choice = Array.isArray(frame.choices) ? frame.choices[0] : undefined
         const reasoning = choice?.delta?.reasoning_content ?? choice?.delta?.reasoning
         if (typeof reasoning === 'string' && reasoning.length > 0) {
+          structuredReasoningSeen = true
+          if (embeddedThinkingPending && embeddedThinkingBuffer.length > 0) {
+            yield { kind: 'token', content: embeddedThinkingBuffer }
+            embeddedThinkingBuffer = ''
+          }
+          embeddedThinkingPending = false
           if (!reasoningOpen) {
             reasoningOpen = true
             yield { kind: 'token', content: '<Thoughts>\n' }
@@ -570,11 +661,32 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
         }
         const delta = choice?.delta?.content
         if (typeof delta === 'string' && delta.length > 0) {
+          let content = delta
+          if (delta.length > accumulatedContent.length && delta.startsWith(accumulatedContent)) {
+            content = delta.slice(accumulatedContent.length)
+            accumulatedContent = delta
+          } else {
+            accumulatedContent += delta
+          }
           if (reasoningOpen) {
             reasoningOpen = false
             yield { kind: 'token', content: '\n</Thoughts>\n' }
           }
-          yield { kind: 'token', content: delta }
+          if (req.deepSeekThinkingOutput && !structuredReasoningSeen && embeddedThinkingPending) {
+            embeddedThinkingBuffer += content
+            if (embeddedThinkingBuffer.includes('</think>')) {
+              const normalized = normalizeDeepSeekThinking(embeddedThinkingBuffer)
+              embeddedThinkingBuffer = ''
+              embeddedThinkingPending = false
+              if (normalized.length > 0) yield { kind: 'token', content: normalized }
+            } else if (!'<think>'.startsWith(embeddedThinkingBuffer) && !embeddedThinkingBuffer.startsWith('<think>')) {
+              yield { kind: 'token', content: embeddedThinkingBuffer }
+              embeddedThinkingBuffer = ''
+              embeddedThinkingPending = false
+            }
+          } else if (content.length > 0) {
+            yield { kind: 'token', content }
+          }
         }
         if (choice?.finish_reason) {
           finishReason = mapFinishReason(choice.finish_reason)
@@ -599,7 +711,10 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
       yield { kind: 'error', error: 'truncated upstream stream event' }
       return
     }
+    if (embeddedThinkingPending && embeddedThinkingBuffer.length > 0) {
+      yield { kind: 'token', content: normalizeDeepSeekThinking(embeddedThinkingBuffer) }
+    }
     if (reasoningOpen) yield { kind: 'token', content: '\n</Thoughts>\n' }
-    yield { kind: 'done', finishReason }
+    yield { kind: 'done', finishReason, ...(apiMetadata ? { apiMetadata } : {}) }
   }
 }

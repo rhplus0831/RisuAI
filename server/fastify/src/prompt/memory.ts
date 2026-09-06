@@ -1,9 +1,9 @@
-import type { Chat, Database } from '../../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
-import type { PromptItem } from '../../../../src/ts/process/prompt'
+import type { FastifyChat as Chat, FastifyDatabase as Database, FastifyMessage as Message } from './serverTypes.js'
+import type { PromptItem } from './promptTemplate.js'
 import type { UnformatedPromptSlots } from './templates.js'
 import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
+import type { PromptMessage } from './promptMessage.js'
 
 /**
  * Server memory window: ports the SPA's non-Hypa budget fallback from
@@ -14,7 +14,7 @@ import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 
 export interface MemoryWindowInput {
   /** The flattened history rows (`AssemblyState.historyMessages`). */
-  chats: OpenAIChat[]
+  chats: PromptMessage[]
   /** The running token estimate seeded by lorebook preflight. */
   currentTokens: number
   /** `db.maxContext`. */
@@ -32,12 +32,14 @@ export interface MemoryWindowInput {
 }
 
 export type MemoryWindowResult =
-  | { stopSending: true }
+  | { stopSending: true; reason: 'history_context_overflow' | 'bardwiki_pinned_budget_exceeded' }
   | {
       stopSending: false
       currentTokens: number
       currentChat: Chat
-      memories: OpenAIChat[]
+      memories: PromptMessage[]
+      /** True when at least one durable chat message was omitted for budget. */
+      historyTruncated?: true
     }
 
 /**
@@ -56,24 +58,34 @@ export function buildMemoryWindow(input: MemoryWindowInput): MemoryWindowResult 
   const currentChat = input.currentChat
   const stableMessageIds = new Set(
     (currentChat.message ?? [])
-      .map((message) => message.chatId)
-      .filter((messageId): messageId is string => typeof messageId === 'string' && messageId.length > 0),
+      .map((message: Message) => message.chatId)
+      .filter(
+        (messageId: string | undefined): messageId is string => typeof messageId === 'string' && messageId.length > 0,
+      ),
   )
   let trimmedStableMessage = false
 
   // Non-Hypa budget trim (SPA `buildMemoryWindow.ts`).
   while (currentTokens > maxContextTokens) {
-    if (chats.length <= 1) {
-      return { stopSending: true }
+    const trimIndex = memoryWindowTrimIndex(chats)
+    if (trimIndex === -1) {
+      return {
+        stopSending: true,
+        reason: chats.some((chat) => chat.memo === 'bardWiki' && chat.removable === false)
+          ? 'bardwiki_pinned_budget_exceeded'
+          : 'history_context_overflow',
+      }
     }
-    if (typeof chats[0].memo === 'string' && stableMessageIds.has(chats[0].memo)) {
+    const candidate = chats[trimIndex]
+    if (typeof candidate.memo === 'string' && stableMessageIds.has(candidate.memo)) {
       trimmedStableMessage = true
     }
-    currentTokens -= tokenizeChat(chats[0], encoding, options)
-    chats.splice(0, 1)
+    currentTokens -= tokenizeChat(candidate, encoding, options)
+    chats.splice(trimIndex, 1)
   }
   const survivingMessageId = chats.find(
-    (chat): chat is OpenAIChat & { memo: string } => typeof chat.memo === 'string' && stableMessageIds.has(chat.memo),
+    (chat): chat is PromptMessage & { memo: string } =>
+      typeof chat.memo === 'string' && stableMessageIds.has(chat.memo),
   )?.memo
   if (trimmedStableMessage && survivingMessageId) {
     currentChat.lastMemory = survivingMessageId
@@ -81,7 +93,7 @@ export function buildMemoryWindow(input: MemoryWindowInput): MemoryWindowResult 
     delete currentChat.lastMemory
   }
 
-  const memories: OpenAIChat[] = []
+  const memories: PromptMessage[] = []
 
   // Match the SPA's `buildMemoryWindow`: promote the trailing chat to
   // `lastChat` only on the non-template path.
@@ -95,17 +107,41 @@ export function buildMemoryWindow(input: MemoryWindowInput): MemoryWindowResult 
   // inline; everything else is marked `removable`. Empty rows drop out.
   unformated.chats = chats
     .map((v) => {
-      if (v.memo !== 'supaMemory' && v.memo !== 'hypaMemory') {
+      if (v.memo !== 'supaMemory' && v.memo !== 'hypaMemory' && v.memo !== 'bardWiki') {
         v.removable = true
       } else if (memoryCardUsed) {
         memories.push(v)
-        return { role: 'system', content: '' } as OpenAIChat
-      } else {
+        return { role: 'system', content: '' } as PromptMessage
+      } else if (v.memo !== 'bardWiki') {
         v.content = `<Previous Conversation>${v.content}</Previous Conversation>`
       }
       return v
     })
     .filter((v) => v.content.trim() !== '' || (v.multimodals && v.multimodals.length > 0))
 
-  return { stopSending: false, currentTokens, currentChat, memories }
+  return {
+    stopSending: false,
+    currentTokens,
+    currentChat,
+    memories,
+    ...(trimmedStableMessage ? { historyTruncated: true as const } : {}),
+  }
+}
+
+function memoryWindowTrimIndex(chats: readonly PromptMessage[]): number {
+  const nonPinnedBardWiki = chats.findIndex((chat) => chat.memo === 'bardWiki' && chat.removable === true)
+  if (nonPinnedBardWiki >= 0) return nonPinnedBardWiki
+
+  let newestHistoryIndex = -1
+  for (let index = chats.length - 1; index >= 0; index--) {
+    if (!isMemoryRow(chats[index])) {
+      newestHistoryIndex = index
+      break
+    }
+  }
+  return chats.findIndex((chat, index) => !isMemoryRow(chat) && index !== newestHistoryIndex)
+}
+
+function isMemoryRow(chat: PromptMessage): boolean {
+  return chat.memo === 'supaMemory' || chat.memo === 'hypaMemory' || chat.memo === 'bardWiki'
 }

@@ -10,11 +10,18 @@ import { risuSaveFixtureCases } from '../__fixtures__/risuSave/fixtures.js'
 import { encodeRisuSaveBlockEnvelope, RisuSaveBlockType } from '../src/risuSave/blockCodec.js'
 import { encodeLegacyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
 import { RISUSAVE_EMPTY_DATABASE_ERROR, RISUSAVE_INCOMPLETE_BLOCKS_ERROR } from '../src/risuSave/importSnapshot.js'
-import { insertAssetMetadataBatch, listBackups, loadPersisted, loadPersistedWithMessages } from '../src/repository.js'
+import { RISU_SERVER_DATA_KEY } from '../src/risuSave/portableMetadata.js'
+import {
+  insertAssetMetadataBatch,
+  listBackups,
+  loadChatHydration,
+  loadPersisted,
+  loadPersistedWithMessages,
+} from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import { listMemoryChunks, listMemorySummaries } from '../src/memoryRepository.js'
-import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
+import { injectComposedResourceDatabase } from './helpers/resourceDatabase.js'
 
 interface Harness {
   app: FastifyInstance
@@ -41,7 +48,6 @@ async function startHarness(): Promise<Harness> {
     memoryWorker: false,
     commandEvents,
   })
-  installResourceDatabaseBootstrapAdapter(app)
   return { app, dataDir, commandEvents }
 }
 
@@ -130,6 +136,14 @@ function authedInject(opts: Record<string, unknown>) {
   })
 }
 
+function authedComposedResourceDatabase(opts: Record<string, unknown>) {
+  const headers = (opts.headers ?? {}) as Record<string, string>
+  return injectComposedResourceDatabase(harness.app, {
+    ...opts,
+    headers: { 'risu-auth': assertion, ...headers },
+  } as never)
+}
+
 function readBackupDatabase(dataDir: string, id: string): Record<string, unknown> {
   const backupRoot = path.join(dataDir, 'backups', id)
   const backupDb = new DatabaseSync(path.join(backupRoot, 'risu.db'), { readOnly: true })
@@ -140,7 +154,49 @@ function readBackupDatabase(dataDir: string, id: string): Record<string, unknown
   }
 }
 
-describe('Phase 9-8a multipart .risu import route', () => {
+describe('multipart .risu import route', () => {
+  it('restores portable reroll candidates into durable alternate rows', async () => {
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: {
+        database: {
+          characters: [
+            {
+              chaId: 'alternate-import-char',
+              name: 'Alternate Import',
+              chats: [
+                {
+                  id: 'alternate-import-chat',
+                  message: [{ role: 'user', data: 'active', chatId: 'active-message' }],
+                  alternates: [
+                    { role: 'char', data: 'newest candidate', chatId: 'alternate-newest' },
+                    { role: 'char', data: 'older candidate', chatId: 'alternate-older' },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    })
+
+    expect(imported.statusCode).toBe(200)
+    const db = openDatabase(harness.dataDir)
+    try {
+      expect(loadChatHydration(db, harness.dataDir, 'alternate-import-chat').alternates).toEqual([
+        { role: 'char', data: 'newest candidate', chatId: 'alternate-newest' },
+        { role: 'char', data: 'older candidate', chatId: 'alternate-older' },
+      ])
+      const storedChat = (
+        loadPersisted(db, harness.dataDir).database as { characters: Array<{ chats: Array<Record<string, unknown>> }> }
+      ).characters[0].chats[0]
+      expect(storedChat).not.toHaveProperty('alternates')
+    } finally {
+      db.close()
+    }
+  })
+
   it('keeps JSON fixture import behavior available', async () => {
     const imported = await authedInject({
       method: 'POST',
@@ -163,14 +219,115 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(harness.commandEvents.list()).toEqual([imported.json().event])
     expect(listBackups(harness.dataDir)).toEqual([])
 
-    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
-    expectExportRequiredShape(bootstrap.json().database)
+    const bootstrap = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
+    expectExportRequiredShape(bootstrap.resourceDatabase)
 
     const exported = await authedInject({
       method: 'GET',
       url: '/api/v1/export/risusave?envelope=risusave-blocks',
     })
     expect(exported.statusCode).toBe(200)
+  })
+
+  it.each(['legacy', 'blocks', 'json'] as const)(
+    'restores portable tombstones from %s imports without exposing server metadata in bootstrap',
+    async (format) => {
+      const portableDatabase = {
+        characters: [],
+        [RISU_SERVER_DATA_KEY]: {
+          version: 1,
+          memoryLegacySummaryTombstones: [
+            {
+              summaryId: `summary-${format}`,
+              chatId: `chat-${format}`,
+              deletedAt: '2026-07-23T00:00:00.000Z',
+            },
+          ],
+        },
+      }
+      const request =
+        format === 'json'
+          ? { payload: { database: portableDatabase }, headers: {} }
+          : (() => {
+              const bytes =
+                format === 'legacy'
+                  ? encodeLegacyRisuSaveEnvelope(portableDatabase, 'legacy-raw')
+                  : encodeRisuSaveBlockEnvelope([
+                      {
+                        name: 'root',
+                        type: RisuSaveBlockType.ROOT,
+                        data: JSON.stringify({ ...portableDatabase, __directory: [] }),
+                      },
+                    ])
+              const upload = multipartRisuSave(bytes)
+              return {
+                payload: upload.payload,
+                headers: { 'content-type': upload.contentType },
+              }
+            })()
+
+      const imported = await authedInject({
+        method: 'POST',
+        url: '/api/v1/import/risusave',
+        ...request,
+      })
+      expect(imported.statusCode).toBe(200)
+
+      const db = openDatabase(harness.dataDir)
+      try {
+        expect(
+          db
+            .prepare(
+              `SELECT summary_id, chat_id, deleted_at
+               FROM memory_legacy_summary_tombstones`,
+            )
+            .all(),
+        ).toEqual([
+          {
+            summary_id: `summary-${format}`,
+            chat_id: `chat-${format}`,
+            deleted_at: '2026-07-23T00:00:00.000Z',
+          },
+        ])
+      } finally {
+        db.close()
+      }
+
+      const bootstrap = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
+      expect(bootstrap.resourceDatabase).not.toHaveProperty(RISU_SERVER_DATA_KEY)
+    },
+  )
+
+  it('rejects malformed portable metadata before replacing the JSON database', async () => {
+    const baseline = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: { database: { characters: [], tag: 'preserve-before-malformed-metadata' } },
+    })
+    expect(baseline.statusCode).toBe(200)
+
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: {
+        database: {
+          characters: [],
+          [RISU_SERVER_DATA_KEY]: {
+            version: 1,
+            memoryLegacySummaryTombstones: [
+              { summaryId: 'duplicate', chatId: 'chat-a', deletedAt: 'now' },
+              { summaryId: 'duplicate', chatId: 'chat-b', deletedAt: 'later' },
+            ],
+          },
+        },
+      },
+    })
+    expect(imported.statusCode).toBe(400)
+    expect(imported.json().error).toContain('summaryId values must be unique')
+
+    const bootstrap = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(bootstrap.resourceDatabase).toMatchObject({ tag: 'preserve-before-malformed-metadata' })
+    expect(bootstrap.resourceDatabase).not.toHaveProperty(RISU_SERVER_DATA_KEY)
   })
 
   it('takes a pre-import safety snapshot for JSON database replacements', async () => {
@@ -224,16 +381,18 @@ describe('Phase 9-8a multipart .risu import route', () => {
     })
     expect(baseline.statusCode).toBe(200)
 
-    const originalWriteFileSync = fs.writeFileSync.bind(fs)
-    vi.spyOn(fs, 'writeFileSync').mockImplementation((file, data, options) => {
+    const originalWriteFile = fs.promises.writeFile.bind(fs.promises)
+    let rejectedManifests = 0
+    vi.spyOn(fs.promises, 'writeFile').mockImplementation(async (file, data, options) => {
       if (
-        String(file).endsWith(`${path.sep}manifest.json`) &&
+        String(file).endsWith(`${path.sep}.manifest.json`) &&
         String(file).includes(`${path.sep}backups${path.sep}`) &&
         String(data).includes('"kind":"automatic"')
       ) {
+        rejectedManifests++
         throw new Error('injected automatic backup manifest failure')
       }
-      return originalWriteFileSync(file, data, options)
+      return originalWriteFile(file, data, options)
     })
 
     const imported = await authedInject({
@@ -241,12 +400,14 @@ describe('Phase 9-8a multipart .risu import route', () => {
       url: '/api/v1/import/risusave',
       payload: { database: { version: 1, tag: 'must-not-be-imported' } },
     })
+    expect(rejectedManifests).toBe(1)
     expect(imported.statusCode).toBe(500)
     expect(imported.json()).toEqual({ error: 'automatic_backup_failed' })
     expect(listBackups(harness.dataDir)).toEqual([])
+    expect(fs.readdirSync(path.join(harness.dataDir, 'backups'))).toEqual([])
 
-    const after = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
-    expect(after.json().database).toMatchObject({ tag: 'preserved-after-snapshot-failure' })
+    const after = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(after.resourceDatabase).toMatchObject({ tag: 'preserved-after-snapshot-failure' })
     expect(after.json().revision).toBe(baseline.json().revision)
   })
 
@@ -271,8 +432,8 @@ describe('Phase 9-8a multipart .risu import route', () => {
 
       expect(imported.statusCode).toBe(200)
 
-      const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
-      expectExportRequiredShape(bootstrap.json().database)
+      const bootstrap = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
+      expectExportRequiredShape(bootstrap.resourceDatabase)
 
       const exported = await authedInject({
         method: 'GET',
@@ -281,6 +442,21 @@ describe('Phase 9-8a multipart .risu import route', () => {
       expect(exported.statusCode).toBe(200)
     },
   )
+
+  it.each([2, '2.1'] as const)('rejects JSON imports containing V%s-series plugins', async (version) => {
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: {
+        database: {
+          plugins: [{ name: 'unsupported-plugin', version }],
+        },
+      },
+    })
+
+    expect(imported.statusCode).toBe(400)
+    expect(imported.json().error).toBe('plugins[0].version must be "3.0"; Fastify does not support V2-series plugins')
+  })
 
   it('normalizes malformed JSON resource families into the exportable current shape', async () => {
     const imported = await authedInject({
@@ -300,8 +476,8 @@ describe('Phase 9-8a multipart .risu import route', () => {
 
     expect(imported.statusCode).toBe(200)
 
-    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
-    expectExportRequiredShape(bootstrap.json().database)
+    const bootstrap = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
+    expectExportRequiredShape(bootstrap.resourceDatabase)
 
     const exported = await authedInject({
       method: 'GET',
@@ -354,8 +530,8 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(messages.map((message) => message.chatId)).toContain('message-a')
     expect(new Set(messages.map((message) => message.chatId)).size).toBe(3)
     expect(messages.every((message) => typeof message.chatId === 'string' && message.chatId)).toBe(true)
-    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
-    expect(bootstrap.json().database).toMatchObject({
+    const bootstrap = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(bootstrap.resourceDatabase).toMatchObject({
       characters: [
         expect.objectContaining({
           chaId: 'char-a',
@@ -371,6 +547,36 @@ describe('Phase 9-8a multipart .risu import route', () => {
       characterOrder: ['char-a'],
       currentChar: 0,
     })
+  })
+
+  it('preserves a null prompt template during JSON database import', async () => {
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: {
+        database: {
+          version: 1,
+          promptTemplate: null,
+          promptPresets: [{ id: 'prompt-disabled', name: 'Disabled Prompt', promptTemplate: null }],
+          promptPresetsId: 0,
+        },
+      },
+    })
+
+    expect(imported.statusCode).toBe(200)
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const persisted = loadPersisted(db, harness.dataDir).database as Record<string, unknown>
+      // The physical root collection stays omitted while normal repository reads
+      // project the selected modern preset's explicitly disabled/null body.
+      expect(persisted.promptTemplate).toBeNull()
+      const rootRows = db.prepare('SELECT COUNT(*) AS count FROM prompt_templates').get() as { count: number }
+      expect(rootRows.count).toBe(0)
+      expect((persisted.promptPresets as Array<Record<string, unknown>>)[0].promptTemplate).toBeNull()
+    } finally {
+      db.close()
+    }
   })
 
   it('forces JSON database imported chat generation settings incomplete while preserving prefill', async () => {
@@ -428,8 +634,8 @@ describe('Phase 9-8a multipart .risu import route', () => {
 
     expect(imported.statusCode).toBe(200)
 
-    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
-    const chats = bootstrap.json().database.characters[0].chats as Array<{
+    const bootstrap = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
+    const chats = bootstrap.resourceDatabase.characters[0].chats as Array<{
       generationSettings?: Record<string, unknown>
     }>
     expect(chats[0].generationSettings).toEqual({
@@ -515,8 +721,8 @@ describe('Phase 9-8a multipart .risu import route', () => {
 
     expect(imported.statusCode).toBe(200)
 
-    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
-    const database = bootstrap.json().database
+    const bootstrap = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
+    const database = bootstrap.resourceDatabase
     expect(database.characters[0].globalLore[0]).toMatchObject({
       id: 'char-entry-array',
       key: 'gamma, delta',
@@ -556,7 +762,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
     })
   })
 
-  it('L28: imports JSON bodies through the normalized throwaway object without repository structuredClone', async () => {
+  it('imports JSON bodies through the normalized throwaway object without repository structuredClone', async () => {
     const payload = {
       database: {
         characters: [
@@ -660,9 +866,9 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.statusCode).toBe(400)
     expect(imported.json()).toEqual({ error: 'database must be an object' })
 
-    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const bootstrap = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(bootstrap.json().revision).toBe(0)
-    expect(bootstrap.json().database).toBeNull()
+    expect(bootstrap.resourceDatabase).toBeNull()
     expect(harness.commandEvents.list()).toEqual([])
   })
 
@@ -680,7 +886,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
       },
     })
     expect(seeded.statusCode).toBe(200)
-    const before = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const before = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(listBackups(harness.dataDir)).toEqual([])
 
     const jsonImport = await authedInject({
@@ -701,12 +907,12 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(fileImport.statusCode).toBe(400)
     expect(fileImport.json()).toEqual({ error: RISUSAVE_EMPTY_DATABASE_ERROR })
 
-    const after = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const after = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(after.json()).toMatchObject({
       revision: before.json().revision,
       databaseLineage: before.json().databaseLineage,
-      database: before.json().database,
     })
+    expect(after.resourceDatabase).toEqual(before.resourceDatabase)
     expect(listBackups(harness.dataDir)).toEqual([])
     expect(harness.commandEvents.list()).toEqual([seeded.json().event])
   })
@@ -728,9 +934,9 @@ describe('Phase 9-8a multipart .risu import route', () => {
     })
     expect(legacy.statusCode).toBe(200)
 
-    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
-    expect(bootstrap.json().database.characters).toEqual([])
-    expectExportRequiredShape(bootstrap.json().database)
+    const bootstrap = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(bootstrap.resourceDatabase.characters).toEqual([])
+    expectExportRequiredShape(bootstrap.resourceDatabase)
   })
 
   it('does not write imported state when command event persistence fails', async () => {
@@ -744,9 +950,9 @@ describe('Phase 9-8a multipart .risu import route', () => {
 
     expect(imported.statusCode).toBe(500)
     expect(harness.commandEvents.list()).toEqual([])
-    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const bootstrap = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(bootstrap.json().revision).toBe(0)
-    expect(bootstrap.json().database).toBeNull()
+    expect(bootstrap.resourceDatabase).toBeNull()
   })
 
   it('reports referenced, missing, and orphaned server assets after JSON imports', async () => {
@@ -909,8 +1115,8 @@ describe('Phase 9-8a multipart .risu import route', () => {
     })
     expect(imported.json().importReport).not.toHaveProperty('unsupportedReferences')
 
-    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
-    const chats = bootstrap.json().database.characters[0].chats as Array<{
+    const bootstrap = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
+    const chats = bootstrap.resourceDatabase.characters[0].chats as Array<{
       generationSettings?: Record<string, unknown>
     }>
     expect(chats[0].generationSettings).toEqual({
@@ -939,9 +1145,9 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.statusCode).toBe(400)
     expect(imported.json()).toEqual({ error: 'Expanded .risu payload exceeds size limit' })
 
-    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const bootstrap = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(bootstrap.json().revision).toBe(0)
-    expect(bootstrap.json().database).toBeNull()
+    expect(bootstrap.resourceDatabase).toBeNull()
     expect(harness.commandEvents.list()).toEqual([])
   })
 
@@ -975,6 +1181,70 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.json().importReport).not.toHaveProperty('unsupportedReferences')
   })
 
+  it('salvages supported blocks and reports every skipped standalone CHAT block', async () => {
+    const seeded = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      payload: {
+        database: {
+          version: 1,
+          tag: 'preserve-before-standalone-chat-import',
+          characters: [{ chaId: 'live-char', name: 'Live Character', chats: [] }],
+        },
+      },
+    })
+    expect(seeded.statusCode).toBe(200)
+    const before = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
+    const upload = multipartRisuSave(
+      encodeRisuSaveBlockEnvelope([
+        {
+          name: 'root',
+          type: RisuSaveBlockType.ROOT,
+          data: JSON.stringify({
+            version: 2,
+            tag: 'salvaged-block-save',
+            __directory: ['supported-character', 'standalone-chat'],
+          }),
+        },
+        {
+          name: 'supported-character',
+          type: RisuSaveBlockType.CHARACTER_WITHOUT_CHAT,
+          data: JSON.stringify({ chaId: 'salvaged-char', name: 'Salvaged Character', chats: [] }),
+        },
+        {
+          name: 'standalone-chat',
+          type: RisuSaveBlockType.CHAT,
+          data: JSON.stringify({ id: 'standalone-chat', name: 'Unsupported Chat', message: [] }),
+        },
+      ]),
+    )
+
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'content-type': upload.contentType },
+      payload: upload.payload,
+    })
+
+    expect(imported.statusCode).toBe(200)
+    expect(imported.json()).toMatchObject({
+      revision: 2,
+      importReport: {
+        incompleteChatCount: 0,
+        unsupportedReferenceCount: 0,
+        skippedBlocks: [{ name: 'standalone-chat', type: 'CHAT' }],
+      },
+    })
+    const after = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(after.resourceDatabase).toMatchObject({
+      tag: 'salvaged-block-save',
+      characters: [expect.objectContaining({ chaId: 'salvaged-char', name: 'Salvaged Character' })],
+    })
+    expect(after.resourceDatabase.tag).not.toBe(before.resourceDatabase.tag)
+    expect(listBackups(harness.dataDir)).toHaveLength(1)
+    expect(harness.commandEvents.list()).toHaveLength(2)
+  })
+
   it('rejects a block upload truncated exactly after a complete block before taking a snapshot', async () => {
     const seeded = await authedInject({
       method: 'POST',
@@ -989,7 +1259,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
       },
     })
     expect(seeded.statusCode).toBe(200)
-    const before = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const before = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
 
     const blocks = [
       {
@@ -1025,12 +1295,12 @@ describe('Phase 9-8a multipart .risu import route', () => {
 
     expect(imported.statusCode).toBe(400)
     expect(imported.json()).toEqual({ error: RISUSAVE_INCOMPLETE_BLOCKS_ERROR })
-    const after = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const after = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(after.json()).toMatchObject({
       revision: before.json().revision,
       databaseLineage: before.json().databaseLineage,
-      database: before.json().database,
     })
+    expect(after.resourceDatabase).toEqual(before.resourceDatabase)
     expect(listBackups(harness.dataDir)).toEqual([])
     expect(harness.commandEvents.list()).toEqual([seeded.json().event])
   })
@@ -1057,9 +1327,9 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.statusCode).toBe(400)
     expect(imported.json()).toEqual({ error: 'Expanded .risu payload exceeds size limit' })
 
-    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const bootstrap = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(bootstrap.json().revision).toBe(0)
-    expect(bootstrap.json().database).toBeNull()
+    expect(bootstrap.resourceDatabase).toBeNull()
     expect(harness.commandEvents.list()).toEqual([])
   })
 
@@ -1088,9 +1358,9 @@ describe('Phase 9-8a multipart .risu import route', () => {
 
     expect(imported.statusCode).toBe(200)
 
-    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
-    expect(bootstrap.json().database.customRootField).toEqual({ enabled: true })
-    expectExportRequiredShape(bootstrap.json().database)
+    const bootstrap = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(bootstrap.resourceDatabase.customRootField).toEqual({ enabled: true })
+    expectExportRequiredShape(bootstrap.resourceDatabase)
   })
 
   it('rejects RISUSAVE root-component resource-family overwrites without mutating persistence', async () => {
@@ -1129,11 +1399,11 @@ describe('Phase 9-8a multipart .risu import route', () => {
     })
     expect(harness.commandEvents.list()).toEqual([seeded.json().event])
 
-    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const bootstrap = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.version).toBe(1)
-    expect(bootstrap.json().database.customRootField).toEqual({ kept: true })
-    expectExportRequiredShape(bootstrap.json().database)
+    expect(bootstrap.resourceDatabase.version).toBe(1)
+    expect(bootstrap.resourceDatabase.customRootField).toEqual({ kept: true })
+    expectExportRequiredShape(bootstrap.resourceDatabase)
 
     const exported = await authedInject({
       method: 'GET',
@@ -1170,9 +1440,9 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.statusCode).toBe(400)
     expect(imported.json()).toEqual({ error: 'Unsupported .risu envelope: unknown' })
 
-    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const bootstrap = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(bootstrap.json().revision).toBe(0)
-    expect(bootstrap.json().database).toBeNull()
+    expect(bootstrap.resourceDatabase).toBeNull()
     expect(harness.commandEvents.list()).toEqual([])
   })
 
@@ -1190,9 +1460,9 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.statusCode).toBe(400)
     expect(imported.json()).toEqual({ error: 'Malformed RISUSAVE block header at offset 9' })
 
-    const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const bootstrap = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(bootstrap.json().revision).toBe(0)
-    expect(bootstrap.json().database).toBeNull()
+    expect(bootstrap.resourceDatabase).toBeNull()
     expect(harness.commandEvents.list()).toEqual([])
   })
 })

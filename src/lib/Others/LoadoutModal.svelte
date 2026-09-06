@@ -1,9 +1,13 @@
 <script lang="ts">
   import { XIcon, StarIcon, ClockIcon, UserIcon, ListIcon, SaveIcon, TrashIcon } from '@lucide/svelte'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import {
+    charactersResourceState,
+    collectionsResourceState,
+    getCharacterResourceOwner,
+  } from 'src/ts/server/resourceState.svelte'
   import { loadoutModalStore } from 'src/ts/stores.svelte'
   import { applyLoadout, deleteLoadout, saveCurrentLoadout, toggleLoadoutFavorite, type Loadout } from 'src/ts/loadout'
-  import { getCurrentCharacter } from 'src/ts/storage/database.svelte'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { language } from 'src/lang'
   import { alertConfirm, alertNormal } from 'src/ts/alert'
@@ -49,8 +53,37 @@
 
   const RECENT_LIMIT = 3
 
+  function uniqueLoadoutOwners(value: unknown): readonly Loadout[] | undefined {
+    if (!Array.isArray(value)) return undefined
+
+    const ids = new Set<string>()
+    for (const loadout of value) {
+      if (!loadout || typeof loadout !== 'object' || typeof loadout.id !== 'string' || !loadout.id.trim()) {
+        return undefined
+      }
+      if (ids.has(loadout.id)) return undefined
+      ids.add(loadout.id)
+    }
+    return value as Loadout[]
+  }
+
+  function readLoadoutOwners(): readonly Loadout[] | undefined {
+    const ownerValue = collectionsResourceState.values.loadouts
+    const ownerRows = uniqueLoadoutOwners(ownerValue)
+    if (collectionsResourceState.statuses.loadouts === 'ready') return ownerRows ?? []
+    return undefined
+  }
+
+  function readSelectedCharacterId(): string | undefined {
+    if (charactersResourceState.status !== 'ready') return undefined
+    const selected = charactersResourceState.characters[charactersResourceState.currentChar]
+    return selected?.chaId && getCharacterResourceOwner(selected.chaId) === selected ? selected.chaId : undefined
+  }
+
   function getSortedLoadouts(): Loadout[] {
-    const loadouts = [...(getDatabase().loadouts ?? [])]
+    const owners = readLoadoutOwners()
+    if (!owners) return []
+    const loadouts = [...owners]
     if (deletingLoadout && !loadouts.some((loadout) => loadout.id === deletingLoadout?.id)) {
       loadouts.push(deletingLoadout)
     }
@@ -62,7 +95,7 @@
   }
 
   function getCharacterLoadouts(): Loadout[] {
-    const chaId = getCurrentCharacter()?.chaId
+    const chaId = readSelectedCharacterId()
     if (!chaId) return []
     return getSortedLoadouts()
       .filter((l) => l.characterIds?.includes(chaId))
@@ -221,11 +254,9 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  use:modalBackdropDismiss={close}
   data-modal-root
-  class="fixed inset-0 z-40 bg-black/60 flex justify-center items-center"
-  onclick={(e) => {
-    if (e.target === e.currentTarget) close()
-  }}>
+  class="fixed inset-0 z-40 bg-black/60 flex justify-center items-center">
   <div
     use:modalFocusTrap
     class="bg-darkbg rounded-lg flex flex-col w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-xl"

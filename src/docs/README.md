@@ -1,23 +1,24 @@
 # Source Docs
 
-Last audited: 2026-07-20.
+Last audited: 2026-09-05.
 
-These notes are the current frontend/client documentation for agents working in
-`src/`. They replace the old compact frontend map under `docs/structure/`.
+Select the smallest browser/UI owner. Use its linked section first, then inspect
+source and the matching tests; these guides are not a required reading sequence.
 
-| File                                     | Use                                                                                                                                                                                                   |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`svelte-ui.md`](svelte-ui.md)           | First stop for Svelte UI/UX work: app shell, routes/history, settings, Saved Toggles, popup editor, shared controls, chat/sidebar, viewport layout, mobile/lite, playground, and visible-state tests. |
-| [`client-runtime.md`](client-runtime.md) | Browser coordination that shapes visible UI: startup, root-resource ownership, async freshness, generation/reattach, fixed server-operation adapters, and links to adjacent canonical owners.         |
+| Guide | Owns | Entry sections |
+| --- | --- | --- |
+| [`svelte-ui.md`](svelte-ui.md) | App shell, routes/stores, localization, styling, responsive/Lite behavior, Playground | [Triage](svelte-ui.md#fast-triage), [render priority](svelte-ui.md#app-render-priority) |
+| [`svelte-chat-ui.md`](svelte-chat-ui.md) | Transcript/message rendering, composer, visible loading, in-chat confirmations | [Triage](svelte-chat-ui.md#fast-triage), [generation UI](svelte-chat-ui.md#generation-and-loading-states) |
+| [`svelte-navigation-ui.md`](svelte-navigation-ui.md) | Sidebar, character/chat selection, folders, ordering, chat-scoped controls | [Triage](svelte-navigation-ui.md#fast-triage), [toggle readiness](svelte-navigation-ui.md#owner-readiness-and-toggle-preservation) |
+| [`svelte-settings-ui.md`](svelte-settings-ui.md) | Settings routes, shared controls, authoring, model-profile UI, save outcomes | [Triage](svelte-settings-ui.md#fast-triage), [persistence](svelte-settings-ui.md#settings-persistence) |
+| [`client-runtime.md`](client-runtime.md) | Startup, resource integration, drafts, freshness, server-operation adapters | [Startup](client-runtime.md#startup-sequence), [runtime boundaries](client-runtime.md#adjacent-runtime-owners) |
+| [`generation-client.md`](generation-client.md) | Durable generation, streams, cancellation, reattach, terminal effects, audio | [Preflight gates](generation-client.md#preflight-persistence-gates), [stream recovery](generation-client.md#operations-streams-and-reattach) |
 
-Continue with the canonical focused notes instead of copying their contracts
-into frontend guides:
+Cross-layer contracts have separate canonical owners:
 
-| Topic                                                            | Canonical guide                                                                           |
-| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Resource protocol, hydration, and command reconciliation         | [`server-resources-and-bridges.md`](../../docs/structure/server-resources-and-bridges.md) |
-| Assets, inlay catalog, saves, backups, Realm, and legacy storage | [`assets-and-saves.md`](../../docs/structure/assets-and-saves.md)                         |
-| Prompt assembly, model profiles, providers, and Agent Presets    | [`providers-and-models.md`](../../docs/structure/providers-and-models.md)                 |
-| Plugin storage/execution and MCP boundaries                      | [`plugins-and-mcp.md`](../../docs/structure/plugins-and-mcp.md)                           |
-| Retired, compatibility-only, generated, and absent surfaces      | [`generated-and-legacy.md`](../../docs/structure/generated-and-legacy.md)                 |
-| Scripts, Vite, test lanes, dev server, and operations            | [`testing-and-operations.md`](../../docs/structure/testing-and-operations.md)             |
+- Read/cache/hydration protocol: [Server Resources And Hydration](../../docs/structure/server-resources-and-bridges.md).
+- Command durability, event ordering, and writer loss: [Durable Mutations And Recovery](../../docs/structure/durable-mutations-and-recovery.md).
+- Domain execution (providers, prompts, Agents, translation, BardWiki, modules,
+  assets): choose the [architecture owner](../../docs/structure/README.md#ownership).
+- Related layers to verify: [cross-cutting checklist](../../docs/structure/README.md#cross-cutting-changes).
+- Test discovery: [Test Suite Guide](../../docs/tests/README.md).

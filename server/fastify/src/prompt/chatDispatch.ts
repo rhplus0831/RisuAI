@@ -1,49 +1,82 @@
-import type { Database } from '../../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
-import { LLMFlags, LLMFormat, type LLMFormat as LLMFormatValue } from '../../../../src/ts/model/types'
-import { OpenAIModels } from '../../../../src/ts/model/providers/openai'
+import type { ProviderGenerationSettings as Database, ServerSeparateParameters } from './serverTypes.js'
+import type { DatabaseSync } from 'node:sqlite'
+import type { PromptMessage } from './promptMessage.js'
+import { LLMFlags, LLMFormat, LLMProvider, type LLMFormat as LLMFormatValue } from '@risuai/shared-core/model-types'
+import { OpenAIModels } from '@risuai/shared-core/openai-models'
 import type { CompletionResult, CompletionStreamFrame } from '../generation/frames.js'
+import { stripCoTFromCompletionFrames } from '../generation/stripCoT.js'
 import { resolveEchoRequest, runEcho, runEchoStream } from '../generation/echo.js'
 import { resolveOpenAIRequest, runOpenAI, runOpenAIStream } from '../generation/openai.js'
 import { resolveAnthropicRequest, runAnthropic, runAnthropicStream } from '../generation/anthropic.js'
 import { resolveMistralRequest, runMistral, runMistralStream } from '../generation/mistral.js'
 import { resolveCohereRequest, runCohere } from '../generation/cohere.js'
-import { resolveGeminiRequest, runGemini, runGeminiStream, type VertexAuthInput } from '../generation/gemini.js'
+import {
+  resolveGeminiRequest,
+  runGemini,
+  runGeminiStream,
+  type GeminiInlineData,
+  type GeminiResponseModality,
+  type GeminiResponseWarning,
+  type VertexAuthInput,
+} from '../generation/gemini.js'
 import { resolveOpenAILegacyInstructRequest, runOpenAILegacyInstruct } from '../generation/openaiLegacyInstruct.js'
 import { resolveOpenAIResponsesRequest, runOpenAIResponses } from '../generation/openaiResponses.js'
 import { resolveKoboldRequest, runKobold } from '../generation/kobold.js'
 import { resolveOllamaRequest, runOllama, runOllamaStream } from '../generation/ollama.js'
 import { resolveBedrockRequest, runBedrock, type BedrockCredentials } from '../generation/bedrock.js'
 import { resolveHordeRequest, runHorde } from '../generation/horde.js'
-import { resolveOobaLegacyRequest, runOobaLegacy } from '../generation/oobaLegacy.js'
+import { resolveOpenRouterFreeModel } from '../generation/openrouterFreeModel.js'
+import { buildOobaLegacyStopStrings, resolveOobaLegacyRequest, runOobaLegacy } from '../generation/oobaLegacy.js'
 import {
   resolveProviderCapability,
-  type CustomModelEntryLike,
   type ProviderCapabilityInput,
   type ProviderUnsupportedReason,
-} from '../../../../src/ts/process/request/providerCapability'
+} from '@risuai/shared-core/provider-capability'
 import {
   assertModelProfileGenerationReady,
   resolveModelProfile,
   resolveProfileRequestModel,
   type ResolvedModelProfile,
-} from '../../../../src/ts/model/modelProfileResolver.js'
+} from '@risuai/shared-core/model-profile-resolver'
 import { emitProtocolMetric } from '../protocolMetrics.js'
 import { promptSummaryMetricFields, summarizePromptRows } from './promptSummary.js'
 import type { GenerationTraceContext } from '../generation/generationTraceSidecar.js'
 import { encodeTokens, encodingForModel } from './tokens.js'
-import type { ServerToolDefinition, ServerToolRound } from '../../../../src/ts/process/request/serverToolProtocol.js'
-import { appendOpenAIToolRounds } from '../generation/serverTools.js'
+import { ensureTokenizerLoadedForDb, tokenizerEncodingFromDb } from './tokenizerConfig.js'
+import type { TokenEncoding } from './tokens.js'
+import type { ServerToolDefinition, ServerToolRound } from '@risuai/protocol/server-tool'
+import { appendOpenAIToolRounds, openAIResponsesToolDefinitions } from '../generation/serverTools.js'
 import {
   buildAnthropicWireMessages,
   buildOpenAIWireMessages,
   sanitizeTextMessages,
 } from '../generation/providerMessages.js'
 import { extractConfiguredJsonValue, parseConfiguredJsonSchemaText } from '../generation/jsonControls.js'
+import {
+  completeRequestHistory,
+  requestHistoryRedactionValues,
+  requestHistoryProfileSnapshot,
+  tryBeginRequestHistory,
+  wrapRequestHistoryFrames,
+  type RequestHistoryContext,
+} from '../requestHistory.js'
+import { persistServerInlayAsset } from '../inlayAssetPersistence.js'
+import { getProfileAdditionalParameters } from '../generation/additionalParams.js'
+
+export interface ChatDispatchHistoryInput {
+  db: DatabaseSync
+  source: string
+  context?: RequestHistoryContext
+  toggles?: Record<string, string>
+  metadata?: Record<string, unknown>
+}
+
+/** Fastify's generation-facing database input until the provider domain is narrowed in its own Phase 4 slice. */
+export type ChatDispatchDatabase = Database
 
 interface ChatDispatchArgs {
-  database: Database
-  formated: OpenAIChat[]
+  database: ChatDispatchDatabase
+  formated: PromptMessage[]
   outputTokens?: number
   profile?: ResolvedModelProfile
   signal: AbortSignal
@@ -55,18 +88,23 @@ interface ChatDispatchArgs {
   tools?: ServerToolDefinition[]
   /** Prior calls and browser-executed results, converted to provider-native history server-side. */
   toolRounds?: ServerToolRound[]
+  /** Optional internal schema override matching the retained low-level generation contract. */
+  schema?: string
+  /** Durable diagnostics for one actual provider attempt. */
+  history?: ChatDispatchHistoryInput
+  /** Provider-flag-normalized messages prepared by the public dispatch boundary. */
+  finalizedMessages?: PromptMessage[]
+  /** Effective character selected for this generation, including non-zero database positions. */
+  currentCharacterName?: string
+  /** Reports a dispatch-time sentinel resolution to generation metadata owners. */
+  onResolvedModel?: (model: string) => void
+  /** Main generation route capability for provider-returned media. */
+  inlayAssetPersistence?: { db: DatabaseSync; dataDir: string }
+  /** Provider warnings surfaced over the owning route's warning channel. */
+  onWarning?: (warning: GeminiResponseWarning) => void
 }
 
-interface CustomModelEntry {
-  id?: unknown
-  name?: unknown
-  internalId?: unknown
-  url?: unknown
-  key?: unknown
-  format?: unknown
-  params?: unknown
-  tokenizer?: unknown
-}
+type CustomModelEntry = NonNullable<Database['customModels']>[number]
 
 interface ModelInfoLite {
   id: string
@@ -81,9 +119,11 @@ interface ModelInfoLite {
 interface OpenAICompatibleVariant {
   apiKey?: string
   baseUrl?: string
+  endpointUrl?: string
   extraHeaders?: Record<string, string>
   additionalParams?: Array<[string, string]>
   oobaSystemHoist?: boolean
+  oobaArgs?: unknown
 }
 
 const NANOGPT_BASE_URL = 'https://nano-gpt.com/api/v1'
@@ -124,6 +164,8 @@ function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 
+function asNumber<T extends number>(value: T | undefined): T | undefined
+function asNumber(value: unknown): number | undefined
 function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
@@ -148,20 +190,39 @@ interface DispatchParameters {
   verbosity?: string
 }
 
-function dispatchParameterSource(db: Database, profile: ResolvedModelProfile): Record<string, unknown> | Database {
-  if (!db.seperateParametersEnabled || !db.seperateParametersByModel) return db
-  const override = db.seperateParameters?.overrides?.[profile.modelId]
-  return override && typeof override === 'object' ? (override as unknown as Record<string, unknown>) : db
+function dispatchParameterOverride(db: Database, profile: ResolvedModelProfile): ServerSeparateParameters | undefined {
+  if (!db.seperateParametersEnabled || !db.seperateParametersByModel) return undefined
+  return db.seperateParameters?.overrides?.[profile.modelId]
 }
 
-function reasoningEffort(value: unknown): string | undefined {
+const dispatchSamplerFields = {
+  temperature: 'temperature',
+  top_p: 'top_p',
+  top_k: 'top_k',
+  min_p: 'min_p',
+  top_a: 'top_a',
+  repetition_penalty: 'repetition_penalty',
+  frequency_penalty: 'frequencyPenalty',
+  presence_penalty: 'PresensePenalty',
+  reasoning_effort: 'reasoningEffort',
+  thinking_tokens: 'thinkingTokens',
+  verbosity: 'verbosity',
+} as const satisfies Partial<Record<keyof ServerSeparateParameters, keyof Database>>
+
+function reasoningEffort(
+  value: unknown,
+  disabledEffort: 'minimal' | 'none' = 'minimal',
+  supportsXHigh = false,
+  minEffort: 'low' | 'medium' = 'low',
+): string | undefined {
   const numeric = asNumber(value)
   if (numeric === undefined || numeric === DISABLED_SAMPLER_SENTINEL) return undefined
-  if (numeric < 0) return 'minimal'
-  if (numeric === 0) return 'low'
+  if (numeric === -1) return disabledEffort
+  if (numeric === 0) return minEffort
   if (numeric === 1) return 'medium'
   if (numeric === 2) return 'high'
-  return 'xhigh'
+  if (numeric === 3) return supportsXHigh ? 'xhigh' : 'high'
+  return 'medium'
 }
 
 function verbosity(value: unknown): string | undefined {
@@ -170,14 +231,30 @@ function verbosity(value: unknown): string | undefined {
   return ['low', 'medium', 'high'][numeric] ?? 'medium'
 }
 
-function parseConfiguredJsonSchema(db: Database): Record<string, unknown> | undefined {
-  if (db.jsonSchemaEnabled !== true) return undefined
-  const raw = typeof db.jsonSchema === 'string' ? db.jsonSchema.trim() : ''
+function parseConfiguredJsonSchema(db: Database, schemaOverride?: string): Record<string, unknown> | undefined {
+  if (schemaOverride === undefined && db.jsonSchemaEnabled !== true) return undefined
+  const raw = typeof schemaOverride === 'string' ? schemaOverride.trim() : db.jsonSchema?.trim()
   if (!raw) return undefined
   return parseConfiguredJsonSchemaText(raw)
 }
 
-function openAIChatResponseFormat(db: Database): Record<string, unknown> | undefined {
+function stripGeminiUnsupportedSchemaKeywords(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripGeminiUnsupportedSchemaKeywords)
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => key !== '$schema' && key !== 'additionalProperties')
+      .map(([key, nested]) => [key, stripGeminiUnsupportedSchemaKeywords(nested)]),
+  )
+}
+
+function geminiResponseSchema(db: Database, schemaOverride?: string): Record<string, unknown> | undefined {
+  const schema = parseConfiguredJsonSchema(db, schemaOverride)
+  return schema ? (stripGeminiUnsupportedSchemaKeywords(schema) as Record<string, unknown>) : undefined
+}
+
+function openAIChatResponseFormat(db: Database, flags: readonly number[]): Record<string, unknown> | undefined {
+  if (flags.includes(LLMFlags.noStructuredOutput)) return undefined
   const schema = parseConfiguredJsonSchema(db)
   if (!schema) return undefined
   return {
@@ -212,37 +289,54 @@ function resolveDeepSeekThinking(db: Database, flags: readonly number[]): Record
     : { type: 'disabled' }
 }
 
-export function resolveOpenAILogitBias(rows: readonly [string, number][], model: string): Record<string, number> {
+export const OPENAI_STRONG_BAN_PUNCTUATION = ' !"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~“”‘’«»「」…–―※'
+
+export function resolveOpenAILogitBias(
+  rows: readonly [string, number][],
+  model: string,
+  selectedEncoding?: TokenEncoding,
+  encode: (text: string, encoding: TokenEncoding) => readonly number[] = encodeTokens,
+): Record<string, number> {
   const bias: Record<string, number> = {}
-  const encoding = encodingForModel(model)
+  const encoding = selectedEncoding ?? encodingForModel(model)
   const assignTokens = (text: string, value: number): void => {
-    for (const token of encodeTokens(text, encoding)) bias[String(token)] = value
+    for (const token of encode(text, encoding)) bias[String(token)] = value
   }
   for (const [rawText, rawValue] of rows) {
     if (typeof rawText !== 'string' || typeof rawValue !== 'number' || !Number.isFinite(rawValue)) continue
-    const directToken = /^\[\[(\d+)\]\]$/u.exec(rawText.trim())
-    if (directToken) {
-      bias[directToken[1]] = Math.max(-100, Math.min(100, rawValue))
+    if (rawText.startsWith('[[') && rawText.endsWith(']]')) {
+      const token = Number.parseInt(rawText.replace('[[', '').replace(']]', ''), 10)
+      bias[String(token)] = rawValue
       continue
     }
     if (rawValue === -101) {
-      const trimmed = rawText.trim()
-      const variants = new Set([
+      const variants = [
         rawText,
-        trimmed,
-        trimmed.toLocaleLowerCase(),
-        trimmed.toLocaleUpperCase(),
-        trimmed ? trimmed[0].toLocaleUpperCase() + trimmed.slice(1) : '',
-        trimmed ? trimmed[0].toLocaleLowerCase() + trimmed.slice(1) : '',
-        ` ${trimmed}`,
-        `\n${trimmed}`,
-      ])
-      for (const variant of variants) {
-        if (variant) assignTokens(variant, -100)
+        rawText.trim(),
+        rawText.toLocaleUpperCase(),
+        rawText.toLocaleLowerCase(),
+        rawText ? rawText[0].toLocaleUpperCase() + rawText.slice(1) : '',
+        rawText ? rawText[0].toLocaleLowerCase() + rawText.slice(1) : '',
+      ]
+      const punctuationTokens = new Set<number>()
+      for (const char of OPENAI_STRONG_BAN_PUNCTUATION) {
+        const token = encode(char, encoding)[0]
+        if (token !== undefined) punctuationTokens.add(token)
+      }
+      const banFirstToken = (text: string): void => {
+        const token = encode(text, encoding)[0]
+        if (token !== undefined && !punctuationTokens.has(token)) bias[String(token)] = -100
+      }
+      for (const char of OPENAI_STRONG_BAN_PUNCTUATION) {
+        banFirstToken(char)
+        for (const variant of variants) {
+          banFirstToken(variant + char)
+          banFirstToken(char + variant)
+        }
       }
       continue
     }
-    assignTokens(rawText, Math.max(-100, Math.min(100, rawValue)))
+    assignTokens(rawText, rawValue)
   }
   return bias
 }
@@ -250,32 +344,36 @@ export function resolveOpenAILogitBias(rows: readonly [string, number][], model:
 /** Resolve only parameters declared by the selected model's capability row. */
 export function resolveDispatchParameters(db: Database, profile: ResolvedModelProfile): DispatchParameters {
   const supported = new Set(profile.modelInfo.parameters)
-  const source = dispatchParameterSource(db, profile) as Record<string, unknown>
-  const from = (separateKey: string, databaseKey: keyof Database): unknown =>
-    source === (db as unknown as Record<string, unknown>) ? db[databaseKey] : source[separateKey]
+  const override = dispatchParameterOverride(db, profile)
+  const from = (key: keyof typeof dispatchSamplerFields, databaseDefault?: number): number | undefined =>
+    override ? override[key] : (db[dispatchSamplerFields[key]] ?? databaseDefault)
   const out: DispatchParameters = {}
-  if (supported.has('temperature'))
-    out.temperature = normalizeDispatchSampler(from('temperature', 'temperature'), { scale: 100 })
-  if (supported.has('top_p')) out.topP = normalizeDispatchSampler(from('top_p', 'top_p'))
-  if (supported.has('top_k')) out.topK = normalizeDispatchSampler(from('top_k', 'top_k'))
-  if (supported.has('min_p')) out.minP = normalizeDispatchSampler(from('min_p', 'min_p'))
-  if (supported.has('top_a')) out.topA = normalizeDispatchSampler(from('top_a', 'top_a'))
+  if (supported.has('temperature')) out.temperature = normalizeDispatchSampler(from('temperature'), { scale: 100 })
+  if (supported.has('top_p')) out.topP = normalizeDispatchSampler(from('top_p'))
+  if (supported.has('top_k')) out.topK = normalizeDispatchSampler(from('top_k'))
+  if (supported.has('min_p')) out.minP = normalizeDispatchSampler(from('min_p'))
+  if (supported.has('top_a')) out.topA = normalizeDispatchSampler(from('top_a'))
   if (supported.has('repetition_penalty')) {
-    out.repetitionPenalty = normalizeDispatchSampler(from('repetition_penalty', 'repetition_penalty'))
+    out.repetitionPenalty = normalizeDispatchSampler(from('repetition_penalty'))
   }
   if (supported.has('frequency_penalty')) {
-    out.frequencyPenalty = normalizeDispatchSampler(from('frequency_penalty', 'frequencyPenalty'), { scale: 100 })
+    out.frequencyPenalty = normalizeDispatchSampler(from('frequency_penalty'), { scale: 100 })
   }
   if (supported.has('presence_penalty')) {
-    out.presencePenalty = normalizeDispatchSampler(from('presence_penalty', 'PresensePenalty'), { scale: 100 })
+    out.presencePenalty = normalizeDispatchSampler(from('presence_penalty'), { scale: 100 })
   }
   if (supported.has('reasoning_effort')) {
-    out.reasoningEffort = reasoningEffort(from('reasoning_effort', 'reasoningEffort'))
+    out.reasoningEffort = reasoningEffort(
+      from('reasoning_effort'),
+      supported.has('reasoning_effort_none') ? 'none' : 'minimal',
+      supported.has('reasoning_effort_xhigh'),
+      supported.has('reasoning_effort_min_medium') ? 'medium' : 'low',
+    )
   }
   if (supported.has('thinking_tokens')) {
-    out.thinkingTokens = normalizeDispatchSampler(from('thinking_tokens', 'thinkingTokens'))
+    out.thinkingTokens = normalizeDispatchSampler(from('thinking_tokens'))
   }
-  if (supported.has('verbosity')) out.verbosity = verbosity(from('verbosity', 'verbosity'))
+  if (supported.has('verbosity')) out.verbosity = verbosity(from('verbosity', 1))
   return out
 }
 
@@ -302,16 +400,44 @@ function parseXcustomParams(params: unknown): Array<[string, string]> | undefine
 }
 
 function findXcustomEntry(db: Database, aiModel: string): CustomModelEntry | null {
-  const models = Array.isArray(db.customModels) ? (db.customModels as CustomModelEntry[]) : []
+  const models = Array.isArray(db.customModels) ? db.customModels : []
   return models.find((m) => m.id === aiModel) ?? null
 }
 
 function deriveOpenAIBaseUrl(endpoint: string): string {
-  const trimmed = endpoint.replace(/\/+$/, '')
-  if (trimmed.endsWith('/chat/completions')) {
-    return trimmed.slice(0, -'/chat/completions'.length)
+  try {
+    const url = new URL(endpoint)
+    const trimmedPath = url.pathname.replace(/\/+$/u, '')
+    if (trimmedPath.endsWith('/chat/completions')) {
+      url.pathname = trimmedPath.slice(0, -'/chat/completions'.length)
+      return url.toString().replace(/\/$/u, '')
+    }
+    url.pathname = trimmedPath
+    return url.toString().replace(/\/$/u, '')
+  } catch {
+    const trimmed = endpoint.replace(/\/+$/u, '')
+    return trimmed.endsWith('/chat/completions') ? trimmed.slice(0, -'/chat/completions'.length) : trimmed
   }
-  return trimmed
+}
+
+function autofillOpenAIEndpoint(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl)
+    const path = url.pathname
+    if (path.endsWith('v1')) {
+      url.pathname += '/chat/completions'
+    } else if (path.endsWith('v1/')) {
+      url.pathname += 'chat/completions'
+    } else if (!(path.endsWith('completions') || path.endsWith('completions/'))) {
+      url.pathname += path.endsWith('/') ? 'v1/chat/completions' : '/v1/chat/completions'
+    }
+    return url.toString()
+  } catch {
+    if (rawUrl.endsWith('v1')) return `${rawUrl}/chat/completions`
+    if (rawUrl.endsWith('v1/')) return `${rawUrl}chat/completions`
+    if (rawUrl.endsWith('completions') || rawUrl.endsWith('completions/')) return rawUrl
+    return rawUrl + (rawUrl.endsWith('/') ? 'v1/chat/completions' : '/v1/chat/completions')
+  }
 }
 
 function resolveReverseProxyUrl(
@@ -319,6 +445,7 @@ function resolveReverseProxyUrl(
   autofill: boolean,
 ): {
   baseUrl: string
+  endpointUrl: string
   risuIdentify: boolean
 } {
   let url = rawUrl
@@ -328,20 +455,22 @@ function resolveReverseProxyUrl(
     url = url.slice('risu::'.length)
   }
   if (autofill) {
-    if (url.endsWith('v1')) {
-      url += '/chat/completions'
-    } else if (url.endsWith('v1/')) {
-      url += 'chat/completions'
-    } else if (!(url.endsWith('completions') || url.endsWith('completions/'))) {
-      url += url.endsWith('/') ? 'v1/chat/completions' : '/v1/chat/completions'
-    }
+    url = autofillOpenAIEndpoint(url)
   }
-  return { baseUrl: deriveOpenAIBaseUrl(url), risuIdentify }
+  return { baseUrl: deriveOpenAIBaseUrl(url), endpointUrl: url, risuIdentify }
 }
 
 function stripTrailingPath(rawUrl: string, path: string): string {
-  const trimmed = rawUrl.replace(/\/+$/, '')
-  return trimmed.endsWith(path) ? trimmed.slice(0, -path.length) : trimmed
+  try {
+    const url = new URL(rawUrl)
+    const trimmedPath = url.pathname.replace(/\/+$/u, '')
+    if (trimmedPath.endsWith(path)) url.pathname = trimmedPath.slice(0, -path.length)
+    else url.pathname = trimmedPath
+    return url.toString().replace(/\/$/u, '')
+  } catch {
+    const trimmed = rawUrl.replace(/\/+$/u, '')
+    return trimmed.endsWith(path) ? trimmed.slice(0, -path.length) : trimmed
+  }
 }
 
 function resolveModelInfo(db: Database): ModelInfoLite {
@@ -350,7 +479,7 @@ function resolveModelInfo(db: Database): ModelInfoLite {
     return {
       id: aiModel,
       internalID: asString(db.customProxyRequestModel) ?? aiModel,
-      format: (asNumber(db.customAPIFormat) ?? LLMFormat.OpenAICompatible) as LLMFormatValue,
+      format: asNumber(db.customAPIFormat) ?? LLMFormat.OpenAICompatible,
       flags: DEFAULT_OPENAI_FLAGS,
     }
   }
@@ -361,7 +490,7 @@ function resolveModelInfo(db: Database): ModelInfoLite {
       return {
         id: asString(entry.id) ?? aiModel,
         internalID: asString(entry.internalId) ?? asString(entry.id) ?? aiModel,
-        format: (asNumber(entry.format) ?? LLMFormat.OpenAICompatible) as LLMFormatValue,
+        format: asNumber(entry.format) ?? LLMFormat.OpenAICompatible,
         flags: DEFAULT_OPENAI_FLAGS,
       }
     }
@@ -397,7 +526,7 @@ function resolveModelInfo(db: Database): ModelInfoLite {
   if (aiModel === 'ollama-cloud') {
     return {
       id: aiModel,
-      format: (asNumber(db.ollamaRequestFormat) ?? LLMFormat.OpenAICompatible) as LLMFormatValue,
+      format: asNumber(db.ollamaRequestFormat) ?? LLMFormat.OpenAICompatible,
       flags: DEFAULT_OPENAI_FLAGS,
     }
   }
@@ -499,17 +628,17 @@ function needsReformatClone(needs: ReformatBranchNeeds): boolean {
   return needs.systemPrompt || needs.alternateRole || needs.startWithUserInput
 }
 
-function cloneDispatchRows(rows: OpenAIChat[]): OpenAIChat[] {
+function cloneDispatchRows(rows: PromptMessage[]): PromptMessage[] {
   chatDispatchReformatInstrumentation.fullPromptClones++
   return structuredClone(rows)
 }
 
-export function reformatMessages(db: Database, rows: OpenAIChat[], flags: readonly number[]): OpenAIChat[] {
+export function reformatMessages(db: Database, rows: PromptMessage[], flags: readonly number[]): PromptMessage[] {
   const needs = resolveReformatBranchNeeds(flags)
   if (!needsReformatClone(needs)) return rows
 
   let formated = cloneDispatchRows(rows)
-  let systemPrompt: OpenAIChat | null = null
+  let systemPrompt: PromptMessage | null = null
 
   if (needs.systemPrompt) {
     if (needs.firstSystemPrompt) {
@@ -528,7 +657,7 @@ export function reformatMessages(db: Database, rows: OpenAIChat[], flags: readon
         row.content = db.systemContentReplacement
           ? db.systemContentReplacement.replace('{{slot}}', row.content)
           : `system: ${row.content}`
-        const replacement = asString(db.systemRoleReplacement)
+        const replacement = asString(db.systemRoleReplacement) || 'user'
         row.role =
           replacement === 'assistant' ||
           replacement === 'user' ||
@@ -541,7 +670,7 @@ export function reformatMessages(db: Database, rows: OpenAIChat[], flags: readon
   }
 
   if (needs.alternateRole) {
-    const merged: OpenAIChat[] = []
+    const merged: PromptMessage[] = []
     for (const row of formated) {
       const prev = merged[merged.length - 1]
       if (prev && prev.role === row.role) {
@@ -592,7 +721,7 @@ function buildChatCapabilityInput(db: Database, info: ModelInfoLite): ProviderCa
       forceReplaceUrl: asString(db.forceReplaceUrl),
       proxyKey: asString(db.proxyKey),
       oaiCompApiKeys: db.OaiCompAPIKeys,
-      customModels: db.customModels as CustomModelEntryLike[] | undefined,
+      customModels: db.customModels,
       googleProjectId: db.google?.projectId,
       vertexRegion: db.vertexRegion,
       vertexClientEmail: db.vertexClientEmail,
@@ -601,7 +730,7 @@ function buildChatCapabilityInput(db: Database, info: ModelInfoLite): ProviderCa
       instructChatTemplate: asString(db.instructChatTemplate),
       jinjaTemplate: asString(db.JinjaTemplate),
       ollamaApiKey: asString(db.ollamaApiKey),
-      ollamaRequestFormat: asNumber(db.ollamaRequestFormat) as LLMFormatValue | undefined,
+      ollamaRequestFormat: asNumber(db.ollamaRequestFormat),
       ollamaURL: asString(db.ollamaURL),
     },
   }
@@ -736,7 +865,7 @@ function resolveLegacyMirrorCustomApiBaseUrl(
   db: Database,
   profile: ResolvedModelProfile,
   baseUrl: string | undefined,
-): { baseUrl: string | undefined; extraHeaders?: Record<string, string> } {
+): { baseUrl: string | undefined; endpointUrl?: string; extraHeaders?: Record<string, string> } {
   const legacyUrl = asString(db.forceReplaceUrl)
   if (
     !baseUrl ||
@@ -756,6 +885,7 @@ function resolveLegacyMirrorCustomApiBaseUrl(
   const resolved = resolveReverseProxyUrl(legacyUrl, db.autofillRequestUrl !== false)
   return {
     baseUrl: resolved.baseUrl,
+    endpointUrl: resolved.endpointUrl,
     ...(resolved.risuIdentify ? { extraHeaders: { 'X-Proxy-Risu': 'RisuAI' } } : {}),
   }
 }
@@ -779,15 +909,28 @@ function resolveProfileOpenAIVariant(
   return {
     ...(apiKey ? { apiKey } : {}),
     baseUrl: legacyMirror.baseUrl,
+    endpointUrl:
+      legacyMirror.endpointUrl ??
+      (profile.modelId === 'reverse_proxy' && options.reverseProxy?.autofillRequestUrl === false
+        ? legacyMirror.baseUrl
+        : undefined),
     extraHeaders,
     additionalParams: options.additionalParams,
     oobaSystemHoist: options.reverseProxy?.oobaSystemHoist === true,
+    oobaArgs: options.reverseProxy?.oobaArgs,
   }
 }
 
 function resolveProfileOllamaBaseUrl(profile: ResolvedModelProfile): string | undefined {
   const options = profile.providerOptions
   return asString(options.ollama?.url) ?? asString(options.baseUrl)
+}
+
+function resolveOllamaThinkMode(value: unknown): boolean | 'low' | 'medium' | 'high' | undefined {
+  if (value === 'off') return false
+  if (value === 'on') return true
+  if (value === 'low' || value === 'medium' || value === 'high') return value
+  return undefined
 }
 
 function resolveDebugEchoMessage(profile: ResolvedModelProfile): string {
@@ -850,13 +993,15 @@ export function resolveOpenAIVariant(
     const apiKey = asString(db.proxyKey)
     const rawUrl = asString(db.forceReplaceUrl)
     if (!apiKey || !rawUrl) return null
-    const { baseUrl, risuIdentify } = resolveReverseProxyUrl(rawUrl, db.autofillRequestUrl !== false)
+    const { baseUrl, endpointUrl, risuIdentify } = resolveReverseProxyUrl(rawUrl, db.autofillRequestUrl !== false)
     return {
       apiKey,
       baseUrl,
+      endpointUrl,
       extraHeaders: risuIdentify ? { 'X-Proxy-Risu': 'RisuAI' } : undefined,
       additionalParams: additionalParams(db.additionalParams),
       oobaSystemHoist: db.reverseProxyOobaMode === true,
+      oobaArgs: db.reverseProxyOobaArgs,
     }
   }
   if (aiModel.startsWith('xcustom:::')) {
@@ -867,6 +1012,7 @@ export function resolveOpenAIVariant(
     return {
       apiKey,
       baseUrl: deriveOpenAIBaseUrl(url),
+      endpointUrl: url,
       additionalParams: parseXcustomParams(entry.params),
     }
   }
@@ -876,15 +1022,16 @@ export function resolveOpenAIVariant(
     return {
       apiKey,
       baseUrl: info.endpoint ? deriveOpenAIBaseUrl(info.endpoint) : undefined,
+      endpointUrl: info.endpoint,
     }
   }
   const apiKey = asString(db.openAIKey)
   return apiKey ? { apiKey } : null
 }
 
-function extractSystem(messages: OpenAIChat[], newOAIHandle = true): { messages: OpenAIChat[]; system?: string } {
+function extractSystem(messages: PromptMessage[], newOAIHandle = true): { messages: PromptMessage[]; system?: string } {
   const systemTexts: string[] = []
-  const passthrough: OpenAIChat[] = []
+  const passthrough: PromptMessage[] = []
   for (const row of messages) {
     if (row.role === 'system' && typeof row.content === 'string' && row.content.length > 0) {
       if (!(newOAIHandle && row.memo?.startsWith('NewChat'))) systemTexts.push(row.content)
@@ -897,7 +1044,9 @@ function extractSystem(messages: OpenAIChat[], newOAIHandle = true): { messages:
     : { messages: passthrough }
 }
 
-function applyChatTemplate(db: Database, messages: OpenAIChat[]): string {
+function applyChatTemplate(db: Database, messages: PromptMessage[]): string {
+  // Accepted divergence (PR-18/PR-7 sunset): Fastify intentionally does not
+  // port the SPA's `src/ts/process/templates/chatTemplate.ts` engine.
   const type = asString(db.instructChatTemplate)
   if (type === 'chatml' || type === 'gpt2') {
     const rows = messages
@@ -911,7 +1060,7 @@ function applyChatTemplate(db: Database, messages: OpenAIChat[]): string {
   return `${rows.join('\n\n')}\n\nassistant:`
 }
 
-function unstringlizeChat(text: string, formated: OpenAIChat[], char: string, username: string): string {
+function unstringlizeChat(text: string, formated: PromptMessage[], char: string, username: string): string {
   const chunks = ['system note:', 'system:', 'system note：', 'system：']
   if (char) chunks.push(`${char}:`, `${char}：`, `${char}: `, `${char}： `)
   if (username) chunks.push(`${username}:`, `${username}：`, `${username}: `, `${username}： `)
@@ -924,6 +1073,13 @@ function unstringlizeChat(text: string, formated: OpenAIChat[], char: string, us
     if (index !== -1 && (minIndex === -1 || index < minIndex)) minIndex = index
   }
   return minIndex === -1 ? text : text.substring(0, minIndex).trim()
+}
+
+function cleanupCharacterName(args: ChatDispatchArgs, db: Database): string {
+  if (args.currentCharacterName) return args.currentCharacterName
+  const currentChar = db.currentChar
+  const selected = typeof currentChar === 'number' && Number.isInteger(currentChar) ? currentChar : 0
+  return db.characters?.[selected]?.name ?? ''
 }
 
 async function* resultFrames(
@@ -939,6 +1095,8 @@ async function* resultFrames(
       ...(typeof result.status === 'number' ? { status: result.status } : {}),
       ...(result.statusText ? { statusText: result.statusText } : {}),
       ...(result.code ? { code: result.code } : {}),
+      ...(result.nonRetryable === true ? { nonRetryable: true } : {}),
+      ...(result.apiMetadata ? { apiMetadata: result.apiMetadata } : {}),
     }
     return
   }
@@ -952,11 +1110,57 @@ async function* resultFrames(
     finishReason: result.toolCalls?.length ? 'tool_calls' : 'stop',
     ...(alternates?.length ? { alternates } : {}),
     ...(result.toolCalls?.length ? { toolCalls: result.toolCalls } : {}),
+    ...(result.model !== undefined || result.apiMetadata
+      ? { apiMetadata: { ...(result.model !== undefined ? { model: result.model } : {}), ...result.apiMetadata } }
+      : {}),
   }
 }
 
 export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<AsyncIterable<CompletionStreamFrame>> {
+  const profile = args.profile ?? resolveModelProfile({ database: args.database })
+  const finalizedMessages = reformatMessages(args.database, args.formated, profile.modelInfo.flags)
+  const handle = args.history
+    ? tryBeginRequestHistory({
+        db: args.history.db,
+        limit: args.database.requestHistoryLimit,
+        source: args.history.source,
+        profile: requestHistoryProfileSnapshot(profile),
+        prompt:
+          (args.toolRounds?.length ?? 0) > 0
+            ? { messages: finalizedMessages, toolRounds: args.toolRounds }
+            : finalizedMessages,
+        context: args.history.context,
+        toggles: args.history.toggles,
+        metadata: {
+          responseBudget: args.outputTokens ?? args.database.maxResponse,
+          maxContext: args.database.maxContext,
+          streamingRequested: args.database.useStreaming === true || args.database.halfStreaming === true,
+          halfStreamingRequested: args.database.halfStreaming === true,
+          multiGenerationRequested: args.multiGeneration === true,
+          toolCount: args.tools?.length ?? 0,
+          toolRoundCount: args.toolRounds?.length ?? 0,
+          ...(args.history.metadata ?? {}),
+        },
+        redactionValues: requestHistoryRedactionValues(profile.providerOptions),
+      })
+    : null
+  try {
+    const frames = await dispatchChatProviderCore({ ...args, profile, finalizedMessages })
+    const processedFrames = profile.runtimeOptions.stripCoT ? stripCoTFromCompletionFrames(frames) : frames
+    return wrapRequestHistoryFrames(processedFrames, handle, args.signal)
+  } catch (error) {
+    completeRequestHistory(handle, {
+      status: args.signal.aborted ? 'cancelled' : 'error',
+      error: error instanceof Error ? error.message : String(error),
+      metadata: { dispatchFailedBeforeFrames: true },
+    })
+    throw error
+  }
+}
+
+async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIterable<CompletionStreamFrame>> {
   const { database: db, outputTokens, signal, trace } = args
+  await ensureTokenizerLoadedForDb(db)
   const profile = args.profile ?? resolveModelProfile({ database: db })
   assertModelProfileGenerationReady(profile)
   const info = profile.modelInfo
@@ -972,10 +1176,28 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
     throw new Error(route.reason)
   }
   const provider = route.provider
+  const resolvedAdditionalParams = getProfileAdditionalParameters(
+    db,
+    profile.modelId,
+    profile.providerOptions.additionalParams,
+    profile.providerOptions.extraHeaders,
+  )
+  const dispatchAdditionalParams = resolvedAdditionalParams.length > 0 ? resolvedAdditionalParams : undefined
 
-  const model = resolveProviderModel(db, info, provider, profile)
+  const configuredModel = resolveProviderModel(db, info, provider, profile)
+  let model = configuredModel
+  let openRouterVariant: OpenAICompatibleVariant | null | undefined
+  if (provider === 'openrouter') {
+    openRouterVariant = resolveOpenAIVariant(db, info, provider, profile)
+    if (!openRouterVariant) throw new Error('options.openai.apiKey is required')
+    model = await resolveOpenRouterFreeModel(configuredModel, {
+      apiKey: openRouterVariant.apiKey,
+      signal,
+    })
+    if (model !== configuredModel) args.onResolvedModel?.(model)
+  }
   const preSummary = summarizePromptRows(args.formated)
-  const messages = reformatMessages(db, args.formated, info.flags)
+  const messages = args.finalizedMessages ?? reformatMessages(db, args.formated, info.flags)
   const postSummary = summarizePromptRows(messages)
   emitProtocolMetric('generation_prompt_dispatch_reformat', {
     provider,
@@ -1000,6 +1222,8 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   })
   const maxTokens = outputTokens ?? db.maxResponse
   const parameters = resolveDispatchParameters(db, profile)
+  const isLLMGatewayProfile = profile.status.providerId === 'llmgateway'
+  const llmGatewayOptions = isLLMGatewayProfile ? profile.providerOptions.llmGateway : undefined
   const temperature = parameters.temperature
   const supportsMultiGeneration = provider === 'openai' || provider === 'openrouter' || provider === 'nanogpt'
   const generationCount =
@@ -1011,11 +1235,28 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       ? Math.min(db.genTime, 20)
       : 1
   const extractJsonPath =
-    db.jsonSchemaEnabled === true && typeof db.extractJson === 'string' && db.extractJson.trim().length > 0
+    (db.jsonSchemaEnabled === true || args.schema !== undefined) &&
+    typeof db.extractJson === 'string' &&
+    db.extractJson.trim().length > 0
       ? db.extractJson.trim()
       : undefined
   const hasTools = (args.tools?.length ?? 0) > 0
-  const stream = !hasTools && db.useStreaming === true && generationCount === 1 && extractJsonPath === undefined
+  const imageResponse = db.outputImageModal === true || info.flags.includes(LLMFlags.hasImageOutput)
+  const audioResponse = !imageResponse && info.flags.includes(LLMFlags.hasAudioOutput)
+  const geminiResponseModalities: readonly GeminiResponseModality[] | undefined =
+    provider === 'gemini'
+      ? imageResponse
+        ? ['TEXT', 'IMAGE']
+        : audioResponse
+          ? ['TEXT', 'AUDIO']
+          : undefined
+      : undefined
+  const stream =
+    !hasTools &&
+    (db.useStreaming === true || db.halfStreaming === true) &&
+    generationCount === 1 &&
+    extractJsonPath === undefined &&
+    geminiResponseModalities === undefined
   const bufferedResultFrames = (result: Promise<CompletionResult>): AsyncGenerator<CompletionStreamFrame> =>
     resultFrames(result, extractJsonPath)
   const textMessages = sanitizeTextMessages(messages, {
@@ -1023,7 +1264,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
     developerRole: info.flags.includes(LLMFlags.DeveloperRole),
   })
 
-  if (hasTools && !['openai', 'openrouter', 'nanogpt', 'anthropic', 'gemini'].includes(provider)) {
+  if (hasTools && !['openai', 'openrouter', 'nanogpt', 'openai-responses', 'anthropic', 'gemini'].includes(provider)) {
     throw new Error(`tools are not supported by the resolved ${provider} provider`)
   }
 
@@ -1032,13 +1273,14 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
     const request = resolveEchoRequest({
       message: isDebugEchoProfile ? resolveDebugEchoMessage(profile) : db.echoMessage,
       delayMs: isDebugEchoProfile ? 0 : (db.echoDelay ?? 0) * 1000,
+      additionalParams: dispatchAdditionalParams,
       signal,
     })
     return stream ? runEchoStream(request) : bufferedResultFrames(runEcho(request))
   }
 
   if (provider === 'openai' || provider === 'openrouter') {
-    const variant = resolveOpenAIVariant(db, info, provider, profile)
+    const variant = provider === 'openrouter' ? openRouterVariant : resolveOpenAIVariant(db, info, provider, profile)
     if (!variant) throw new Error('options.openai.apiKey is required')
     const request = resolveOpenAIRequest({
       model,
@@ -1052,6 +1294,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       ),
       apiKey: variant.apiKey,
       baseUrl: variant.baseUrl,
+      endpointUrl: variant.endpointUrl,
       maxTokens,
       temperature,
       topP: parameters.topP,
@@ -1061,19 +1304,30 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       repetitionPenalty: parameters.repetitionPenalty,
       frequencyPenalty: parameters.frequencyPenalty,
       presencePenalty: parameters.presencePenalty,
-      reasoningEffort: parameters.reasoningEffort,
-      verbosity: parameters.verbosity,
+      reasoningEffort: isLLMGatewayProfile ? llmGatewayOptions?.reasoningEffort : parameters.reasoningEffort,
+      verbosity: isLLMGatewayProfile ? llmGatewayOptions?.verbosity : parameters.verbosity,
+      serviceTier: llmGatewayOptions?.serviceTier,
+      flexProcessing:
+        db.openAIFlexProcessing === true &&
+        (info.provider === LLMProvider.OpenAI ||
+          profile.modelId === 'reverse_proxy' ||
+          profile.modelId === 'custom-api' ||
+          profile.modelId.startsWith('xcustom:::') ||
+          profile.status.providerId === 'custom-api'),
+      routing: llmGatewayOptions?.routing,
       seed: db.generationSeed,
-      responseFormat: openAIChatResponseFormat(db),
+      responseFormat: openAIChatResponseFormat(db, info.flags),
       prediction: db.OAIPrediction,
       openRouter: resolveOpenRouterRequestOptions(provider, profile),
       n: generationCount,
       useCompletionTokens: info.flags.includes(LLMFlags.OAICompletionTokens),
       thinking: resolveDeepSeekThinking(db, info.flags),
-      logitBias: resolveOpenAILogitBias(args.biases ?? [], model),
+      deepSeekThinkingOutput: info.flags.includes(LLMFlags.deepSeekThinkingOutput),
+      logitBias: resolveOpenAILogitBias(args.biases ?? [], model, tokenizerEncodingFromDb(db)),
       extraHeaders: variant.extraHeaders,
-      additionalParams: variant.additionalParams,
+      additionalParams: dispatchAdditionalParams,
       oobaSystemHoist: variant.oobaSystemHoist,
+      oobaArgs: variant.oobaArgs,
       signal,
       trace,
       tools: args.tools,
@@ -1097,6 +1351,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       ),
       apiKey: variant.apiKey,
       baseUrl: variant.baseUrl,
+      endpointUrl: variant.endpointUrl,
       maxTokens,
       temperature,
       topP: parameters.topP,
@@ -1109,16 +1364,18 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       reasoningEffort: parameters.reasoningEffort,
       verbosity: parameters.verbosity,
       seed: db.generationSeed,
-      responseFormat: openAIChatResponseFormat(db),
+      responseFormat: openAIChatResponseFormat(db, info.flags),
       prediction: db.OAIPrediction,
       openRouter: resolveOpenRouterRequestOptions(provider, profile),
       n: generationCount,
       useCompletionTokens: info.flags.includes(LLMFlags.OAICompletionTokens),
       thinking: resolveDeepSeekThinking(db, info.flags),
-      logitBias: resolveOpenAILogitBias(args.biases ?? [], model),
+      deepSeekThinkingOutput: info.flags.includes(LLMFlags.deepSeekThinkingOutput),
+      logitBias: resolveOpenAILogitBias(args.biases ?? [], model, tokenizerEncodingFromDb(db)),
       extraHeaders: variant.extraHeaders,
-      additionalParams: variant.additionalParams,
+      additionalParams: dispatchAdditionalParams,
       oobaSystemHoist: variant.oobaSystemHoist,
+      oobaArgs: variant.oobaArgs,
       signal,
       trace,
       tools: args.tools,
@@ -1150,7 +1407,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       supportsXHighEffort: info.flags.includes(LLMFlags.claudeXHighEffort),
       oneHourCache: db.claude1HourCaching === true,
       extraHeaders: providerOptions.extraHeaders,
-      additionalParams: providerOptions.additionalParams,
+      additionalParams: dispatchAdditionalParams,
       signal,
       tools: args.tools,
       toolRounds: args.toolRounds,
@@ -1172,7 +1429,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       frequencyPenalty: parameters.frequencyPenalty,
       topP: parameters.topP,
       extraHeaders: providerOptions.extraHeaders,
-      additionalParams: providerOptions.additionalParams,
+      additionalParams: dispatchAdditionalParams,
       signal,
     })
     if (!request) throw new Error('options.mistral.apiKey is required')
@@ -1196,7 +1453,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       presencePenalty: parameters.presencePenalty,
       frequencyPenalty: parameters.frequencyPenalty,
       extraHeaders: providerOptions.extraHeaders,
-      additionalParams: providerOptions.additionalParams,
+      additionalParams: dispatchAdditionalParams,
       signal,
     })
     if (!request) throw new Error('cohere requires a user message to generate a response')
@@ -1211,6 +1468,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       messages,
       apiKey: info.format === LLMFormat.VertexAIGemini ? undefined : asString(providerOptions.apiKey),
       vertex,
+      baseUrl: asString(providerOptions.baseUrl),
       maxOutputTokens: maxTokens,
       temperature,
       topP: parameters.topP,
@@ -1218,11 +1476,36 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       presencePenalty: parameters.presencePenalty,
       frequencyPenalty: parameters.frequencyPenalty,
       thinkingTokens: parameters.thinkingTokens,
+      thinkingLevel: parameters.reasoningEffort,
+      thinkingLevelNoMinimal: info.flags.includes(LLMFlags.geminiThinkingNoMinimal),
+      geminiBlockOff: info.flags.includes(LLMFlags.geminiBlockOff),
+      noCivilIntegrity: info.flags.includes(LLMFlags.noCivilIntegrity),
+      responseSchema: geminiResponseSchema(db, args.schema),
+      extraHeaders: providerOptions.extraHeaders,
+      additionalParams: dispatchAdditionalParams,
       streamThoughts: db.streamGeminiThoughts === true,
       signal,
       trace,
       tools: args.tools,
       toolRounds: args.toolRounds,
+      responseModalities: geminiResponseModalities,
+      persistInlineData: args.inlayAssetPersistence
+        ? async (inlineData: GeminiInlineData) => {
+            const compactBase64 = inlineData.data.replace(/\s/gu, '')
+            if (!/^[A-Za-z0-9+/]*={0,2}$/u.test(compactBase64) || compactBase64.length % 4 === 1) {
+              throw new Error('Gemini returned invalid base64 inlineData')
+            }
+            const bytes = Buffer.from(compactBase64, 'base64')
+            if (bytes.length === 0) throw new Error('Gemini returned empty inlineData')
+            const mediaType = inlineData.mimeType.split('/', 1)[0]
+            return persistServerInlayAsset(args.inlayAssetPersistence!.db, args.inlayAssetPersistence!.dataDir, {
+              bytes,
+              contentType: inlineData.mimeType,
+              name: mediaType === 'audio' ? 'gemini-audio' : mediaType === 'image' ? 'gemini-image' : 'gemini-media',
+            })
+          }
+        : undefined,
+      onWarning: args.onWarning,
     })
     if (!request) throw new Error('options.gemini.apiKey or options.gemini.vertex is required')
     return stream ? runGeminiStream(request) : bufferedResultFrames(runGemini(request))
@@ -1242,7 +1525,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       presencePenalty: parameters.presencePenalty,
       frequencyPenalty: parameters.frequencyPenalty,
       extraHeaders: variant.extraHeaders,
-      additionalParams: variant.additionalParams,
+      additionalParams: dispatchAdditionalParams,
       signal,
     })
     if (!request) throw new Error('options["openai-legacy-instruct"].apiKey is required')
@@ -1252,18 +1535,25 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   if (provider === 'openai-responses') {
     const variant = resolveProfileOpenAIVariant(db, profile)
     if (!variant) throw new Error('options["openai-responses"].apiKey is required')
+    const responseTools = [
+      ...openAIResponsesToolDefinitions(args.tools ?? []),
+      ...(profile.runtimeOptions.modelTools.includes('search') ? [{ type: 'web_search_preview' }] : []),
+    ]
     const request = resolveOpenAIResponsesRequest({
       model,
       messages,
       apiKey: variant.apiKey,
       baseUrl: variant.baseUrl,
+      endpointUrl: variant.endpointUrl,
       maxOutputTokens: maxTokens,
       temperature,
       topP: parameters.topP,
       reasoningEffort: parameters.reasoningEffort,
+      reasoningSummary: info.parameters.includes('reasoning_effort'),
       verbosity: parameters.verbosity,
       responseFormat: openAIResponsesFormat(db),
-      tools: profile.runtimeOptions.modelTools.includes('search') ? [{ type: 'web_search_preview' }] : undefined,
+      tools: responseTools.length > 0 ? responseTools : undefined,
+      toolRounds: args.toolRounds,
       developerRole: info.flags.includes(LLMFlags.DeveloperRole),
       visionQuality: db.gptVisionQuality,
       newOAIHandle: db.newOAIHandle !== false,
@@ -1271,7 +1561,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       // privacy contract; Ollama Cloud does not accept this OpenAI-only field.
       store: profile.modelId === 'ollama-cloud' ? undefined : false,
       extraHeaders: variant.extraHeaders,
-      additionalParams: variant.additionalParams,
+      additionalParams: dispatchAdditionalParams,
       signal,
     })
     if (!request) throw new Error('options["openai-responses"].apiKey is required')
@@ -1290,6 +1580,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       topK: parameters.topK,
       topA: parameters.topA,
       repetitionPenalty: parameters.repetitionPenalty,
+      additionalParams: dispatchAdditionalParams,
       signal,
     })
     if (!request) throw new Error('options.kobold.baseUrl is required')
@@ -1297,6 +1588,9 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   }
 
   if (provider === 'ooba-legacy') {
+    // Compatibility policy: Ooba Legacy remains buffered HTTP. The legacy
+    // settings UI disables streaming for this transport instead of reviving
+    // the retired WebSocket adapter.
     const providerOptions = profile.providerOptions
     const ooba = db.ooba
     const request = resolveOobaLegacyRequest({
@@ -1304,7 +1598,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       baseUrl: asString(providerOptions.baseUrl),
       apiKey: asString(providerOptions.apiKey),
       maxTokens,
-      truncationLength: db.maxContext,
+      truncationLength: maxTokens,
       // Ooba Legacy predates the model-capability parameter table and keeps its
       // own sampler block. Preserve that contract even though the model row's
       // `parameters` array is intentionally empty.
@@ -1330,11 +1624,24 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       addBosToken: ooba?.add_bos_token,
       banEosToken: ooba?.ban_eos_token,
       skipSpecialTokens: ooba?.skip_special_tokens,
-      stoppingStrings: db.localStopStrings?.map((value) => value.replace(/\\n/gu, '\n')),
+      stoppingStrings:
+        db.localStopStrings?.map((value: string) => value.replace(/\\n/gu, '\n')) ??
+        buildOobaLegacyStopStrings(ooba?.formating?.userPrefix ?? '', db.username ?? 'User'),
+      additionalParams: dispatchAdditionalParams,
       signal,
     })
     if (!request) throw new Error('options["ooba-legacy"].baseUrl is required')
-    return bufferedResultFrames(runOobaLegacy(request))
+    const charName = cleanupCharacterName(args, db)
+    return bufferedResultFrames(
+      runOobaLegacy(request).then((result) =>
+        result.type === 'success'
+          ? {
+              ...result,
+              result: unstringlizeChat(result.result, messages, charName, db.username ?? ''),
+            }
+          : result,
+      ),
+    )
   }
 
   if (provider === 'ollama') {
@@ -1347,6 +1654,9 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       temperature,
       topP: parameters.topP,
       topK: parameters.topK,
+      think: resolveOllamaThinkMode(profile.providerOptions.ollama?.thinkingMode ?? db.ollamaThinkingMode),
+      extraHeaders: profile.providerOptions.extraHeaders,
+      additionalParams: dispatchAdditionalParams,
       signal,
     })
     if (!request) throw new Error('options.ollama.baseUrl is required')
@@ -1369,6 +1679,12 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       temperature,
       topP: parameters.topP,
       topK: parameters.topK,
+      thinkingTokens: parameters.thinkingTokens,
+      thinkingType: db.thinkingType,
+      adaptiveThinkingEffort: db.adaptiveThinkingEffort,
+      supportsAdaptiveThinking: info.flags.includes(LLMFlags.claudeAdaptiveThinking),
+      supportsXHighEffort: info.flags.includes(LLMFlags.claudeXHighEffort),
+      additionalParams: dispatchAdditionalParams,
       signal,
     })
     if (!request) throw new Error('bedrock could not resolve request from the given options')
@@ -1378,7 +1694,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   if (provider === 'horde') {
     const providerOptions = profile.providerOptions
     const request = resolveHordeRequest({
-      prompt: applyChatTemplate(db, textMessages as OpenAIChat[]),
+      prompt: applyChatTemplate(db, textMessages as PromptMessage[]),
       model,
       apiKey: asString(providerOptions.apiKey),
       maxTokens,
@@ -1386,16 +1702,17 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       temperature,
       topK: normalizeDispatchSampler(db.top_k),
       topP: normalizeDispatchSampler(db.top_p),
+      additionalParams: dispatchAdditionalParams,
       signal,
     })
     if (!request) throw new Error('options.horde.prompt is required')
-    const char = db.characters?.[0]
+    const charName = cleanupCharacterName(args, db)
     return bufferedResultFrames(
       runHorde(request).then((result) =>
         result.type === 'success'
           ? {
               ...result,
-              result: unstringlizeChat(result.result, messages, char?.name ?? '', db.username ?? ''),
+              result: unstringlizeChat(result.result, messages, charName, db.username ?? ''),
             }
           : result,
       ),
@@ -1405,21 +1722,31 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   throw new Error(`provider not implemented yet: ${provider}`)
 }
 
-export function getServerGenerationModelString(db: Database): string {
-  const name = db.aiModel
+export function getServerGenerationModelString(
+  db: Database,
+  profile?: ResolvedModelProfile,
+  resolvedRequestModel?: string,
+): string {
+  const name = profile?.modelId ?? db.aiModel
+  const durableRequestModel = profile?.source.kind === 'durable-profile' ? profile.requestModel : undefined
   switch (name) {
     case 'reverse_proxy':
-      return `custom-${db.reverseProxyOobaMode ? 'ooba' : db.customProxyRequestModel}`
+      return `custom-${db.reverseProxyOobaMode ? 'ooba' : durableRequestModel || db.customProxyRequestModel}`
     case 'openrouter':
-      return `openrouter-${db.openrouterRequestModel}`
+      return `openrouter-${resolvedRequestModel || durableRequestModel || profile?.requestModel || db.openrouterRequestModel}`
     case 'nanogpt': {
-      const modelLabel = db.nanogptRequestModelName || db.nanogptRequestModel
-      return `NanoGPT ${modelLabel}${db.nanogptUseSubscriptionEndpoint ? ' [SUB]' : ''}`
+      const modelLabel = durableRequestModel || db.nanogptRequestModelName || db.nanogptRequestModel
+      const subscription =
+        profile?.providerOptions.nanogpt?.useSubscriptionEndpoint ?? db.nanogptUseSubscriptionEndpoint
+      return `NanoGPT ${modelLabel}${subscription ? ' [SUB]' : ''}`
     }
     case 'ollama-hosted':
     case 'ollama-cloud': {
       const modelLabel =
-        name === 'ollama-cloud' ? db.ollamaCloudModelName || db.ollamaCloudModel : db.ollamaModelName || db.ollamaModel
+        durableRequestModel ||
+        (name === 'ollama-cloud'
+          ? db.ollamaCloudModelName || db.ollamaCloudModel
+          : db.ollamaModelName || db.ollamaModel)
       return `Ollama ${name === 'ollama-cloud' ? 'Cloud' : 'Local'} ${modelLabel}`
     }
     default:

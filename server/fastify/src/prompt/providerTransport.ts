@@ -8,14 +8,39 @@ export interface ProviderChunkTransportResult {
   result: string
   finishReason?: CompletionStreamFrame['finishReason']
   alternates?: string[]
+  /** Present when a post-token failure retained a processed partial row. */
+  failurePostGeneration?: ProviderFailurePostGenerationResult
 }
 
 export type ProviderDoneMetadata = (result: string) => Omit<DoneEvent, 'type' | 'result'> | undefined
 
+export interface ProviderTokenProgressOptions {
+  /** Wall-clock time immediately before provider dispatch. */
+  startedAt: number
+  /** Count tokenizer tokens in one non-empty provider delta. */
+  countTokens: (content: string) => number
+  /** Injectable clock for deterministic transport tests. */
+  now?: () => number
+}
+
 export interface ProviderPostGenerationResult {
   frame?: PostGenerationFrame
+  /** Derived primary text used by post-generation side effects such as TTS. */
+  primary?: string
   /** Final per-choice text to expose on the terminal done event. */
   alternates?: readonly string[]
+  /** The post-generation callback already emitted a terminal error. */
+  terminalStatus?: 'error'
+  /** Successful commit with deferred retry-journal cleanup. */
+  persistenceDisposition?: DoneEvent['persistenceDisposition']
+}
+
+export interface ProviderFailurePostGenerationResult {
+  /** Processed partial-row snapshot persisted after a post-token failure. */
+  frame?: PostGenerationFrame
+  /** Truthful durability state when the partial could not commit immediately. */
+  persistenceDisposition?: ErrorEvent['persistenceDisposition']
+  generationProjection?: ErrorEvent['generationProjection']
 }
 
 export interface ProviderChunkTransportOptions {
@@ -26,8 +51,17 @@ export interface ProviderChunkTransportOptions {
    * durable/replayable transports must retain the terminal result.
    */
   omitResultWhenStreamed?: boolean
-  sideEffects?: (result: string) => PromptChatEvent[]
+  /** Optional batching-safe token throughput metadata for half streaming. */
+  tokenProgress?: ProviderTokenProgressOptions
+  /** Receives post-generation primary + alternates in provider choice order. */
+  sideEffects?: (results: readonly string[]) => PromptChatEvent[]
   errorRestoration?: () => ErrorEvent['restoration']
+  /**
+   * Editoutput-only partial finalization for provider failures after tokens.
+   * The raw token stream remains unchanged; the returned snapshot is additive
+   * on the terminal error and following compatibility `done` frame.
+   */
+  failurePostGeneration?: (result: string) => Promise<ProviderFailurePostGenerationResult | undefined>
   /**
    * Server post-generation pass, run over the full completion text after the
    * stream succeeds and before the terminal `done`. Its result is folded into
@@ -46,7 +80,11 @@ function isProviderPostGenerationResult(
   value: PostGenerationFrame | ProviderPostGenerationResult,
 ): value is ProviderPostGenerationResult {
   return (
-    Object.prototype.hasOwnProperty.call(value, 'frame') || Object.prototype.hasOwnProperty.call(value, 'alternates')
+    Object.prototype.hasOwnProperty.call(value, 'frame') ||
+    Object.prototype.hasOwnProperty.call(value, 'primary') ||
+    Object.prototype.hasOwnProperty.call(value, 'alternates') ||
+    Object.prototype.hasOwnProperty.call(value, 'terminalStatus') ||
+    Object.prototype.hasOwnProperty.call(value, 'persistenceDisposition')
   )
 }
 
@@ -72,29 +110,71 @@ export async function emitProviderChunks(
 ): Promise<ProviderChunkTransportResult> {
   let result = ''
   let alternates: string[] = []
+  let generatedTokens = 0
   const normalizedOptions: ProviderChunkTransportOptions =
     typeof options === 'function' ? { doneMetadata: options } : options
-  const emitSideEffects = (): void => {
-    for (const event of normalizedOptions.sideEffects?.(result) ?? []) {
+  const emitSideEffects = (results: readonly string[]): void => {
+    for (const event of normalizedOptions.sideEffects?.(results) ?? []) {
       emit(event)
     }
   }
+  const emitFailure = async (
+    failure: Omit<
+      ErrorEvent,
+      'type' | 'restoration' | 'result' | 'postGeneration' | 'persistenceDisposition' | 'generationProjection'
+    >,
+  ): Promise<ProviderFailurePostGenerationResult | undefined> => {
+    let partial: ProviderFailurePostGenerationResult | undefined
+    if (result.length > 0 && normalizedOptions.failurePostGeneration) {
+      try {
+        partial = await normalizedOptions.failurePostGeneration(result)
+      } catch {
+        // The provider failure remains authoritative even if best-effort
+        // partial finalization encounters an unexpected implementation error.
+      }
+    }
+    const restoration = normalizedOptions.errorRestoration?.()
+    emit({
+      type: 'error',
+      ...failure,
+      ...(restoration !== undefined ? { restoration } : {}),
+      ...(result.length > 0 ? { result } : {}),
+      ...(partial?.frame ? { postGeneration: partial.frame } : {}),
+      ...(partial?.persistenceDisposition ? { persistenceDisposition: partial.persistenceDisposition } : {}),
+      ...(partial?.generationProjection ? { generationProjection: partial.generationProjection } : {}),
+    })
+    emit({
+      type: 'done',
+      ...(result.length > 0 ? { result } : {}),
+      ...(normalizedOptions.doneMetadata?.(result) ?? {}),
+      ...(partial?.frame ? { postGeneration: partial.frame } : {}),
+    })
+    return partial
+  }
   // Run the post-generation pass before the terminal `done`; thrown errors are
   // handled by the streaming route's provider-error path.
-  const emitSuccessDone = async (): Promise<void> => {
-    emitSideEffects()
+  const emitSuccessDone = async (): Promise<'done' | 'error'> => {
     const postGenerationResult = normalizedOptions.postGeneration
       ? await normalizedOptions.postGeneration(result, alternates)
       : undefined
     let postGeneration: PostGenerationFrame | undefined
+    let primary = result
+    let terminalStatus: ProviderPostGenerationResult['terminalStatus']
+    let persistenceDisposition: ProviderPostGenerationResult['persistenceDisposition']
     if (postGenerationResult) {
       if (isProviderPostGenerationResult(postGenerationResult)) {
         postGeneration = postGenerationResult.frame
+        primary = postGenerationResult.primary ?? postGeneration?.finalText ?? result
         alternates = [...(postGenerationResult.alternates ?? alternates)]
+        terminalStatus = postGenerationResult.terminalStatus
+        persistenceDisposition = postGenerationResult.persistenceDisposition
       } else {
         postGeneration = postGenerationResult as PostGenerationFrame
+        primary = postGeneration.finalText ?? result
       }
     }
+    if (terminalStatus === 'error') return 'error'
+    emitSideEffects([primary, ...alternates])
     const omitStreamedResult = normalizedOptions.omitResultWhenStreamed === true && result.length > 0
     emit({
       type: 'done',
@@ -102,7 +182,9 @@ export async function emitProviderChunks(
       ...(normalizedOptions.doneMetadata?.(result) ?? {}),
       ...(alternates.length > 0 ? { alternates } : {}),
       ...(postGeneration ? { postGeneration } : {}),
+      ...(persistenceDisposition ? { persistenceDisposition } : {}),
     })
+    return 'done'
   }
 
   if (signal?.aborted) {
@@ -117,7 +199,21 @@ export async function emitProviderChunks(
       if (frame.kind === 'token') {
         const content = frame.content ?? ''
         result += content
-        emit({ type: 'token', content })
+        const tokenProgress = normalizedOptions.tokenProgress
+        if (content.length > 0 && tokenProgress) {
+          let deltaTokens = 1
+          try {
+            const counted = tokenProgress.countTokens(content)
+            if (Number.isFinite(counted)) deltaTokens = Math.max(1, Math.floor(counted))
+          } catch {
+            // Throughput telemetry must never interrupt the provider stream.
+          }
+          generatedTokens += deltaTokens
+          const elapsedMs = Math.max(1, Math.round((tokenProgress.now?.() ?? Date.now()) - tokenProgress.startedAt))
+          emit({ type: 'token', content, generatedTokens, elapsedMs })
+        } else {
+          emit({ type: 'token', content })
+        }
         continue
       }
       if (frame.kind === 'error') {
@@ -125,8 +221,7 @@ export async function emitProviderChunks(
         const status = typeof frame.status === 'number' ? frame.status : undefined
         const statusText = nonEmptyString(frame.statusText) ? frame.statusText : undefined
         const code = nonEmptyString(frame.code) ? frame.code : undefined
-        emit({
-          type: 'error',
+        const failurePostGeneration = await emitFailure({
           error: providerError ?? 'Provider stream failed without an error message.',
           reason:
             typeof frame.reason === 'string' && frame.reason.length > 0
@@ -137,10 +232,12 @@ export async function emitProviderChunks(
           ...(status !== undefined ? { status } : {}),
           ...(statusText ? { statusText } : {}),
           ...(code ? { code } : {}),
-          restoration: normalizedOptions.errorRestoration?.(),
         })
-        emit({ type: 'done', ...(normalizedOptions.doneMetadata?.(result) ?? {}) })
-        return { status: 'error', result }
+        return {
+          status: 'error',
+          result,
+          ...(failurePostGeneration ? { failurePostGeneration } : {}),
+        }
       }
 
       if (signal?.aborted) {
@@ -148,9 +245,9 @@ export async function emitProviderChunks(
       }
 
       alternates = Array.isArray(frame.alternates) ? [...frame.alternates] : []
-      await emitSuccessDone()
+      const terminalStatus = await emitSuccessDone()
       return {
-        status: 'done',
+        status: terminalStatus,
         result,
         finishReason: frame.finishReason,
         ...(alternates.length > 0 ? { alternates } : {}),
@@ -160,20 +257,21 @@ export async function emitProviderChunks(
     if (signal?.aborted) {
       return { status: 'aborted', result }
     }
-    emit({
-      type: 'error',
+    const failurePostGeneration = await emitFailure({
       error: errorMessage(err),
       reason: 'provider_stream_exception',
-      restoration: normalizedOptions.errorRestoration?.(),
     })
-    emit({ type: 'done', ...(normalizedOptions.doneMetadata?.(result) ?? {}) })
-    return { status: 'error', result }
+    return {
+      status: 'error',
+      result,
+      ...(failurePostGeneration ? { failurePostGeneration } : {}),
+    }
   }
 
   if (signal?.aborted) {
     return { status: 'aborted', result }
   }
 
-  await emitSuccessDone()
-  return { status: 'done', result }
+  const terminalStatus = await emitSuccessDone()
+  return { status: terminalStatus, result }
 }

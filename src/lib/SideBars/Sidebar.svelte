@@ -11,7 +11,7 @@
     QuickSettings,
     additionalHamburgerMenu,
   } from '../../ts/stores.svelte'
-  import { getDatabase, setDatabase } from '../../ts/storage/database.svelte'
+  import type { character } from '../../ts/storage/database.svelte'
   import BarIcon from './BarIcon.svelte'
   import SidebarIndicator from './SidebarIndicator.svelte'
   import {
@@ -25,18 +25,17 @@
     WrenchIcon,
     User2Icon,
   } from '@lucide/svelte'
-  import { addCharacter, changeChar, getCharImage } from '../../ts/characters'
-  import CharConfig from './CharConfig.svelte'
+  import { getCharImage } from '../../ts/characterImage'
   import { language } from '../../lang'
   import SidebarAvatar from './SidebarAvatar.svelte'
   import BaseRoundedButton from '../UI/BaseRoundedButton.svelte'
   import { selectSingleFile } from 'src/ts/filePicker'
   import { getFileSrc, saveAsset } from 'src/ts/globalApi.svelte'
-  import { alertError, alertInput, alertNormal, alertSelect } from 'src/ts/alert'
+  import { alertConfirm, alertError, alertInput, alertNormal, alertSelect } from 'src/ts/alert'
   import SideChatList from './SideChatList.svelte'
+  import { pluginRuntimeStateStore } from '../../ts/plugins/plugins.svelte'
   import { sideBarSize } from 'src/ts/gui/guisize'
-  import DevTool from './DevTool.svelte'
-  import QuickSettingsGui from '../Others/QuickSettingsGUI.svelte'
+  import LazyComponent from '../UI/LazyComponent.svelte'
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
   import {
     createCharacterOrderFolderWithOutcome,
@@ -54,11 +53,8 @@
     type CharacterFolderImageUploadOperation,
   } from 'src/ts/server/characterFolderImageUpload'
   import { createSidebarCharacterListMemo, type SidebarCharacterListItem } from './sidebarCharList'
-  import {
-    createSidebarCharacterDragController,
-    isSidebarCharacterDrag,
-    SIDEBAR_CHARACTER_DRAG_TYPE,
-  } from './sidebarDrag'
+  import { createSidebarCharacterDragController, isSidebarCharacterDrag } from './sidebarDrag'
+  import { RISU_SIDEBAR_DRAG_TYPE } from 'src/ts/dragTypes'
   import {
     characterRoutePath,
     closeSettingsRoute,
@@ -66,6 +62,30 @@
     openSettingsRoute as openSettingsPath,
     setCharacterSidebarViewMode,
   } from 'src/ts/router'
+  import { canOpenCharacterFolder } from 'src/ts/characterFolderOpening'
+  import GenerationIndicator from './GenerationIndicator.svelte'
+  import PinnedChatsRail from './PinnedChatsRail.svelte'
+  import {
+    collectExhaustedGenerationChatIds,
+    collectGeneratingChatIds,
+    collectPinnedChats,
+    type PinnedChatItem,
+  } from './sidebarMultitasking'
+  import { createSidebarChatProjection } from './sidebarChatProjection.svelte'
+  import { activeChatGenerations } from 'src/ts/process/generationActivity.svelte'
+  import { activeGenerationJobs, generationJobLifecycles } from 'src/ts/process/reattach'
+  import { markChatRead, unreadChatIds } from 'src/ts/process/chatUnread.svelte'
+  import UnreadIndicator from './UnreadIndicator.svelte'
+  import { addCharacter, changeChar } from '../../ts/characters'
+  import {
+    charactersResourceState,
+    getCharacterResourceOwner,
+    settingsResourceState,
+  } from 'src/ts/server/resourceState.svelte'
+
+  const loadCharConfig = () => import('./CharConfig.svelte')
+  const loadDevTool = () => import('./DevTool.svelte')
+  const loadQuickSettings = () => import('../Others/QuickSettingsGUI.svelte')
   let sideBarMode = $state(0)
   let editMode = $state(false)
   let menuMode = $state(0)
@@ -180,14 +200,19 @@
     }
   }
 
-  async function openFolderActions(folderId: string, folderName: string): Promise<void> {
+  async function openFolderActions(folderId: string, folderName: string, askBeforeOpening: boolean): Promise<void> {
     if (
       isCharacterOrganizationActionPending('order') ||
       isCharacterOrganizationActionPending(characterFolderActionKey(folderId))
     ) {
       return
     }
-    const folderActions = [language.renameFolder, language.changeFolderColor, language.changeFolderImage]
+    const folderActions = [
+      language.renameFolder,
+      language.changeFolderColor,
+      language.changeFolderImage,
+      language.askBeforeOpening(askBeforeOpening),
+    ]
     const selectedAction = parseAlertSelection(
       await alertSelect(folderActions, language.folderActionsFor(folderName)),
       folderActions.length,
@@ -216,6 +241,13 @@
           updateCharacterOrderFolderWithOutcome(folderId, { color }),
         )
       }
+      return
+    }
+
+    if (selectedAction === 3) {
+      await runCharacterFolderAction(folderId, folderName, () =>
+        updateCharacterOrderFolderWithOutcome(folderId, { askBeforeOpening: !askBeforeOpening }),
+      )
       return
     }
 
@@ -267,7 +299,7 @@
       const folderImage = await selectSingleFile(['png', 'jpg', 'webp'], {
         onFileSelected: () => {
           const folderImageTarget = captureCharacterFolderImageUploadTarget({
-            characterOrder: getDatabase().characterOrder,
+            characterOrder: characterOrderOwner(),
             folderId,
           })
           if (!folderImageTarget) return
@@ -282,7 +314,7 @@
         if (
           !isFreshCharacterFolderImageUpload({
             operation: freshFolderImageUpload,
-            characterOrder: getDatabase().characterOrder,
+            characterOrder: characterOrderOwner(),
           })
         ) {
           return null
@@ -293,7 +325,7 @@
         if (
           !isFreshCharacterFolderImageUpload({
             operation: freshFolderImageUpload,
-            characterOrder: getDatabase().characterOrder,
+            characterOrder: characterOrderOwner(),
           })
         ) {
           return null
@@ -304,7 +336,7 @@
         if (
           !isFreshCharacterFolderImageUpload({
             operation: freshFolderImageUpload,
-            characterOrder: getDatabase().characterOrder,
+            characterOrder: characterOrderOwner(),
           })
         ) {
           return null
@@ -312,7 +344,7 @@
 
         const freshImagePatch = resolveFreshCharacterFolderImageUploadPatch({
           operation: freshFolderImageUpload,
-          characterOrder: getDatabase().characterOrder,
+          characterOrder: characterOrderOwner(),
           patch: { imgFile: folderImageData, img: folderImageSrc },
         })
 
@@ -324,8 +356,8 @@
     })
   }
 
-  function openCharacterRoute(index: number) {
-    const character = getDatabase().characters?.[index]
+  async function openCharacterRoute(index: number) {
+    const character = characterOwnerAt(index)
     if (!character?.chaId) {
       changeChar(index, { reseter })
       return
@@ -334,19 +366,137 @@
     navigate(characterRoutePath(character.chaId))
   }
 
+  function selectedSidebarCharacter() {
+    const index = $selectedCharID
+    return characterOwnerAt(index)
+  }
+
+  function stableOwnerId(value: unknown): value is string {
+    return typeof value === 'string' && value.trim().length > 0
+  }
+
+  const characterRows = $derived.by((): readonly character[] => {
+    const status = charactersResourceState.status
+    if (status === 'error') return []
+    if (status !== 'ready' && status !== 'idle' && status !== 'loading') return []
+
+    const rows = charactersResourceState.characters
+    const ownerIds = new Set<string>()
+    for (const row of rows) {
+      if (!stableOwnerId(row?.chaId) || ownerIds.has(row.chaId)) return []
+      ownerIds.add(row.chaId)
+    }
+    return rows
+  })
+
+  function characterRowsOwner(): readonly character[] {
+    return characterRows
+  }
+
+  function characterOwnerAt(index: number) {
+    if (index < 0) return undefined
+    const candidate = characterRowsOwner()[index]
+    if (!candidate?.chaId) return undefined
+    if (charactersResourceState.status !== 'ready') return candidate
+    return getCharacterResourceOwner(candidate.chaId) === candidate ? candidate : undefined
+  }
+
+  function hasStableUniqueCharacterOrder(
+    order: typeof charactersResourceState.characterOrder,
+    rows: readonly character[],
+  ): boolean {
+    if (!Array.isArray(order)) return false
+    const characterIds = new Set(rows.map((row) => row.chaId))
+    const orderedCharacterIds = new Set<string>()
+    const folderIds = new Set<string>()
+
+    for (const entry of order) {
+      if (typeof entry === 'string') {
+        if (!stableOwnerId(entry) || !characterIds.has(entry) || orderedCharacterIds.has(entry)) return false
+        orderedCharacterIds.add(entry)
+        continue
+      }
+      if (!entry || !stableOwnerId(entry.id) || folderIds.has(entry.id) || !Array.isArray(entry.data)) return false
+      folderIds.add(entry.id)
+      for (const characterId of entry.data) {
+        if (!stableOwnerId(characterId) || !characterIds.has(characterId) || orderedCharacterIds.has(characterId)) {
+          return false
+        }
+        orderedCharacterIds.add(characterId)
+      }
+    }
+    return true
+  }
+
+  function characterOrderOwner() {
+    const status = charactersResourceState.status
+    if (status === 'error') return []
+    if (status !== 'ready' && status !== 'idle' && status !== 'loading') return []
+    const order = charactersResourceState.characterOrder
+    return hasStableUniqueCharacterOrder(order, characterRowsOwner()) ? order : []
+  }
+
+  const chatProjection = createSidebarChatProjection(characterRowsOwner, () =>
+    hasStableUniqueCharacterOrder(charactersResourceState.characterOrder, characterRowsOwner()),
+  )
+
+  type SidebarBooleanSetting =
+    | 'roundIcons'
+    | 'menuSideBar'
+    | 'hamburgerButtonBottom'
+    | 'showFolderName'
+    | 'enableDevTools'
+  type SidebarSettingsGroup = 'display' | 'sidebar' | 'advanced'
+
+  function sidebarBooleanSetting(key: SidebarBooleanSetting, group: SidebarSettingsGroup, fallback = false): boolean {
+    const status = settingsResourceState.status
+    if (status === 'error' || settingsResourceState.groupStatuses[group] === 'error') return fallback
+    if (status !== 'ready' && status !== 'idle' && status !== 'loading') return fallback
+    const value = settingsResourceState.value[key]
+    return typeof value === 'boolean' ? value : fallback
+  }
+
   const getSidebarCharacterList = createSidebarCharacterListMemo()
   let charImages: SidebarCharacterListItem[] = $derived.by(
-    () => getSidebarCharacterList(getDatabase().characterOrder, getDatabase().characters).items,
+    () => getSidebarCharacterList(characterOrderOwner(), characterRowsOwner()).items,
   )
-  let IconRounded = $derived(getDatabase().roundIcons)
+  let IconRounded = $derived(sidebarBooleanSetting('roundIcons', 'display'))
+  let menuSideBar = $derived(sidebarBooleanSetting('menuSideBar', 'display'))
+  let hamburgerButtonBottom = $derived(sidebarBooleanSetting('hamburgerButtonBottom', 'sidebar'))
+  let showFolderName = $derived(sidebarBooleanSetting('showFolderName', 'display'))
+  let enableDevTools = $derived(sidebarBooleanSetting('enableDevTools', 'advanced'))
+  let warningChatIds = $derived(collectExhaustedGenerationChatIds($generationJobLifecycles))
+  let generatingChatIds = $derived(
+    collectGeneratingChatIds($activeGenerationJobs, $activeChatGenerations, warningChatIds),
+  )
+  let pinnedChats = $derived(collectPinnedChats(chatProjection.rows(), characterOrderOwner()))
+  const generatingCharacterIndexes = $derived(chatProjection.activeIndexes(generatingChatIds))
+  const warningCharacterIndexes = $derived(chatProjection.activeIndexes(warningChatIds))
+  const unreadCharacterIndexes = $derived(chatProjection.activeIndexes($unreadChatIds))
   let openFolders: string[] = $state([])
   const sidebarCharacterDrag = createSidebarCharacterDragController()
   interface Props {
     openGrid?: any
     hidden?: boolean
+    prefetchCharacter?: (characterId: string) => void
+    preloadGridRoute?: () => void
+    preloadPlaygroundRoute?: () => void
+    preloadSettingsRoute?: () => void
   }
 
-  let { openGrid = () => {}, hidden = false }: Props = $props()
+  let {
+    openGrid = () => {},
+    hidden = false,
+    prefetchCharacter = () => {},
+    preloadGridRoute = () => {},
+    preloadPlaygroundRoute = () => {},
+    preloadSettingsRoute = () => {},
+  }: Props = $props()
+
+  function prefetchCharacterAt(index: number): void {
+    const characterId = characterOwnerAt(index)?.chaId
+    if (characterId) prefetchCharacter(characterId)
+  }
 
   sideBarClosing.set(false)
 
@@ -355,27 +505,119 @@
     runCharacterOrderAction(() => moveCharacterOrderItemWithOutcome(mainIndex, targetIndex))
   }
 
-  function scrollToActiveCharacter() {
+  function characterOrderPosition(characterId: string | undefined): DragData | null {
+    if (!characterId) return null
+    for (const [index, entry] of characterOrderOwner().entries()) {
+      if (typeof entry === 'string') {
+        if (entry === characterId) return { index }
+        continue
+      }
+      const childIndex = entry.data.indexOf(characterId)
+      if (childIndex >= 0) return { folder: entry.id, index: childIndex }
+    }
+    return null
+  }
+
+  function openPinnedChat(item: PinnedChatItem): void {
+    markChatRead(item.chatId)
+    reseter()
+    navigate(characterRoutePath(item.characterId, item.chatId))
+    if ($DynamicGUI) {
+      sideBarClosing.set(true)
+    }
+  }
+
+  function openNarrowPinnedChat(item: PinnedChatItem): void {
+    if (menuMode === 1) return
+    openPinnedChat(item)
+  }
+
+  function characterIsGenerating(index: number): boolean {
+    return generatingCharacterIndexes.has(index)
+  }
+
+  function characterFolderIsGenerating(indexes: readonly number[]): boolean {
+    return indexes.some((index) => generatingCharacterIndexes.has(index))
+  }
+
+  function characterHasReattachWarning(index: number): boolean {
+    return warningCharacterIndexes.has(index)
+  }
+
+  function characterFolderHasReattachWarning(indexes: readonly number[]): boolean {
+    return indexes.some((index) => warningCharacterIndexes.has(index))
+  }
+
+  function characterHasUnreadChat(index: number): boolean {
+    return unreadCharacterIndexes.has(index)
+  }
+
+  function characterFolderHasUnreadChat(indexes: readonly number[]): boolean {
+    return indexes.some((index) => unreadCharacterIndexes.has(index))
+  }
+
+  function sidebarItemPosition(item: SidebarCharacterListItem): DragData | null {
+    if (item.type === 'normal') {
+      return characterOrderPosition(characterOwnerAt(item.index)?.chaId)
+    }
+    const index = characterOrderOwner().findIndex((entry) => typeof entry !== 'string' && entry.id === item.id)
+    return index < 0 ? null : { index }
+  }
+
+  function positionAfter(position: DragData | null): DragData | null {
+    if (!position) return null
+    return position.folder ? { folder: position.folder, index: position.index + 1 } : { index: position.index + 1 }
+  }
+
+  async function requestCharacterFolderOpening(
+    characterFolder: Extract<SidebarCharacterListItem, { type: 'folder' }>,
+  ): Promise<boolean> {
+    return canOpenCharacterFolder({
+      folderId: characterFolder.id,
+      askBeforeOpening: characterFolder.askBeforeOpening,
+      confirm: () => alertConfirm(language.confirmFolderOpening(characterFolder.name)),
+    })
+  }
+
+  async function toggleCharacterFolder(
+    characterFolder: Extract<SidebarCharacterListItem, { type: 'folder' }>,
+  ): Promise<void> {
+    const openIndex = openFolders.indexOf(characterFolder.id)
+    if (openIndex >= 0) {
+      openFolders.splice(openIndex, 1)
+      openFolders = openFolders
+      return
+    }
+
+    if (!(await requestCharacterFolderOpening(characterFolder))) return
+    if (!openFolders.includes(characterFolder.id)) {
+      openFolders.push(characterFolder.id)
+      openFolders = openFolders
+    }
+  }
+
+  async function scrollToActiveCharacter() {
     const selectedId = $selectedCharID
     if (selectedId === -1) return
 
-    const characterId = getDatabase().characters[selectedId]?.chaId
+    const characterId = characterOwnerAt(selectedId)?.chaId
     if (!characterId) return
 
-    let targetFolderId: string | null = null
+    let targetFolder: Extract<SidebarCharacterListItem, { type: 'folder' }> | null = null
 
     for (const item of charImages) {
       if (item.type === 'folder') {
-        const foundChar = item.folder.find((c) => getDatabase().characters[c.index]?.chaId === characterId)
+        const foundChar = item.folder.find((c) => characterOwnerAt(c.index)?.chaId === characterId)
         if (foundChar) {
-          targetFolderId = item.id
+          targetFolder = item
           break
         }
       }
     }
 
-    if (targetFolderId && !openFolders.includes(targetFolderId)) {
-      openFolders.push(targetFolderId)
+    if (targetFolder && !openFolders.includes(targetFolder.id)) {
+      if (!(await requestCharacterFolderOpening(targetFolder))) return
+      openFolders.push(targetFolder.id)
       openFolders = openFolders
     }
 
@@ -394,7 +636,7 @@
     if (typeof window === 'undefined') return
 
     const handler = () => {
-      scrollToActiveCharacter()
+      void scrollToActiveCharacter()
     }
 
     window.addEventListener('scrollToActiveCharacter', handler)
@@ -417,10 +659,10 @@
   type DragData = CharacterOrderDragPosition
   const avatarDragStart = (ind: DragData, e: DragEv) => {
     if (characterOrganizationMutationPending) return
-    if (!sidebarCharacterDrag.begin(ind, getDatabase().characterOrder)) return
+    if (!sidebarCharacterDrag.begin(ind, characterOrderOwner())) return
 
     e.dataTransfer.setData('text/plain', '')
-    e.dataTransfer.setData(SIDEBAR_CHARACTER_DRAG_TYPE, 'true')
+    e.dataTransfer.setData(RISU_SIDEBAR_DRAG_TYPE, 'true')
     const avatar = e.currentTarget.querySelector('.avatar')
     if (avatar) {
       e.dataTransfer.setDragImage(avatar, 10, 10)
@@ -436,7 +678,7 @@
 
   const avatarDrop = (ind: DragData, e: DragEv) => {
     if (characterOrganizationMutationPending) return
-    const drag = sidebarCharacterDrag.consume(e.dataTransfer.types, getDatabase().characterOrder)
+    const drag = sidebarCharacterDrag.consume(e.dataTransfer.types, characterOrderOwner())
     if (!drag) return
 
     e.preventDefault()
@@ -457,7 +699,7 @@
   const consumeDropZoneDrag = (e: DragEv) => {
     e.currentTarget.classList.remove('bg-green-500')
     if (characterOrganizationMutationPending) return null
-    const drag = sidebarCharacterDrag.consume(e.dataTransfer.types, getDatabase().characterOrder)
+    const drag = sidebarCharacterDrag.consume(e.dataTransfer.types, characterOrderOwner())
     if (!drag) return null
 
     e.preventDefault()
@@ -476,7 +718,7 @@
   }
 </script>
 
-{#if getDatabase().menuSideBar}
+{#if menuSideBar}
   <div
     class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
     class:editMode
@@ -494,6 +736,8 @@
     <button
       class="flex items-center justify-center py-2 flex-col gap-1 w-full"
       class:text-textcolor2={!$settingsOpen}
+      onpointerenter={preloadSettingsRoute}
+      onfocus={preloadSettingsRoute}
       onclick={openSettingsRoute}>
       <Settings />
       <span class="text-xs">{language.settings}</span>
@@ -501,6 +745,8 @@
     <button
       class="flex items-center justify-center py-2 flex-col gap-1 w-full"
       class:text-textcolor2={!($selectedCharID >= 0)}
+      onpointerenter={preloadGridRoute}
+      onfocus={preloadGridRoute}
       onclick={() => {
         reseter()
         openGrid()
@@ -511,10 +757,20 @@
     <button
       class="flex items-center justify-center py-2 flex-col gap-1 w-full"
       class:text-textcolor2={!($selectedCharID < 0 && $PlaygroundStore !== 0)}
+      onpointerenter={preloadPlaygroundRoute}
+      onfocus={preloadPlaygroundRoute}
       onclick={openPlaygroundRoute}>
       <ShellIcon />
       <span class="text-xs">{language.playground.playground}</span>
     </button>
+    <PinnedChatsRail
+      items={pinnedChats}
+      {generatingChatIds}
+      {warningChatIds}
+      unreadChatIds={$unreadChatIds}
+      rounded={IconRounded}
+      onOpen={openPinnedChat}
+      onPrefetch={(item) => prefetchCharacter(item.characterId)} />
   </div>
 {:else}
   <div
@@ -524,7 +780,7 @@
     class:risu-sub-sidebar-close={$sideBarClosing}
     class:hidden
     class:flex={!hidden}>
-    {#if !getDatabase().hamburgerButtonBottom}
+    {#if !hamburgerButtonBottom}
       <button
         aria-label={language.menu}
         aria-expanded={menuMode === 1}
@@ -538,25 +794,32 @@
         {#if menuMode === 1}
           <div
             class="absolute w-20 min-w-20 flex border-b-selected border-b bg-bgcolor flex-col items-center pt-2 rounded-b-md z-20 pb-2">
-            <BarIcon onClick={openSettingsRoute} ariaLabel={language.settings}><Settings /></BarIcon>
+            <BarIcon onClick={openSettingsRoute} onIntent={preloadSettingsRoute} ariaLabel={language.settings}
+              ><Settings /></BarIcon>
             <div class="mt-2"></div>
             <BarIcon onClick={openHomeRoute} ariaLabel={language.home}><HomeIcon /></BarIcon>
             <div class="mt-2"></div>
-            <BarIcon onClick={openPlaygroundRoute} ariaLabel={language.playground.playground}><ShellIcon /></BarIcon>
-            {#each additionalHamburgerMenu as menu}
-              <div class="mt-2"></div>
-              <BarIcon
-                ariaLabel={menu.name}
-                onClick={() => {
-                  reseter()
-                  menu.callback()
-                }}>
-                <PluginDefinedIcon ico={menu} />
-              </BarIcon>
-            {/each}
+            <BarIcon
+              onClick={openPlaygroundRoute}
+              onIntent={preloadPlaygroundRoute}
+              ariaLabel={language.playground.playground}><ShellIcon /></BarIcon>
+            {#if $pluginRuntimeStateStore.phase === 'ready'}
+              {#each additionalHamburgerMenu as menu}
+                <div class="mt-2"></div>
+                <BarIcon
+                  ariaLabel={menu.name}
+                  onClick={() => {
+                    reseter()
+                    menu.callback()
+                  }}>
+                  <PluginDefinedIcon ico={menu} />
+                </BarIcon>
+              {/each}
+            {/if}
             <div class="mt-2"></div>
             <BarIcon
               ariaLabel={language.grid}
+              onIntent={preloadGridRoute}
               onClick={() => {
                 reseter()
                 openGrid()
@@ -565,11 +828,20 @@
         {/if}
       </div>
     {/if}
+    <PinnedChatsRail
+      items={pinnedChats}
+      {generatingChatIds}
+      {warningChatIds}
+      unreadChatIds={$unreadChatIds}
+      rounded={IconRounded}
+      onOpen={openNarrowPinnedChat}
+      onPrefetch={(item) => prefetchCharacter(item.characterId)}
+      isInert={menuMode === 1} />
     <div
       class="flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0"
       data-risu-sidebar-character-controls
       inert={menuMode === 1}>
-      {#each Object.entries(characterOrganizationActions) as [actionKey, action] (actionKey)}
+      {#each Object.entries(characterOrganizationActions).filter(([, action]) => action.status === 'failed') as [actionKey, action] (actionKey)}
         <span
           class="w-16 px-1 py-0.5 text-center text-[10px] leading-tight text-textcolor2"
           data-risu-character-organization-status={action.status}
@@ -577,11 +849,7 @@
           role="status"
           aria-live="polite"
           title={characterOrganizationActionMessage(action)}>
-          {action.status === 'pending'
-            ? language.characterOrganizationSaving
-            : action.status === 'queued'
-              ? language.mutationStatusQueued
-              : language.mutationStatusFailed}
+          {language.mutationStatusFailed}
         </span>
       {/each}
       <div
@@ -593,13 +861,14 @@
         }}
         ondrop={(e) => {
           const da = consumeDropZoneDrag(e)
-          if (da) {
-            inserter(da, { index: 0 })
+          const target = sidebarItemPosition(charImages[0]) ?? { index: 0 }
+          if (da && target) {
+            inserter(da, target)
           }
         }}
         ondragenter={preventCharacterDrag}>
       </div>
-      {#each charImages as char, ind}
+      {#each charImages as char}
         <div
           class="group relative flex items-center px-2"
           role="listitem"
@@ -614,12 +883,20 @@
               isCharacterOrganizationActionPending('order')
             : isCharacterOrganizationActionPending('order')}
           ondragstart={(e) => {
-            avatarDragStart({ index: ind }, e)
+            const position = sidebarItemPosition(char)
+            if (position) avatarDragStart(position, e)
           }}
           ondragend={sidebarCharacterDrag.clear}
+          onpointerenter={() => {
+            if (char.type === 'normal') prefetchCharacterAt(char.index)
+          }}
+          onfocusin={() => {
+            if (char.type === 'normal') prefetchCharacterAt(char.index)
+          }}
           ondragover={avatarDragOver}
           ondrop={(e) => {
-            avatarDrop({ index: ind }, e)
+            const position = sidebarItemPosition(char)
+            if (position) avatarDrop(position, e)
           }}
           ondragenter={preventCharacterDrag}>
           <SidebarIndicator isActive={char.type === 'normal' && $selectedCharID === char.index && sideBarMode !== 1} />
@@ -630,7 +907,7 @@
                 size="56"
                 rounded={IconRounded}
                 name={char.name}
-                chaId={getDatabase().characters[char.index]?.chaId}
+                chaId={characterOwnerAt(char.index)?.chaId}
                 onClick={() => openCharacterRoute(char.index)} />
             {:else if char.type === 'folder'}
               {#key char.color}
@@ -645,20 +922,12 @@
                     backgroundimg={char.img ? getCharImage(char.img, 'plain') : ''}
                     oncontextmenu={(e) => {
                       e.preventDefault()
-                      void openFolderActions(char.id, char.name)
+                      void openFolderActions(char.id, char.name, char.askBeforeOpening)
                     }}
                     onClick={() => {
-                      if (char.type !== 'folder') {
-                        return
-                      }
-                      if (openFolders.includes(char.id)) {
-                        openFolders.splice(openFolders.indexOf(char.id), 1)
-                      } else {
-                        openFolders.push(char.id)
-                      }
-                      openFolders = openFolders
+                      if (char.type === 'folder') void toggleCharacterFolder(char)
                     }}>
-                    {#if getDatabase().showFolderName}
+                    {#if showFolderName}
                       <div class="h-full w-full flex justify-center items-center">
                         <span class="hyphens-auto truncate font-bold">{char.name}</span>
                       </div>
@@ -672,6 +941,39 @@
               {/key}
             {/if}
           </div>
+          {#if char.type === 'normal' && characterHasReattachWarning(char.index)}
+            <GenerationIndicator
+              state="warning"
+              label={language.generationReattachFailure.sidebarWarning(char.name)}
+              onActivate={() => openCharacterRoute(char.index)} />
+          {:else if char.type === 'folder' && !openFolders.includes(char.id) && characterFolderHasReattachWarning(char.folder.map((item) => item.index))}
+            <GenerationIndicator
+              state="warning"
+              label={language.generationReattachFailure.sidebarWarning(char.name)}
+              onActivate={() => {
+                if (char.type === 'folder') void toggleCharacterFolder(char)
+              }} />
+          {:else if char.type === 'normal' && characterIsGenerating(char.index)}
+            <GenerationIndicator
+              label={`${language.generatingMessage}: ${char.name}`}
+              onActivate={() => openCharacterRoute(char.index)} />
+          {:else if char.type === 'folder' && !openFolders.includes(char.id) && characterFolderIsGenerating(char.folder.map((item) => item.index))}
+            <GenerationIndicator
+              label={`${language.generatingMessage}: ${char.name}`}
+              onActivate={() => {
+                if (char.type === 'folder') void toggleCharacterFolder(char)
+              }} />
+          {:else if char.type === 'normal' && characterHasUnreadChat(char.index)}
+            <UnreadIndicator
+              label={`${language.newMessage}: ${char.name}`}
+              onActivate={() => openCharacterRoute(char.index)} />
+          {:else if char.type === 'folder' && !openFolders.includes(char.id) && characterFolderHasUnreadChat(char.folder.map((item) => item.index))}
+            <UnreadIndicator
+              label={`${language.newMessage}: ${char.name}`}
+              onActivate={() => {
+                if (char.type === 'folder') void toggleCharacterFolder(char)
+              }} />
+          {/if}
         </div>
         {#if char.type === 'folder' && openFolders.includes(char.id)}
           {#key char.color}
@@ -708,7 +1010,7 @@
                 }}
                 ondragenter={preventCharacterDrag}>
               </div>
-              {#each char.folder as char2, ind}
+              {#each char.folder as char2}
                 <div
                   class="group relative flex items-center px-2 z-10"
                   role="listitem"
@@ -716,16 +1018,16 @@
                   data-risu-character-organization-status={characterOrganizationActions.order?.status ?? 'idle'}
                   aria-busy={isCharacterOrganizationActionPending('order')}
                   ondragstart={(e) => {
-                    if (char.type === 'folder') {
-                      avatarDragStart({ index: ind, folder: char.id }, e)
-                    }
+                    const position = characterOrderPosition(characterOwnerAt(char2.index)?.chaId)
+                    if (position) avatarDragStart(position, e)
                   }}
                   ondragend={sidebarCharacterDrag.clear}
+                  onpointerenter={() => prefetchCharacterAt(char2.index)}
+                  onfocusin={() => prefetchCharacterAt(char2.index)}
                   ondragover={avatarDragOver}
                   ondrop={(e) => {
-                    if (char.type === 'folder') {
-                      avatarDrop({ index: ind, folder: char.id }, e)
-                    }
+                    const position = characterOrderPosition(characterOwnerAt(char2.index)?.chaId)
+                    if (position) avatarDrop(position, e)
                   }}
                   ondragenter={preventCharacterDrag}>
                   <SidebarIndicator isActive={$selectedCharID === char2.index && sideBarMode !== 1} />
@@ -735,9 +1037,23 @@
                       size="56"
                       rounded={IconRounded}
                       name={char2.name}
-                      chaId={getDatabase().characters[char2.index]?.chaId}
+                      chaId={characterOwnerAt(char2.index)?.chaId}
                       onClick={() => openCharacterRoute(char2.index)} />
                   </div>
+                  {#if characterHasReattachWarning(char2.index)}
+                    <GenerationIndicator
+                      state="warning"
+                      label={language.generationReattachFailure.sidebarWarning(char2.name)}
+                      onActivate={() => openCharacterRoute(char2.index)} />
+                  {:else if characterIsGenerating(char2.index)}
+                    <GenerationIndicator
+                      label={`${language.generatingMessage}: ${char2.name}`}
+                      onActivate={() => openCharacterRoute(char2.index)} />
+                  {:else if characterHasUnreadChat(char2.index)}
+                    <UnreadIndicator
+                      label={`${language.newMessage}: ${char2.name}`}
+                      onActivate={() => openCharacterRoute(char2.index)} />
+                  {/if}
                 </div>
                 <div
                   class="h-4 min-h-4 w-14 relative z-20"
@@ -748,8 +1064,9 @@
                   }}
                   ondrop={(e) => {
                     const da = consumeDropZoneDrag(e)
-                    if (da && char.type === 'folder') {
-                      inserter(da, { index: ind + 1, folder: char.id })
+                    const target = positionAfter(characterOrderPosition(characterOwnerAt(char2.index)?.chaId))
+                    if (da && target) {
+                      inserter(da, target)
                     }
                   }}
                   ondragenter={preventCharacterDrag}>
@@ -767,8 +1084,9 @@
           }}
           ondrop={(e) => {
             const da = consumeDropZoneDrag(e)
-            if (da) {
-              inserter(da, { index: ind + 1 })
+            const target = positionAfter(sidebarItemPosition(char))
+            if (da && target) {
+              inserter(da, target)
             }
           }}
           ondragenter={preventCharacterDrag}>
@@ -791,30 +1109,37 @@
           ></BaseRoundedButton>
       </div>
     </div>
-    {#if getDatabase().hamburgerButtonBottom}
+    {#if hamburgerButtonBottom}
       <div class="border-t border-t-selected w-full relative text-white">
         {#if menuMode === 1}
           <div
             class="absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-20 pb-2">
-            <BarIcon onClick={openSettingsRoute} ariaLabel={language.settings}><Settings /></BarIcon>
+            <BarIcon onClick={openSettingsRoute} onIntent={preloadSettingsRoute} ariaLabel={language.settings}
+              ><Settings /></BarIcon>
             <div class="mt-2"></div>
             <BarIcon onClick={openHomeRoute} ariaLabel={language.home}><HomeIcon /></BarIcon>
             <div class="mt-2"></div>
-            <BarIcon onClick={openPlaygroundRoute} ariaLabel={language.playground.playground}><ShellIcon /></BarIcon>
-            {#each additionalHamburgerMenu as menu}
-              <div class="mt-2"></div>
-              <BarIcon
-                ariaLabel={menu.name}
-                onClick={() => {
-                  reseter()
-                  menu.callback()
-                }}>
-                <PluginDefinedIcon ico={menu} />
-              </BarIcon>
-            {/each}
+            <BarIcon
+              onClick={openPlaygroundRoute}
+              onIntent={preloadPlaygroundRoute}
+              ariaLabel={language.playground.playground}><ShellIcon /></BarIcon>
+            {#if $pluginRuntimeStateStore.phase === 'ready'}
+              {#each additionalHamburgerMenu as menu}
+                <div class="mt-2"></div>
+                <BarIcon
+                  ariaLabel={menu.name}
+                  onClick={() => {
+                    reseter()
+                    menu.callback()
+                  }}>
+                  <PluginDefinedIcon ico={menu} />
+                </BarIcon>
+              {/each}
+            {/if}
             <div class="mt-2"></div>
             <BarIcon
               ariaLabel={language.grid}
+              onIntent={preloadGridRoute}
               onClick={() => {
                 reseter()
                 openGrid()
@@ -863,9 +1188,13 @@
         <h1 class="text-xl">Welcome to RisuAI!</h1>
         <span class="text-xs text-textcolor2">Select a bot to start chatting</span>
       </div>
-    {:else if getDatabase().characters[$selectedCharID]?.chaId === '§playground'}
-      <SideChatList chara={getDatabase().characters[$selectedCharID]} />
+    {:else if selectedSidebarCharacter()?.chaId === '§playground'}
+      {@const selectedCharacter = selectedSidebarCharacter()}
+      {#if selectedCharacter}
+        <SideChatList chara={selectedCharacter} />
+      {/if}
     {:else}
+      {@const selectedCharacter = selectedSidebarCharacter()}
       <div class="w-full h-8 min-h-8 border-l border-b border-r border-selected relative bottom-6 rounded-b-md flex">
         <button
           onclick={() => {
@@ -887,8 +1216,9 @@
           aria-current={$botMakerMode && !devTool ? 'true' : undefined}
           class="grow rounded-br-md"
           class:text-textcolor2={!$botMakerMode || devTool}>{language.character}</button>
-        {#if getDatabase().enableDevTools}
+        {#if enableDevTools}
           <button
+            data-testid="sidebar-developer-tools-button"
             aria-label={language.enableDevTools}
             aria-pressed={devTool}
             onclick={() => {
@@ -901,16 +1231,18 @@
         {/if}
       </div>
       {#if QuickSettings.open}
-        <QuickSettingsGui />
+        <LazyComponent loader={loadQuickSettings} fill testId="quick-settings" />
       {:else if devTool}
-        <DevTool />
+        <LazyComponent loader={loadDevTool} fill testId="developer-tools" />
       {:else if $botMakerMode}
         <div class="contents" data-risu-sidebar-panel="character">
-          <CharConfig />
+          <LazyComponent loader={loadCharConfig} fill testId="character-editor" />
         </div>
       {:else}
         <div class="contents" data-risu-sidebar-panel="chat">
-          <SideChatList chara={getDatabase().characters[$selectedCharID]} />
+          {#if selectedCharacter}
+            <SideChatList chara={selectedCharacter} />
+          {/if}
         </div>
       {/if}
     {/if}

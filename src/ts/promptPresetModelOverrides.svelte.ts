@@ -6,8 +6,9 @@ import {
   promptPresetModelOverrideFieldForDatabaseKey,
   promptPresetOverridesModelParameters,
 } from './presetSplit'
-import { getDatabase, updatePromptPreset, type PromptPreset } from './storage/database.svelte'
-import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
+import { collectionsResourceState, settingsResourceState } from './server/resourceState.svelte'
+import { SERVER_SETTINGS_GROUP_BY_KEY } from './server/settingsGroups'
+import { updatePromptPreset, type PromptPreset } from './storage/database.svelte'
 
 type OverrideGroup = 'parameters'
 
@@ -28,6 +29,16 @@ export interface PromptPresetModelOverrideMirrorTarget {
   presetId: string
 }
 
+interface PromptPresetOwnerSnapshot {
+  presets: ReadonlyArray<Record<string, unknown>>
+  selectedIndex: number
+}
+
+interface SettingsOwnerValueSnapshot {
+  available: boolean
+  value: unknown
+}
+
 export function promptPresetModelOverrideEnabled(group: OverrideGroup): boolean {
   const preset = selectedPromptPreset()
   const enabledByGroup: Record<OverrideGroup, boolean> = {
@@ -37,20 +48,20 @@ export function promptPresetModelOverrideEnabled(group: OverrideGroup): boolean 
 }
 
 export function setPromptPresetModelOverrideEnabled(group: OverrideGroup, enabled: boolean): void {
-  const selectedIndex = getDatabase().promptPresetsId
-  if (!Number.isInteger(selectedIndex) || selectedIndex < 0) return
-  const preset = getDatabase().promptPresets?.[selectedIndex] as Record<string, unknown> | undefined
-  if (!preset) return
+  const selected = selectedPromptPresetEntry()
+  if (!selected) return
+  const { index: selectedIndex, preset } = selected
 
   const { flagKey, fields } = PROMPT_PRESET_MODEL_OVERRIDE_GROUPS[group]
   const patch: Record<string, unknown> = { [flagKey]: enabled }
 
   if (enabled) {
-    const db = getDatabase() as unknown as Record<string, unknown>
     for (const field of fields) {
       if (Object.prototype.hasOwnProperty.call(preset, field)) continue
       const databaseKey = databaseKeyForModelPresetField(field)
-      const value = db[databaseKey]
+      const owner = currentSettingsOwnerValueSnapshot(databaseKey)
+      if (!owner.available) return
+      const value = owner.value
       if (value !== undefined) patch[field] = cloneJsonValue(value)
     }
   }
@@ -106,11 +117,12 @@ export function createPromptPresetModelOverrideDraft<T>(
 
     untrack(() => {
       const attempted = cloneJsonValue(draft.value)
-      withTrustedResourceWrite(() => {
-        const target = getDatabase() as unknown as Record<string, unknown>
-        target[databaseKey] = attempted
-      })
-      mirrorPromptPresetModelOverrideField(databaseKey, attempted)
+      const target = resolvePromptPresetModelOverrideMirrorTarget(databaseKey)
+      if (!target) return
+      // updatePromptPreset owns the durable stable-id queue and its selected
+      // settings optimistic projection, so a second raw aggregate write here
+      // would sit outside queued/failure rollback ownership.
+      mirrorPromptPresetModelOverrideFieldToTarget(target, attempted)
       previousServerSnapshot = snapshot
     })
   })
@@ -124,7 +136,7 @@ export function currentPromptPresetModelOverrideValue<T>(databaseKey: string, fa
   if (presetField && preset && Object.prototype.hasOwnProperty.call(preset, presetField)) {
     return cloneJsonValue(preset[presetField]) as T
   }
-  const value = (getDatabase() as unknown as Record<string, unknown> | undefined)?.[databaseKey]
+  const value = currentSettingsOwnerValue(databaseKey)
   return value === undefined ? fallback : (cloneJsonValue(value) as T)
 }
 
@@ -139,22 +151,18 @@ export function resolvePromptPresetModelOverrideMirrorTarget(
 ): PromptPresetModelOverrideMirrorTarget | null {
   const presetField = promptPresetModelOverrideFieldForDatabaseKey(databaseKey)
   if (!presetField) return null
-  const selectedIndex = getDatabase().promptPresetsId
-  if (!Number.isInteger(selectedIndex) || selectedIndex < 0) return null
-  const presetId = getDatabase().promptPresets?.[selectedIndex]?.id
-  if (!presetId) return null
-  return { databaseKey, presetField, presetId }
+  const selected = selectedPromptPresetEntry()
+  if (!selected) return null
+  return { databaseKey, presetField, presetId: selected.preset.id as string }
 }
 
 export function currentPromptPresetModelOverrideMirrorValue(target: PromptPresetModelOverrideMirrorTarget): unknown {
-  const preset = getDatabase().promptPresets?.find((candidate) => candidate?.id === target.presetId) as
-    | Record<string, unknown>
-    | undefined
+  const preset = uniquePromptPresetById(target.presetId)
   if (!preset) return undefined
   if (Object.prototype.hasOwnProperty.call(preset, target.presetField)) {
     return cloneJsonValue(preset[target.presetField])
   }
-  return cloneJsonValue((getDatabase() as unknown as Record<string, unknown>)[target.databaseKey])
+  return cloneJsonValue(currentSettingsOwnerValue(target.databaseKey))
 }
 
 export function mirrorPromptPresetModelOverrideFieldToTarget(
@@ -162,28 +170,88 @@ export function mirrorPromptPresetModelOverrideFieldToTarget(
   value: unknown,
 ): boolean {
   if (value === undefined) return false
-  const index = getDatabase().promptPresets?.findIndex((preset) => preset?.id === target.presetId) ?? -1
-  if (index < 0) return false
-  const preset = getDatabase().promptPresets[index] as Record<string, unknown>
+  const selected = uniquePromptPresetEntryById(target.presetId)
+  if (!selected) return false
+  const { index, preset } = selected
   if (snapshotJson(preset[target.presetField]) === snapshotJson(value)) return false
   updatePromptPreset(index, { [target.presetField]: cloneJsonValue(value) } as Partial<PromptPreset>)
   return true
 }
 
 export function updateSelectedPromptPresetField(presetField: string, value: unknown): boolean {
-  const selectedIndex = getDatabase().promptPresetsId
-  if (!Number.isInteger(selectedIndex) || selectedIndex < 0) return false
-  const preset = getDatabase().promptPresets?.[selectedIndex] as Record<string, unknown> | undefined
-  if (!preset) return false
+  const selected = selectedPromptPresetEntry()
+  if (!selected) return false
+  const { index: selectedIndex, preset } = selected
   if (snapshotJson(preset[presetField]) === snapshotJson(value)) return false
   updatePromptPreset(selectedIndex, { [presetField]: cloneJsonValue(value) } as Partial<PromptPreset>)
   return true
 }
 
 function selectedPromptPreset(): Record<string, unknown> | undefined {
-  const selectedIndex = getDatabase().promptPresetsId
-  if (!Number.isInteger(selectedIndex) || selectedIndex < 0) return undefined
-  return getDatabase().promptPresets?.[selectedIndex] as Record<string, unknown> | undefined
+  return selectedPromptPresetEntry()?.preset
+}
+
+function selectedPromptPresetEntry(): { index: number; preset: Record<string, unknown> } | undefined {
+  const owner = currentPromptPresetOwnerSnapshot()
+  if (!owner) return undefined
+  const { presets, selectedIndex } = owner
+  const preset = presets?.[selectedIndex] as Record<string, unknown> | undefined
+  if (!preset || typeof preset.id !== 'string' || preset.id.trim() === '') return undefined
+  const matches = presets.filter((candidate) => candidate?.id === preset.id)
+  return matches.length === 1 ? { index: selectedIndex, preset } : undefined
+}
+
+function uniquePromptPresetEntryById(presetId: string): { index: number; preset: Record<string, unknown> } | undefined {
+  const presets = currentPromptPresetCollectionOwner()
+  if (!presets || !presetId.trim()) return undefined
+  const matches = presets
+    .map((candidate, index) => ({ candidate, index }))
+    .filter(({ candidate }) => candidate?.id === presetId)
+  if (matches.length !== 1) return undefined
+  return { index: matches[0].index, preset: matches[0].candidate as Record<string, unknown> }
+}
+
+function uniquePromptPresetById(presetId: string): Record<string, unknown> | undefined {
+  return uniquePromptPresetEntryById(presetId)?.preset
+}
+
+function currentPromptPresetOwnerSnapshot(): PromptPresetOwnerSnapshot | null {
+  const presets = currentPromptPresetCollectionOwner()
+  const selectedIndex = currentPromptPresetSelectionOwner()
+  if (!presets || selectedIndex === null || selectedIndex < 0 || selectedIndex >= presets.length) return null
+  return { presets, selectedIndex }
+}
+
+function currentPromptPresetCollectionOwner(): PromptPresetOwnerSnapshot['presets'] | null {
+  const status = collectionsResourceState.statuses.promptPresets
+  if (collectionsResourceState.status === 'error' || status !== 'ready') return null
+
+  const value = collectionsResourceState.values.promptPresets
+  if (!Array.isArray(value)) return null
+  return value as ReadonlyArray<Record<string, unknown>>
+}
+
+function currentPromptPresetSelectionOwner(): number | null {
+  const status = settingsResourceState.standaloneStatuses.promptPresetsId
+  if (settingsResourceState.status === 'error' || status !== 'ready') return null
+
+  const value = settingsResourceState.value.promptPresetsId
+  return Number.isInteger(value) ? (value as number) : null
+}
+
+function currentSettingsOwnerValue(key: string): unknown {
+  const snapshot = currentSettingsOwnerValueSnapshot(key)
+  return snapshot.available ? snapshot.value : undefined
+}
+
+function currentSettingsOwnerValueSnapshot(key: string): SettingsOwnerValueSnapshot {
+  const group = SERVER_SETTINGS_GROUP_BY_KEY[key]
+  const status = group ? settingsResourceState.groupStatuses[group] : settingsResourceState.status
+  if (settingsResourceState.status === 'error' || status === 'error') return { available: false, value: undefined }
+  if (status === 'ready') {
+    return { available: true, value: (settingsResourceState.value as Record<string, unknown>)[key] }
+  }
+  return { available: false, value: undefined }
 }
 
 function snapshotJson(value: unknown): string {

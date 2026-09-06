@@ -23,14 +23,19 @@ describe('resolveKoboldRequest', () => {
     ).toBeNull()
   })
 
-  it('flattens messages into a prompt string', () => {
+  it('pins the retained legacy-instruct flattening', () => {
+    // Accepted divergence (PR-18/PR-7 sunset): Kobold keeps this fixed flattening
+    // instead of baseline `src/ts/process/templates/chatTemplate.ts` templates.
     const r = resolveKoboldRequest({
-      messages: [{ role: 'user', content: 'hi' }],
+      messages: [
+        { role: 'system', content: 'rules' },
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: 'prior' },
+      ],
       baseUrl: 'http://localhost:5001',
       signal: new AbortController().signal,
     })
-    expect(r?.prompt).toContain('## User\nhi')
-    expect(r?.prompt).toContain('## Response')
+    expect(r?.prompt).toBe('\n## Instruction\nrules\n## User\nhi\n## Assistant\nprior\n## Response\n')
   })
 })
 
@@ -52,7 +57,7 @@ describe('runKobold', () => {
     expect(r).toEqual({ type: 'success', result: 'kobold ok' })
     expect(captured!.url).toBe('http://localhost:5001/api/v1/generate')
     const sent = JSON.parse(captured!.init.body as string)
-    expect(sent.prompt).toContain('## User')
+    expect(sent.prompt).toBe('\n## User\nhi\n## Response\n')
     expect(sent.max_length).toBe(128)
     expect(sent.temperature).toBe(0.7)
     expect(sent.n).toBe(1)
@@ -73,6 +78,60 @@ describe('runKobold', () => {
     expect(capturedUrl).toBe('http://localhost:5001/api/v1/generate')
   })
 
+  it('posts to a user-supplied non-root path verbatim', async () => {
+    let capturedUrl = ''
+    vi.stubGlobal('fetch', async (url: string) => {
+      capturedUrl = url
+      return ok({ results: [{ text: 'x' }] })
+    })
+    const resolved = resolveKoboldRequest({
+      messages: [{ role: 'user', content: 'hi' }],
+      baseUrl: 'http://localhost:5001/api/v1',
+      signal: new AbortController().signal,
+    })!
+    await runKobold(resolved)
+    expect(capturedUrl).toBe('http://localhost:5001/api/v1')
+  })
+
+  it('preserves custom paths and query strings verbatim', async () => {
+    let capturedUrl = ''
+    vi.stubGlobal('fetch', async (url: string) => {
+      capturedUrl = url
+      return ok({ results: [{ text: 'x' }] })
+    })
+    const resolved = resolveKoboldRequest({
+      messages: [{ role: 'user', content: 'hi' }],
+      baseUrl: 'http://localhost:5001/custom/generate?profile=legacy',
+      signal: new AbortController().signal,
+    })!
+    await runKobold(resolved)
+    expect(capturedUrl).toBe('http://localhost:5001/custom/generate?profile=legacy')
+  })
+
+  it('applies additional parameters after building the body and injects headers', async () => {
+    let captured: RequestInit | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = init
+      return ok({ results: [{ text: 'x' }] })
+    })
+    const resolved = resolveKoboldRequest({
+      messages: [{ role: 'user', content: 'hi' }],
+      baseUrl: 'http://localhost:5001',
+      temperature: 0.7,
+      additionalParams: [
+        ['temperature', '0.25'],
+        ['custom_flag', 'true'],
+        ['header::X-Global-Trace', 'kobold'],
+      ],
+      signal: new AbortController().signal,
+    })!
+
+    await runKobold(resolved)
+
+    expect(JSON.parse(captured!.body as string)).toMatchObject({ temperature: 0.25, custom_flag: true })
+    expect((captured!.headers as Record<string, string>)['X-Global-Trace']).toBe('kobold')
+  })
+
   it('returns fail with raw body on non-2xx', async () => {
     vi.stubGlobal('fetch', async () => new Response('overloaded', { status: 503 }))
     const resolved = resolveKoboldRequest({
@@ -80,7 +139,7 @@ describe('runKobold', () => {
       baseUrl: 'http://localhost:5001',
       signal: new AbortController().signal,
     })!
-    expect(await runKobold(resolved)).toEqual({ type: 'fail', result: 'overloaded' })
+    expect(await runKobold(resolved)).toEqual({ type: 'fail', result: 'overloaded', nonRetryable: true })
   })
 
   it('returns fail when results array lacks text', async () => {

@@ -7,8 +7,13 @@
 - Use `pnpm dev:agent` when you need a full-stack development server.
 - For an agent-controlled API server that does not restart on every source edit, run `pnpm api:dev:flag` instead of `pnpm api:dev`. It restarts only when `.risu-api-restart` is created or touched (`touch .risu-api-restart`), then deletes that flag after the restart request is consumed.
 - The frontend is available at `http://localhost:6418`; Fastify runs on port `6419` and is proxied through `/api` on the frontend server.
-- `pnpm dev:agent` bypasses password authentication and Terms of Service confirmation for agent-run browser sessions.
-- `pnpm dev:agent` runs against a disposable sandbox data directory (`data-agent/`) that is re-cloned from the human `data/` directory on every launch. Mutate state freely: nothing you do through `dev:agent` can touch the human database, and the sandbox is discarded on the next launch. Set `RISU_AGENT_DATA_MODE=keep` to reuse the previous sandbox across launches, or `RISU_AGENT_DATA_MODE=fresh` to start from an empty database.
+- `pnpm dev:agent` bypasses password authentication and RisuRealm terms confirmation for agent-run browser sessions.
+- `pnpm dev:agent` runs against a disposable `data-agent/` sandbox and cannot
+  mutate the human database. Its default `clone` mode takes an online SQLite
+  snapshot and links or copies `assets/` and `save/`, while intentionally
+  omitting auth files, backups, traces, and Web Push keys. Set
+  `RISU_AGENT_DATA_MODE=keep` to reuse the sandbox or
+  `RISU_AGENT_DATA_MODE=fresh` to start empty.
 - Stop the dev server when you are done using it.
 
 # Dev Trace Logs
@@ -35,6 +40,17 @@ Start by reading `STRUCTURE.md` to understand the project structure.
 
 - Before committing, run Prettier to ensure the formatting is consistent.
 - When writing commit titles, use conventional prefixes such as `feat:`, `fix:`, and `refactor:`.
+- Describe what you did in the commit message.
+
+# Test Workflow
+
+- While working, run only narrowly scoped tests using `pnpm test -- <test-or-source-file>`.
+- Once all work is complete, run `pnpm test:agent` and check for bugs.
+  - “all work is complete” means there is nothing left to do except testing.
+- `pnpm test:agent` owns the core typechecks, current-document validation,
+  topology validation, frontend and server tests, and browser-smoke build. The
+  user and CI retain `pnpm test:all` for formatting, compatibility, coverage,
+  scale, performance, and full Playwright verification.
 
 # Language File
 

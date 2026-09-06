@@ -2,17 +2,64 @@
   import { PlusIcon, TrashIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
+  import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
   import OptionInput from 'src/lib/UI/GUI/OptionInput.svelte'
   import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
+  import {
+    isModelProfileDividerSelectValue,
+    modelProfileDividerSelectValue,
+    modelProfileListItems,
+    type ModelProfileRecord,
+  } from 'src/ts/model/modelProfileRecords'
   import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
-  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsOwner.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
+  import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
   import type { InputHook } from 'src/ts/storage/database.svelte'
   import { createDefaultInputHooks } from 'src/ts/storage/defaultPrompts'
 
   const inputHooksDraft = createServerBackedSettingDraft<InputHook[]>('inputHooks', createDefaultInputHooks())
   let newHookType = $state<InputHook['type']>('draft')
+  let modelProfiles = $derived(
+    settingsResourceState.groupStatuses.providers === 'ready' && settingsResourceState.groupStatuses.models === 'ready'
+      ? readModelProfileOwners(settingsResourceState.value.modelProfiles)
+      : [],
+  )
+  let modelProfileItems = $derived(
+    settingsResourceState.groupStatuses.providers === 'ready' && settingsResourceState.groupStatuses.models === 'ready'
+      ? hasUniqueModelProfileOrder(settingsResourceState.value.modelProfileOrder)
+        ? modelProfileListItems(modelProfiles, settingsResourceState.value.modelProfileOrder)
+        : []
+      : [],
+  )
+
+  function readModelProfileOwners(value: unknown): ModelProfileRecord[] {
+    if (!Array.isArray(value)) return []
+    const ids = new Set<string>()
+    for (const profile of value) {
+      if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return []
+      const id = (profile as { id?: unknown }).id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return []
+      ids.add(id)
+    }
+    return value as ModelProfileRecord[]
+  }
+
+  function hasUniqueModelProfileOrder(value: unknown): boolean {
+    if (value === undefined) return true
+    if (!Array.isArray(value)) return false
+    const ids = new Set<string>()
+    for (const entry of value) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false
+      const row = entry as { kind?: unknown; profileId?: unknown; id?: unknown }
+      const id = row.kind === 'profile' ? row.profileId : row.kind === 'divider' ? row.id : undefined
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return false
+      ids.add(id)
+    }
+    return true
+  }
 
   function updateHooks(updater: (hooks: InputHook[]) => void): void {
     const hooks = inputHooksDraft.value.map((hook) => ({ ...hook }))
@@ -34,11 +81,31 @@
         name: newHookType === 'draft' ? language.inputHookTypeDraft : language.inputHookTypeBtw,
         type: newHookType,
         prompt: '',
+        model: { mode: 'inheritOtherAx' },
+        ...(newHookType === 'draft' ? { translation: false } : {}),
       })
     })
   }
 
+  function hookProfileId(hook: InputHook): string {
+    return hook.model?.mode === 'modelProfile' && typeof hook.model.profileId === 'string' ? hook.model.profileId : ''
+  }
+
+  function handleHookModelChange(index: number, previousProfileId: string, event: Event): void {
+    const select = event.currentTarget
+    if (!(select instanceof HTMLSelectElement)) return
+    if (isModelProfileDividerSelectValue(select.value)) {
+      select.value = previousProfileId
+      return
+    }
+    const profileId = select.value.trim()
+    updateHook(index, {
+      model: profileId ? { mode: 'modelProfile', profileId } : { mode: 'inheritOtherAx' },
+    })
+  }
+
   function deleteHook(index: number): void {
+    if (!confirmSettingsItemRemoval()) return
     updateHooks((hooks) => {
       hooks.splice(index, 1)
     })
@@ -60,7 +127,7 @@
 
   {#each inputHooksDraft.value as hook, index (hook.id)}
     <article class="flex flex-col gap-3 rounded-md border border-darkborderc p-4">
-      <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end">
+      <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(12rem,auto)_auto] sm:items-end">
         <label class="flex min-w-0 flex-col gap-1">
           <span class="text-sm text-textcolor2">{language.inputHookName}</span>
           <TextInput
@@ -80,6 +147,23 @@
             <OptionInput value="btw">{language.inputHookTypeBtw}</OptionInput>
           </SelectInput>
         </label>
+        <label class="flex min-w-0 flex-col gap-1">
+          <span class="text-sm text-textcolor2">{language.inputHookModel}</span>
+          <select
+            class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-textcolor focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+            aria-label={`${language.inputHookModel}: ${hook.name}`}
+            value={hookProfileId(hook)}
+            onchange={(event) => handleHookModelChange(index, hookProfileId(hook), event)}>
+            <option value="">{language.inputHookInheritOtherAxModel}</option>
+            {#each modelProfileItems as item (`${item.kind}:${item.kind === 'profile' ? item.profile.id : item.id}`)}
+              {#if item.kind === 'divider'}
+                <option value={modelProfileDividerSelectValue(item.id)} data-model-profile-divider="true">---</option>
+              {:else}
+                <option value={item.profile.id}>{item.profile.name ?? item.profile.id}</option>
+              {/if}
+            {/each}
+          </select>
+        </label>
         <Button
           styled="danger"
           ariaLabel={`${language.inputHookDelete}: ${hook.name}`}
@@ -87,6 +171,13 @@
           <span class="inline-flex items-center gap-2"><TrashIcon size={16} />{language.inputHookDelete}</span>
         </Button>
       </div>
+
+      {#if hook.type === 'draft'}
+        <CheckInput
+          name={language.inputHookTranslation}
+          check={hook.translation === true}
+          onChange={(translation) => updateHook(index, { translation })} />
+      {/if}
 
       <label class="flex flex-col gap-1">
         <span class="text-sm text-textcolor2">{language.inputHookPrompt}</span>

@@ -8,10 +8,15 @@ vi.mock('../modules', async (importActual) => {
 import { setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
 import {
   buildAuthorNote,
-  buildCotInstruction,
+  buildCotInstruction as buildCotInstructionWithDatabase,
   buildInlayViewInstruction,
   buildPersona,
 } from '../promptAssembly/buildStaticPromptSections'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
+
+function buildCotInstruction(usingPromptTemplate: boolean) {
+  return buildCotInstructionWithDatabase(usingPromptTemplate, getDatabase())
+}
 
 function makeChar(overrides: Partial<character> = {}): character {
   return {
@@ -150,13 +155,29 @@ describe('buildPersona', () => {
     seedDb()
   })
 
-  it('returns the persona prompt when db.personaPrompt is set', () => {
-    seedDb({ personaPrompt: 'Curious user persona.' })
+  it('returns the selected persona owner prompt', () => {
+    seedDb({
+      selectedPersona: 0,
+      selectedPersonaId: 'persona-a',
+      username: 'Curious User',
+      personaPrompt: 'Curious user persona.',
+      userIcon: '',
+      userNote: '',
+      personas: [
+        {
+          id: 'persona-a',
+          name: 'Curious User',
+          personaPrompt: 'Curious user persona.',
+          icon: '',
+          note: '',
+        },
+      ],
+    })
     expect(buildPersona(makeChar())).toEqual([{ role: 'system', content: 'Curious user persona.' }])
   })
 
   it('returns empty when db.personaPrompt is empty', () => {
-    seedDb({ personaPrompt: '' })
+    seedDb({ personaPrompt: '', personas: [] })
     expect(buildPersona(makeChar())).toEqual([])
   })
 })

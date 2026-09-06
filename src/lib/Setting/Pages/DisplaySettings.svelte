@@ -1,25 +1,23 @@
 <script lang="ts">
   import { language } from 'src/lang'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import SettingRenderer from '../SettingRenderer.svelte'
   import {
-    displayNonRendererServerSettingKeys,
     displayOtherSettingsItems,
     displaySizeSettingsItems,
     displayThemeSettingsItems,
   } from 'src/ts/setting/displaySettingsData.svelte'
-  import { onDestroy } from 'svelte'
-  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
   import { reconcileLegacyGuiSubmenu } from 'src/ts/setting/legacyGuiLayout'
 
-  let submenu = $state(getDatabase().useLegacyGUI ? -1 : 0)
+  let submenu = $state(0)
 
   $effect(() => {
-    submenu = reconcileLegacyGuiSubmenu(Boolean(getDatabase().useLegacyGUI), submenu)
+    if (settingsResourceState.groupStatuses.display !== 'ready') {
+      submenu = -1
+      return
+    }
+    submenu = reconcileLegacyGuiSubmenu(Boolean(settingsResourceState.value.useLegacyGUI), submenu)
   })
-
-  const stopServerSettingsWatch = watchServerBackedSettings(displayNonRendererServerSettingKeys)
-  onDestroy(stopServerSettingsWatch)
 </script>
 
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.display}</h2>

@@ -6,7 +6,7 @@ export function scrollElementToContainerStart(element: Element, container: HTMLE
   const offset = elementTop - scrollportTop
   if (!Number.isFinite(offset)) return
 
-  // Adjust only the transcript scroller. Element.scrollIntoView() also scrolls
-  // ancestor scrollports and can leave the document itself offset.
+  // Adjust only the transcript. scrollIntoView() can also move ancestor
+  // scrollports, including the document on mobile browsers.
   container.scrollTop += offset
 }

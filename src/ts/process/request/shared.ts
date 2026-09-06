@@ -1,5 +1,5 @@
-import { getDatabase } from 'src/ts/storage/database.svelte'
-import type { LegacyModelMode } from '../../model/modelRoles'
+import type { Database } from 'src/ts/storage/database.svelte'
+import type { LegacyModelMode } from '@risuai/shared-core/model-roles'
 import { parseAdditionalParamJsonValue } from './additionalParams'
 
 export type LLMParameter =
@@ -12,10 +12,37 @@ export type LLMParameter =
   | 'frequency_penalty'
   | 'presence_penalty'
   | 'reasoning_effort'
+  | 'reasoning_effort_min_medium'
+  | 'reasoning_effort_none'
+  | 'reasoning_effort_xhigh'
   | 'thinking_tokens'
   | 'verbosity'
 
 export type ModelModeExtended = LegacyModelMode
+
+export interface RequestParameterRuntimeOptions {
+  temperature?: number
+  topK?: number
+  repetitionPenalty?: number
+  minP?: number
+  topA?: number
+  topP?: number
+  frequencyPenalty?: number
+  presencePenalty?: number
+  reasoningEffort?: number
+  thinkingTokens?: number
+  verbosity?: number
+}
+
+const reasoningCapabilityParameters: LLMParameter[] = [
+  'reasoning_effort_min_medium',
+  'reasoning_effort_none',
+  'reasoning_effort_xhigh',
+]
+
+function isReasoningCapabilityParameter(parameter: LLMParameter): boolean {
+  return reasoningCapabilityParameters.includes(parameter)
+}
 
 type SeparateParameterMode = 'memory' | 'emotion' | 'translate' | 'otherAx' | 'scriptMain' | 'scriptAux'
 
@@ -53,9 +80,7 @@ export function setObjectValue<T>(obj: T, key: string, value: any): T {
   return obj
 }
 
-export function getAdditionalParameters(aiModel?: string): [string, string][] {
-  const db = getDatabase()
-
+export function getAdditionalParameters(db: Database, aiModel?: string): [string, string][] {
   if (!aiModel) {
     return []
   }
@@ -65,7 +90,7 @@ export function getAdditionalParameters(aiModel?: string): [string, string][] {
   }
 
   if (!aiModel.startsWith('xcustom:::')) {
-    return []
+    return db.applyAdditionalParamsToAll === true ? [...(db.additionalParams ?? [])] : []
   }
 
   const found = db.customModels.find((model) => model.id === aiModel)
@@ -83,6 +108,30 @@ export function getAdditionalParameters(aiModel?: string): [string, string][] {
   }
 
   return additionalParams
+}
+
+/**
+ * Resolve additional parameters for a profile-aware browser request. Special
+ * reverse-proxy/custom-model profiles keep their existing profile-owned
+ * snapshot; ordinary models receive opt-in globals first and profile rows
+ * last so profile-owned additional parameters win conflicts.
+ */
+export function getRequestAdditionalParameters(
+  db: Database,
+  aiModel: string | undefined,
+  profileAdditionalParams?: [string, string][],
+  profileExtraHeaders?: Record<string, string>,
+): [string, string][] {
+  if (!aiModel) return []
+  if (profileAdditionalParams === undefined) return getAdditionalParameters(db, aiModel)
+  if (aiModel === 'reverse_proxy' || aiModel.startsWith('xcustom:::')) return [...profileAdditionalParams]
+
+  const profileHeaderNames = new Set(Object.keys(profileExtraHeaders ?? {}).map((header) => header.toLocaleLowerCase()))
+  const globalParams = getAdditionalParameters(db, aiModel).filter(([key]) => {
+    if (!key.startsWith('header::')) return true
+    return !profileHeaderNames.has(key.slice('header::'.length).toLocaleLowerCase())
+  })
+  return [...globalParams, ...profileAdditionalParams]
 }
 
 export function applyAdditionalParameters<T extends Record<string, any>>(
@@ -148,25 +197,38 @@ export function applyParameters(
   rename: Partial<Record<LLMParameter, string>>,
   modelMode: ModelModeExtended,
   arg: {
+    database: Database
     ignoreTopKIfZero?: boolean
     modelId: string
+    runtimeOptions?: RequestParameterRuntimeOptions
   },
 ): Record<string, any> {
-  const db = getDatabase()
+  const db = arg.database
+  const reasoningDisabledEffort = parameters.includes('reasoning_effort_none') ? 'none' : 'minimal'
+  const reasoningMinEffort = parameters.includes('reasoning_effort_min_medium') ? 'medium' : 'low'
+  const supportsXHighReasoning = parameters.includes('reasoning_effort_xhigh')
 
-  function getEffort(effort: number) {
+  function getEffort(
+    effort: number,
+    disabledEffort: 'minimal' | 'none' = 'minimal',
+    supportsXHigh = false,
+    minEffort: 'low' | 'medium' = 'low',
+  ) {
     switch (effort) {
       case -1: {
-        return 'minimal'
+        return disabledEffort
       }
       case 0: {
-        return 'low'
+        return minEffort
       }
       case 1: {
         return 'medium'
       }
       case 2: {
         return 'high'
+      }
+      case 3: {
+        return supportsXHigh ? 'xhigh' : 'high'
       }
       default: {
         return 'medium'
@@ -175,20 +237,7 @@ export function applyParameters(
   }
 
   function getVerbosity(verbosity: number) {
-    switch (verbosity) {
-      case 0: {
-        return 'low'
-      }
-      case 1: {
-        return 'medium'
-      }
-      case 2: {
-        return 'high'
-      }
-      default: {
-        return 'medium'
-      }
-    }
+    return ['low', 'medium', 'high'][verbosity] ?? 'medium'
   }
 
   const separateParameterMode = separateParameterModeFor(db.seperateParameters, modelMode)
@@ -205,6 +254,9 @@ export function applyParameters(
     }
     for (const parameter of parameters) {
       let value: number | string = 0
+      if (isReasoningCapabilityParameter(parameter)) {
+        continue
+      }
       if (parameter === 'top_k' && arg.ignoreTopKIfZero && sepParams[parameter] === 0) {
         continue
       }
@@ -247,7 +299,12 @@ export function applyParameters(
           break
         }
         case 'reasoning_effort': {
-          value = getEffort(sepParams.reasoning_effort)
+          value = getEffort(
+            sepParams.reasoning_effort,
+            reasoningDisabledEffort,
+            supportsXHighReasoning,
+            reasoningMinEffort,
+          )
           break
         }
         case 'verbosity': {
@@ -265,59 +322,68 @@ export function applyParameters(
     return data
   }
 
+  const runtime = arg.runtimeOptions
   for (const parameter of parameters) {
-    let value: number | string = 0
-    if (parameter === 'top_k' && arg.ignoreTopKIfZero && db.top_k === 0) {
+    let value: number | string | undefined = 0
+    if (isReasoningCapabilityParameter(parameter)) {
+      continue
+    }
+    if (parameter === 'top_k' && arg.ignoreTopKIfZero && (runtime ? runtime.topK : db.top_k) === 0) {
       continue
     }
     switch (parameter) {
       case 'temperature': {
-        value = db.temperature === -1000 ? -1000 : db.temperature / 100
+        value = runtime ? runtime.temperature : db.temperature === -1000 ? -1000 : db.temperature / 100
         break
       }
       case 'top_k': {
-        value = db.top_k
+        value = runtime ? runtime.topK : db.top_k
         break
       }
       case 'repetition_penalty': {
-        value = db.repetition_penalty
+        value = runtime ? runtime.repetitionPenalty : db.repetition_penalty
         break
       }
       case 'min_p': {
-        value = db.min_p
+        value = runtime ? runtime.minP : db.min_p
         break
       }
       case 'top_a': {
-        value = db.top_a
+        value = runtime ? runtime.topA : db.top_a
         break
       }
       case 'top_p': {
-        value = db.top_p
+        value = runtime ? runtime.topP : db.top_p
         break
       }
       case 'reasoning_effort': {
-        value = getEffort(db.reasoningEffort)
+        const effort = runtime ? runtime.reasoningEffort : db.reasoningEffort
+        value =
+          effort === undefined
+            ? undefined
+            : getEffort(effort, reasoningDisabledEffort, supportsXHighReasoning, reasoningMinEffort)
         break
       }
       case 'verbosity': {
-        value = getVerbosity(db.verbosity)
+        const verbosity = runtime ? runtime.verbosity : db.verbosity
+        value = verbosity === undefined ? undefined : getVerbosity(verbosity)
         break
       }
       case 'frequency_penalty': {
-        value = db.frequencyPenalty === -1000 ? -1000 : db.frequencyPenalty / 100
+        value = runtime ? runtime.frequencyPenalty : db.frequencyPenalty === -1000 ? -1000 : db.frequencyPenalty / 100
         break
       }
       case 'presence_penalty': {
-        value = db.PresensePenalty === -1000 ? -1000 : db.PresensePenalty / 100
+        value = runtime ? runtime.presencePenalty : db.PresensePenalty === -1000 ? -1000 : db.PresensePenalty / 100
         break
       }
       case 'thinking_tokens': {
-        value = db.thinkingTokens
+        value = runtime ? runtime.thinkingTokens : db.thinkingTokens
         break
       }
     }
 
-    if (value === -1000) {
+    if (value === -1000 || value === undefined || value === null || (typeof value === 'number' && isNaN(value))) {
       continue
     }
 

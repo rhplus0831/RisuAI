@@ -1,5 +1,28 @@
+<script lang="ts" module>
+  import { selectCharacterOwner } from 'src/ts/characterState'
+  import type { character } from 'src/ts/storage/database.svelte'
+
+  interface MobileSelectedCharacterInput {
+    ownerCharacters: readonly character[]
+    ownerStatus: 'idle' | 'loading' | 'ready' | 'error'
+    ownerSelectedIndex: number
+  }
+
+  export function resolveMobileSelectedCharacter({
+    ownerCharacters,
+    ownerStatus,
+    ownerSelectedIndex,
+  }: MobileSelectedCharacterInput): character | undefined {
+    return ownerStatus === 'ready' ? selectCharacterOwner(ownerCharacters, ownerSelectedIndex) : undefined
+  }
+
+  export function shouldRenderMobileChat(selectedCharacter: character | undefined): boolean {
+    return selectedCharacter !== undefined
+  }
+</script>
+
 <script lang="ts">
-  import { MobileGUIStack, MobileSideBar, selectedCharID } from 'src/ts/stores.svelte'
+  import { MobileGUIStack, MobileSideBar } from 'src/ts/stores.svelte'
   import Settings from '../Setting/Settings.svelte'
   import RealmMain from '../UI/Realm/RealmMain.svelte'
   import MobileCharacters from './MobileCharacters.svelte'
@@ -11,7 +34,15 @@
   import DevTool from '../SideBars/DevTool.svelte'
   import { isLite } from 'src/ts/lite'
 
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
+
+  let selectedMobileCharacter = $derived(
+    resolveMobileSelectedCharacter({
+      ownerCharacters: charactersResourceState.characters,
+      ownerStatus: charactersResourceState.status,
+      ownerSelectedIndex: charactersResourceState.currentChar,
+    }),
+  )
 </script>
 
 {#if $MobileSideBar > 0 && !$isLite}
@@ -48,14 +79,16 @@
   {#if $MobileSideBar > 0}
     <div class="w-full flex flex-col p-2 mt-2 h-full">
       {#if $MobileSideBar === 1}
-        <SideChatList chara={getDatabase().characters[$selectedCharID]} />
+        {#if selectedMobileCharacter}
+          <SideChatList chara={selectedMobileCharacter} />
+        {/if}
       {:else if $MobileSideBar === 2}
         <CharConfig />
       {:else if $MobileSideBar === 3}
         <DevTool />
       {/if}
     </div>
-  {:else if $selectedCharID !== -1}
+  {:else if shouldRenderMobileChat(selectedMobileCharacter)}
     <ChatScreen />
   {:else if $MobileGUIStack === 0}
     <RealmMain />

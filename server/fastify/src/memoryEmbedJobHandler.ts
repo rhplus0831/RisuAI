@@ -1,7 +1,5 @@
 import { createHash } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
-import type { Database } from '../../../src/ts/storage/database.svelte'
-import type { HypaModel } from '../../../src/ts/process/memory/hypamemory'
 import { embedTextGroups, embedTexts, type MemoryEmbeddingAdapterResult } from './memoryEmbeddingAdapter.js'
 import {
   effectiveMemoryEmbeddingLimits,
@@ -10,7 +8,9 @@ import {
   findMemoryEmbeddingLimitViolation,
   formatMemoryEmbeddingLimitViolation,
   resolveMemoryEmbeddingModel,
+  type MemoryEmbeddingModel,
   type MemoryEmbeddingModelRequest,
+  type MemoryEmbeddingSettings,
 } from './memoryEmbeddingModel.js'
 import { normalizeHypaV3Settings, type HypaV3Settings } from './memoryPlanner.js'
 import {
@@ -21,9 +21,10 @@ import {
   type MemoryJob,
 } from './memoryRepository.js'
 import { loadPersistedDatabaseForMemoryJob } from './repository.js'
-import { MEMORY_JOB_BATCH_MAX_JOBS, type MemoryJobBatchHandler } from './memoryWorker.js'
+import { MEMORY_JOB_BATCH_MAX_JOBS, type MemoryJobBatchHandler, type MemoryJobHandlerContext } from './memoryWorker.js'
 import { emitProtocolMetric } from './protocolMetrics.js'
-import { armMemoryProviderFetchDeadline } from './memoryProviderDeadline.js'
+import { createMemoryProviderAbortScope, throwIfMemoryProviderAborted } from './memoryProviderDeadline.js'
+import { hypaV3PresetIndexFromStableId } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 
 export interface EmbedMemoryJobHandlerOptions {
   db: DatabaseSync
@@ -46,18 +47,19 @@ interface HypaV3EmbedJobPayload {
   model: string
 }
 
-interface DatabaseLike {
+interface MemoryEmbeddingJobDatabase extends MemoryEmbeddingSettings {
   hypaV3Presets?: unknown
-  hypaV3PresetId?: unknown
-  hypaV3Settings?: unknown
+  selectedHypaV3PresetId?: unknown
 }
 
-export function createEmbedMemoryJobHandler(opts: EmbedMemoryJobHandlerOptions): (job: MemoryJob) => Promise<void> {
+export function createEmbedMemoryJobHandler(
+  opts: EmbedMemoryJobHandlerOptions,
+): (job: MemoryJob, context?: MemoryJobHandlerContext) => Promise<void> {
   const embed = opts.embed ?? embedTexts
   const embedGroups = opts.embedGroups ?? embedTextGroups
   const acquireRateLimit = createEmbeddingRateLimiter(opts)
 
-  return async (job: MemoryJob): Promise<void> => {
+  return async (job: MemoryJob, context?: MemoryJobHandlerContext): Promise<void> => {
     if (job.kind !== 'embed') {
       throw new Error(`embed handler received ${job.kind} job`)
     }
@@ -72,8 +74,11 @@ export function createEmbedMemoryJobHandler(opts: EmbedMemoryJobHandlerOptions):
       embed,
       embedGroups,
       acquireRateLimit,
+      signal: context?.signal,
     })
     if (result.kind === 'existing') return
+    const currentJob = getMemoryJob(opts.db, job.id)
+    if (currentJob?.status !== 'pending' && currentJob?.status !== 'running') return
     persistEmbedding(opts.db, result)
   }
 }
@@ -98,8 +103,9 @@ export function createEmbedMemoryJobBatchHandler(opts: EmbedMemoryJobHandlerOpti
     }
 
     const orderedJobs = [...jobs].sort(compareEmbedJobs)
-    if (isContextualVoyageBatch(orderedJobs)) {
-      const modelRequest = resolveMemoryEmbeddingModel(database, 'voyageContext3')
+    const contextualModel = contextualVoyageBatchModel(orderedJobs)
+    if (contextualModel) {
+      const modelRequest = resolveMemoryEmbeddingModel(database, contextualModel)
       if (modelRequest.ok === false) {
         commitContextualBatchResults(
           opts,
@@ -134,6 +140,9 @@ export function createEmbedMemoryJobBatchHandler(opts: EmbedMemoryJobHandlerOpti
           modelRequest: modelRequest.request,
           embedGroups,
           acquireRateLimit,
+          // One provider request produces vectors for the whole contextual
+          // group. A single job cancellation must not abort its siblings; the
+          // commit fence below discards only the cancelled job's staged vector.
         })
         commitContextualBatchResults(opts, context, results)
       }
@@ -152,6 +161,7 @@ export function createEmbedMemoryJobBatchHandler(opts: EmbedMemoryJobHandlerOpti
             embed,
             embedGroups,
             acquireRateLimit,
+            signal: context.signalFor(job.id),
           }),
         } satisfies BatchJobResult
       } catch (error) {
@@ -201,11 +211,12 @@ interface ContextualSubBatchPlan {
 async function executeEmbedJob(input: {
   opts: EmbedMemoryJobHandlerOptions
   job: MemoryJob
-  database: Database
+  database: MemoryEmbeddingJobDatabase
   settings: HypaV3Settings
   embed: NonNullable<EmbedMemoryJobHandlerOptions['embed']>
   embedGroups: NonNullable<EmbedMemoryJobHandlerOptions['embedGroups']>
   acquireRateLimit: EmbeddingRateLimiter
+  signal?: AbortSignal
 }): Promise<EmbedExecutionResult> {
   const payload = parseEmbedPayload(input.job.payload)
   const chunk = getMemoryChunk(input.opts.db, payload.chunkId)
@@ -216,7 +227,7 @@ async function executeEmbedJob(input: {
     throw new Error(`memory chunk ${payload.chunkId} does not belong to chat ${input.job.chatId}`)
   }
 
-  const isContextualModel = payload.model === 'voyageContext3'
+  const isContextualModel = isVoyageContextualModel(payload.model)
   const existing = listMemoryEmbeddings(input.opts.db, {
     chatId: input.job.chatId,
     chunkId: chunk.id,
@@ -227,25 +238,28 @@ async function executeEmbedJob(input: {
     return { kind: 'existing', job: input.job, payload, chunkId: chunk.id }
   }
 
-  const modelRequest = resolveMemoryEmbeddingModel(input.database, payload.model as HypaModel)
+  const modelRequest = resolveMemoryEmbeddingModel(input.database, payload.model as MemoryEmbeddingModel)
   if (modelRequest.ok === false) {
     throw new Error(modelRequest.error)
   }
   assertChunkWithinEmbeddingLimits(modelRequest.request, chunk.id, chunk.text)
 
-  const controller = new AbortController()
   await input.acquireRateLimit(input.settings)
+  if (input.signal?.aborted) {
+    throw input.signal.reason instanceof Error ? input.signal.reason : new Error('memory job cancelled')
+  }
+  const abortScope = createMemoryProviderAbortScope(input.signal, input.opts.providerFetchDeadlineMs)
   if (modelRequest.request.provider === 'voyage-contextual') {
     let embedding: Awaited<ReturnType<NonNullable<EmbedMemoryJobHandlerOptions['embedGroups']>>>
-    const clearDeadline = armMemoryProviderFetchDeadline(controller, input.opts.providerFetchDeadlineMs)
     try {
+      throwIfMemoryProviderAborted(abortScope.signal)
       embedding = await input.embedGroups({
         request: modelRequest.request,
         groups: [[chunk.text]],
-        signal: controller.signal,
+        signal: abortScope.signal,
       })
     } finally {
-      clearDeadline()
+      abortScope.dispose()
     }
     if ('error' in embedding) {
       throw new Error(embedding.error)
@@ -267,15 +281,15 @@ async function executeEmbedJob(input: {
   }
 
   let embedding: Awaited<ReturnType<NonNullable<EmbedMemoryJobHandlerOptions['embed']>>>
-  const clearDeadline = armMemoryProviderFetchDeadline(controller, input.opts.providerFetchDeadlineMs)
   try {
+    throwIfMemoryProviderAborted(abortScope.signal)
     embedding = await input.embed({
       request: modelRequest.request,
       input: [chunk.text],
-      signal: controller.signal,
+      signal: abortScope.signal,
     })
   } finally {
-    clearDeadline()
+    abortScope.dispose()
   }
   if ('error' in embedding) {
     throw new Error(embedding.error)
@@ -423,7 +437,7 @@ function emitContextualSubBatchSplitMetric(
   if (plan.subBatches.length <= 1) return
   emitProtocolMetric('memory_contextual_embed_split', () => ({
     chatId: jobs[0]?.chatId ?? null,
-    model: 'voyageContext3',
+    model: tryParseEmbedPayload(jobs[0]?.payload)?.model ?? null,
     provider: request.provider,
     requestModel: request.model,
     originalJobCount: jobs.length,
@@ -441,6 +455,7 @@ async function executeContextualEmbedJobs(input: {
   modelRequest: MemoryEmbeddingModelRequest
   embedGroups: NonNullable<EmbedMemoryJobHandlerOptions['embedGroups']>
   acquireRateLimit: EmbeddingRateLimiter
+  signal?: AbortSignal
 }): Promise<BatchJobResult[]> {
   try {
     const parsed = input.jobs.map((job) => {
@@ -456,7 +471,7 @@ async function executeContextualEmbedJobs(input: {
     })
 
     const groupChunkIds = parsed.map((item) => item.chunk.id)
-    const groupId = buildEmbeddingGroupId(input.jobs[0].chatId, 'voyageContext3', groupChunkIds)
+    const groupId = buildEmbeddingGroupId(input.jobs[0].chatId, parsed[0].payload.model, groupChunkIds)
     const existing = new Map(
       parsed.map((item) => [
         item.chunk.id,
@@ -482,18 +497,21 @@ async function executeContextualEmbedJobs(input: {
       parsed.map((item) => item.chunk.text),
     )
 
-    const controller = new AbortController()
     await input.acquireRateLimit(input.settings)
+    if (input.signal?.aborted) {
+      throw input.signal.reason instanceof Error ? input.signal.reason : new Error('memory job cancelled')
+    }
+    const abortScope = createMemoryProviderAbortScope(input.signal, input.opts.providerFetchDeadlineMs)
     let embedding: Awaited<ReturnType<NonNullable<EmbedMemoryJobHandlerOptions['embedGroups']>>>
-    const clearDeadline = armMemoryProviderFetchDeadline(controller, input.opts.providerFetchDeadlineMs)
     try {
+      throwIfMemoryProviderAborted(abortScope.signal)
       embedding = await input.embedGroups({
         request: input.modelRequest,
         groups: [parsed.map((item) => item.chunk.text)],
-        signal: controller.signal,
+        signal: abortScope.signal,
       })
     } finally {
-      clearDeadline()
+      abortScope.dispose()
     }
     if ('error' in embedding) {
       throw new Error(embedding.error)
@@ -536,13 +554,7 @@ function commitIndependentBatchResults(
   context: Parameters<MemoryJobBatchHandler>[1],
   results: readonly BatchJobResult[],
 ): void {
-  let blockedByCommitFailure: string | null = null
   for (const item of results) {
-    if (blockedByCommitFailure !== null) {
-      context.retryOrFail(item.job.id, blockedByCommitFailure)
-      continue
-    }
-
     if ('error' in item) {
       context.retryOrFail(item.job.id, item.error || 'embed job failed')
       continue
@@ -550,7 +562,6 @@ function commitIndependentBatchResults(
 
     try {
       if (getMemoryJob(opts.db, item.job.id)?.status !== 'running') {
-        blockedByCommitFailure = `embed job ${item.job.id} is no longer running`
         continue
       }
       if (item.result.kind === 'embedding') {
@@ -558,8 +569,8 @@ function commitIndependentBatchResults(
       }
       context.complete(item.job.id)
     } catch (error) {
-      blockedByCommitFailure = error instanceof Error && error.message ? error.message : String(error)
-      context.retryOrFail(item.job.id, blockedByCommitFailure)
+      const message = error instanceof Error && error.message ? error.message : String(error)
+      context.retryOrFail(item.job.id, message)
     }
   }
 }
@@ -575,13 +586,10 @@ function commitContextualBatchResults(
     return
   }
 
-  const successful = results as Array<{ job: MemoryJob; result: EmbedExecutionResult }>
-  for (const item of successful) {
-    if (getMemoryJob(opts.db, item.job.id)?.status !== 'running') {
-      retryContextualBatch(context, successful, `embed job ${item.job.id} is no longer running`)
-      return
-    }
-  }
+  const successful = (results as Array<{ job: MemoryJob; result: EmbedExecutionResult }>).filter(
+    (item) => getMemoryJob(opts.db, item.job.id)?.status === 'running',
+  )
+  if (successful.length === 0) return
 
   try {
     persistEmbeddingGroup(
@@ -664,8 +672,16 @@ function compareEmbedJobs(left: MemoryJob, right: MemoryJob): number {
   return left.id.localeCompare(right.id)
 }
 
-function isContextualVoyageBatch(jobs: readonly MemoryJob[]): boolean {
-  return jobs.length > 0 && jobs.every((job) => tryParseEmbedPayload(job.payload)?.model === 'voyageContext3')
+function contextualVoyageBatchModel(jobs: readonly MemoryJob[]): MemoryEmbeddingModel | null {
+  const model = tryParseEmbedPayload(jobs[0]?.payload)?.model
+  if (!isVoyageContextualModel(model)) return null
+  return jobs.every((job) => tryParseEmbedPayload(job.payload)?.model === model) ? model : null
+}
+
+function isVoyageContextualModel(
+  model: unknown,
+): model is Extract<MemoryEmbeddingModel, 'voyageContext3' | 'voyageContext4'> {
+  return model === 'voyageContext3' || model === 'voyageContext4'
 }
 
 function tryParseEmbedPayload(payload: unknown): HypaV3EmbedJobPayload | null {
@@ -692,7 +708,7 @@ function parseEmbedPayload(payload: unknown): HypaV3EmbedJobPayload {
   }
 }
 
-function loadDatabase(opts: EmbedMemoryJobHandlerOptions): Database {
+function loadDatabase(opts: EmbedMemoryJobHandlerOptions): MemoryEmbeddingJobDatabase {
   // Memory-job-scoped read settings + hypa presets + chat-id
   // stubs only — never the whole characters/chats/collections payload parse.
   const database = opts.loadDatabase
@@ -703,13 +719,16 @@ function loadDatabase(opts: EmbedMemoryJobHandlerOptions): Database {
   if (!isRecord(database)) {
     throw new Error('persisted database is missing')
   }
-  return database as unknown as Database
+  return database as MemoryEmbeddingJobDatabase
 }
 
-function resolveHypaV3Settings(database: Database): HypaV3Settings {
-  const db = database as DatabaseLike
-  let rawSettings: unknown = db.hypaV3Settings
-  const presetId = typeof db.hypaV3PresetId === 'number' ? db.hypaV3PresetId : 0
+function resolveHypaV3Settings(database: MemoryEmbeddingJobDatabase): HypaV3Settings {
+  const db = database
+  let rawSettings: unknown = null
+  const presetId = hypaV3PresetIndexFromStableId({
+    hypaV3Presets: db.hypaV3Presets,
+    selectedHypaV3PresetId: db.selectedHypaV3PresetId,
+  })
   if (Array.isArray(db.hypaV3Presets)) {
     const preset = db.hypaV3Presets[presetId]
     if (isRecord(preset)) rawSettings = preset.settings

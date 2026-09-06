@@ -44,7 +44,11 @@ const testState = vi.hoisted(() => {
 
   return {
     db: {} as any,
-    doingChat: makeStore(false),
+    resourceStatus: {
+      settings: 'ready' as 'idle' | 'loading' | 'ready' | 'error',
+      collections: 'ready' as 'idle' | 'loading' | 'ready' | 'error',
+      characters: 'ready' as 'idle' | 'loading' | 'ready' | 'error',
+    },
     selectedCharID: makeStore(0),
     globalFetch: vi.fn(),
     requestProviderOperation: vi.fn(),
@@ -56,7 +60,7 @@ const testState = vi.hoisted(() => {
           : { source: 'none' },
     ),
     alertError: vi.fn(),
-    requestChatData: vi.fn(async () => {
+    requestChatData: vi.fn<(...args: unknown[]) => Promise<{ type: 'success'; result: string }>>(async () => {
       throw new Error('requestChatData should not run in cached translator tests')
     }),
     processScriptFull: vi.fn(async (_char: unknown, text: string) => ({ data: text })),
@@ -78,8 +82,64 @@ vi.mock('../stores.svelte', () => ({
   selectedCharID: testState.selectedCharID,
 }))
 
-vi.mock('../process/index.svelte', () => ({
-  doingChat: testState.doingChat,
+vi.mock('../server/resourceState.svelte', () => ({
+  settingsResourceState: {
+    get status() {
+      return testState.resourceStatus.settings
+    },
+    get value() {
+      return testState.db
+    },
+  },
+  collectionsResourceState: {
+    get status() {
+      return testState.resourceStatus.collections
+    },
+    get values() {
+      return testState.db
+    },
+  },
+  charactersResourceState: {
+    get status() {
+      return testState.resourceStatus.characters
+    },
+    get characters() {
+      return testState.db.characters ?? []
+    },
+    get characterOrder() {
+      return testState.db.characterOrder ?? []
+    },
+    currentChar: 0,
+  },
+  getResourceDatabase: (options: { snapshot?: boolean } = {}) =>
+    options.snapshot ? JSON.parse(JSON.stringify(testState.db)) : testState.db,
+  getCharacterResourceOwner: (characterId: string) => {
+    const matches = (testState.db.characters ?? []).filter(
+      (character: { chaId?: string }) => character.chaId === characterId,
+    )
+    return matches.length === 1 ? matches[0] : undefined
+  },
+  getChatMetadataOwnerState: (chatId: string) => {
+    const matches = (testState.db.characters ?? []).flatMap((character: { chats?: Array<{ id?: string }> }) =>
+      (character.chats ?? []).filter((chat) => chat.id === chatId),
+    )
+    return matches.length === 1 ? { chatId } : undefined
+  },
+}))
+
+vi.mock('../chatCommands', () => ({
+  captureActiveChatTarget: () => {
+    const character = testState.db.characters?.[0]
+    const chatPage = character?.chatPage ?? 0
+    const chat = character?.chats?.[chatPage]
+    if (!character || !chat) return null
+    return {
+      selectedCharID: 0,
+      chatPage,
+      characterId: character.chaId,
+      chatId: chat.id,
+    }
+  },
 }))
 
 vi.mock('../globalApi.svelte', () => ({
@@ -152,12 +212,19 @@ vi.mock('../../etc/send.mp3', () => ({
 }))
 
 import { DEEPLX_DELIMITER_FALLBACK_MAX_SEGMENTS, __translatorTestHooks, setLLMCache, translateHTML } from './translator'
+import { createTranslatorPreset } from './presets'
+import {
+  beginChatGenerationActivity,
+  resetChatGenerationActivitiesForTests,
+} from '../process/generationActivity.svelte'
 
 function resetDatabase() {
   Object.assign(testState.db, {
     translator: 'ko',
     translatorInputLanguage: 'ja',
     translatorType: 'google',
+    translatorPresets: [createTranslatorPreset('Default', { id: 'default', prompt: 'Default {{slot}}' })],
+    translatorPresetId: 'default',
     aiModel: 'openai',
     useExperimentalGoogleTranslator: false,
     noWaitForTranslate: true,
@@ -196,11 +263,30 @@ function stubGoogleFetch() {
   return fetchMock
 }
 
+function beginGenerationForChat(chatPage: number) {
+  const character = testState.db.characters[0]
+  const chat = character.chats[chatPage]
+  const activity = beginChatGenerationActivity({
+    target: {
+      selectedCharID: 0,
+      chatPage,
+      characterId: character.chaId,
+      chatId: chat.id,
+    },
+    kind: 'message',
+  })
+  if (!activity) throw new Error(`could not start test generation for ${chat.id}`)
+  return activity
+}
+
 describe('translateHTML streaming guards', () => {
   beforeEach(() => {
     resetDatabase()
+    testState.resourceStatus.settings = 'ready'
+    testState.resourceStatus.collections = 'ready'
+    testState.resourceStatus.characters = 'ready'
     testState.selectedCharID.set(0)
-    testState.doingChat.set(false)
+    resetChatGenerationActivitiesForTests()
     testState.llmCache.clear()
     __translatorTestHooks.clearTranslateCache()
     vi.clearAllMocks()
@@ -211,8 +297,8 @@ describe('translateHTML streaming guards', () => {
     vi.restoreAllMocks()
   })
 
-  it('M16: skips Google auto-translate work while a message is streaming', async () => {
-    testState.doingChat.set(true)
+  it('skips Google auto-translate work while the same chat is streaming', async () => {
+    beginGenerationForChat(0)
     const html = '<p>streaming frame</p>'
     const fetchMock = vi.fn()
     const domParserMock = vi.fn(function () {
@@ -229,7 +315,7 @@ describe('translateHTML streaming guards', () => {
     expect(consoleLog).not.toHaveBeenCalled()
   })
 
-  it('M16: default HTML translation no longer logs source HTML or chunks', async () => {
+  it('default HTML translation no longer logs source HTML or chunks', async () => {
     const fetchMock = stubGoogleFetch()
     const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {})
 
@@ -241,9 +327,9 @@ describe('translateHTML streaming guards', () => {
     expect(consoleLog).not.toHaveBeenCalled()
   })
 
-  it('M16: preserves cached LLM translations during streaming', async () => {
+  it('preserves cached LLM translations during streaming', async () => {
     testState.db.translatorType = 'llm'
-    testState.doingChat.set(true)
+    beginGenerationForChat(0)
     await setLLMCache('<p>Hello</p>', '<p>Cached result</p>')
     const fetchMock = vi.fn()
     const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -257,7 +343,30 @@ describe('translateHTML streaming guards', () => {
     expect(consoleLog).not.toHaveBeenCalled()
   })
 
-  it('v4-L24: memoizes translated HTML output until the explicit signature changes', async () => {
+  it('runs an uncached LLM translation in idle Chat B while Chat A generates', async () => {
+    testState.db.translatorType = 'llm'
+    testState.db.characters[0].chats.push({ id: 'chat-b', message: [] })
+    beginGenerationForChat(0)
+    testState.db.characters[0].chatPage = 1
+    testState.requestChatData.mockResolvedValue({ type: 'success', result: '<p>Translated in B</p>' })
+
+    const translated = await translateHTML('<p>Uncached in B</p>', false, '', 0)
+
+    expect(translated).toBe('<p>Translated in B</p>')
+    expect(testState.requestChatData).toHaveBeenCalledOnce()
+  })
+
+  it('blocks an uncached LLM translation while its own chat generates', async () => {
+    testState.db.translatorType = 'llm'
+    beginGenerationForChat(0)
+    testState.requestChatData.mockResolvedValue({ type: 'success', result: '<p>Should not run</p>' })
+    const html = '<p>Uncached in A</p>'
+
+    await expect(translateHTML(html, false, '', 0)).resolves.toBe(html)
+    expect(testState.requestChatData).not.toHaveBeenCalled()
+  })
+
+  it('memoizes translated HTML output until the explicit signature changes', async () => {
     const fetchMock = stubGoogleFetch()
     const OriginalDOMParser = DOMParser
     const parseSpy = vi.fn()
@@ -286,7 +395,7 @@ describe('translateHTML streaming guards', () => {
     expect(__translatorTestHooks.getTranslateHTMLMemoEntries()).toHaveLength(2)
   })
 
-  it('v4-L24: keys translated HTML memo by the active chat selected prompt regex', async () => {
+  it('keys translated HTML memo by the active chat selected prompt regex', async () => {
     const fetchMock = stubGoogleFetch()
     testState.db.presetRegex = [
       {
@@ -328,7 +437,7 @@ describe('translateHTML streaming guards', () => {
     expect(__translatorTestHooks.getTranslateHTMLMemoEntries()).toHaveLength(2)
   })
 
-  it('v4-L29: combineTranslation processes a multi-line paragraph as one display unit', async () => {
+  it('combineTranslation processes a multi-line paragraph as one display unit', async () => {
     testState.db.combineTranslation = true
     const fetchMock = stubGoogleFetch()
     testState.processScriptFull.mockImplementation(async (_char: unknown, text: string) => ({
@@ -345,7 +454,7 @@ describe('translateHTML streaming guards', () => {
     expect(testState.processScriptFull.mock.calls[0][1]).toBe('translated:ko:Line one\nLine two\nLine three')
   })
 
-  it('v4-L25: reuses edit-translation regexes and reports invalid patterns once per script version', async () => {
+  it('reuses edit-translation regexes and reports invalid patterns once per script version', async () => {
     const fetchMock = stubGoogleFetch()
     testState.db.characters[0].customscript = [
       {
@@ -405,7 +514,7 @@ describe('translateHTML streaming guards', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('v4-L27: caps deeplX delimiter-mismatch one-by-one fallback fanout', async () => {
+  it('caps deeplX delimiter-mismatch one-by-one fallback fanout', async () => {
     testState.db.translatorType = 'deeplX'
     testState.db.deeplXOptions.token = '__RISU_SECRET_MASKED__'
     testState.requestProviderOperation.mockImplementation(

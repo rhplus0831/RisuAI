@@ -1,3 +1,4 @@
+import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
 
 export interface EchoRequest {
@@ -11,11 +12,24 @@ export type EchoStreamFrame = CompletionStreamFrame
 
 const DEFAULT_MESSAGE = 'Echo Message'
 
-export function resolveEchoRequest(input: { message?: unknown; delayMs?: unknown; signal: AbortSignal }): EchoRequest {
+export function resolveEchoRequest(input: {
+  message?: unknown
+  delayMs?: unknown
+  additionalParams?: Array<[string, string]>
+  signal: AbortSignal
+}): EchoRequest {
   const message = typeof input.message === 'string' ? input.message : DEFAULT_MESSAGE
   const delayMs =
     typeof input.delayMs === 'number' && Number.isFinite(input.delayMs) && input.delayMs > 0 ? input.delayMs : 0
-  return { message, delayMs, signal: input.signal }
+  const body: Record<string, unknown> = { message, delayMs }
+  if (input.additionalParams !== undefined && input.additionalParams.length > 0) {
+    applyAdditionalParameters(body, {}, input.additionalParams)
+  }
+  return {
+    message: typeof body.message === 'string' ? body.message : message,
+    delayMs: typeof body.delayMs === 'number' && Number.isFinite(body.delayMs) && body.delayMs > 0 ? body.delayMs : 0,
+    signal: input.signal,
+  }
 }
 
 function delay(ms: number, signal: AbortSignal): Promise<{ aborted: boolean }> {

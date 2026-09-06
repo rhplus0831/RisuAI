@@ -3,6 +3,12 @@ import { get } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from '../../ts/storage/database.svelte'
 import { parseBranchComment } from './branchComment'
+import { TRANSCRIPT_INTERACTION_CONTEXT, type TranscriptInteractionProvider } from './transcriptInteraction'
+import {
+  createTranscriptMessageViewOwner,
+  TRANSCRIPT_MESSAGE_VIEW_CONTEXT,
+  type TranscriptMessageViewOwner,
+} from './transcriptMessageView'
 
 const customHtmlMocks = vi.hoisted(() => {
   const templates = {
@@ -23,9 +29,25 @@ const customHtmlMocks = vi.hoisted(() => {
     alertRequestData: vi.fn(),
     alertWait: vi.fn(),
     canUseServerCommands: vi.fn(() => false),
+    captureChatForkSnapshot: vi.fn(),
     changeChatTo: vi.fn(),
+    dispatchForkChatWithOutcome: vi.fn(),
     foldChatToMessage: vi.fn(),
     getDatabase: vi.fn(),
+    getChatMessageOwnerState: vi.fn(
+      (
+        _chatId: string,
+      ):
+        | {
+            chatId: string
+            messages: Array<Record<string, unknown>>
+            projectionEpoch: number
+            resourceLoaded: boolean
+            hydrationPending: boolean
+            hydrationFailed: boolean
+          }
+        | undefined => undefined,
+    ),
     getServerCommandBaseRevision: vi.fn(async () => 1),
     hydrateChatMessages: vi.fn(async (_chatId: string, _options?: { strict?: boolean; force?: boolean }) => undefined),
     runServerCommand: vi.fn(
@@ -68,6 +90,39 @@ const customHtmlMocks = vi.hoisted(() => {
         updatedAt: 123,
       },
     })),
+    translateGreetingCommand: vi.fn(
+      async (input: {
+        baseRevision: number
+        characterId: string
+        chatId: string
+        greetingIndex: number
+        jobId: string
+      }) => ({
+        status: 'ok',
+        revision: 2,
+        event: {
+          type: 'character.greetingTranslation.updated',
+          revision: 2,
+          resource: 'greetingTranslation',
+          id: input.characterId,
+        },
+        characterId: input.characterId,
+        chatId: input.chatId,
+        greetingIndex: input.greetingIndex,
+        jobId: input.jobId,
+        settingsHash: 'greeting-settings',
+        translation: {
+          source: 'raw',
+          text: 'translated greeting',
+          sourceHash: 'a'.repeat(64),
+          targetLanguage: 'ko',
+          inputLanguage: 'en',
+          translatorType: 'llm',
+          settingsHash: 'greeting-settings',
+          updatedAt: 123,
+        },
+      }),
+    ),
     updateMessageCommand: vi.fn(async () => ({
       status: 'ok',
       revision: 3,
@@ -115,8 +170,7 @@ const customHtmlMocks = vi.hoisted(() => {
     setLLMCache: vi.fn(async () => undefined),
     sleep: vi.fn(async () => undefined),
     navigate: vi.fn(),
-    rollbackServerBackedChatRowMetadata: vi.fn(),
-    syncServerBackedChatMetadataBaselines: vi.fn(),
+    restoreChatRowMetadata: vi.fn(),
   }
 })
 
@@ -231,6 +285,7 @@ vi.mock('../../ts/translator/translator', () => ({
 }))
 
 vi.mock('src/ts/chatCommands', () => ({
+  captureChatForkSnapshot: customHtmlMocks.captureChatForkSnapshot,
   cloneJsonValue: <T>(value: T) => JSON.parse(JSON.stringify(value)) as T,
   currentChatScopedSnapshot: vi.fn(() => {
     const character = customHtmlMocks.getDatabase().characters[0]
@@ -242,10 +297,12 @@ vi.mock('src/ts/chatCommands', () => ({
       chat: JSON.parse(JSON.stringify(chat)),
     }
   }),
-  currentChatStateSnapshot: vi.fn(() => ({})),
+  currentChatStateSnapshot: vi.fn(() => {
+    throw new Error('Branching must not capture every character transcript')
+  }),
   dispatchCompatibleChatUpdateScoped: vi.fn(),
   dispatchDeleteMessageScoped: vi.fn(),
-  dispatchForkChat: vi.fn(),
+  dispatchForkChatWithOutcome: customHtmlMocks.dispatchForkChatWithOutcome,
   dispatchReplaceMessagesScoped: vi.fn(),
   dispatchTruncateMessagesScoped: vi.fn(),
   dispatchUpdateChatScopedWithOutcome: vi.fn(),
@@ -254,6 +311,7 @@ vi.mock('src/ts/chatCommands', () => ({
     message.chatId ??= 'generated-message-id'
     return message.chatId
   }),
+  restoreChatRowMetadata: customHtmlMocks.restoreChatRowMetadata,
 }))
 
 vi.mock('src/ts/server/commands', () => ({
@@ -261,16 +319,88 @@ vi.mock('src/ts/server/commands', () => ({
   getServerCommandBaseRevision: customHtmlMocks.getServerCommandBaseRevision,
   runServerCommand: customHtmlMocks.runServerCommand,
   translateMessageCommand: customHtmlMocks.translateMessageCommand,
+  translateGreetingCommand: customHtmlMocks.translateGreetingCommand,
   updateMessageCommand: customHtmlMocks.updateMessageCommand,
 }))
 
-vi.mock('src/ts/server/chatBridge.svelte', () => ({
-  rollbackServerBackedChatRowMetadata: customHtmlMocks.rollbackServerBackedChatRowMetadata,
-  syncServerBackedChatMetadataBaselines: customHtmlMocks.syncServerBackedChatMetadataBaselines,
+const greetingProjectionMocks = vi.hoisted(() => {
+  let jobs: unknown[] = []
+  const subscribers = new Set<(value: unknown[]) => void>()
+  return {
+    translation: null as Record<string, unknown> | null,
+    greetingIndex: -1,
+    active: {
+      subscribe(callback: (value: unknown[]) => void) {
+        callback(jobs)
+        subscribers.add(callback)
+        return () => subscribers.delete(callback)
+      },
+      update(updater: (value: unknown[]) => unknown[]) {
+        jobs = updater(jobs)
+        for (const subscriber of subscribers) subscriber(jobs)
+      },
+    },
+    reset() {
+      this.translation = null
+      this.greetingIndex = -1
+      jobs = []
+      for (const subscriber of subscribers) subscriber(jobs)
+    },
+  }
+})
+
+vi.mock('src/ts/server/greetingTranslations.svelte', () => ({
+  activeGreetingTranslations: greetingProjectionMocks.active,
+  getGreetingTranslationProjection: () => ({
+    revision: 1,
+    characterId: 'custom-html-character',
+    chatId: 'custom-html-chat',
+    settingsHash: 'greeting-settings',
+    clientSettingsSignature: 'client-settings',
+    translations: [],
+  }),
+  findGreetingTranslation: (input: { greetingIndex: number }) =>
+    input.greetingIndex === greetingProjectionMocks.greetingIndex ? greetingProjectionMocks.translation : null,
+  refreshGreetingTranslationProjection: vi.fn(async () => ({ status: 'ok' })),
+  applyGreetingTranslationCommandReceipt: (input: { greetingIndex: number; translation: Record<string, unknown> }) => {
+    greetingProjectionMocks.greetingIndex = input.greetingIndex
+    greetingProjectionMocks.translation = input.translation
+    return true
+  },
+  beginActiveGreetingTranslation: (job: Record<string, unknown>) => {
+    greetingProjectionMocks.active.update((jobs) => [...jobs, job])
+    return true
+  },
+  isCurrentGreetingTranslationJob: (
+    characterId: string,
+    chatId: string,
+    greetingIndex: number,
+    settingsHash: string,
+    jobId: string,
+  ) =>
+    (greetingProjectionMocks.active as any) &&
+    characterId === 'custom-html-character' &&
+    chatId === 'custom-html-chat' &&
+    greetingIndex === -1 &&
+    settingsHash === 'greeting-settings' &&
+    typeof jobId === 'string',
+  clearGreetingTranslationJob: (jobId: string) => {
+    greetingProjectionMocks.active.update((jobs) =>
+      jobs.filter((job) => (job as Record<string, unknown>).jobId !== jobId),
+    )
+  },
 }))
 
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
+  applyMessageTranslationLocalEffect: (chatId: string, messageId: string, translation: unknown) => {
+    const messages = customHtmlMocks.getChatMessageOwnerState(chatId)?.messages ?? []
+    const matches = messages.filter((message) => message.chatId === messageId)
+    if (matches.length !== 1) return false
+    matches[0].translation = translation
+    return true
+  },
   applyServerChatMessagesResource: vi.fn(() => true),
+  getChatMessageOwnerState: customHtmlMocks.getChatMessageOwnerState,
   hydrateActiveChat: vi.fn(async () => undefined),
   hydrateChatMessages: customHtmlMocks.hydrateChatMessages,
   resetChatHydration: vi.fn(),
@@ -308,22 +438,32 @@ import {
   selectedCharID,
 } from '../../ts/stores.svelte'
 import { getCurrentCharacter, getCurrentChat } from '../../ts/storage/database.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
 import {
+  charactersResourceState,
+  replaceResourceDatabase,
+  settingsResourceState,
+} from '../../ts/server/resourceState.svelte'
+import {
+  captureChatForkSnapshot,
+  currentChatStateSnapshot,
   dispatchCompatibleChatUpdateScoped,
-  dispatchForkChat,
+  dispatchDeleteMessageScoped,
+  dispatchForkChatWithOutcome,
   dispatchReplaceMessagesScoped,
   dispatchTruncateMessagesScoped,
   dispatchUpdateChatScopedWithOutcome,
   dispatchUpdateMessageScoped,
+  type ChatMutationFinalOutcome,
+  type ChatMutationOutcome,
 } from 'src/ts/chatCommands'
 import {
   activeMessageTranslations,
   clearMessageTranslationJob,
   setActiveMessageTranslations,
 } from 'src/ts/server/messageTranslationJobs'
-import { withTrustedResourceWrite } from '../../ts/server/resourceWriteGuard.svelte'
+
 import { BILINGUAL_PAIR_CLASS } from '../../ts/translator/bilingualInterleave'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {
@@ -419,6 +559,7 @@ function seedDatabase(messageCount: number, guiHTML = customHtmlMocks.templates.
         type: 'character',
       },
     ],
+    currentChar: 0,
     clickToEdit: false,
     createFolderOnBranch: false,
     disableAutoPopupMessageEditor: true,
@@ -456,14 +597,23 @@ function mountCustomHtmlRows(
     autoTranslateOnReady: boolean
     onAutoTranslationEligibilityConsumed: () => void
     isChatGenerating: boolean
+    isGenerationLoading: boolean
+    messageGenerationInfo: { model?: string; generationId?: string }
+    generationPersistenceState: 'queued' | 'stalled' | 'terminal' | 'stalled_legacy' | null
   }> = {},
   startIndex = 0,
+  interactions?: TranscriptInteractionProvider,
+  messageViews?: TranscriptMessageViewOwner,
 ) {
   for (let offset = 0; offset < count; offset += 1) {
     const index = startIndex + offset
     components.push(
       mount(Chat, {
         target,
+        context: new Map<symbol, unknown>([
+          ...(interactions ? [[TRANSCRIPT_INTERACTION_CONTEXT, interactions] as const] : []),
+          ...(messageViews ? [[TRANSCRIPT_MESSAGE_VIEW_CONTEXT, messageViews] as const] : []),
+        ]),
         props: {
           message: `visible message ${index}`,
           name: 'Template Bot',
@@ -480,6 +630,31 @@ function mountCustomHtmlRows(
       }) as MountedComponent,
     )
   }
+}
+
+function mountStableMessageRow(messageId: string) {
+  const chat = testDatabaseState.db.characters[0].chats[0]
+  components.push(
+    mount(Chat, {
+      target,
+      props: {
+        get message() {
+          return chat.message.find((message) => message.chatId === messageId)?.data ?? ''
+        },
+        get idx() {
+          return chat.message.findIndex((message) => message.chatId === messageId)
+        },
+        get totalLength() {
+          return chat.message.length
+        },
+        name: 'Template Bot',
+        isLastMemory: false,
+        role: 'char',
+        displayMessageId: messageId,
+        displayChatId: chat.id,
+      },
+    }) as MountedComponent,
+  )
 }
 
 function mountPopupList() {
@@ -523,6 +698,7 @@ beforeEach(() => {
   NativeDOMParser = globalThis.DOMParser
   vi.stubGlobal('DOMParser', CountingDOMParser)
   vi.clearAllMocks()
+  greetingProjectionMocks.reset()
   customHtmlMocks.changeChatTo.mockImplementation((idOrIndex: string | number) => {
     const character = testDatabaseState.db.characters[0]
     const chatIndex =
@@ -534,6 +710,25 @@ beforeEach(() => {
   customHtmlMocks.sleep.mockResolvedValue(undefined)
   customHtmlMocks.getFileSrc.mockResolvedValue('')
   customHtmlMocks.canUseServerCommands.mockReturnValue(false)
+  customHtmlMocks.captureChatForkSnapshot.mockReturnValue({ kind: 'chat-fork' })
+  customHtmlMocks.getChatMessageOwnerState.mockImplementation((chatId: string) => {
+    const matches = testDatabaseState.db.characters.flatMap((character) =>
+      character.chats.filter((chat) => chat.id === chatId),
+    )
+    if (matches.length !== 1) return undefined
+    return {
+      chatId,
+      messages: matches[0].message as unknown as Array<Record<string, unknown>>,
+      projectionEpoch: 0,
+      resourceLoaded: true,
+      hydrationPending: false,
+      hydrationFailed: false,
+    }
+  })
+  vi.mocked(dispatchForkChatWithOutcome).mockResolvedValue({
+    status: 'accepted',
+    result: { status: 'ok' },
+  } as never)
   vi.mocked(dispatchUpdateMessageScoped).mockReturnValue(null)
   customHtmlMocks.runServerCommand.mockImplementation(
     async (input: { command: (baseRevision: number) => Promise<unknown>; rollback?: () => void }) => {
@@ -623,8 +818,129 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
+describe('empty synthetic greeting identity', () => {
+  it('keeps the character icon and name beside the empty-chat prompt', async () => {
+    seedDatabase(0, null as unknown as string)
+    components.push(
+      mount(Chat, {
+        target,
+        props: {
+          message: '',
+          name: 'Template Bot',
+          isLastMemory: false,
+          idx: -1,
+          role: 'char',
+          totalLength: 0,
+          firstMessage: true,
+          img: 'background-image:url("character-icon.png");',
+          rerollIcon: false,
+          disabled: false,
+        },
+      }) as MountedComponent,
+    )
+    await settle()
+
+    const greeting = target.querySelector<HTMLElement>('.risu-chat[data-chat-index="-1"]')
+    expect(greeting?.textContent).toContain('noMessage')
+    expect(greeting?.textContent).toContain('Template Bot')
+    expect(greeting?.querySelector<HTMLElement>('.shadow-lg.bg-textcolor2')?.style.backgroundImage).toContain(
+      'character-icon.png',
+    )
+  })
+})
+
+describe('generation finalization row indicator', () => {
+  it('renders a terminal legacy warning only on the exact affected message row', async () => {
+    seedDatabase(2, null as unknown as string)
+    mountCustomHtmlRows(1, 'char', {}, 0)
+    mountCustomHtmlRows(1, 'char', { generationPersistenceState: 'stalled_legacy' }, 1)
+    await settle()
+
+    const unaffected = target.querySelector<HTMLElement>('.risu-chat[data-chat-id="message-0"]')
+    const affected = target.querySelector<HTMLElement>('.risu-chat[data-chat-id="message-1"]')
+    expect(unaffected?.querySelector('[data-generation-persistence-state]')).toBeNull()
+    expect(affected?.querySelector('[data-generation-persistence-state="stalled_legacy"]')?.textContent).toContain(
+      'generationPersistenceStalledLegacy',
+    )
+  })
+})
+
+describe('explicit Chat resource owners', () => {
+  it('does not recover a ready message id from the aggregate when the transcript owner is missing', async () => {
+    seedDatabase(1, null as unknown as string)
+    customHtmlMocks.getChatMessageOwnerState.mockReturnValue(undefined)
+    mountCustomHtmlRows(1)
+    await settle()
+
+    expect(target.querySelector<HTMLElement>('.risu-chat[data-chat-index="0"]')?.dataset.chatId).toBe('')
+    target.querySelector<HTMLButtonElement>('[data-risu-message-action="remove"]')?.click()
+    await settle()
+    expect(dispatchDeleteMessageScoped).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when ready character or chat ids are duplicated', async () => {
+    seedDatabase(1, null as unknown as string)
+    const character = testDatabaseState.db.characters[0]
+    character.chats.push(JSON.parse(JSON.stringify(character.chats[0])) as (typeof character.chats)[number])
+    testDatabaseState.db.characters.push(JSON.parse(JSON.stringify(character)) as typeof character)
+    mountCustomHtmlRows(1)
+    await settle()
+
+    expect(target.querySelector<HTMLElement>('.risu-chat[data-chat-index="0"]')?.dataset.chatId).toBe('')
+  })
+
+  it('does not revive character or display aggregates after an owner error', async () => {
+    seedDatabase(1, customHtmlMocks.templates.base)
+    charactersResourceState.status = 'error'
+    settingsResourceState.groupStatuses.display = 'error'
+    mountCustomHtmlRows(1)
+    await settle()
+
+    const row = target.querySelector<HTMLElement>('.risu-chat[data-chat-index="0"]')
+    expect(row?.dataset.chatId).toBe('')
+    expect(row?.querySelector('.custom-html-template')).toBeNull()
+  })
+})
+
+describe('regeneration row feedback', () => {
+  it('replaces the previous response and its metadata controls with generation loading feedback', async () => {
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(1, null as unknown as string)
+    testDatabaseState.db.requestInfoInsideChat = true
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'llm'
+    const chat = testDatabaseState.db.characters[0].chats[0]
+    chat.autoTranslate = true
+    chat.message[0].generationInfo = { model: 'mock-model', generationId: 'message-0' }
+    chat.message[0].translation = {
+      source: 'raw',
+      text: 'translated previous response',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm',
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 123,
+    }
+
+    mountCustomHtmlRows(1, 'char', {
+      isGenerationLoading: true,
+      messageGenerationInfo: chat.message[0].generationInfo,
+      rerollIcon: true,
+    })
+    await settle()
+
+    expect(target.querySelector('.chat-generation-loading[role="status"]')).toBeTruthy()
+    expect(target.textContent).not.toContain('visible message 0')
+    expect(target.textContent).not.toContain('translated previous response')
+    expect(target.textContent).not.toContain('retranslate')
+    expect(target.textContent).not.toContain('Mock-model')
+    expect(target.querySelector('.button-icon-reroll')).toBeNull()
+  })
+})
+
 describe('customHTML template memo', () => {
-  it('L31: repeated customHTML rows share one parsed template per template version', async () => {
+  it('repeated customHTML rows share one parsed template per template version', async () => {
     seedDatabase(4)
     mountCustomHtmlRows(4)
     await settle()
@@ -643,7 +959,7 @@ describe('customHTML template memo', () => {
     expect(parserCalls).toHaveLength(0)
   })
 
-  it('L31: guiHTML changes and cbs-condition changes invalidate the customHTML template memo', async () => {
+  it('guiHTML changes and cbs-condition changes invalidate the customHTML template memo', async () => {
     seedDatabase(2)
     mountCustomHtmlRows(2)
     await settle()
@@ -699,7 +1015,7 @@ describe('customHTML template memo', () => {
     expect(target.textContent).toContain('parsed-message:visible message 0')
   })
 
-  it('L31: parse failures return an empty placeholder without poisoning the memo', () => {
+  it('parse failures return an empty placeholder without poisoning the memo', () => {
     const body = renderCustomHtmlTemplate(customHtmlMocks.templates.throwing, {
       firstmsg: false,
       chatRole: 'char',
@@ -880,6 +1196,209 @@ describe('customHTML rendered button trigger freshness', () => {
     expect(testDatabaseState.db.characters[0].chats[0].scriptstate?.$choice).toBe('applied')
     expect(get(VariableReloadGUIPointer)).toBe(previousVariableEpoch + 1)
     expect(dispatchCompatibleChatUpdateScoped).toHaveBeenCalled()
+  })
+})
+
+describe('transcript interaction reservations', () => {
+  it('rejects an additional editor before changing its draft and releases accepted edits on save', async () => {
+    seedDatabase(1, null as unknown as string)
+    const release = vi.fn()
+    const reserve = vi.fn<TranscriptInteractionProvider['reserve']>(() => null)
+    mountCustomHtmlRows(1, 'char', {}, 0, { reserve, subscribeAvailable: () => () => {} })
+    await settle()
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+    expect(target.querySelector('.message-edit-area')).toBeNull()
+    expect(customHtmlMocks.alertNormal).toHaveBeenCalledWith('transcriptInteractionLimit')
+    expect(dispatchUpdateMessageScoped).not.toHaveBeenCalled()
+
+    reserve.mockReturnValue(release)
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+    expect(reserve).toHaveBeenLastCalledWith('message-0', expect.any(Object))
+    expect(target.querySelector('.message-edit-area')).not.toBeNull()
+    expect(release).not.toHaveBeenCalled()
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+    expect(release).toHaveBeenCalledOnce()
+  })
+
+  it('restores a manual return to the original after the translated row is evicted and remounted', async () => {
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(1, null as unknown as string)
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'google'
+    const chat = testDatabaseState.db.characters[0].chats[0]
+    chat.autoTranslate = true
+    chat.message[0].translation = {
+      source: 'raw',
+      text: 'saved translation',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'google',
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 123,
+    }
+    const views = createTranscriptMessageViewOwner()
+    mountCustomHtmlRows(1, 'char', {}, 0, undefined, views)
+    await settle()
+    expect(target.textContent).toContain('saved translation')
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+    expect(target.textContent).not.toContain('saved translation')
+    for (const mounted of components) unmount(mounted)
+    components = []
+    await settle()
+    mountCustomHtmlRows(1, 'char', {}, 0, undefined, views)
+    await settle()
+    expect(target.textContent).toContain('visible message 0')
+    expect(target.textContent).not.toContain('saved translation')
+    expect(customHtmlMocks.translateMessageCommand).not.toHaveBeenCalled()
+  })
+
+  it('keeps automatic translation eligible while full, then holds the row until its provider request settles', async () => {
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(1, null as unknown as string)
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'google'
+    testDatabaseState.db.characters[0].chats[0].autoTranslate = true
+    const release = vi.fn()
+    const reserve = vi.fn<TranscriptInteractionProvider['reserve']>(() => null)
+    const unsubscribe = vi.fn()
+    let available!: () => void
+    const consumed = vi.fn()
+    const pending = deferred<Awaited<ReturnType<typeof customHtmlMocks.translateMessageCommand>>>()
+    customHtmlMocks.translateMessageCommand.mockReturnValueOnce(pending.promise)
+    mountCustomHtmlRows(
+      1,
+      'char',
+      {
+        autoTranslateOnReady: true,
+        onAutoTranslationEligibilityConsumed: consumed,
+      },
+      0,
+      {
+        reserve,
+        subscribeAvailable: (listener) => {
+          available = listener
+          return unsubscribe
+        },
+      },
+    )
+    await settle()
+    expect(customHtmlMocks.translateMessageCommand).not.toHaveBeenCalled()
+    expect(consumed).not.toHaveBeenCalled()
+    expect(customHtmlMocks.alertNormal).not.toHaveBeenCalled()
+
+    reserve.mockReturnValue(release)
+    available()
+    await settle()
+    expect(consumed).toHaveBeenCalledOnce()
+    expect(customHtmlMocks.translateMessageCommand).toHaveBeenCalledOnce()
+    expect(release).not.toHaveBeenCalled()
+    const request = customHtmlMocks.translateMessageCommand.mock.calls[0][0]
+    pending.resolve({
+      status: 'ok',
+      revision: 2,
+      event: { type: 'message.updated', revision: 2, resource: 'message', id: 'message-0' },
+      chatId: 'custom-html-chat',
+      messageId: 'message-0',
+      jobId: request.jobId,
+      translation: {
+        source: 'raw',
+        text: 'completed automatic translation',
+        sourceHash: 'a'.repeat(64),
+        targetLanguage: 'ko',
+        inputLanguage: 'en',
+        translatorType: 'google',
+        settingsHash: 'b'.repeat(64),
+        updatedAt: 123,
+      },
+    })
+    await settle()
+    expect(release).toHaveBeenCalledOnce()
+    expect(target.textContent).toContain('completed automatic translation')
+    available()
+    await settle()
+    expect(consumed).toHaveBeenCalledOnce()
+    for (const mounted of components) unmount(mounted)
+    components = []
+    await settle()
+    expect(unsubscribe).toHaveBeenCalledOnce()
+  })
+})
+
+describe('stable message editor identity', () => {
+  it('keeps the inline draft and saves to the same message after an earlier row is deleted', async () => {
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(3, null as unknown as string)
+    mountStableMessageRow('message-1')
+    await settle()
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+    const editor = target.querySelector<HTMLTextAreaElement>('.message-edit-area')!
+    expect(editor).not.toBeNull()
+    editor.value = 'kept inline draft'
+    editor.dispatchEvent(new Event('input', { bubbles: true }))
+    testDatabaseState.db.characters[0].chats[0].message.splice(0, 1)
+    await settle()
+    expect(target.querySelector('.message-edit-area')).toBe(editor)
+    expect(editor.value).toBe('kept inline draft')
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+    expect(dispatchUpdateMessageScoped).toHaveBeenCalledWith(
+      'message-1',
+      { data: 'kept inline draft' },
+      expect.anything(),
+    )
+    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('visible message 2')
+  })
+
+  it('keeps the popup draft after an earlier row is deleted', async () => {
+    const pendingEditorWait = deferred<void>()
+    customHtmlMocks.sleep.mockReturnValueOnce(pendingEditorWait.promise)
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(3, null as unknown as string)
+    testDatabaseState.db.disableAutoPopupMessageEditor = false
+    mountStableMessageRow('message-1')
+    await settle()
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+    expect(popUpEditorStore.open).toBe(true)
+    popUpEditorStore.value = 'kept popup draft'
+    testDatabaseState.db.characters[0].chats[0].message.splice(0, 1)
+    await settle()
+    expect(popUpEditorStore.open).toBe(true)
+    popUpEditorStore.open = false
+    pendingEditorWait.resolve()
+    await settle()
+    expect(dispatchUpdateMessageScoped).toHaveBeenCalledWith(
+      'message-1',
+      { data: 'kept popup draft' },
+      expect.anything(),
+    )
+  })
+
+  it('does not overwrite a changed source after relocation', async () => {
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(3, null as unknown as string)
+    mountStableMessageRow('message-1')
+    await settle()
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+    const editor = target.querySelector<HTMLTextAreaElement>('.message-edit-area')!
+    editor.value = 'stale draft'
+    editor.dispatchEvent(new Event('input', { bubbles: true }))
+    const chat = testDatabaseState.db.characters[0].chats[0]
+    chat.message.splice(0, 1)
+    chat.message[0].data = 'newer authoritative text'
+    await settle()
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+    expect(dispatchUpdateMessageScoped).not.toHaveBeenCalled()
+    expect(chat.message[0].data).toBe('newer authoritative text')
+    expect(chat.message[1].data).toBe('visible message 2')
   })
 })
 
@@ -1076,7 +1595,6 @@ describe('message action target freshness', () => {
     popupStore.openId = 0
     await openMessageActions()
     expect(target.querySelector('.button-icon-bookmark')?.classList.contains('text-yellow-400')).toBe(true)
-    expect(customHtmlMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
     expect(dispatchUpdateChatScopedWithOutcome).toHaveBeenCalled()
   })
 
@@ -1101,7 +1619,6 @@ describe('message action target freshness', () => {
       'message-0': 'Pinned original',
     })
     expect(testDatabaseState.db.characters[0].chats[1].bookmarks).toEqual([])
-    expect(customHtmlMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
     expect(dispatchUpdateChatScopedWithOutcome).toHaveBeenCalledWith(
       'custom-html-chat',
       expect.objectContaining({
@@ -1111,7 +1628,7 @@ describe('message action target freshness', () => {
         },
       }),
       expect.anything(),
-      customHtmlMocks.rollbackServerBackedChatRowMetadata,
+      customHtmlMocks.restoreChatRowMetadata,
     )
   })
 
@@ -1135,6 +1652,130 @@ describe('message action target freshness', () => {
     expect(customHtmlMocks.navigate).toHaveBeenCalledWith(`/character/custom-html-character/${branchedChat?.id}`)
   })
 
+  it.each([false, true])(
+    'captures branch intent before changing source folder or membership (existing folder: %s)',
+    async (hasExistingFolder) => {
+      seedDatabase(1, null as unknown as string)
+      testDatabaseState.db.createFolderOnBranch = true
+      const character = testDatabaseState.db.characters[0]
+      const sourceChat = character.chats[0]
+      const sourceMessage = sourceChat.message[0]
+      const originalChatIds = character.chats.map((chat) => chat.id)
+      character.chatFolders = hasExistingFolder
+        ? [{ id: 'branches-folder', name: `Branches of ${sourceChat.name}`, folded: true }]
+        : []
+      if (hasExistingFolder) sourceChat.folderId = 'branches-folder'
+      const snapshot = { kind: 'chat-fork' }
+      customHtmlMocks.captureChatForkSnapshot.mockImplementationOnce((sourceChatId, input) => {
+        expect(sourceChatId).toBe(sourceChat.id)
+        expect(character.chats.map((chat) => chat.id)).toEqual(originalChatIds)
+        expect(character.chatFolders).toHaveLength(hasExistingFolder ? 1 : 0)
+        expect(sourceChat.folderId).toBe(hasExistingFolder ? 'branches-folder' : undefined)
+        expect(sourceChat.message[0]).toBe(sourceMessage)
+        expect(input.chat.folderId).toBe(input.folder.id)
+        expect(input.sourcePatch).toEqual({ folderId: input.folder.id })
+        expect(input.chat.message.at(-1)?.data).toContain('{{specialcomment::branchedfrom::')
+        return snapshot
+      })
+      mountPopupList()
+      mountCustomHtmlRows(1)
+      await settle()
+
+      await openMessageActions()
+      buttonByText('branch')?.click()
+      await settle()
+
+      expect(captureChatForkSnapshot).toHaveBeenCalledOnce()
+      const forkInput = vi.mocked(captureChatForkSnapshot).mock.calls[0]?.[1]
+      expect(dispatchForkChatWithOutcome).toHaveBeenCalledWith(sourceChat.id, snapshot, forkInput)
+      expect(character.chatFolders).toHaveLength(1)
+      expect(sourceChat.folderId).toBe(forkInput?.folder?.id)
+      expect(character.chats[0].folderId).toBe(forkInput?.folder?.id)
+      expect(sourceChat.message[0]).toBe(sourceMessage)
+      expect(currentChatStateSnapshot).not.toHaveBeenCalled()
+    },
+  )
+
+  it('leaves the source unchanged when branch intent cannot resolve its owner', async () => {
+    seedDatabase(1, null as unknown as string)
+    testDatabaseState.db.createFolderOnBranch = true
+    const character = testDatabaseState.db.characters[0]
+    const sourceChat = character.chats[0]
+    const originalChatIds = character.chats.map((chat) => chat.id)
+    customHtmlMocks.captureChatForkSnapshot.mockReturnValueOnce(null)
+    mountPopupList()
+    mountCustomHtmlRows(1)
+    await settle()
+
+    await openMessageActions()
+    buttonByText('branch')?.click()
+    await settle()
+
+    expect(character.chats.map((chat) => chat.id)).toEqual(originalChatIds)
+    expect(sourceChat.folderId).toBeUndefined()
+    expect(character.chatFolders).toBeUndefined()
+    expect(dispatchForkChatWithOutcome).not.toHaveBeenCalled()
+    expect(customHtmlMocks.navigate).not.toHaveBeenCalled()
+    expect(customHtmlMocks.alertError).toHaveBeenCalled()
+  })
+
+  it('recovers the source route when a queued branch finally fails and rolls back', async () => {
+    const finalSettlement = deferred<ChatMutationFinalOutcome>()
+    seedDatabase(1, null as unknown as string)
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    window.history.replaceState(null, '', '/character/custom-html-character/custom-html-chat')
+    customHtmlMocks.navigate.mockImplementation((path: string, options?: { replace?: boolean }) => {
+      window.history[options?.replace ? 'replaceState' : 'pushState'](null, '', path)
+    })
+    vi.mocked(dispatchForkChatWithOutcome).mockImplementationOnce((_sourceChatId, _previous, input) => {
+      const character = testDatabaseState.db.characters[0]
+      const provisionalChat = JSON.parse(JSON.stringify(input.chat)) as (typeof character.chats)[number]
+      withTestDatabaseWrite(() => {
+        character.chats.unshift(provisionalChat)
+        character.chatPage = 0
+      })
+      const settlement = finalSettlement.promise.then((outcome) => {
+        if (outcome.status === 'failed') {
+          withTestDatabaseWrite(() => {
+            character.chats = character.chats.filter((chat) => chat.id !== provisionalChat.id)
+            character.chatPage = character.chats.findIndex((chat) => chat.id === 'custom-html-chat')
+          })
+        }
+        return outcome
+      })
+      return Promise.resolve({
+        status: 'queued',
+        result: { status: 'unavailable' },
+        mutationIds: ['queued-branch'],
+        settlement,
+      } satisfies ChatMutationOutcome)
+    })
+    mountPopupList()
+    mountCustomHtmlRows(1)
+    await settle()
+
+    await openMessageActions()
+    buttonByText('branch')?.click()
+    await settle()
+
+    const forkPayload = vi.mocked(dispatchForkChatWithOutcome).mock.calls.at(-1)?.[2]
+    const provisionalChatId = forkPayload?.chat.id
+    expect(provisionalChatId).toBeTruthy()
+    expect(testDatabaseState.db.characters[0].chats[0].id).toBe(provisionalChatId)
+    expect(window.location.pathname).toBe(`/character/custom-html-character/${provisionalChatId}`)
+
+    finalSettlement.resolve({ status: 'failed', result: { status: 'error', error: 'fork rejected' } })
+    await settle()
+
+    const character = testDatabaseState.db.characters[0]
+    expect(character.chats.some((chat) => chat.id === provisionalChatId)).toBe(false)
+    expect(character.chats[character.chatPage].id).toBe('custom-html-chat')
+    expect(window.location.pathname).toBe('/character/custom-html-character/custom-html-chat')
+    expect(customHtmlMocks.navigate).toHaveBeenLastCalledWith('/character/custom-html-character/custom-html-chat', {
+      replace: true,
+    })
+  })
+
   it('does not branch when the confirmation is declined', async () => {
     seedDatabase(1, null as unknown as string)
     customHtmlMocks.alertConfirm.mockResolvedValueOnce(false)
@@ -1152,7 +1793,7 @@ describe('message action target freshness', () => {
       chat.message.some((message) => message.data.includes('{{specialcomment::branchedfrom::')),
     )
     expect(branchedChat).toBeUndefined()
-    expect(dispatchForkChat).not.toHaveBeenCalled()
+    expect(dispatchForkChatWithOutcome).not.toHaveBeenCalled()
     expect(customHtmlMocks.changeChatTo).not.toHaveBeenCalled()
     expect(customHtmlMocks.navigate).not.toHaveBeenCalled()
   })
@@ -1183,8 +1824,8 @@ describe('message action target freshness', () => {
     await settle()
 
     expect(customHtmlMocks.hydrateChatMessages).toHaveBeenCalledWith('custom-html-chat', { strict: true })
-    const forkPayload = vi.mocked(dispatchForkChat).mock.calls.at(-1)?.[2] as
-      | Parameters<typeof dispatchForkChat>[2]
+    const forkPayload = vi.mocked(dispatchForkChatWithOutcome).mock.calls.at(-1)?.[2] as
+      | Parameters<typeof dispatchForkChatWithOutcome>[2]
       | undefined
     expect(forkPayload?.chat.message.slice(0, 3).map((item) => item.data)).toEqual([
       'loaded message 0',
@@ -1328,7 +1969,7 @@ describe('message action target freshness', () => {
       data: 'other chat message',
       role: 'char',
     })
-    expect(dispatchForkChat).toHaveBeenCalledWith(
+    expect(dispatchForkChatWithOutcome).toHaveBeenCalledWith(
       'custom-html-chat',
       expect.anything(),
       expect.objectContaining({
@@ -1337,7 +1978,7 @@ describe('message action target freshness', () => {
         }),
       }),
     )
-    const forkPayload = vi.mocked(dispatchForkChat).mock.calls.at(-1)?.[2] as
+    const forkPayload = vi.mocked(dispatchForkChatWithOutcome).mock.calls.at(-1)?.[2] as
       | {
           chat: {
             message: Array<{ chatId?: string; data: string; generationInfo?: { generationId?: string } }>
@@ -1409,6 +2050,44 @@ describe('message action target freshness', () => {
 })
 
 describe('server raw translation controls', () => {
+  it('requires confirmation before replacing an existing message translation', async () => {
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(1, null as unknown as string)
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'llm'
+    testDatabaseState.db.characters[0].chats[0].message[0].translation = {
+      source: 'raw',
+      text: 'existing translation',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm',
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 123,
+    }
+    mountCustomHtmlRows(1)
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+    expect(target.textContent).toContain('existing translation')
+
+    customHtmlMocks.alertConfirm.mockResolvedValueOnce(false)
+    buttonByText('retranslate')?.click()
+    await settle()
+
+    expect(customHtmlMocks.alertConfirm).toHaveBeenCalledWith('retranslateConfirm')
+    expect(customHtmlMocks.translateMessageCommand).not.toHaveBeenCalled()
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].translation?.text).toBe('existing translation')
+
+    customHtmlMocks.alertConfirm.mockResolvedValueOnce(true)
+    buttonByText('retranslate')?.click()
+    await settle()
+
+    expect(customHtmlMocks.translateMessageCommand).toHaveBeenCalledOnce()
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].translation?.text).toBe('translated raw')
+  })
+
   it('auto-displays a stored translation once without overriding a manual return to the original', async () => {
     customHtmlMocks.canUseServerCommands.mockReturnValue(true)
     seedDatabase(1, null as unknown as string)
@@ -1436,7 +2115,7 @@ describe('server raw translation controls', () => {
     expect(target.textContent).not.toContain('stored automatic translation')
   })
 
-  it('skips automatic display for user rows in bot-only mode while retaining the manual toggle', async () => {
+  it('auto-displays an existing user translation in bot-only mode without requesting a new translation', async () => {
     customHtmlMocks.canUseServerCommands.mockReturnValue(true)
     seedDatabase(1, null as unknown as string)
     const chat = testDatabaseState.db.characters[0].chats[0]
@@ -1454,14 +2133,17 @@ describe('server raw translation controls', () => {
       settingsHash: 'b'.repeat(64),
       updatedAt: 123,
     }
-    mountCustomHtmlRows(1, 'user')
+    mountCustomHtmlRows(1, 'user', { autoTranslateOnReady: true })
     await settle()
 
-    expect(target.textContent).toContain('visible message 0')
-    expect(target.textContent).not.toContain('manual user translation')
+    expect(target.textContent).toContain('manual user translation')
+    expect(target.textContent).not.toContain('visible message 0')
+    expect(customHtmlMocks.translateMessageCommand).not.toHaveBeenCalled()
+
     target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
     await settle()
-    expect(target.textContent).toContain('manual user translation')
+    expect(target.textContent).toContain('visible message 0')
+    expect(target.textContent).not.toContain('manual user translation')
   })
 
   it('consumes one-shot append eligibility only after streaming finishes and attempts translation once', async () => {
@@ -1559,6 +2241,322 @@ describe('server raw translation controls', () => {
     expect(chat.message[0].translation?.text).toBe('번역된 메시지')
   })
 
+  it('translates the synthetic greeting through the server command without exposing the pencil editor', async () => {
+    seedDatabase(0, null as unknown as string)
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    testDatabaseState.db.translator = 'ko'
+    testDatabaseState.db.translatorType = 'llm'
+    components.push(
+      mount(Chat, {
+        target,
+        props: {
+          message: 'primary greeting',
+          name: 'Template Bot',
+          isLastMemory: false,
+          idx: -1,
+          role: 'char',
+          totalLength: 0,
+          firstMessage: true,
+          img: '',
+          rerollIcon: false,
+          disabled: false,
+          greetingTarget: {
+            characterId: 'custom-html-character',
+            chatId: 'custom-html-chat',
+            greetingIndex: -1,
+            source: 'primary greeting',
+            clientSettingsSignature: 'client-settings',
+          },
+        },
+      }) as MountedComponent,
+    )
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+
+    expect(customHtmlMocks.translateGreetingCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        baseRevision: 1,
+        characterId: 'custom-html-character',
+        greetingIndex: -1,
+        jobId: expect.any(String),
+      }),
+    )
+    expect(customHtmlMocks.translateMessageCommand).not.toHaveBeenCalled()
+    expect(target.textContent).toContain('translated greeting')
+    expect(target.querySelector('.button-icon-translate')?.getAttribute('aria-label')).toBe('translate')
+    expect(buttonByText('editTranslation')).toBeUndefined()
+
+    buttonByText('retranslate')?.click()
+    await settle()
+    expect(customHtmlMocks.translateGreetingCommand).toHaveBeenCalledTimes(2)
+    expect(customHtmlMocks.translateGreetingCommand).toHaveBeenLastCalledWith(
+      expect.objectContaining({ characterId: 'custom-html-character', greetingIndex: -1 }),
+    )
+  })
+
+  it('reuses a persisted greeting after remount and renders it through the bilingual display path', async () => {
+    seedDatabase(0, null as unknown as string)
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    testDatabaseState.db.translator = 'ko'
+    testDatabaseState.db.translatorType = 'llm'
+    testDatabaseState.db.characters[0].chats[0].bilingualDisplay = true
+    greetingProjectionMocks.translation = {
+      source: 'raw',
+      text: 'persisted greeting translation',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm',
+      settingsHash: 'greeting-settings',
+      updatedAt: 123,
+    }
+    const props = {
+      message: 'primary greeting',
+      name: 'Template Bot',
+      isLastMemory: false,
+      idx: -1,
+      role: 'char' as const,
+      totalLength: 0,
+      firstMessage: true,
+      greetingTarget: {
+        characterId: 'custom-html-character',
+        chatId: 'custom-html-chat',
+        greetingIndex: -1,
+        source: 'primary greeting',
+        clientSettingsSignature: 'client-settings',
+      },
+    }
+
+    const firstMount = mount(Chat, { target, props }) as MountedComponent
+    await settle()
+    expect(target.textContent).toContain('primary greeting')
+    expect(target.textContent).not.toContain('persisted greeting translation')
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+    expect(target.textContent).toContain('primary greeting')
+    expect(target.textContent).toContain('persisted greeting translation')
+    expect(target.textContent).toContain('x-risu-bilingual-translation')
+    expect(customHtmlMocks.translateGreetingCommand).not.toHaveBeenCalled()
+
+    await unmount(firstMount)
+    target.replaceChildren()
+    components.push(mount(Chat, { target, props }) as MountedComponent)
+    await settle()
+    expect(target.textContent).not.toContain('persisted greeting translation')
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+    expect(target.textContent).toContain('persisted greeting translation')
+    expect(customHtmlMocks.translateGreetingCommand).not.toHaveBeenCalled()
+  })
+
+  it('shows an eligible persisted greeting on open without starting automatic provider work', async () => {
+    seedDatabase(0, null as unknown as string)
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    testDatabaseState.db.translator = 'ko'
+    testDatabaseState.db.translatorType = 'llm'
+    testDatabaseState.db.characters[0].chats[0].autoTranslate = true
+    greetingProjectionMocks.translation = {
+      source: 'raw',
+      text: 'cached greeting translation',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm',
+      settingsHash: 'greeting-settings',
+      updatedAt: 123,
+    }
+    components.push(
+      mount(Chat, {
+        target,
+        props: {
+          message: 'primary greeting',
+          name: 'Template Bot',
+          isLastMemory: false,
+          idx: -1,
+          role: 'char',
+          totalLength: 0,
+          firstMessage: true,
+          greetingTarget: {
+            characterId: 'custom-html-character',
+            chatId: 'custom-html-chat',
+            greetingIndex: -1,
+            source: 'primary greeting',
+            clientSettingsSignature: 'client-settings',
+          },
+        },
+      }) as MountedComponent,
+    )
+    await settle()
+
+    expect(target.textContent).toContain('cached greeting translation')
+    expect(customHtmlMocks.translateGreetingCommand).not.toHaveBeenCalled()
+  })
+
+  it('keeps a replacement alternate greeting untouched when the captured primary request finishes', async () => {
+    seedDatabase(0, null as unknown as string)
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    testDatabaseState.db.translator = 'ko'
+    testDatabaseState.db.translatorType = 'llm'
+    const provider = deferred<void>()
+    customHtmlMocks.translateGreetingCommand.mockImplementationOnce(async (input) => {
+      await provider.promise
+      return {
+        status: 'ok',
+        revision: 2,
+        event: {
+          type: 'character.greetingTranslation.updated',
+          revision: 2,
+          resource: 'greetingTranslation',
+          id: input.characterId,
+        },
+        characterId: input.characterId,
+        chatId: input.chatId,
+        greetingIndex: input.greetingIndex,
+        jobId: input.jobId,
+        settingsHash: 'greeting-settings',
+        translation: {
+          source: 'raw',
+          text: 'late primary translation',
+          sourceHash: 'a'.repeat(64),
+          targetLanguage: 'ko',
+          inputLanguage: 'en',
+          translatorType: 'llm',
+          settingsHash: 'greeting-settings',
+          updatedAt: 123,
+        },
+      } as const
+    })
+
+    const firstMount = mount(Chat, {
+      target,
+      props: {
+        message: 'primary greeting',
+        name: 'Template Bot',
+        isLastMemory: false,
+        idx: -1,
+        role: 'char',
+        totalLength: 0,
+        firstMessage: true,
+        greetingTarget: {
+          characterId: 'custom-html-character',
+          chatId: 'custom-html-chat',
+          greetingIndex: -1,
+          source: 'primary greeting',
+          clientSettingsSignature: 'client-settings',
+        },
+      },
+    }) as MountedComponent
+    await settle()
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+    expect(target.querySelector<HTMLButtonElement>('.button-icon-translate')?.disabled).toBe(true)
+
+    await unmount(firstMount)
+    target.replaceChildren()
+    components.push(
+      mount(Chat, {
+        target,
+        props: {
+          message: 'alternate greeting',
+          name: 'Template Bot',
+          isLastMemory: false,
+          idx: -1,
+          role: 'char',
+          totalLength: 0,
+          firstMessage: true,
+          greetingTarget: {
+            characterId: 'custom-html-character',
+            chatId: 'custom-html-chat',
+            greetingIndex: 0,
+            source: 'alternate greeting',
+            clientSettingsSignature: 'client-settings',
+          },
+        },
+      }) as MountedComponent,
+    )
+    provider.resolve()
+    await settle()
+
+    expect(target.textContent).toContain('alternate greeting')
+    expect(target.textContent).not.toContain('late primary translation')
+    expect(customHtmlMocks.translateGreetingCommand).toHaveBeenCalledOnce()
+  })
+
+  it('restores the greeting source when the manual provider request fails', async () => {
+    seedDatabase(0, null as unknown as string)
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    customHtmlMocks.translateGreetingCommand.mockResolvedValueOnce({
+      status: 'error',
+      error: 'greeting provider failed',
+    } as never)
+    testDatabaseState.db.translator = 'ko'
+    testDatabaseState.db.translatorType = 'llm'
+    components.push(
+      mount(Chat, {
+        target,
+        props: {
+          message: 'primary greeting',
+          name: 'Template Bot',
+          isLastMemory: false,
+          idx: -1,
+          role: 'char',
+          totalLength: 0,
+          firstMessage: true,
+          greetingTarget: {
+            characterId: 'custom-html-character',
+            chatId: 'custom-html-chat',
+            greetingIndex: -1,
+            source: 'primary greeting',
+            clientSettingsSignature: 'client-settings',
+          },
+        },
+      }) as MountedComponent,
+    )
+    await settle()
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+
+    expect(target.textContent).toContain('primary greeting')
+    expect(target.textContent).toContain('greeting provider failed')
+    expect(target.querySelector<HTMLButtonElement>('.button-icon-translate')?.disabled).toBe(false)
+  })
+
+  it('keeps an untranslated greeting manual-only even when chat auto-translation is enabled', async () => {
+    seedDatabase(0, null as unknown as string)
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    testDatabaseState.db.translator = 'ko'
+    testDatabaseState.db.translatorType = 'llm'
+    testDatabaseState.db.characters[0].chats[0].autoTranslate = true
+    components.push(
+      mount(Chat, {
+        target,
+        props: {
+          message: 'primary greeting',
+          name: 'Template Bot',
+          isLastMemory: false,
+          idx: -1,
+          role: 'char',
+          totalLength: 0,
+          firstMessage: true,
+          autoTranslateOnReady: true,
+          greetingTarget: {
+            characterId: 'custom-html-character',
+            chatId: 'custom-html-chat',
+            greetingIndex: -1,
+            source: 'primary greeting',
+            clientSettingsSignature: 'client-settings',
+          },
+        },
+      }) as MountedComponent,
+    )
+    await settle()
+
+    expect(customHtmlMocks.translateGreetingCommand).not.toHaveBeenCalled()
+    expect(target.textContent).toContain('primary greeting')
+  })
+
   it('reactively pairs sentence chunks when sentence paragraph breaks are enabled', async () => {
     customHtmlMocks.canUseServerCommands.mockReturnValue(true)
     seedDatabase(1, null as unknown as string)
@@ -1585,7 +2583,7 @@ describe('server raw translation controls', () => {
     const renderedPairCount = () => (target.textContent ?? '').split(BILINGUAL_PAIR_CLASS).length - 1
     expect(renderedPairCount()).toBe(1)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.paragraphBreakBySentences = true
       testDatabaseState.db.paragraphBreakSentenceCount = 3
     })
@@ -1651,6 +2649,32 @@ describe('server raw translation controls', () => {
     target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
     await settle()
     expect(customHtmlMocks.translateMessageCommand).toHaveBeenCalledOnce()
+  })
+
+  it('treats a reload as cancel for an unsaved inline message edit', async () => {
+    seedDatabase(1, null as unknown as string)
+    mountCustomHtmlRows(1)
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+    const textarea = target.querySelector<HTMLTextAreaElement>('.message-edit-area')
+    expect(textarea?.value).toBe('visible message 0')
+    textarea!.value = 'transient unsaved edit'
+    textarea!.dispatchEvent(new Event('input', { bubbles: true }))
+    await settle()
+
+    for (const mounted of components) unmount(mounted)
+    components = []
+    target.replaceChildren()
+    mountCustomHtmlRows(1)
+    await settle()
+
+    expect(target.querySelector('.message-edit-area')).toBeNull()
+    expect(target.textContent).toContain('visible message 0')
+    expect(target.textContent).not.toContain('transient unsaved edit')
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('visible message 0')
+    expect(dispatchUpdateMessageScoped).not.toHaveBeenCalled()
   })
 
   it('keeps translate pending state separate from completed translation UI', async () => {

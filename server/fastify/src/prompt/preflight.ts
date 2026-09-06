@@ -1,8 +1,7 @@
-import type { character } from '../../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
-import type { PromptItem } from '../../../../src/ts/process/prompt'
-import type { ExpandContext } from './variables.js'
-import { resolvePosition, type LorebookActivationReport } from './lorebook.js'
+import type { FastifyCharacter as character } from './serverTypes.js'
+import type { PromptItem } from './promptTemplate.js'
+import { expandVariables, type ExpandContext } from './variables.js'
+import { createPositionParser, type LorebookActivationReport } from './lorebook.js'
 import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 import {
@@ -10,6 +9,7 @@ import {
   type StableCardRenderCache,
   type UnformatedPromptSlots as PromptUnformatedSlots,
 } from './templates.js'
+import type { PromptMessage } from './promptMessage.js'
 
 /**
  * Template-wide token preflight ported from the SPA's
@@ -29,10 +29,9 @@ import {
  * chains, card normalization / alias resolution, cache-marker emission as actual
  * prompt rows, and route-layer wiring.
  *
- * `positionParser`: the SPA injects `inject_lore` location-targeted lorebooks
- * here too, but lorebook activation filters those entries out of `report.actives`,
- * so the SPA's `injectionLorebooks` branch is dead at this layer. The shim just
- * delegates to `resolvePosition`; the `loc` argument is kept for SPA parity.
+ * `positionParser`: preflight uses the same `{{position::}}` and
+ * `@@inject_at` resolver as final rendering. This is important when stable
+ * cards are cached during preflight and reused by the final template walk.
  */
 
 /**
@@ -57,15 +56,27 @@ export interface PreflightInput {
   usingPromptTemplate: boolean
   report?: LorebookActivationReport
   stableCardCache?: StableCardRenderCache
+  descriptionBaseIndex?: number
 }
 
-function positionParserFor(report: LorebookActivationReport | undefined): (text: string, loc: string) => string {
+function positionParserFor(
+  report: LorebookActivationReport | undefined,
+): (text: string, loc: string | undefined) => string {
   if (!report) return (text) => text
-  return (text) => resolvePosition(text, report)
+  return createPositionParser(report)
 }
 
 export function preflightTemplateTokens(input: PreflightInput): PreflightResult {
-  const { ctx, currentChar, unformated, promptTemplate, usingPromptTemplate, report, stableCardCache } = input
+  const {
+    ctx,
+    currentChar,
+    unformated,
+    promptTemplate,
+    usingPromptTemplate,
+    report,
+    stableCardCache,
+    descriptionBaseIndex,
+  } = input
   const db = ctx.database
   const { encoding, options } = tokenizerOptionsFromDb(db)
   const positionParser = positionParserFor(report)
@@ -74,10 +85,21 @@ export function preflightTemplateTokens(input: PreflightInput): PreflightResult 
   let memoryCardUsed = false
   let hasCachePoint = false
 
-  const tokenizeAll = (rows: OpenAIChat[]): void => {
+  const tokenizeAll = (rows: PromptMessage[]): void => {
     for (const row of rows) {
       addedTokens += tokenizeChat(row, encoding, options)
     }
+  }
+
+  const tokenizeCharacterDepthPrompt = (): void => {
+    const depthPrompt = currentChar.depth_prompt
+    if (!depthPrompt?.prompt) return
+    tokenizeAll([
+      {
+        role: 'system',
+        content: expandVariables(depthPrompt.prompt, { ...ctx, chara: currentChar }).text,
+      },
+    ])
   }
 
   // Match the SPA's `preflightTemplateTokens` null-template fallback:
@@ -86,6 +108,7 @@ export function preflightTemplateTokens(input: PreflightInput): PreflightResult 
     for (const key of Object.keys(unformated) as Array<keyof PromptUnformatedSlots>) {
       tokenizeAll(unformated[key])
     }
+    tokenizeCharacterDepthPrompt()
     return { addedTokens, memoryCardUsed, hasCachePoint }
   }
 
@@ -102,6 +125,7 @@ export function preflightTemplateTokens(input: PreflightInput): PreflightResult 
         unformated,
         usingPromptTemplate,
         positionParser,
+        descriptionBaseIndex,
       },
       stableCardCache,
       templateIndex,
@@ -117,6 +141,8 @@ export function preflightTemplateTokens(input: PreflightInput): PreflightResult 
       hasCachePoint = true
     }
   }
+
+  tokenizeCharacterDepthPrompt()
 
   return { addedTokens, memoryCardUsed, hasCachePoint }
 }

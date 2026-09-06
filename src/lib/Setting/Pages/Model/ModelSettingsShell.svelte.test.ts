@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -53,9 +55,11 @@ import {
   modelProfileProjectionFingerprint,
   retainPendingModelMutation,
 } from 'src/ts/model/modelProfileMutations'
-import { MODEL_ROLES } from 'src/ts/model/modelRoles'
-import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
+import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
+import { setDatabaseLite } from 'src/ts/storage/database.svelte'
 import ModelSettingsShell from './ModelSettingsShell.svelte'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -76,7 +80,7 @@ async function flushAsync(): Promise<void> {
 }
 
 function clearPendingModelMutations(): void {
-  for (const lane of ['model-profiles', 'model-runtime-defaults'] as const) {
+  for (const lane of ['model-profiles', 'model-runtime-defaults', 'provider-credentials'] as const) {
     for (const pending of getPendingModelMutations(lane)) finishPendingModelMutation(pending.token)
   }
 }
@@ -89,6 +93,7 @@ beforeEach(() => {
   setDatabaseLite({
     aiModel: 'legacy-main',
     subModel: 'legacy-aux',
+    providerCredentials: [],
     modelProfiles: [],
     modelRoleProfiles: {},
     modelRuntimeDefaults: {},
@@ -112,6 +117,62 @@ afterEach(() => {
 })
 
 describe('ModelSettingsShell legacy conversion', () => {
+  it('keeps the model settings UI on explicit settings and collection owners', () => {
+    const ownerExpectations = new Map<string, readonly string[]>([
+      ['ModelSettingsShell', ['settingsResourceState', 'collectionsResourceState']],
+      ['ModelPresetList', ['settingsResourceState', 'collectionsResourceState']],
+      ['ModelProfileList', ['settingsResourceState', 'collectionsResourceState']],
+      ['ModelProfileRoleList', ['settingsResourceState', 'collectionsResourceState']],
+      ['ModelRoleList', ['settingsResourceState']],
+      ['ModelRuntimeDefaultsEditor', ['settingsResourceState']],
+      ['ProviderCredentialList', ['settingsResourceState']],
+    ])
+
+    for (const [componentName, expectedOwners] of ownerExpectations) {
+      const source = readFileSync(resolve(process.cwd(), `src/lib/Setting/Pages/Model/${componentName}.svelte`), 'utf8')
+      expect(source, componentName).not.toMatch(
+        /\b(?:getDatabase|getResourceDatabase|getResourceDatabaseFacadeEpoch|resourceDatabaseFacadeEpoch)\b/,
+      )
+      for (const expectedOwner of expectedOwners) expect(source, componentName).toContain(expectedOwner)
+      if (!['ModelRuntimeDefaultsEditor'].includes(componentName)) {
+        expect(source, componentName).toContain('readModelProfileOwners')
+      }
+    }
+  })
+
+  it('opens the credential manager from the model settings tabs', async () => {
+    component = mount(ModelSettingsShell, { target })
+    await tick()
+
+    expect(target.querySelector('[data-segment-btn][aria-pressed="true"]')?.textContent?.trim()).toBe(
+      language.modelProfiles.profilesTab,
+    )
+    expect(target.textContent).toContain(language.modelProfiles.createProfile)
+
+    const credentialsTab = Array.from(target.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes(language.modelProfiles.credentialsTab),
+    )
+    expect(credentialsTab).toBeTruthy()
+    credentialsTab!.click()
+    await tick()
+
+    expect(target.textContent).toContain(language.modelProfiles.credentialsTabTitle)
+    expect(target.textContent).toContain(language.modelProfiles.createApiCredential)
+  })
+
+  it('does not offer legacy conversion when profile owner IDs are ambiguous', async () => {
+    settingsResourceState.value.modelProfiles = [
+      { id: 'duplicate-profile', name: 'First', providerId: 'debug-echo', modelId: 'echo_model' },
+      { id: 'duplicate-profile', name: 'Second', providerId: 'debug-echo', modelId: 'echo_model' },
+    ]
+
+    component = mount(ModelSettingsShell, { target })
+    await tick()
+
+    expect(conversionButtons()).toHaveLength(0)
+    expect(mutationMocks.convertLegacyModelProfilesDurably).not.toHaveBeenCalled()
+  })
+
   it('reports a terminal conversion failure and leaves conversion retryable', async () => {
     mutationMocks.convertLegacyModelProfilesDurably.mockResolvedValue({
       status: 'failed',
@@ -141,9 +202,7 @@ describe('ModelSettingsShell legacy conversion', () => {
     button.click()
     await flushAsync()
 
-    expect(target.querySelector('[data-model-conversion-command-notice]')?.textContent).toContain(
-      language.modelProfiles.commandQueued,
-    )
+    expect(target.querySelector('[data-model-conversion-command-notice]')).toBeNull()
     expect(conversionButtons().every((candidate) => candidate.disabled)).toBe(true)
     button.click()
     await flushAsync()
@@ -153,7 +212,7 @@ describe('ModelSettingsShell legacy conversion', () => {
       { id: 'unrelated-profile', name: 'Unrelated', providerId: 'debug-echo', modelId: 'echo_model' },
     ]
     await flushAsync()
-    expect(target.querySelector('[data-model-conversion-command-notice]')).not.toBeNull()
+    expect(target.querySelector('[data-model-conversion-command-notice]')).toBeNull()
     expect(conversionButtons().every((candidate) => candidate.disabled)).toBe(true)
 
     getDatabase().modelProfiles = [
@@ -182,7 +241,7 @@ describe('ModelSettingsShell legacy conversion', () => {
 
     conversionButtons()[0]?.click()
     await flushAsync()
-    expect(target.textContent).toContain(language.modelProfiles.commandQueued)
+    expect(target.textContent).not.toContain(language.modelProfiles.commandQueued)
 
     settlementMocks.listeners.get('discarded-conversion')?.('discarded')
     await flushAsync()

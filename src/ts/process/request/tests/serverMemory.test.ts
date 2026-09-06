@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { get } from 'svelte/store'
 
 vi.mock('../../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../../platform')>()
@@ -19,7 +18,6 @@ vi.mock('../../../server/activeWriterSession', () => ({
 }))
 
 import {
-  applyServerHypaV3Progress,
   cancelServerMemoryJob,
   deleteServerMemorySummary,
   listServerMemoryChunks,
@@ -31,7 +29,6 @@ import {
   type ServerMemorySummary,
 } from '../serverMemory'
 import { handleActiveWriterStaleResponse } from '../../../server/activeWriterSession'
-import { hypaV3ProgressStore } from '../../../stores.svelte'
 
 interface CapturedFetch {
   url: string
@@ -65,6 +62,7 @@ const baseSummary: ServerMemorySummary = {
 
 const baseJob: ServerMemoryJob = {
   id: 'job/1',
+  instanceId: 'job-instance-1',
   chatId: 'chat 1',
   kind: 'summarize',
   status: 'pending',
@@ -103,12 +101,6 @@ function makeMemoryFetch(bodyForUrl: (url: string, init: RequestInit) => unknown
 
 beforeEach(() => {
   vi.mocked(handleActiveWriterStaleResponse).mockClear()
-  hypaV3ProgressStore.set({
-    open: false,
-    miniMsg: '',
-    msg: '',
-    subMsg: '',
-  })
 })
 
 afterEach(() => {
@@ -125,7 +117,7 @@ describe('server memory API adapter', () => {
     expect(result).toEqual({ status: 'ok', chunks: [baseChunk] })
     expect(memoryFetch.calls).toEqual([
       {
-        url: '/api/v1/memory/chunks/chat%201',
+        url: '/api/v1/memory/chunks/chat%201?limit=200',
         method: 'GET',
         authHeader: 'test-auth-token',
         ifNoneMatch: null,
@@ -141,7 +133,7 @@ describe('server memory API adapter', () => {
 
     expect(result).toEqual({ status: 'ok', summaries: [baseSummary] })
     expect(memoryFetch.calls[0]).toEqual({
-      url: '/api/v1/memory/summaries/chat%201?model=model+a',
+      url: '/api/v1/memory/summaries/chat%201?model=model+a&limit=200',
       method: 'GET',
       authHeader: 'test-auth-token',
       ifNoneMatch: null,
@@ -154,7 +146,91 @@ describe('server memory API adapter', () => {
 
     await listServerMemorySummaries('chat 1')
 
-    expect(memoryFetch.calls[0].url).toBe('/api/v1/memory/summaries/chat%201')
+    expect(memoryFetch.calls[0].url).toBe('/api/v1/memory/summaries/chat%201?limit=200')
+  })
+
+  it('drains memory chunk pages and supports a terminal legacy response', async () => {
+    const secondChunk = { ...baseChunk, id: 'chunk-2', rangeStartSeq: 5, rangeEndSeq: 8 }
+    const memoryFetch = makeMemoryFetch((url) => {
+      if (url.endsWith('?limit=200')) return { chunks: [baseChunk], nextCursor: 'chunk-cursor-1' }
+      if (url.endsWith('?limit=200&cursor=chunk-cursor-1')) return { chunks: [secondChunk], nextCursor: null }
+      return jsonResponse({ error: 'unexpected page' }, 500)
+    })
+    vi.stubGlobal('fetch', memoryFetch.fetch)
+
+    await expect(listServerMemoryChunks('chat 1')).resolves.toEqual({
+      status: 'ok',
+      chunks: [baseChunk, secondChunk],
+    })
+    expect(memoryFetch.calls.map((call) => call.url)).toEqual([
+      '/api/v1/memory/chunks/chat%201?limit=200',
+      '/api/v1/memory/chunks/chat%201?limit=200&cursor=chunk-cursor-1',
+    ])
+
+    const legacyFetch = makeMemoryFetch(() => ({ chunks: [baseChunk] }))
+    vi.stubGlobal('fetch', legacyFetch.fetch)
+    await expect(listServerMemoryChunks('chat 1')).resolves.toEqual({ status: 'ok', chunks: [baseChunk] })
+    expect(legacyFetch.calls).toHaveLength(1)
+  })
+
+  it('propagates summary filters across pages and rejects repeated cursors', async () => {
+    const secondSummary = { ...baseSummary, id: 'summary-2' }
+    const memoryFetch = makeMemoryFetch((url) => {
+      if (url.endsWith('model=model+a&limit=200')) {
+        return { summaries: [baseSummary], nextCursor: 'summary-cursor-1' }
+      }
+      if (url.endsWith('model=model+a&limit=200&cursor=summary-cursor-1')) {
+        return { summaries: [secondSummary], nextCursor: null }
+      }
+      return jsonResponse({ error: 'unexpected page' }, 500)
+    })
+    vi.stubGlobal('fetch', memoryFetch.fetch)
+
+    await expect(listServerMemorySummaries('chat 1', 'model a')).resolves.toEqual({
+      status: 'ok',
+      summaries: [baseSummary, secondSummary],
+    })
+    expect(memoryFetch.calls.every((call) => call.url.includes('model=model+a'))).toBe(true)
+
+    const repeated = makeMemoryFetch(() => ({ summaries: [baseSummary], nextCursor: 'same-cursor' }))
+    vi.stubGlobal('fetch', repeated.fetch)
+    await expect(listServerMemorySummaries('chat 1', 'model a')).resolves.toEqual({
+      status: 'error',
+      error: 'Memory summary pagination returned a repeated cursor',
+    })
+    expect(repeated.calls).toHaveLength(2)
+  })
+
+  it('propagates later-page errors and honors abort signals on every memory page', async () => {
+    const failed = makeMemoryFetch((url) =>
+      url.includes('cursor=next')
+        ? jsonResponse({ error: 'later page failed' }, 503)
+        : { chunks: [baseChunk], nextCursor: 'next' },
+    )
+    vi.stubGlobal('fetch', failed.fetch)
+    await expect(listServerMemoryChunks('chat 1')).resolves.toEqual({
+      status: 'error',
+      error: 'later page failed',
+    })
+
+    const controller = new AbortController()
+    let calls = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+        calls += 1
+        if (calls === 1) {
+          controller.abort()
+          return jsonResponse({ chunks: [baseChunk], nextCursor: 'after-abort' })
+        }
+        expect(init.signal).toBe(controller.signal)
+        throw new DOMException('aborted', 'AbortError')
+      }),
+    )
+    const aborted = await listServerMemoryChunks('chat 1', controller.signal)
+    expect(aborted.status).toBe('error')
+    expect(aborted).toMatchObject({ error: expect.stringContaining('Network error:') })
+    expect(calls).toBe(2)
   })
 
   it('patches summary text and metadata through the active-writer API', async () => {
@@ -207,8 +283,18 @@ describe('server memory API adapter', () => {
     })
   })
 
-  it('lists jobs with optional route filters', async () => {
-    const memoryFetch = makeMemoryFetch(() => ({ jobs: [baseJob] }))
+  it('lists jobs with optional route filters and snapshot ordering metadata', async () => {
+    const memoryFetch = makeMemoryFetch(
+      () =>
+        new Response(JSON.stringify({ jobs: [baseJob] }), {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+            'x-risu-memory-stream-id': 'memory-stream-1',
+            'x-risu-memory-version': '7',
+          },
+        }),
+    )
     vi.stubGlobal('fetch', memoryFetch.fetch)
 
     const result = await listServerMemoryJobs({
@@ -217,7 +303,11 @@ describe('server memory API adapter', () => {
       status: 'pending',
     })
 
-    expect(result).toEqual({ status: 'ok', jobs: [baseJob] })
+    expect(result).toEqual({
+      status: 'ok',
+      memorySnapshot: { streamId: 'memory-stream-1', version: 7 },
+      jobs: [baseJob],
+    })
     expect(memoryFetch.calls[0]).toEqual({
       url: '/api/v1/memory/jobs?chatId=chat+1&kind=summarize&status=pending',
       method: 'GET',
@@ -227,7 +317,17 @@ describe('server memory API adapter', () => {
   })
 
   it('lists jobs with an If-None-Match validator when provided', async () => {
-    const memoryFetch = makeMemoryFetch(() => jsonResponse(null, 304))
+    const memoryFetch = makeMemoryFetch(
+      () =>
+        new Response(null, {
+          status: 304,
+          headers: {
+            etag: '"jobs-etag"',
+            'x-risu-memory-stream-id': 'memory-stream-1',
+            'x-risu-memory-version': '8',
+          },
+        }),
+    )
     vi.stubGlobal('fetch', memoryFetch.fetch)
 
     const result = await listServerMemoryJobs({
@@ -235,7 +335,11 @@ describe('server memory API adapter', () => {
       etag: '"jobs-etag"',
     })
 
-    expect(result).toEqual({ status: 'not-modified' })
+    expect(result).toEqual({
+      status: 'not-modified',
+      etag: '"jobs-etag"',
+      memorySnapshot: { streamId: 'memory-stream-1', version: 8 },
+    })
     expect(memoryFetch.calls[0]).toEqual({
       url: '/api/v1/memory/jobs?chatId=chat+1',
       method: 'GET',
@@ -403,42 +507,6 @@ describe('server memory API adapter', () => {
     await expect(listServerMemoryJobs()).resolves.toEqual({
       status: 'error',
       error: 'Invalid server response',
-    })
-  })
-
-  it('applies Fastify Hypa V3 progress payloads to the browser store', () => {
-    const applied = applyServerHypaV3Progress({
-      open: true,
-      miniMsg: '2',
-      msg: '[Hypa V3] Summarizing...',
-      subMsg: '2 queued',
-      status: 'running',
-      queuedCount: 2,
-    })
-
-    expect(applied).toBe(true)
-    expect(get(hypaV3ProgressStore)).toEqual({
-      open: true,
-      miniMsg: '2',
-      msg: '[Hypa V3] Summarizing...',
-      subMsg: '2 queued',
-    })
-  })
-
-  it('ignores malformed or unavailable Hypa V3 progress payloads', () => {
-    hypaV3ProgressStore.set({
-      open: true,
-      miniMsg: '1',
-      msg: 'existing',
-      subMsg: 'existing sub',
-    })
-
-    expect(applyServerHypaV3Progress({ open: true, miniMsg: 1, msg: '', subMsg: '' })).toBe(false)
-    expect(get(hypaV3ProgressStore)).toEqual({
-      open: true,
-      miniMsg: '1',
-      msg: 'existing',
-      subMsg: 'existing sub',
     })
   })
 })

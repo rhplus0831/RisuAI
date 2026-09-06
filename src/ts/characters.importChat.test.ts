@@ -71,13 +71,26 @@ vi.mock('./alert', async (importActual) => {
   }
 })
 
+vi.mock('./chatCommands', async (importActual) => {
+  const actual = await importActual<typeof import('./chatCommands')>()
+  return {
+    ...actual,
+    captureChatImportSnapshot: vi.fn(actual.captureChatImportSnapshot),
+    currentChatStateSnapshot: vi.fn(() => {
+      throw new Error('Importing must not capture existing character transcripts')
+    }),
+  }
+})
+
+import { captureChatImportSnapshot, currentChatStateSnapshot } from './chatCommands'
 import { clearCachedServerCommandRevision } from './server/commands'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+
+import { replaceResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 import type { Database } from './storage/database.svelte'
 import { importChat } from './characters'
 import { alertError, alertNormal } from './alert'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db(): Database {
@@ -240,7 +253,6 @@ beforeEach(() => {
   vi.clearAllMocks()
   platformState.isFastifyServer = true
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
   selectedCharID.set(0)
   selectedFileState.file = null
   selectedFileState.beforeResolve = null
@@ -264,6 +276,15 @@ beforeEach(() => {
         customPromptTemplateToggle: '',
       },
     ],
+    translatorPresets: [
+      {
+        id: 'translator-a',
+        name: 'Translator A',
+        prompt: 'Translate',
+        maxResponse: 128,
+        steps: [],
+      },
+    ],
     characters: [
       {
         chaId: 'char-a',
@@ -277,33 +298,54 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
 describe('chat import projection helpers', () => {
-  it('imports a chat through a trusted optimistic projection write and create-chat command', async () => {
+  it('captures only target identities and leaves existing transcript objects unread during import', async () => {
+    const calls = stubCommandFetch()
+    const character = testDatabaseState.db.characters[0]
+    const existingChat = character.chats[0]
+    const unreadMessage = { role: 'user' as const, data: 'existing transcript', chatId: 'existing-message' }
+    const readExistingText = vi.fn(() => {
+      throw new Error('The import must not read an existing transcript')
+    })
+    Object.defineProperty(unreadMessage, 'data', {
+      configurable: true,
+      enumerable: true,
+      get: readExistingText,
+    })
+    existingChat.message = [unreadMessage]
+    const existingMessages = existingChat.message
+    const existingMessage = existingMessages[0]
+    selectJsonFile('chat.json', { type: 'risuChat', ver: 1, data: importedChat() })
+
+    await importChat()
+
+    expect(createChatCalls(calls)).toHaveLength(1)
+    expect(captureChatImportSnapshot).toHaveBeenCalledOnce()
+    expect(captureChatImportSnapshot).toHaveBeenCalledWith('char-a')
+    expect(currentChatStateSnapshot).not.toHaveBeenCalled()
+    expect(readExistingText).not.toHaveBeenCalled()
+    expect(character.chats.find((chat) => chat.id === 'chat-a')).toBe(existingChat)
+    expect(existingChat.message).toBe(existingMessages)
+    expect(existingChat.message[0]).toBe(existingMessage)
+    expect(alertError).not.toHaveBeenCalled()
+  })
+
+  it('imports a chat through the character owner projection and create-chat command', async () => {
     const calls = stubCommandFetch()
     selectJsonFile('chat.json', {
       type: 'risuChat',
       ver: 1,
       data: importedChat({ note: '' }),
     })
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      testDatabaseState.db.characters[0].chats.unshift({ id: 'direct', name: 'Direct', message: [] } as any)
-    }).toThrow()
-
     await importChat()
 
     expect(testDatabaseState.db.characters[0].chats[0]).toMatchObject({
       name: 'Imported Chat',
       fmIndex: -1,
     })
-    expect(() => {
-      testDatabaseState.db.characters[0].chats.unshift({ id: 'direct-2', name: 'Direct', message: [] } as any)
-    }).toThrow()
     const [createCall] = await waitForCreateChatCalls(calls)
     expect(createCall).toEqual({
       url: '/api/v1/commands/characters/char-a/chats',
@@ -515,7 +557,7 @@ describe('chat import projection helpers', () => {
       failCommandNumber: 1,
       onCommand: ({ commandNumber }) => {
         if (commandNumber !== 1) return
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           const character = testDatabaseState.db.characters[0]
           const importedFolder = character.chatFolders.find((folder) => folder.name === 'Folder A')
           const importedChatRow = character.chats.find((chat) => chat.name === 'Imported One')
@@ -749,7 +791,7 @@ describe('chat import projection helpers', () => {
       failCommandNumber: 1,
       onCommand: ({ commandNumber }) => {
         if (commandNumber !== 1) return
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           const importedChatRow = testDatabaseState.db.characters[0].chats[0]
           if (importedChatRow?.name === 'Imported Duplicate') {
             importedChatRow.name = 'Imported Duplicate edited'
@@ -814,6 +856,27 @@ describe('chat import projection helpers', () => {
         generationSettings: expectedGenerationSettings,
       },
     })
+  })
+
+  it('keeps valid standalone chat translator bindings and clears missing ones', async () => {
+    const calls = stubCommandFetch()
+    selectJsonFile('chats.json', {
+      type: 'risuAllChats',
+      ver: 1,
+      data: [
+        importedChat({ name: 'Valid binding', translatorPresetId: 'translator-a' }),
+        importedChat({ name: 'Missing binding', translatorPresetId: 'translator-missing' }),
+      ],
+    })
+
+    await importChat()
+
+    const imported = testDatabaseState.db.characters[0].chats.slice(0, 2)
+    expect(imported.find((chat) => chat.name === 'Valid binding')?.translatorPresetId).toBe('translator-a')
+    expect(imported.find((chat) => chat.name === 'Missing binding')).not.toHaveProperty('translatorPresetId')
+    const createCalls = await waitForCreateChatCalls(calls, 2)
+    expect((createCalls[0].body as any).chat.translatorPresetId).toBe('translator-a')
+    expect((createCalls[1].body as any).chat).not.toHaveProperty('translatorPresetId')
   })
 
   it('normalizes v2 all-chat imports and drops invalid generation settings', async () => {

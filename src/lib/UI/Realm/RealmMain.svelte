@@ -13,6 +13,7 @@
   import RisuHubIcon from './RealmHubIcon.svelte'
   import { MobileGUI, RealmInitialOpenChar } from 'src/ts/stores.svelte'
   import RealmPopUp from './RealmPopUp.svelte'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { resolveRealmImportId } from './realmImportInput'
 
@@ -332,9 +333,9 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
+    use:modalBackdropDismiss={closeMenu}
     data-modal-root
-    class="top-0 left-0 z-50 fixed w-full h-full bg-black/50 flex justify-center items-center"
-    onclick={closeMenu}>
+    class="top-0 left-0 z-50 fixed w-full h-full bg-black/50 flex justify-center items-center">
     <div
       use:modalFocusTrap
       class="max-w-full bg-darkbg rounded-md flex flex-col gap-4 overflow-y-auto p-4"

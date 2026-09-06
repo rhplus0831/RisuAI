@@ -9,28 +9,42 @@ import { DatabaseSync } from 'node:sqlite'
 import { compressSync } from 'fflate'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { readChatGenerationSettingsSave } from '../src/commands/chats.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { applyJsonCommandMutation, applyMessageFreeJsonCommandMutation } from '../src/commands/mutations.js'
 import { getSchemaState, openDatabase } from '../src/db.js'
+import { getDatabaseLineage } from '../src/databaseLineage.js'
 import { addAlternateMessage } from '../src/messageStore.js'
+import {
+  createMemoryChunk,
+  createMemoryJob,
+  createMemorySummary,
+  listMemoryChunks,
+  listMemoryJobs,
+} from '../src/memoryRepository.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { loadPersisted, writePersistedWithMessages, insertAssetMetadataBatch } from '../src/repository.js'
 import { activeMessageRowids, assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
-import { MODEL_ROLES } from '../../../src/ts/model/modelRoles.js'
-import type { Database } from '../../../src/ts/storage/database.svelte.js'
-import { LLMFlags, LLMFormat } from '../../../src/ts/model/types.js'
+import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
+import type { FastifyDatabase as Database } from '../src/prompt/serverTypes.js'
+import { LLMFlags, LLMFormat } from '@risuai/shared-core/model-types'
 import {
   serializeChatGenerationSettingsDigestInput,
   type ChatGenerationSettings,
-} from '../../../src/ts/chatGenerationSettings.js'
+} from '@risuai/shared-core/chat-generation-settings'
 import {
   serializePersonaCollectionDigestInput,
   serializePersonaIdsDigestInput,
   serializePersonaProfileDigestInput,
   type PersonaProfileDigestValue,
-} from '../../../src/ts/personaMutationCertificate.js'
-import { serializeScriptDefinitionCollectionDigestInput } from '../../../src/ts/server/scriptDefinitionMutations.js'
-import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
+  serializeScriptDefinitionCollectionDigestInput,
+} from '@risuai/shared-core/mutation-certificates'
+import { injectComposedResourceDatabase } from './helpers/resourceDatabase.js'
+import {
+  getGreetingTranslation,
+  sourceHash,
+  upsertGreetingTranslation,
+} from '../src/translation/greetingTranslationStore.js'
 
 const subtle = webcrypto.subtle
 
@@ -101,7 +115,6 @@ async function startHarness(): Promise<Harness> {
     },
     commandEvents,
   })
-  installResourceDatabaseBootstrapAdapter(app)
   return { app, dataDir, commandEvents }
 }
 
@@ -115,6 +128,15 @@ function loadPersistedFromDir(dataDir: string) {
   const db = openDatabase(dataDir)
   try {
     return loadPersisted(db, dataDir)
+  } finally {
+    db.close()
+  }
+}
+
+function databaseLineageFromDir(dataDir: string): string {
+  const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  try {
+    return getDatabaseLineage(db)
   } finally {
     db.close()
   }
@@ -387,7 +409,7 @@ async function waitForActiveMessageTranslation(
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    const bootstrap = await app.inject({
+    const bootstrap = await injectComposedResourceDatabase(app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -399,6 +421,61 @@ async function waitForActiveMessageTranslation(
     await sleep(10)
   }
   throw new Error(`Timed out waiting for active message translation: ${JSON.stringify(expected)}`)
+}
+
+async function waitForActiveGreetingTranslation(
+  app: FastifyInstance,
+  assertion: string,
+  expected: { characterId: string; chatId: string; greetingIndex: number },
+  timeoutMs = 2_000,
+): Promise<{ characterId: string; chatId: string; greetingIndex: number; settingsHash: string; jobId: string }> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const bootstrap = await injectComposedResourceDatabase(app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const active = bootstrap.json().activeGreetingTranslations as Array<{
+      characterId: string
+      chatId: string
+      greetingIndex: number
+      settingsHash: string
+      jobId: string
+    }>
+    const matching = active.find(
+      (entry) =>
+        entry.characterId === expected.characterId &&
+        entry.chatId === expected.chatId &&
+        entry.greetingIndex === expected.greetingIndex,
+    )
+    if (matching) return matching
+    await sleep(10)
+  }
+  throw new Error(`Timed out waiting for active greeting translation: ${JSON.stringify(expected)}`)
+}
+
+async function waitForProjectedGreetingTranslation(
+  app: FastifyInstance,
+  assertion: string,
+  characterId: string,
+  chatId: string,
+  expectedText: string,
+  timeoutMs = 2_000,
+): Promise<Record<string, unknown>> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const projection = await app.inject({
+      method: 'GET',
+      url: `/api/v1/characters/${encodeURIComponent(characterId)}/greeting-translations?chatId=${encodeURIComponent(chatId)}`,
+      headers: { 'risu-auth': assertion },
+    })
+    const translations = projection.json().translations as Array<{ translation?: Record<string, unknown> }>
+    const matching = translations.find((entry) => entry.translation?.text === expectedText)?.translation
+    if (matching) return matching
+    await sleep(25)
+  }
+  throw new Error(`Timed out waiting for projected greeting translation: ${expectedText}`)
 }
 
 async function importMessageTranslationFixture(
@@ -430,6 +507,33 @@ async function importMessageTranslationFixture(
         ],
         chatFolders: [],
         chatPage: 0,
+      },
+    ],
+    characterOrder: ['char-a'],
+  })
+}
+
+async function importGreetingTranslationFixture(
+  app: FastifyInstance,
+  assertion: string,
+  options: { echoMessage: string; echoDelay?: number },
+): Promise<number> {
+  return importDatabase(app, assertion, {
+    translator: 'ko',
+    translatorInputLanguage: 'en',
+    translatorType: 'llm',
+    aiModel: 'echo_model',
+    echoMessage: options.echoMessage,
+    ...(options.echoDelay === undefined ? {} : { echoDelay: options.echoDelay }),
+    translatorPrompt: 'Translate {{slot::content}} to {{slot}}',
+    translatorMaxResponse: 128,
+    characters: [
+      {
+        chaId: 'char-a',
+        name: 'A',
+        firstMessage: 'primary greeting',
+        alternateGreetings: ['alternate greeting'],
+        chats: [{ id: 'chat-a', name: 'A chat', message: [], fmIndex: -1 }],
       },
     ],
     characterOrder: ['char-a'],
@@ -480,7 +584,22 @@ afterEach(async () => {
   await stopHarness(harness)
 })
 
-describe('Phase 9-1 command foundation', () => {
+describe('chat generation settings prompt owner validation', () => {
+  it.each(['missing', 'duplicate'])('rejects a %s prompt preset owner', (kind) => {
+    const promptPresets = kind === 'missing' ? [{ id: 'other' }] : [{ id: 'prompt-a' }, { id: 'prompt-a' }]
+    const context = {
+      personas: [],
+      modelPresets: [],
+      promptPresets,
+    }
+
+    expect(() =>
+      readChatGenerationSettingsSave({ promptPresetId: 'prompt-a', jailbreakToggle: false }, context),
+    ).toThrow('Unknown prompt preset id in generationSettings.promptPresetId: prompt-a')
+  })
+})
+
+describe('command foundation', () => {
   it('rejects unauthenticated runtime settings commands once a password is set', async () => {
     await harness.app.inject({
       method: 'POST',
@@ -552,13 +671,13 @@ describe('Phase 9-1 command foundation', () => {
     // may have leaked: no event, no revision bump, no persisted write.
     expect(harness.commandEvents.list()).toEqual([])
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database).toMatchObject({ streamGeminiThoughts: false })
+    expect(bootstrap.resourceDatabase).toMatchObject({ streamGeminiThoughts: false })
   })
 
   it('applies the runtime settings harness command, emits an event, and appears in bootstrap', async () => {
@@ -590,16 +709,228 @@ describe('Phase 9-1 command foundation', () => {
     })
     expect(harness.commandEvents.list()).toEqual([res.json().event])
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.statusCode).toBe(200)
     expect(bootstrap.json().revision).toBe(2)
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       streamGeminiThoughts: true,
       greeting: 'hi',
+    })
+  })
+
+  it('serializes same-base ordinary command transactions to one winner', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      theme: 'dark',
+      zoomsize: 100,
+    })
+    const databaseLineage = databaseLineageFromDir(harness.dataDir)
+    harness.commandEvents.clear()
+    const attempts = [
+      {
+        field: 'theme',
+        initial: 'dark',
+        next: 'light',
+        mutationId: 'same-base-theme',
+        patch: { theme: 'light' },
+      },
+      {
+        field: 'zoomsize',
+        initial: 100,
+        next: 88,
+        mutationId: 'same-base-zoom',
+        patch: { zoomsize: 88 },
+      },
+    ] as const
+
+    const responses = await Promise.all(
+      attempts.map((attempt) =>
+        harness.app.inject({
+          method: 'PATCH',
+          url: '/api/v1/commands/settings/display',
+          headers: {
+            'risu-auth': assertion,
+            'risu-writer-session': 'writer-concurrency',
+            'risu-mutation-id': attempt.mutationId,
+            'risu-database-lineage': databaseLineage,
+          },
+          payload: { baseRevision: revision, patch: attempt.patch },
+        }),
+      ),
+    )
+
+    expect(responses.map((response) => response.statusCode).sort((left, right) => left - right)).toEqual([200, 409])
+    const winnerIndex = responses.findIndex((response) => response.statusCode === 200)
+    const loserIndex = responses.findIndex((response) => response.statusCode === 409)
+    expect(winnerIndex).toBeGreaterThanOrEqual(0)
+    expect(loserIndex).toBeGreaterThanOrEqual(0)
+    const winner = attempts[winnerIndex]!
+    const loser = attempts[loserIndex]!
+    const winnerBody = responses[winnerIndex]!.json()
+    expect(winnerBody).toEqual({
+      revision: revision + 1,
+      event: {
+        type: 'settings.updated',
+        revision: revision + 1,
+        resource: 'settings',
+        id: 'display',
+      },
+      acknowledgedKeys: [winner.field],
+      settings: {},
+    })
+    expect(responses[loserIndex]!.json()).toEqual({
+      error: 'revision_conflict',
+      currentRevision: revision + 1,
+    })
+    expect(harness.commandEvents.list()).toEqual([
+      {
+        ...winnerBody.event,
+        origin: { writerSessionId: 'writer-concurrency' },
+      },
+    ])
+
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().revision).toBe(revision + 1)
+    const persistedDatabase = bootstrap.resourceDatabase as Record<string, unknown>
+    expect(persistedDatabase[winner.field]).toBe(winner.next)
+    expect(persistedDatabase[loser.field]).toBe(loser.initial)
+
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      expect(getSchemaState(db).revision).toBe(revision + 1)
+      expect(
+        db
+          .prepare(
+            `
+              SELECT revision, type, resource, id
+              FROM command_events
+              WHERE revision > ?
+              ORDER BY revision
+            `,
+          )
+          .all(revision),
+      ).toEqual([
+        {
+          revision: revision + 1,
+          type: 'settings.updated',
+          resource: 'settings',
+          id: 'display',
+        },
+      ])
+      const receipts = db
+        .prepare(
+          `
+            SELECT mutation_id AS mutationId, response_json AS responseJson
+            FROM command_mutation_receipts
+            ORDER BY mutation_id
+          `,
+        )
+        .all() as unknown as Array<{ mutationId: string; responseJson: string }>
+      expect(receipts).toHaveLength(1)
+      expect(receipts[0]!.mutationId).toBe(winner.mutationId)
+      expect(JSON.parse(receipts[0]!.responseJson)).toEqual({
+        revision: winnerBody.revision,
+        event: winnerBody.event,
+        extra: {
+          acknowledgedKeys: [winner.field],
+          settings: {},
+        },
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('rolls back an ordinary command transaction when event persistence fails', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      streamGeminiThoughts: false,
+    })
+    const databaseLineage = databaseLineageFromDir(harness.dataDir)
+    const before = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    let eventCountBeforeFailure: number
+    try {
+      eventCountBeforeFailure = (
+        before.prepare('SELECT COUNT(*) AS count FROM command_events').get() as { count: number }
+      ).count
+    } finally {
+      before.close()
+    }
+    harness.commandEvents.clear()
+    failCommandEventPersistence(harness.dataDir)
+
+    const failed = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/runtime',
+      headers: {
+        'risu-auth': assertion,
+        'risu-writer-session': 'writer-event-failure',
+        'risu-mutation-id': 'event-persistence-failure',
+        'risu-database-lineage': databaseLineage,
+      },
+      payload: { baseRevision: revision, patch: { streamGeminiThoughts: true } },
+    })
+
+    expect(failed.statusCode).toBe(500)
+    expect(harness.commandEvents.list()).toEqual([])
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().revision).toBe(revision)
+    expect(bootstrap.resourceDatabase).toMatchObject({ streamGeminiThoughts: false })
+
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      expect(getSchemaState(db).revision).toBe(revision)
+      expect(db.prepare('SELECT COUNT(*) AS count FROM command_events').get()).toEqual({
+        count: eventCountBeforeFailure,
+      })
+      expect(db.prepare('SELECT COUNT(*) AS count FROM command_mutation_receipts').get()).toEqual({ count: 0 })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('persists chain-of-thought exclusion as a boolean language setting', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      translatorSendTextAsIs: true,
+      translatorExcludeThoughts: false,
+    })
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/language',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { translatorExcludeThoughts: true } },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      acknowledgedKeys: ['translatorExcludeThoughts'],
+      event: { resource: 'settings', id: 'language' },
+    })
+
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.resourceDatabase).toMatchObject({
+      translatorSendTextAsIs: true,
+      translatorExcludeThoughts: true,
     })
   })
 
@@ -619,6 +950,15 @@ describe('Phase 9-1 command foundation', () => {
     expect(res.statusCode).toBe(400)
     expect(res.json().error).toBe('streamGeminiThoughts must be a boolean')
 
+    const badAdditionalParamsOptIn = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/providers',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { applyAdditionalParamsToAll: 'yes' } },
+    })
+    expect(badAdditionalParamsOptIn.statusCode).toBe(400)
+    expect(badAdditionalParamsOptIn.json().error).toBe('applyAdditionalParamsToAll must be a boolean')
+
     const emptyMinP = await harness.app.inject({
       method: 'PATCH',
       url: '/api/v1/commands/settings/runtime',
@@ -628,13 +968,13 @@ describe('Phase 9-1 command foundation', () => {
     expect(emptyMinP.statusCode).toBe(400)
     expect(emptyMinP.json().error).toBe('min_p must be a finite number')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database).toMatchObject({ streamGeminiThoughts: false })
+    expect(bootstrap.resourceDatabase).toMatchObject({ streamGeminiThoughts: false })
   })
 
   it('rolls back a thrown JSON command mutation before bumping revision', () => {
@@ -757,13 +1097,13 @@ describe('first-run database seed', () => {
     expect(account.statusCode).toBe(200)
     expect(account.json().revision).toBe(2)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(2)
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       username: 'Test',
       theme: 'fastify',
       temperature: 80,
@@ -773,7 +1113,7 @@ describe('first-run database seed', () => {
       personas: [expect.objectContaining({ id: 'default-persona' })],
     })
 
-    const defaultLorebookId = bootstrap.json().database.loreBook[0]?.id as string
+    const defaultLorebookId = bootstrap.resourceDatabase.loreBook[0]?.id as string
     expect(defaultLorebookId).toBe('default-global-lorebook')
     const entry = {
       id: 'first-default-entry',
@@ -794,12 +1134,12 @@ describe('first-run database seed', () => {
     })
     expect(added.statusCode).toBe(200)
 
-    const reloaded = await harness.app.inject({
+    const reloaded = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(reloaded.json().database.loreBook).toEqual([
+    expect(reloaded.resourceDatabase.loreBook).toEqual([
       expect.objectContaining({ id: defaultLorebookId, data: [expect.objectContaining({ id: entry.id })] }),
     ])
   })
@@ -835,7 +1175,7 @@ describe('first-run database seed', () => {
       db.close()
     }
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -957,13 +1297,13 @@ describe('first-run database seed', () => {
     // No write happened: no event, revision unchanged, data preserved.
     expect(harness.commandEvents.list()).toEqual([])
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    expect(bootstrap.json().database).toMatchObject({ username: 'Existing' })
+    expect(bootstrap.resourceDatabase).toMatchObject({ username: 'Existing' })
   })
 
   it('rejects request-shaped database seed payloads', async () => {
@@ -995,7 +1335,7 @@ describe('first-run database seed', () => {
   })
 })
 
-describe('Phase 9-2a scalar settings groups', () => {
+describe('scalar settings groups', () => {
   it('applies display settings through the grouped settings command', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -1045,13 +1385,13 @@ describe('Phase 9-2a scalar settings groups', () => {
       settings: {},
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(2)
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       theme: 'light',
       zoomsize: 88,
       chatScreenWidth: 1240,
@@ -1083,12 +1423,12 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
     expect(res.body).not.toContain(customCSS)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.customCSS).toBe(customCSS)
+    expect(bootstrap.resourceDatabase.customCSS).toBe(customCSS)
   })
 
   it('patches large settings objects by field without echoing or replacing untouched data', async () => {
@@ -1169,18 +1509,18 @@ describe('Phase 9-2a scalar settings groups', () => {
       canonicalDeletedKeys: [],
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.NAIImgConfig).toMatchObject({
+    expect(bootstrap.resourceDatabase.NAIImgConfig).toMatchObject({
       width: 832,
       height: 768,
       sampler: 'k_euler',
       vibe_data: originalVibe,
     })
-    expect(bootstrap.json().database.seperateParameters).toEqual({
+    expect(bootstrap.resourceDatabase.seperateParameters).toEqual({
       memory: { temperature: 0.8 },
       emotion: { temperature: 0.2 },
       translate: {},
@@ -1229,12 +1569,12 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
     expect(secretPatch.body).not.toContain('new-secret')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.wavespeedImage).toMatchObject({
+    expect(bootstrap.resourceDatabase.wavespeedImage).toMatchObject({
       key: MASKED_PROVIDER_SECRET,
       model: 'flux',
       loras: [{ path: 'owner/old', scale: 1 }],
@@ -1290,6 +1630,7 @@ describe('Phase 9-2a scalar settings groups', () => {
     const revision = await importDatabase(harness.app, assertion, {
       keepSessionAlive: 'off',
       showUnrecommended: false,
+      regexOutputSizeLimitMiB: 16,
     })
 
     const res = await harness.app.inject({
@@ -1301,29 +1642,60 @@ describe('Phase 9-2a scalar settings groups', () => {
         patch: {
           keepSessionAlive: 'pip',
           showUnrecommended: true,
+          regexOutputSizeLimitMiB: 32,
         },
       },
     })
 
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({
-      acknowledgedKeys: ['keepSessionAlive', 'showUnrecommended'],
+      acknowledgedKeys: ['keepSessionAlive', 'showUnrecommended', 'regexOutputSizeLimitMiB'],
       settings: { keepSessionAlive: 'sound' },
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       keepSessionAlive: 'sound',
       showUnrecommended: true,
+      regexOutputSizeLimitMiB: 32,
     })
+  })
+
+  it('rejects regex output limits outside the supported range', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, { regexOutputSizeLimitMiB: 16 })
+
+    for (const regexOutputSizeLimitMiB of [0, 65, 1.5]) {
+      const res = await harness.app.inject({
+        method: 'PATCH',
+        url: '/api/v1/commands/settings/advanced',
+        headers: { 'risu-auth': assertion },
+        payload: { baseRevision: revision, patch: { regexOutputSizeLimitMiB } },
+      })
+
+      expect(res.statusCode).toBe(400)
+      expect(res.json().error).toBe('regexOutputSizeLimitMiB must be an integer from 1 to 64')
+    }
   })
 
   it('accepts grouped settings updates across resource families', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
+    const customColorScheme = {
+      bgcolor: '#111111',
+      darkbg: '#222222',
+      borderc: '#333333',
+      selected: '#444444',
+      draculared: '#555555',
+      textcolor: '#eeeeee',
+      textcolor2: '#dddddd',
+      darkBorderc: '#666666',
+      darkbutton: '#777777',
+      type: 'dark',
+    }
     const revision = await importDatabase(harness.app, assertion, {
       notification: false,
       useAutoSuggestions: false,
@@ -1342,6 +1714,7 @@ describe('Phase 9-2a scalar settings groups', () => {
           textScreenColor: null,
           promptDiffPrefs: { diffStyle: 'line', contextRadius: 2 },
           customTextTheme: { FontColorStandard: '#ffffff' },
+          customColorScheme,
         },
       },
     })
@@ -1422,18 +1795,19 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
     expect(sidebar.statusCode).toBe(200)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       notification: true,
       useAutoSuggestions: true,
       useAutoTranslateInput: true,
       textScreenColor: null,
       promptDiffPrefs: { diffStyle: 'line', contextRadius: 2 },
       customTextTheme: { FontColorStandard: '#ffffff' },
+      customColorScheme,
       globalscript: [{ id: 'script-a', in: 'foo', out: 'bar', type: 'editinput' }],
       allowAllExtentionFiles: true,
       auxModelUnderModelSettings: true,
@@ -1509,12 +1883,12 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
     expect(updated.body).not.toContain(largeBody)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.globalscript).toEqual(expectedScripts)
+    expect(bootstrap.resourceDatabase.globalscript).toEqual(expectedScripts)
 
     const unknown = await harness.app.inject({
       method: 'PATCH',
@@ -1613,12 +1987,12 @@ describe('Phase 9-2a scalar settings groups', () => {
 
     expect(res.statusCode).toBe(200)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.customSidebarItems).toEqual([
+    expect(bootstrap.resourceDatabase.customSidebarItems).toEqual([
       {
         id: 'theme-setting',
         type: 'setting',
@@ -1647,12 +2021,12 @@ describe('Phase 9-2a scalar settings groups', () => {
 
     expect(res.statusCode).toBe(200)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       openAIKey: MASKED_PROVIDER_SECRET,
       aiModel: 'openrouter',
     })
@@ -1671,6 +2045,17 @@ describe('Phase 9-2a scalar settings groups', () => {
       payload: {
         baseRevision: revision,
         patch: {
+          providerCredentials: [
+            {
+              id: ' credential-vertex ',
+              name: ' Vertex ',
+              type: 'vertexServiceAccount',
+              vertex: {
+                clientEmail: ' svc@example.iam.gserviceaccount.com ',
+                privateKey: ' private-key ',
+              },
+            },
+          ],
           modelProfiles: [
             {
               id: ' profile-a ',
@@ -1678,15 +2063,13 @@ describe('Phase 9-2a scalar settings groups', () => {
               providerId: ' vertex ',
               modelId: ' gpt-5 ',
               providerOptions: {
+                credentialId: ' credential-vertex ',
                 requestModel: ' wire-model ',
-                apiKey: ' profile-api-key ',
                 extraHeaders: { 'X-Test': ' yes ' },
                 additionalParams: [[' header::X-Test ', ' true ']],
                 vertex: {
                   projectId: ' project-a ',
                   region: ' us-central1 ',
-                  clientEmail: ' svc@example.iam.gserviceaccount.com ',
-                  privateKey: ' private-key ',
                 },
               },
               runtimeOptions: {
@@ -1699,6 +2082,7 @@ describe('Phase 9-2a scalar settings groups', () => {
                 genTime: 3,
                 extractJson: ' object ',
                 jsonSchemaEnabled: true,
+                stripCoT: false,
                 modelTools: [' tool-a ', ''],
                 customFlags: [LLMFlags.hasImageInput],
                 customTokenizer: ' custom-tokenizer ',
@@ -1716,6 +2100,7 @@ describe('Phase 9-2a scalar settings groups', () => {
           modelRuntimeDefaults: {
             maxContext: 8192,
             temperature: 55,
+            stripCoT: true,
             modelTools: [' tool-a ', ''],
           },
         },
@@ -1725,6 +2110,17 @@ describe('Phase 9-2a scalar settings groups', () => {
     expect(res.statusCode, res.body).toBe(200)
     expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
       aiModel: 'flat-main-model',
+      providerCredentials: [
+        {
+          id: 'credential-vertex',
+          name: 'Vertex',
+          type: 'vertexServiceAccount',
+          vertex: {
+            clientEmail: 'svc@example.iam.gserviceaccount.com',
+            privateKey: 'private-key',
+          },
+        },
+      ],
       modelProfiles: [
         {
           id: 'profile-a',
@@ -1732,15 +2128,13 @@ describe('Phase 9-2a scalar settings groups', () => {
           providerId: 'vertex',
           modelId: 'gpt-5',
           providerOptions: {
+            credentialId: 'credential-vertex',
             requestModel: 'wire-model',
-            apiKey: 'profile-api-key',
             extraHeaders: { 'X-Test': 'yes' },
             additionalParams: [['header::X-Test', 'true']],
             vertex: {
               projectId: 'project-a',
               region: 'us-central1',
-              clientEmail: 'svc@example.iam.gserviceaccount.com',
-              privateKey: 'private-key',
             },
           },
           runtimeOptions: {
@@ -1753,6 +2147,7 @@ describe('Phase 9-2a scalar settings groups', () => {
             genTime: 3,
             extractJson: 'object',
             jsonSchemaEnabled: true,
+            stripCoT: false,
             modelTools: ['tool-a'],
             customFlags: [LLMFlags.hasImageInput],
             customTokenizer: 'custom-tokenizer',
@@ -1771,6 +2166,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       modelRuntimeDefaults: {
         maxContext: 8192,
         temperature: 55,
+        stripCoT: true,
         modelTools: ['tool-a'],
       },
     })
@@ -1796,7 +2192,8 @@ describe('Phase 9-2a scalar settings groups', () => {
         patch: {
           modelProfiles: [{ id: 'profile-a', name: 'Primary', providerOptions: { apiKey: 42 } }],
         },
-        error: 'modelProfiles[0].providerOptions.apiKey must be a string when present',
+        error:
+          'modelProfiles[0].providerOptions.apiKey is no longer supported; reference a credential via modelProfiles[0].providerOptions.credentialId',
       },
       {
         patch: {
@@ -1914,6 +2311,7 @@ describe('Phase 9-2a scalar settings groups', () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       modelProfiles: [],
+      providerCredentials: [{ id: 'credential-memory', name: 'Memory', type: 'apiKey', apiKey: 'memory-key' }],
     })
 
     const res = await harness.app.inject({
@@ -1927,7 +2325,7 @@ describe('Phase 9-2a scalar settings groups', () => {
           name: 'Memory Profile',
           providerId: 'openai',
           modelId: 'gpt-5',
-          providerOptions: { apiKey: 'memory-key' },
+          providerOptions: { credentialId: 'credential-memory' },
         },
       },
     })
@@ -1951,7 +2349,7 @@ describe('Phase 9-2a scalar settings groups', () => {
           name: 'Memory Profile',
           providerId: 'openai',
           modelId: 'gpt-5',
-          providerOptions: { apiKey: 'memory-key' },
+          providerOptions: { credentialId: 'credential-memory' },
         },
       ],
       modelRoleProfiles: {
@@ -1960,9 +2358,63 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
   })
 
+  it('rejects missing credential references on profile create, update, and create-and-bind', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      providerCredentials: [],
+      modelProfiles: [{ id: 'profile-a', name: 'Profile A', providerId: 'openai', modelId: 'gpt-5' }],
+    })
+    const profile = {
+      name: 'Missing credential',
+      providerId: 'openai',
+      modelId: 'gpt-5',
+      providerOptions: { credentialId: 'credential-missing' },
+    }
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/model-profiles',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, profile },
+    })
+    expect(created.statusCode).toBe(400)
+    expect(created.json().error).toBe(
+      'profile.providerOptions.credentialId must reference an existing provider credential',
+    )
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/model-profiles/profile-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        expectedProfile: { id: 'profile-a', name: 'Profile A', providerId: 'openai', modelId: 'gpt-5' },
+        profile: { ...profile, id: 'profile-a' },
+      },
+    })
+    expect(updated.statusCode).toBe(400)
+    expect(updated.json().error).toBe(
+      'profile.providerOptions.credentialId must reference an existing provider credential',
+    )
+
+    const bound = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/model-profiles/create-and-bind',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, role: 'memory', profile },
+    })
+    expect(bound.statusCode).toBe(400)
+    expect(bound.json().error).toBe(
+      'profile.providerOptions.credentialId must reference an existing provider credential',
+    )
+  })
+
   it('updates role bindings and their selected model-preset mirror atomically', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
+      providerCredentials: [
+        { id: 'credential-anthropic', name: 'Anthropic', type: 'apiKey', apiKey: 'anthropic-secret' },
+      ],
       modelProfiles: [
         {
           id: 'profile-a',
@@ -2038,13 +2490,16 @@ describe('Phase 9-2a scalar settings groups', () => {
   it('rejects a memory role binding that the summary worker cannot execute', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
+      providerCredentials: [
+        { id: 'credential-anthropic', name: 'Anthropic', type: 'apiKey', apiKey: 'anthropic-secret' },
+      ],
       modelProfiles: [
         {
           id: 'anthropic-memory',
           name: 'Anthropic Memory',
           providerId: 'anthropic',
           modelId: 'claude-3-5-sonnet-latest',
-          providerOptions: { apiKey: 'anthropic-secret' },
+          providerOptions: { credentialId: 'credential-anthropic' },
         },
       ],
     })
@@ -2069,163 +2524,276 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
   })
 
-  it('preserves masked profile secrets on update and clears omitted secrets on full-row save', async () => {
+  it('creates, renames, rotates, and deletes provider credentials with masked placeholder semantics', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
-      modelProfiles: [
-        {
-          id: 'profile-a',
-          name: 'Profile A',
-          providerId: 'vertex',
-          modelId: 'gemini-2.5-pro-vertex',
-          providerOptions: {
-            apiKey: 'profile-key',
-            requestModel: 'old-wire',
-            vertex: {
-              projectId: 'project-a',
-              region: 'us-central1',
-              clientEmail: 'svc@example.com',
-              privateKey: 'vertex-private',
-            },
-          },
-        },
-      ],
-    })
-
-    const preserved = await harness.app.inject({
-      method: 'PATCH',
-      url: '/api/v1/commands/model-profiles/profile-a',
-      headers: { 'risu-auth': assertion },
-      payload: {
-        baseRevision: revision,
-        expectedProfile: {
-          id: 'profile-a',
-          name: 'Profile A',
-          providerId: 'vertex',
-          modelId: 'gemini-2.5-pro-vertex',
-          providerOptions: {
-            apiKey: MASKED_PROVIDER_SECRET,
-            requestModel: 'old-wire',
-            vertex: {
-              projectId: 'project-a',
-              region: 'us-central1',
-              clientEmail: 'svc@example.com',
-              privateKey: MASKED_PROVIDER_SECRET,
-            },
-          },
-        },
-        profile: {
-          id: 'profile-a',
-          name: 'Profile A renamed',
-          providerId: 'vertex',
-          modelId: 'gemini-2.5-pro-vertex',
-          providerOptions: {
-            apiKey: MASKED_PROVIDER_SECRET,
-            requestModel: 'new-wire',
-            vertex: {
-              projectId: 'project-a',
-              region: 'europe-west1',
-              clientEmail: 'svc@example.com',
-              privateKey: MASKED_PROVIDER_SECRET,
-            },
-          },
-        },
-      },
-    })
-    expect(preserved.statusCode, preserved.body).toBe(200)
-    expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
-      modelProfiles: [
-        {
-          id: 'profile-a',
-          name: 'Profile A renamed',
-          providerOptions: {
-            apiKey: 'profile-key',
-            requestModel: 'new-wire',
-            vertex: {
-              privateKey: 'vertex-private',
-              region: 'europe-west1',
-            },
-          },
-        },
-      ],
-    })
-
-    const cleared = await harness.app.inject({
-      method: 'PATCH',
-      url: '/api/v1/commands/model-profiles/profile-a',
-      headers: { 'risu-auth': assertion },
-      payload: {
-        baseRevision: preserved.json().revision,
-        expectedProfile: {
-          id: 'profile-a',
-          name: 'Profile A renamed',
-          providerId: 'vertex',
-          modelId: 'gemini-2.5-pro-vertex',
-          providerOptions: {
-            apiKey: MASKED_PROVIDER_SECRET,
-            requestModel: 'new-wire',
-            vertex: {
-              projectId: 'project-a',
-              region: 'europe-west1',
-              clientEmail: 'svc@example.com',
-              privateKey: MASKED_PROVIDER_SECRET,
-            },
-          },
-        },
-        profile: {
-          name: 'Profile A cleared',
-          providerId: 'vertex',
-          modelId: 'gemini-2.5-pro-vertex',
-          providerOptions: {
-            requestModel: 'new-wire',
-            vertex: {
-              projectId: 'project-a',
-              region: 'europe-west1',
-              clientEmail: 'svc@example.com',
-            },
-          },
-        },
-      },
-    })
-    expect(cleared.statusCode, cleared.body).toBe(200)
-    const profile = (
-      loadPersistedFromDir(harness.dataDir).database as { modelProfiles: Array<Record<string, unknown>> }
-    ).modelProfiles[0]
-    expect(profile.providerOptions).toEqual({
-      requestModel: 'new-wire',
-      vertex: {
-        projectId: 'project-a',
-        region: 'europe-west1',
-        clientEmail: 'svc@example.com',
-      },
-    })
-  })
-
-  it('rejects stale model profile rows even when the caller has the latest global revision', async () => {
-    const { assertion } = await setupAuthedClient(harness.app)
-    const revision = await importDatabase(harness.app, assertion, {
+      providerCredentials: [{ id: 'credential-in-use', name: 'In use', type: 'apiKey', apiKey: 'in-use-secret' }],
       modelProfiles: [
         {
           id: 'profile-a',
           name: 'Profile A',
           providerId: 'openai',
           modelId: 'gpt-5',
-          providerOptions: { apiKey: 'profile-key', requestModel: 'wire-v1' },
+          providerOptions: { credentialId: 'credential-in-use' },
+        },
+      ],
+    })
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/provider-credentials',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        credential: { name: 'Created API key', type: 'apiKey', apiKey: 'created-secret' },
+      },
+    })
+    expect(created.statusCode, created.body).toBe(200)
+    const credentialId = created.json().credentialId as string
+    expect(credentialId).toMatch(/^cred_[0-9a-f]{20}$/)
+    expect(created.json().event).toMatchObject({
+      type: 'providerCredential.created',
+      resource: 'providerCredential',
+      id: credentialId,
+    })
+
+    const renamed = await harness.app.inject({
+      method: 'PATCH',
+      url: `/api/v1/commands/provider-credentials/${credentialId}`,
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: created.json().revision,
+        expectedCredential: {
+          id: credentialId,
+          name: 'Created API key',
+          type: 'apiKey',
+          apiKey: MASKED_PROVIDER_SECRET,
+        },
+        credential: {
+          id: credentialId,
+          name: 'Renamed API key',
+          type: 'apiKey',
+          apiKey: MASKED_PROVIDER_SECRET,
+        },
+      },
+    })
+    expect(renamed.statusCode, renamed.body).toBe(200)
+    expect(
+      (
+        loadPersistedFromDir(harness.dataDir).database as {
+          providerCredentials: Array<Record<string, unknown>>
+        }
+      ).providerCredentials,
+    ).toContainEqual({
+      id: credentialId,
+      name: 'Renamed API key',
+      type: 'apiKey',
+      apiKey: 'created-secret',
+    })
+
+    const rotated = await harness.app.inject({
+      method: 'PATCH',
+      url: `/api/v1/commands/provider-credentials/${credentialId}`,
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: renamed.json().revision,
+        expectedCredential: {
+          id: credentialId,
+          name: 'Renamed API key',
+          type: 'apiKey',
+          apiKey: MASKED_PROVIDER_SECRET,
+        },
+        credential: {
+          id: credentialId,
+          name: 'Renamed API key',
+          type: 'apiKey',
+          apiKey: 'rotated-secret',
+        },
+      },
+    })
+    expect(rotated.statusCode, rotated.body).toBe(200)
+    expect(
+      (
+        loadPersistedFromDir(harness.dataDir).database as {
+          providerCredentials: Array<Record<string, unknown>>
+        }
+      ).providerCredentials,
+    ).toContainEqual({
+      id: credentialId,
+      name: 'Renamed API key',
+      type: 'apiKey',
+      apiKey: 'rotated-secret',
+    })
+
+    const stale = await harness.app.inject({
+      method: 'PATCH',
+      url: `/api/v1/commands/provider-credentials/${credentialId}`,
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: rotated.json().revision,
+        expectedCredential: {
+          id: credentialId,
+          name: 'Created API key',
+          type: 'apiKey',
+          apiKey: MASKED_PROVIDER_SECRET,
+        },
+        credential: {
+          id: credentialId,
+          name: 'Stale rename',
+          type: 'apiKey',
+          apiKey: MASKED_PROVIDER_SECRET,
+        },
+      },
+    })
+    expect(stale.statusCode, stale.body).toBe(409)
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: `/api/v1/commands/provider-credentials/${credentialId}`,
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: rotated.json().revision },
+    })
+    expect(deleted.statusCode, deleted.body).toBe(200)
+
+    const inUse = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/provider-credentials/credential-in-use',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: deleted.json().revision },
+    })
+    expect(inUse.statusCode, inUse.body).toBe(400)
+    expect(inUse.json().error).toContain('Profile A (profile-a)')
+  })
+
+  it('rejects unresolved masked secrets when changing credential types', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      providerCredentials: [
+        { id: 'credential-api', name: 'API', type: 'apiKey', apiKey: 'api-secret' },
+        {
+          id: 'credential-vertex',
+          name: 'Vertex',
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: 'vertex@example.com', privateKey: 'vertex-secret' },
+        },
+      ],
+    })
+
+    const cases = [
+      {
+        credentialId: 'credential-api',
+        expectedCredential: {
+          id: 'credential-api',
+          name: 'API',
+          type: 'apiKey',
+          apiKey: MASKED_PROVIDER_SECRET,
+        },
+        credential: {
+          id: 'credential-api',
+          name: 'API switched to Vertex',
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: 'switched@example.com', privateKey: MASKED_PROVIDER_SECRET },
+        },
+      },
+      {
+        credentialId: 'credential-vertex',
+        expectedCredential: {
+          id: 'credential-vertex',
+          name: 'Vertex',
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: 'vertex@example.com', privateKey: MASKED_PROVIDER_SECRET },
+        },
+        credential: {
+          id: 'credential-vertex',
+          name: 'Vertex switched to API',
+          type: 'apiKey',
+          apiKey: MASKED_PROVIDER_SECRET,
+        },
+      },
+    ] as const
+
+    for (const testCase of cases) {
+      const response = await harness.app.inject({
+        method: 'PATCH',
+        url: `/api/v1/commands/provider-credentials/${testCase.credentialId}`,
+        headers: { 'risu-auth': assertion },
+        payload: {
+          baseRevision: revision,
+          expectedCredential: testCase.expectedCredential,
+          credential: testCase.credential,
+        },
+      })
+      expect(response.statusCode, response.body).toBe(400)
+      expect(response.json().error).toBe(
+        'Masked provider secret placeholders must resolve before a credential can be saved',
+      )
+    }
+
+    const unresolvedExpected = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/provider-credentials/credential-api',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        expectedCredential: {
+          id: 'credential-api',
+          name: 'Wrong expected type',
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: 'wrong@example.com', privateKey: MASKED_PROVIDER_SECRET },
+        },
+        credential: {
+          id: 'credential-api',
+          name: 'API rotated',
+          type: 'apiKey',
+          apiKey: 'new-api-secret',
+        },
+      },
+    })
+    expect(unresolvedExpected.statusCode, unresolvedExpected.body).toBe(409)
+
+    expect(
+      (
+        loadPersistedFromDir(harness.dataDir).database as {
+          providerCredentials: Array<Record<string, unknown>>
+        }
+      ).providerCredentials,
+    ).toEqual([
+      { id: 'credential-api', name: 'API', type: 'apiKey', apiKey: 'api-secret' },
+      {
+        id: 'credential-vertex',
+        name: 'Vertex',
+        type: 'vertexServiceAccount',
+        vertex: { clientEmail: 'vertex@example.com', privateKey: 'vertex-secret' },
+      },
+    ])
+  })
+
+  it('rejects stale model profile rows even when the caller has the latest global revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      providerCredentials: [{ id: 'credential-profile', name: 'Profile', type: 'apiKey', apiKey: 'profile-key' }],
+      modelProfiles: [
+        {
+          id: 'profile-a',
+          name: 'Profile A',
+          providerId: 'openai',
+          modelId: 'gpt-5',
+          providerOptions: { credentialId: 'credential-profile', requestModel: 'wire-v1' },
           runtimeOptions: { temperature: 50 },
         },
       ],
     })
-    const originalMaskedProfile = {
+    const originalProfile = {
       id: 'profile-a',
       name: 'Profile A',
       providerId: 'openai',
       modelId: 'gpt-5',
-      providerOptions: { apiKey: MASKED_PROVIDER_SECRET, requestModel: 'wire-v1' },
+      providerOptions: { credentialId: 'credential-profile', requestModel: 'wire-v1' },
       runtimeOptions: { temperature: 50 },
     }
-    const concurrentMaskedProfile = {
-      ...originalMaskedProfile,
-      providerOptions: { apiKey: MASKED_PROVIDER_SECRET, requestModel: 'wire-v2' },
+    const concurrentProfile = {
+      ...originalProfile,
+      providerOptions: { credentialId: 'credential-profile', requestModel: 'wire-v2' },
       runtimeOptions: { temperature: 70 },
     }
 
@@ -2235,8 +2803,8 @@ describe('Phase 9-2a scalar settings groups', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: revision,
-        expectedProfile: originalMaskedProfile,
-        profile: concurrentMaskedProfile,
+        expectedProfile: originalProfile,
+        profile: concurrentProfile,
       },
     })
     expect(concurrent.statusCode, concurrent.body).toBe(200)
@@ -2248,8 +2816,8 @@ describe('Phase 9-2a scalar settings groups', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: concurrentRevision,
-        expectedProfile: originalMaskedProfile,
-        profile: { ...originalMaskedProfile, name: 'Locally renamed' },
+        expectedProfile: originalProfile,
+        profile: { ...originalProfile, name: 'Locally renamed' },
       },
     })
     expect(stale.statusCode, stale.body).toBe(409)
@@ -2259,7 +2827,7 @@ describe('Phase 9-2a scalar settings groups', () => {
         .modelProfiles[0],
     ).toMatchObject({
       name: 'Profile A',
-      providerOptions: { apiKey: 'profile-key', requestModel: 'wire-v2' },
+      providerOptions: { credentialId: 'credential-profile', requestModel: 'wire-v2' },
       runtimeOptions: { temperature: 70 },
     })
 
@@ -2269,9 +2837,9 @@ describe('Phase 9-2a scalar settings groups', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: concurrentRevision,
-        expectedProfile: concurrentMaskedProfile,
+        expectedProfile: concurrentProfile,
         profile: {
-          ...concurrentMaskedProfile,
+          ...concurrentProfile,
           providerOptions: { requestModel: 'wire-v2' },
         },
       },
@@ -2279,17 +2847,17 @@ describe('Phase 9-2a scalar settings groups', () => {
     expect(cleared.statusCode, cleared.body).toBe(200)
     const clearedRevision = cleared.json().revision as number
 
-    const staleMaskedSecret = await harness.app.inject({
+    const staleCredentialReference = await harness.app.inject({
       method: 'PATCH',
       url: '/api/v1/commands/model-profiles/profile-a',
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: clearedRevision,
-        expectedProfile: concurrentMaskedProfile,
-        profile: { ...concurrentMaskedProfile, name: 'Stale secret edit' },
+        expectedProfile: concurrentProfile,
+        profile: { ...concurrentProfile, name: 'Stale credential edit' },
       },
     })
-    expect(staleMaskedSecret.statusCode, staleMaskedSecret.body).toBe(409)
+    expect(staleCredentialReference.statusCode, staleCredentialReference.body).toBe(409)
     const persistedAfterClear = (
       loadPersistedFromDir(harness.dataDir).database as { modelProfiles: Array<Record<string, any>> }
     ).modelProfiles[0]
@@ -2297,9 +2865,17 @@ describe('Phase 9-2a scalar settings groups', () => {
     expect(persistedAfterClear.providerOptions).toEqual({ requestModel: 'wire-v2' })
   })
 
-  it('duplicates model profiles without secrets by default and includes them when requested', async () => {
+  it('duplicates model profiles while naturally preserving credential references', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
+      providerCredentials: [
+        {
+          id: 'credential-vertex',
+          name: 'Vertex',
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: 'svc@example.com', privateKey: 'vertex-private' },
+        },
+      ],
       modelProfiles: [
         {
           id: 'profile-a',
@@ -2307,63 +2883,146 @@ describe('Phase 9-2a scalar settings groups', () => {
           providerId: 'vertex',
           modelId: 'gemini-2.5-pro-vertex',
           providerOptions: {
-            apiKey: 'profile-key',
+            credentialId: 'credential-vertex',
             requestModel: 'wire-model',
             vertex: {
               projectId: 'project-a',
               region: 'us-central1',
-              clientEmail: 'svc@example.com',
-              privateKey: 'vertex-private',
             },
           },
         },
       ],
     })
 
-    const withoutSecrets = await harness.app.inject({
+    const duplicated = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/commands/model-profiles/profile-a/duplicate',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: revision, name: 'No Secrets' },
+      payload: { baseRevision: revision, name: 'Profile Copy' },
     })
-    expect(withoutSecrets.statusCode, withoutSecrets.body).toBe(200)
-    const withoutSecretsId = withoutSecrets.json().profileId as string
-
-    const withSecrets = await harness.app.inject({
-      method: 'POST',
-      url: '/api/v1/commands/model-profiles/profile-a/duplicate',
-      headers: { 'risu-auth': assertion },
-      payload: { baseRevision: withoutSecrets.json().revision, name: 'With Secrets', includeSecrets: true },
-    })
-    expect(withSecrets.statusCode, withSecrets.body).toBe(200)
-    const withSecretsId = withSecrets.json().profileId as string
+    expect(duplicated.statusCode, duplicated.body).toBe(200)
+    const duplicatedId = duplicated.json().profileId as string
 
     const profiles = (loadPersistedFromDir(harness.dataDir).database as { modelProfiles: Array<Record<string, any>> })
       .modelProfiles
-    const copiedWithoutSecrets = profiles.find((profile) => profile.id === withoutSecretsId)
-    const copiedWithSecrets = profiles.find((profile) => profile.id === withSecretsId)
-    expect(copiedWithoutSecrets).toMatchObject({
-      id: withoutSecretsId,
-      name: 'No Secrets',
+    const copied = profiles.find((profile) => profile.id === duplicatedId)
+    expect(copied).toMatchObject({
+      id: duplicatedId,
+      name: 'Profile Copy',
       providerOptions: {
+        credentialId: 'credential-vertex',
         requestModel: 'wire-model',
         vertex: {
           projectId: 'project-a',
           region: 'us-central1',
-          clientEmail: 'svc@example.com',
         },
       },
     })
-    expect(copiedWithoutSecrets?.providerOptions).not.toHaveProperty('apiKey')
-    expect(copiedWithoutSecrets?.providerOptions.vertex).not.toHaveProperty('privateKey')
-    expect(copiedWithSecrets).toMatchObject({
-      id: withSecretsId,
-      name: 'With Secrets',
-      providerOptions: {
-        apiKey: 'profile-key',
-        vertex: { privateKey: 'vertex-private' },
+  })
+
+  it('reorders model profiles only with a complete stable-id order', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      modelProfiles: [
+        { id: 'profile-a', name: 'A', modelId: 'gpt-5' },
+        { id: 'profile-b', name: 'B', modelId: 'gpt-4o' },
+        { id: 'profile-c', name: 'C', modelId: 'claude-sonnet-4-5' },
+      ],
+    })
+
+    const incomplete = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/model-profiles/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, profileIds: ['profile-b', 'profile-a'] },
+    })
+    expect(incomplete.statusCode).toBe(400)
+    expect(incomplete.json().error).toBe('profileIds must include every existing model profile exactly once')
+
+    const duplicate = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/model-profiles/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, profileIds: ['profile-a', 'profile-a', 'profile-c'] },
+    })
+    expect(duplicate.statusCode).toBe(400)
+    expect(duplicate.json().error).toBe('Duplicate model profile id: profile-a')
+
+    const reordered = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/model-profiles/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        order: [
+          { kind: 'profile', profileId: 'profile-c' },
+          { kind: 'divider', id: 'divider-a' },
+          { kind: 'profile', profileId: 'profile-a' },
+          { kind: 'profile', profileId: 'profile-b' },
+        ],
       },
     })
+    expect(reordered.statusCode, reordered.body).toBe(200)
+    expect(reordered.json()).toMatchObject({
+      revision: revision + 1,
+      profileIds: ['profile-c', 'profile-a', 'profile-b'],
+      order: [
+        { kind: 'profile', profileId: 'profile-c' },
+        { kind: 'divider', id: 'divider-a' },
+        { kind: 'profile', profileId: 'profile-a' },
+        { kind: 'profile', profileId: 'profile-b' },
+      ],
+      event: { type: 'modelProfile.reordered', resource: 'modelProfile' },
+    })
+    const database = loadPersistedFromDir(harness.dataDir).database as {
+      modelProfiles: Array<Record<string, unknown>>
+      modelProfileOrder: Array<Record<string, unknown>>
+    }
+    expect(database.modelProfiles).toMatchObject([{ id: 'profile-c' }, { id: 'profile-a' }, { id: 'profile-b' }])
+    expect(database.modelProfileOrder).toEqual([
+      { kind: 'profile', profileId: 'profile-c' },
+      { kind: 'divider', id: 'divider-a' },
+      { kind: 'profile', profileId: 'profile-a' },
+      { kind: 'profile', profileId: 'profile-b' },
+    ])
+  })
+
+  it('blocks model profile deletion when any Model Preset role binding uses it', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      modelProfiles: [
+        { id: 'profile-main', name: 'Main', modelId: 'gpt-5' },
+        { id: 'profile-alt', name: 'Alt', modelId: 'gpt-4o' },
+      ],
+      modelProfileOrder: [
+        { kind: 'profile', profileId: 'profile-main' },
+        { kind: 'divider', id: 'divider-a' },
+        { kind: 'profile', profileId: 'profile-alt' },
+      ],
+      modelRoleProfiles: {},
+      modelPresets: [
+        { id: 'model-a', name: 'Unrelated', modelRoleProfiles: {} },
+        {
+          id: 'model-b',
+          name: 'Uses Main',
+          modelRoleProfiles: { memory: { mode: 'profile', profileId: 'profile-main' } },
+        },
+      ],
+      modelPresetsId: 0,
+    })
+
+    const blocked = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/model-profiles/profile-main',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, reassignments: {} },
+    })
+    expect(blocked.statusCode).toBe(400)
+    expect(blocked.json().error).toBe('Model profile profile-main is used by Model Presets: Uses Main')
+    expect(
+      (loadPersistedFromDir(harness.dataDir).database as { modelProfiles: Array<Record<string, unknown>> })
+        .modelProfiles,
+    ).toMatchObject([{ id: 'profile-main' }, { id: 'profile-alt' }])
   })
 
   it('validates model profile delete reassignments and applies direct role updates atomically', async () => {
@@ -2372,6 +3031,11 @@ describe('Phase 9-2a scalar settings groups', () => {
       modelProfiles: [
         { id: 'profile-main', name: 'Main', modelId: 'gpt-5' },
         { id: 'profile-alt', name: 'Alt', modelId: 'gpt-4o' },
+      ],
+      modelProfileOrder: [
+        { kind: 'profile', profileId: 'profile-main' },
+        { kind: 'divider', id: 'divider-a' },
+        { kind: 'profile', profileId: 'profile-alt' },
       ],
       modelRoleProfiles: {
         chatMain: { mode: 'profile', profileId: 'profile-main' },
@@ -2438,6 +3102,10 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
     expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
       modelProfiles: [{ id: 'profile-alt' }],
+      modelProfileOrder: [
+        { kind: 'divider', id: 'divider-a' },
+        { kind: 'profile', profileId: 'profile-alt' },
+      ],
       modelRoleProfiles: {
         chatMain: { mode: 'legacy' },
         memory: { mode: 'inherit' },
@@ -2462,14 +3130,17 @@ describe('Phase 9-2a scalar settings groups', () => {
     expect(stale.statusCode).toBe(409)
     expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json()).toMatchObject({
-      revision: 1,
-      database: { modelProfiles: [] },
+    expect(bootstrap.json()).toMatchObject({ revision: 1 })
+    expect(bootstrap.resourceDatabase).toMatchObject({
+      modelProfiles: [
+        expect.objectContaining({ id: 'mp_legacy_chatMain', modelId: 'gpt-5' }),
+        expect.objectContaining({ id: 'mp_legacy_chatAux', modelId: 'claude-sonnet-4-5' }),
+      ],
     })
   })
 
@@ -2481,6 +3152,9 @@ describe('Phase 9-2a scalar settings groups', () => {
       openAIKey: 'openai-key',
       claudeAPIKey: 'claude-key',
       google: { accessToken: 'google-key', projectId: 'vertex-project' },
+      vertexClientEmail: 'vertex@example.com',
+      vertexPrivateKey: 'vertex-private-key',
+      vertexRegion: 'us-central1',
       forceReplaceUrl: 'https://proxy.example.com/chat/risu',
       proxyKey: 'proxy-key',
       customProxyRequestModel: 'local-model',
@@ -2496,7 +3170,8 @@ describe('Phase 9-2a scalar settings groups', () => {
       },
       seperateModelsForAxModels: true,
       seperateModels: {
-        translate: 'gemini-2.5-pro',
+        emotion: 'gemini-2.5-flash',
+        translate: 'gemini-2.5-pro-vertex',
         scriptAux: 'reverse_proxy',
       },
       seperateParametersEnabled: true,
@@ -2531,6 +3206,7 @@ describe('Phase 9-2a scalar settings groups', () => {
 
     const database = loadPersistedFromDir(harness.dataDir).database as {
       modelProfiles: Array<Record<string, any>>
+      providerCredentials: Array<Record<string, any>>
       modelRoleProfiles: Record<string, any>
       modelRuntimeDefaults: Record<string, unknown>
     }
@@ -2538,8 +3214,10 @@ describe('Phase 9-2a scalar settings groups', () => {
     const main = profileById.get(body.profileIdsByRole.chatMain)
     const aux = profileById.get(body.profileIdsByRole.chatAux)
     const memory = profileById.get(body.profileIdsByRole.memory)
+    const emotion = profileById.get(body.profileIdsByRole.emotion)
     const translate = profileById.get(body.profileIdsByRole.translate)
     const scriptAux = profileById.get(body.profileIdsByRole.scriptAux)
+    const credentialById = new Map(database.providerCredentials.map((credential) => [credential.id, credential]))
 
     expect(database.modelRuntimeDefaults).toMatchObject({
       maxContext: 12345,
@@ -2553,14 +3231,14 @@ describe('Phase 9-2a scalar settings groups', () => {
       name: 'Main Chat',
       providerId: 'openai',
       modelId: 'gpt-5',
-      providerOptions: { apiKey: 'openai-key' },
+      providerOptions: { credentialId: expect.stringMatching(/^cred_/) },
       fallbacks: [{ mode: 'model', modelId: 'fallback-main' }],
     })
     expect(aux).toMatchObject({
       name: 'Auxiliary',
       providerId: 'anthropic',
       modelId: 'claude-sonnet-4-5',
-      providerOptions: { apiKey: 'claude-key' },
+      providerOptions: { credentialId: expect.stringMatching(/^cred_/) },
       runtimeOptions: { temperature: 44 },
     })
     expect(memory).toMatchObject({
@@ -2570,23 +3248,69 @@ describe('Phase 9-2a scalar settings groups', () => {
       runtimeOptions: { temperature: 22, topP: 0.5 },
       fallbacks: [{ mode: 'model', modelId: 'fallback-memory' }],
     })
+    expect(memory?.providerOptions.credentialId).toBe(main?.providerOptions.credentialId)
+    expect(emotion).toMatchObject({
+      name: 'Emotion',
+      providerId: 'vertex',
+      modelId: 'gemini-2.5-flash',
+      providerOptions: {
+        credentialId: expect.stringMatching(/^cred_/),
+        vertex: { projectId: 'vertex-project', region: 'us-central1' },
+      },
+    })
     expect(translate).toMatchObject({
       name: 'Translate',
-      providerId: 'google',
-      modelId: 'gemini-2.5-pro',
-      providerOptions: { apiKey: 'google-key' },
+      providerId: 'vertex',
+      modelId: 'gemini-2.5-pro-vertex',
+      providerOptions: {
+        credentialId: expect.stringMatching(/^cred_/),
+        vertex: { projectId: 'vertex-project', region: 'us-central1' },
+      },
     })
+    expect(emotion?.providerOptions.credentialId).toBe(translate?.providerOptions.credentialId)
     expect(scriptAux).toMatchObject({
       name: 'Script Auxiliary',
       providerId: 'custom-api',
       modelId: 'custom-api',
       providerOptions: {
-        apiKey: 'proxy-key',
+        credentialId: expect.stringMatching(/^cred_/),
         baseUrl: 'https://proxy.example.com/chat/risu/v1',
         requestModel: 'local-model',
       },
       runtimeOptions: { topK: 5 },
     })
+    expect(credentialById.get(main?.providerOptions.credentialId)).toMatchObject({
+      name: 'OpenAI (imported)',
+      type: 'apiKey',
+      apiKey: 'openai-key',
+    })
+    expect(credentialById.get(aux?.providerOptions.credentialId)).toMatchObject({
+      name: 'Anthropic (imported)',
+      type: 'apiKey',
+      apiKey: 'claude-key',
+    })
+    expect(credentialById.get(emotion?.providerOptions.credentialId)).toMatchObject({
+      name: 'Vertex AI (imported)',
+      type: 'vertexServiceAccount',
+      vertex: { clientEmail: 'vertex@example.com', privateKey: 'vertex-private-key' },
+    })
+    expect(credentialById.get(translate?.providerOptions.credentialId)).toMatchObject({
+      name: 'Vertex AI (imported)',
+      type: 'vertexServiceAccount',
+      vertex: { clientEmail: 'vertex@example.com', privateKey: 'vertex-private-key' },
+    })
+    expect(credentialById.get(scriptAux?.providerOptions.credentialId)).toMatchObject({
+      name: 'Proxy (imported)',
+      type: 'apiKey',
+      apiKey: 'proxy-key',
+    })
+    expect(database.providerCredentials).toContainEqual(
+      expect.objectContaining({
+        name: 'Google (imported)',
+        type: 'apiKey',
+        apiKey: 'google-key',
+      }),
+    )
     expect(database.modelRoleProfiles).toMatchObject({
       chatMain: { mode: 'profile', profileId: body.profileIdsByRole.chatMain },
       chatAux: { mode: 'profile', profileId: body.profileIdsByRole.chatAux },
@@ -2621,12 +3345,12 @@ describe('Phase 9-2a scalar settings groups', () => {
 
     expect(res.statusCode, res.body).toBe(200)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       instructChatTemplate: 'jinja',
       JinjaTemplate: jinjaTemplate,
     })
@@ -2710,12 +3434,12 @@ describe('Phase 9-2a scalar settings groups', () => {
       aiModel: 'gpt4o-chatgpt',
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       openAIKey: MASKED_PROVIDER_SECRET,
       claudeAPIKey: MASKED_PROVIDER_SECRET,
       OaiCompAPIKeys: { deepseek: MASKED_PROVIDER_SECRET, deepinfra: MASKED_PROVIDER_SECRET },
@@ -2736,16 +3460,13 @@ describe('Phase 9-2a scalar settings groups', () => {
         { id: 'xcustom:::a', name: 'Custom A', key: 'custom-a', url: 'https://a.example.com' },
         { id: 'xcustom:::b', name: 'Custom B', key: 'custom-b', url: 'https://b.example.com' },
       ],
-      modelProfiles: [
-        { id: 'profile-a', name: 'Profile A', providerOptions: { apiKey: 'profile-a-key', requestModel: 'a-wire' } },
+      providerCredentials: [
+        { id: 'credential-a', name: 'Credential A', type: 'apiKey', apiKey: 'credential-a-key' },
         {
-          id: 'profile-b',
-          name: 'Profile B',
-          providerOptions: {
-            apiKey: 'profile-b-key',
-            requestModel: 'b-wire',
-            vertex: { privateKey: 'profile-b-vertex-key', region: 'us-central1' },
-          },
+          id: 'credential-b',
+          name: 'Credential B',
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: 'b@example.com', privateKey: 'credential-b-private-key' },
         },
       ],
       authRefreshes: [
@@ -2787,20 +3508,18 @@ describe('Phase 9-2a scalar settings groups', () => {
               url: 'https://a2.example.com',
             },
           ],
-          modelProfiles: [
+          providerCredentials: [
             {
-              id: 'profile-b',
-              name: 'Profile B renamed',
-              providerOptions: {
-                apiKey: MASKED_PROVIDER_SECRET,
-                requestModel: 'b-new-wire',
-                vertex: { privateKey: MASKED_PROVIDER_SECRET, region: 'europe-west1' },
-              },
+              id: 'credential-b',
+              name: 'Credential B renamed',
+              type: 'vertexServiceAccount',
+              vertex: { clientEmail: 'b-renamed@example.com', privateKey: MASKED_PROVIDER_SECRET },
             },
             {
-              id: 'profile-a',
-              name: 'Profile A renamed',
-              providerOptions: { apiKey: MASKED_PROVIDER_SECRET, requestModel: 'a-new-wire' },
+              id: 'credential-a',
+              name: 'Credential A renamed',
+              type: 'apiKey',
+              apiKey: MASKED_PROVIDER_SECRET,
             },
           ],
           authRefreshes: [
@@ -2839,20 +3558,18 @@ describe('Phase 9-2a scalar settings groups', () => {
           url: 'https://a2.example.com',
         },
       ],
-      modelProfiles: [
+      providerCredentials: [
         {
-          id: 'profile-b',
-          name: 'Profile B renamed',
-          providerOptions: {
-            apiKey: 'profile-b-key',
-            requestModel: 'b-new-wire',
-            vertex: { privateKey: 'profile-b-vertex-key', region: 'europe-west1' },
-          },
+          id: 'credential-b',
+          name: 'Credential B renamed',
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: 'b-renamed@example.com', privateKey: 'credential-b-private-key' },
         },
         {
-          id: 'profile-a',
-          name: 'Profile A renamed',
-          providerOptions: { apiKey: 'profile-a-key', requestModel: 'a-new-wire' },
+          id: 'credential-a',
+          name: 'Credential A renamed',
+          type: 'apiKey',
+          apiKey: 'credential-a-key',
         },
       ],
       authRefreshes: [
@@ -3062,6 +3779,7 @@ describe('Phase 9-2a scalar settings groups', () => {
           ainconfig: { top_p: 0.7, top_k: 90 },
           bias: [['token', -10]],
           additionalParams: [['stop', 'value']],
+          applyAdditionalParamsToAll: true,
           huggingfaceKey: 'huggingface-secret',
         },
       },
@@ -3159,8 +3877,10 @@ describe('Phase 9-2a scalar settings groups', () => {
         patch: {
           hypaV3: true,
           hypaV3PresetId: 0,
+          selectedHypaV3PresetId: 'fastify-memory',
           hypaV3Presets: [
             {
+              id: 'fastify-memory',
               name: 'Fastify memory',
               settings: {
                 summarizationModel: 'subModel',
@@ -3223,12 +3943,12 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
     expect(advanced.statusCode).toBe(200)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       aiModel: 'openrouter',
       subModel: 'claude',
       forceReplaceUrl: 'https://proxy.example.test',
@@ -3291,6 +4011,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       ainconfig: { top_p: 0.7, top_k: 90 },
       bias: [['token', -10]],
       additionalParams: [['stop', 'value']],
+      applyAdditionalParamsToAll: true,
       huggingfaceKey: MASKED_PROVIDER_SECRET,
       maxContext: 12000,
       useStreaming: true,
@@ -3352,8 +4073,10 @@ describe('Phase 9-2a scalar settings groups', () => {
       emotionProcesser: 'embedding',
       hypaV3: true,
       hypaV3PresetId: 0,
+      selectedHypaV3PresetId: 'fastify-memory',
       hypaV3Presets: [
         {
+          id: 'fastify-memory',
           name: 'Fastify memory',
           settings: {
             summarizationModel: 'subModel',
@@ -3415,8 +4138,10 @@ describe('Phase 9-2a scalar settings groups', () => {
       payload: {
         baseRevision: settingsOnly.json().revision,
         patch: {
+          selectedHypaV3PresetId: 'cross-resource-memory',
           hypaV3Presets: [
             {
+              id: 'cross-resource-memory',
               name: 'Cross-resource memory',
               settings: {
                 summarizationModel: 'subModel',
@@ -3431,13 +4156,192 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
     expect(withPresets.statusCode).toBe(200)
     expect(withPresets.json()).toMatchObject({
-      acknowledgedKeys: ['hypaV3Presets'],
+      acknowledgedKeys: ['selectedHypaV3PresetId', 'hypaV3Presets'],
       settings: {},
     })
     expect(withPresets.json().event).toMatchObject({
       type: 'settings.updated',
       resource: 'settingsWithHypaV3Presets',
       id: 'memory',
+    })
+  })
+
+  it('keeps stable Hypa selection authoritative and co-writes its numeric projection atomically', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    let revision = await importDatabase(harness.app, assertion, {
+      hypaV3Presets: [
+        { id: 'memory-a', name: 'A', settings: {} },
+        { id: 'memory-b', name: 'B', settings: {} },
+      ],
+      selectedHypaV3PresetId: 'memory-a',
+      hypaV3PresetId: 0,
+    })
+
+    const selected = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/memory',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { selectedHypaV3PresetId: 'memory-b' } },
+    })
+    expect(selected.statusCode, selected.body).toBe(200)
+    revision = selected.json().revision
+
+    const reordered = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/memory',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          hypaV3Presets: [
+            { id: 'memory-b', name: 'B', settings: {} },
+            { id: 'memory-a', name: 'A', settings: {} },
+          ],
+        },
+      },
+    })
+    expect(reordered.statusCode, reordered.body).toBe(200)
+
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      const settings = JSON.parse(
+        (db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }).data_json,
+      ) as Record<string, unknown>
+      expect(settings).toMatchObject({ selectedHypaV3PresetId: 'memory-b', hypaV3PresetId: 0 })
+      const presets = db.prepare('SELECT data_json FROM hypa_v3_presets ORDER BY position').all() as Array<{
+        data_json: string
+      }>
+      expect(presets.map(({ data_json }) => (JSON.parse(data_json) as { id: string }).id)).toEqual([
+        'memory-b',
+        'memory-a',
+      ])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('rejects malformed Hypa identity patches and damaged stored rows without write or revision churn', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      hypaV3Presets: [
+        { id: 'memory-a', name: 'A', settings: {} },
+        { id: 'memory-b', name: 'B', settings: {} },
+      ],
+      selectedHypaV3PresetId: 'memory-a',
+      hypaV3PresetId: 0,
+    })
+
+    for (const patch of [
+      { hypaV3PresetId: 1 },
+      { selectedHypaV3PresetId: 'memory-b', hypaV3PresetId: 0 },
+      {
+        selectedHypaV3PresetId: 'missing',
+        hypaV3Presets: [{ id: 'memory-a', name: 'A', settings: {} }],
+      },
+      {
+        selectedHypaV3PresetId: 'memory-a',
+        hypaV3Presets: [{ name: 'Missing id', settings: {} }],
+      },
+      {
+        selectedHypaV3PresetId: 'duplicate',
+        hypaV3Presets: [
+          { id: 'duplicate', name: 'A', settings: {} },
+          { id: 'duplicate', name: 'B', settings: {} },
+        ],
+      },
+    ]) {
+      const before = readAllDatabaseRows(harness.dataDir)
+      const response = await harness.app.inject({
+        method: 'PATCH',
+        url: '/api/v1/commands/settings/memory',
+        headers: { 'risu-auth': assertion },
+        payload: { baseRevision: revision, patch },
+      })
+      expect(response.statusCode, response.body).toBe(400)
+      expect(readAllDatabaseRows(harness.dataDir)).toEqual(before)
+    }
+
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      db.prepare('UPDATE hypa_v3_presets SET data_json = ? WHERE position = 1').run(
+        JSON.stringify({ id: 'memory-a', name: 'Damaged duplicate', settings: {} }),
+      )
+    } finally {
+      db.close()
+    }
+    const damagedRows = readAllDatabaseRows(harness.dataDir)
+
+    const response = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/memory',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { selectedHypaV3PresetId: 'memory-b' } },
+    })
+    expect(response.statusCode, response.body).toBe(400)
+    expect(response.json().error).toBe('Duplicate hypaV3Presets id: memory-a')
+    expect(readAllDatabaseRows(harness.dataDir)).toEqual(damagedRows)
+  })
+
+  it('rejects legacy Hypa aliases while allowing canonical preset settings to remain authoritative', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      hypaV3Settings: { summarizationPrompt: 'stale flat prompt' },
+      supaMemoryKey: 'stale-flat-key',
+      hypaV3Presets: [
+        {
+          id: 'canonical-memory',
+          name: 'Canonical memory',
+          settings: { summarizationModel: 'subModel', summarizationPrompt: 'canonical prompt' },
+        },
+      ],
+    })
+
+    for (const [key, value] of [
+      ['hypaV3Settings', { summarizationPrompt: 'attempted stale overwrite' }],
+      ['supaMemoryKey', 'attempted stale key overwrite'],
+    ] as const) {
+      const response = await harness.app.inject({
+        method: 'PATCH',
+        url: '/api/v1/commands/settings/memory',
+        headers: { 'risu-auth': assertion },
+        payload: { baseRevision: revision, patch: { [key]: value } },
+      })
+      expect(response.statusCode).toBe(400)
+      expect(response.json().error).toBe(`Unsupported memory setting: ${key}`)
+    }
+
+    const canonical = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/memory',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          hypaV3Presets: [
+            {
+              id: 'canonical-memory',
+              name: 'Canonical memory',
+              settings: { summarizationModel: 'subModel', summarizationPrompt: 'updated canonical prompt' },
+            },
+          ],
+        },
+      },
+    })
+    expect(canonical.statusCode).toBe(200)
+    expect(canonical.json().acknowledgedKeys).toEqual(['hypaV3Presets'])
+
+    const memory = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/memory',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(memory.statusCode).toBe(200)
+    expect(memory.json().settings).not.toHaveProperty('hypaV3Settings')
+    expect(memory.json().settings).not.toHaveProperty('supaMemoryKey')
+    expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
+      hypaV3Settings: { summarizationPrompt: 'stale flat prompt' },
+      supaMemoryKey: 'stale-flat-key',
+      hypaV3Presets: [{ settings: { summarizationPrompt: 'updated canonical prompt' } }],
     })
   })
 
@@ -3452,8 +4356,10 @@ describe('Phase 9-2a scalar settings groups', () => {
       payload: {
         baseRevision: revision,
         patch: {
+          selectedHypaV3PresetId: 'unsupported-gpu',
           hypaV3Presets: [
             {
+              id: 'unsupported-gpu',
               name: 'Unsupported GPU preset',
               settings: { summarizationModel: 'Qwen3-4B-q4f32_1-MLC' },
             },
@@ -3517,12 +4423,12 @@ describe('Phase 9-2a scalar settings groups', () => {
       },
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       outputImageModal: true,
       fallbackModels: res.json().settings.fallbackModels,
       fallbackWhenBlankResponse: true,
@@ -3546,13 +4452,13 @@ describe('Phase 9-2a scalar settings groups', () => {
     expect(res.statusCode).toBe(400)
     expect(res.json().error).toBe('Unsupported display setting: openAIKey')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database).toMatchObject({ theme: 'dark' })
+    expect(bootstrap.resourceDatabase).toMatchObject({ theme: 'dark' })
   })
 
   it('rejects retired Context Agent setting keys while preserving imported old-save data', async () => {
@@ -3574,13 +4480,13 @@ describe('Phase 9-2a scalar settings groups', () => {
     expect(res.statusCode).toBe(400)
     expect(res.json().error).toBe('Unsupported advanced setting: agentContextEnabled')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       agentContextEnabled: true,
       agentContextPrompt: 'legacy context prompt',
       agentContextMaxOutput: 999,
@@ -3641,7 +4547,7 @@ describe('Phase 9-2a scalar settings groups', () => {
   })
 })
 
-describe('Phase 9-2b bot preset commands', () => {
+describe('bot preset commands', () => {
   it('rejects missing durable ids on public root create commands', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -3741,7 +4647,7 @@ describe('Phase 9-2b bot preset commands', () => {
       expect(res.json().error).toBe(testCase.error)
     }
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -3822,12 +4728,12 @@ describe('Phase 9-2b bot preset commands', () => {
       canonicalDeletedKeys: ['agentPresetDefaultId'],
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.botPresets).toMatchObject([
+    expect(bootstrap.resourceDatabase.botPresets).toMatchObject([
       { id: 'preset-a', name: 'A' },
       { id: 'preset-b', name: 'B renamed' },
     ])
@@ -3884,7 +4790,6 @@ describe('Phase 9-2b bot preset commands', () => {
             name: 'Profile A',
             providerId: 'openai',
             modelId: 'gpt-5',
-            providerOptions: { apiKey: MASKED_PROVIDER_SECRET },
           },
         ],
       },
@@ -3893,7 +4798,7 @@ describe('Phase 9-2b bot preset commands', () => {
     expect(updated.body).not.toContain('receipt-must-not-leak')
   })
 
-  it('resolves masked secrets in legacy preset PATCHes before persisting them', async () => {
+  it('resolves masked legacy scalar secrets in preset PATCHes before persisting them', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       botPresets: [
@@ -3902,13 +4807,6 @@ describe('Phase 9-2b bot preset commands', () => {
           name: 'A',
           openAIKey: 'stored-openai-secret',
           proxyKey: 'stored-proxy-secret',
-          modelProfiles: [
-            {
-              id: 'profile-a',
-              name: 'Profile A',
-              providerOptions: { apiKey: 'stored-profile-secret' },
-            },
-          ],
         },
       ],
       botPresetsId: 0,
@@ -3923,13 +4821,6 @@ describe('Phase 9-2b bot preset commands', () => {
         patch: {
           openAIKey: MASKED_PROVIDER_SECRET,
           proxyKey: MASKED_PROVIDER_SECRET,
-          modelProfiles: [
-            {
-              id: 'profile-a',
-              name: ' Renamed profile ',
-              providerOptions: { apiKey: MASKED_PROVIDER_SECRET },
-            },
-          ],
         },
       },
     })
@@ -3937,7 +4828,6 @@ describe('Phase 9-2b bot preset commands', () => {
     expect(updated.statusCode, updated.body).toBe(200)
     expect(updated.body).not.toContain('stored-openai-secret')
     expect(updated.body).not.toContain('stored-proxy-secret')
-    expect(updated.body).not.toContain('stored-profile-secret')
     const persisted = loadPersistedFromDir(harness.dataDir).database as {
       botPresets: Array<Record<string, any>>
     }
@@ -3945,13 +4835,6 @@ describe('Phase 9-2b bot preset commands', () => {
       id: 'preset-a',
       openAIKey: 'stored-openai-secret',
       proxyKey: 'stored-proxy-secret',
-      modelProfiles: [
-        {
-          id: 'profile-a',
-          name: 'Renamed profile',
-          providerOptions: { apiKey: 'stored-profile-secret' },
-        },
-      ],
     })
   })
 
@@ -4001,12 +4884,12 @@ describe('Phase 9-2b bot preset commands', () => {
       baseRevision = cleared.json().revision as number
     }
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.botPresets).toMatchObject([
+    expect(bootstrap.resourceDatabase.botPresets).toMatchObject([
       { id: 'preset-a', name: 'A', image: '-' },
       { id: 'preset-b', name: 'B', image: uploaded.assetId },
     ])
@@ -4092,13 +4975,13 @@ describe('Phase 9-2b bot preset commands', () => {
     expect(missingPatch.statusCode).toBe(400)
     expect(missingPatch.json().error).toBe('patch.image references a missing server asset')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    expect(bootstrap.json().database.botPresets).toMatchObject([{ id: 'preset-a', name: 'A', image: '' }])
+    expect(bootstrap.resourceDatabase.botPresets).toMatchObject([{ id: 'preset-a', name: 'A', image: '' }])
   })
 
   it('selects and applies a preset while saving the previously selected snapshot', async () => {
@@ -4163,12 +5046,12 @@ describe('Phase 9-2b bot preset commands', () => {
       presetId: 'preset-b',
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       botPresetsId: 1,
       mainPrompt: 'target prompt',
       temperature: 90,
@@ -4181,7 +5064,7 @@ describe('Phase 9-2b bot preset commands', () => {
       agentPresets: [{ id: 'agent-target', name: 'Target Agent', enabled: true, version: 1, steps: [] }],
       agentPresetDefaultId: 'agent-target',
     })
-    expect(bootstrap.json().database.botPresets[0]).toMatchObject({ id: 'preset-a', name: 'A', image: '' })
+    expect(bootstrap.resourceDatabase.botPresets[0]).toMatchObject({ id: 'preset-a', name: 'A', image: '' })
     const savedPreset = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/legacy-presets/preset-a',
@@ -4201,6 +5084,141 @@ describe('Phase 9-2b bot preset commands', () => {
       agentPresets: [{ id: 'current-agent', name: 'Current Agent', enabled: true, version: 1, steps: [] }],
       agentPresetDefaultId: 'current-agent',
     })
+  })
+
+  it('saves and applies additionalParams when selecting a legacy preset', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [
+        { id: 'preset-a', name: 'A', additionalParams: [['stale', 'value']] },
+        { id: 'preset-b', name: 'B', additionalParams: [['target', 'value']] },
+      ],
+      botPresetsId: 0,
+      additionalParams: [['current', 'value']],
+    })
+
+    const selected = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets/select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        presetId: 'preset-b',
+        saveCurrent: true,
+        apply: true,
+      },
+    })
+
+    expect(selected.statusCode, selected.body).toBe(200)
+    const persisted = loadPersistedFromDir(harness.dataDir).database as {
+      additionalParams: Array<[string, string]>
+      botPresets: Array<{ id: string; additionalParams?: Array<[string, string]> }>
+    }
+    expect(persisted.additionalParams).toEqual([['target', 'value']])
+    expect(persisted.botPresets[0]?.additionalParams).toEqual([['current', 'value']])
+
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.resourceDatabase.additionalParams).toEqual([['target', 'value']])
+    const savedPreset = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/legacy-presets/preset-a',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(savedPreset.statusCode).toBe(200)
+    expect(savedPreset.json().preset.additionalParams).toEqual([['current', 'value']])
+  })
+
+  it.each([
+    {
+      name: 'absent field',
+      target: {},
+      expected: [['current', 'value']],
+    },
+    {
+      name: 'explicit null',
+      target: { additionalParams: null },
+      expected: null,
+    },
+    {
+      name: 'default empty array reset',
+      target: { additionalParams: [] },
+      expected: [],
+    },
+  ])('keeps the $name distinct when applying legacy preset additionalParams', async ({ target, expected }) => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [
+        { id: 'preset-a', name: 'A', additionalParams: [['stale', 'value']] },
+        { id: 'preset-b', name: 'B', ...target },
+      ],
+      botPresetsId: 0,
+      additionalParams: [['current', 'value']],
+    })
+
+    const selected = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets/select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        presetId: 'preset-b',
+        saveCurrent: false,
+        apply: true,
+      },
+    })
+
+    expect(selected.statusCode, selected.body).toBe(200)
+    const persisted = loadPersistedFromDir(harness.dataDir).database as {
+      additionalParams: unknown
+      botPresets: Array<Record<string, unknown>>
+    }
+    expect(persisted.additionalParams).toEqual(expected)
+    expect(persisted.botPresets[1]).toEqual(expect.objectContaining({ id: 'preset-b', name: 'B', ...target }))
+  })
+
+  it('snapshots normalized default additionalParams before applying a non-default legacy preset', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [
+        { id: 'preset-a', name: 'A' },
+        {
+          id: 'preset-b',
+          name: 'B',
+          additionalParams: [
+            ['body.option', 'true'],
+            ['header::X-Target', 'target'],
+          ],
+        },
+      ],
+      botPresetsId: 0,
+    })
+
+    const selected = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets/select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        presetId: 'preset-b',
+        saveCurrent: true,
+        apply: true,
+      },
+    })
+
+    expect(selected.statusCode, selected.body).toBe(200)
+    const persisted = loadPersistedFromDir(harness.dataDir).database as {
+      additionalParams: Array<[string, string]>
+      botPresets: Array<{ id: string; additionalParams?: Array<[string, string]> }>
+    }
+    expect(persisted.additionalParams).toEqual([
+      ['body.option', 'true'],
+      ['header::X-Target', 'target'],
+    ])
+    expect(persisted.botPresets[0]?.additionalParams).toEqual([])
   })
 
   it('reports the exact resource shape for no-apply preset selection', async () => {
@@ -4360,19 +5378,19 @@ describe('Phase 9-2b bot preset commands', () => {
       selectedPresetId: 'preset-b',
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.botPresets.map((preset: { id: string }) => preset.id)).toEqual([
+    expect(bootstrap.resourceDatabase.botPresets.map((preset: { id: string }) => preset.id)).toEqual([
       'preset-b',
       'preset-a',
     ])
-    expect(bootstrap.json().database.botPresetsId).toBe(0)
+    expect(bootstrap.resourceDatabase.botPresetsId).toBe(0)
   })
 
-  it('omits the preset reorder receipt when the selected pointer requires normalization', async () => {
+  it('rejects preset reorder when the persisted selected pointer requires repair', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       botPresets: [
@@ -4384,6 +5402,7 @@ describe('Phase 9-2b bot preset commands', () => {
     updateSettingsRow((settings) => {
       settings.botPresetsId = 99
     })
+    const damagedRows = readAllDatabaseRows(harness.dataDir)
 
     const reordered = await harness.app.inject({
       method: 'POST',
@@ -4395,18 +5414,9 @@ describe('Phase 9-2b bot preset commands', () => {
       },
     })
 
-    expect(reordered.statusCode, reordered.body).toBe(200)
-    expect(reordered.json()).toMatchObject({
-      selectedPresetId: 'preset-b',
-      event: {
-        type: 'preset.reordered',
-        resource: 'presetCollectionWithPointer',
-      },
-    })
-    expect(reordered.json()).not.toHaveProperty('presetReorderCertificate')
-    expect(reordered.json()).not.toHaveProperty('presetKind')
-    expect(reordered.json()).not.toHaveProperty('presetIds')
-    expect(reordered.json()).not.toHaveProperty('settingsWritten')
+    expect(reordered.statusCode, reordered.body).toBe(400)
+    expect(reordered.json().error).toBe('botPresetsId must select an existing record')
+    expect(readAllDatabaseRows(harness.dataDir)).toEqual(damagedRows)
   })
 
   it('rejects missing and duplicate preset ids on copy and import', async () => {
@@ -4453,13 +5463,13 @@ describe('Phase 9-2b bot preset commands', () => {
       expect(res.json().error).toBe(testCase.error)
     }
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    expect(bootstrap.json().database.botPresets.map((preset: { id: string }) => preset.id)).toEqual([
+    expect(bootstrap.resourceDatabase.botPresets.map((preset: { id: string }) => preset.id)).toEqual([
       'preset-a',
       'preset-b',
     ])
@@ -4488,13 +5498,13 @@ describe('Phase 9-2b bot preset commands', () => {
     expect(res.statusCode).toBe(400)
     expect(res.json().error).toBe('Duplicate preset id: preset-a')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.botPresets.map((preset: { id: string }) => preset.id)).toEqual([
+    expect(bootstrap.resourceDatabase.botPresets.map((preset: { id: string }) => preset.id)).toEqual([
       'preset-a',
       'preset-b',
     ])
@@ -4571,6 +5581,8 @@ describe('Agent Preset command surface', () => {
         patch: {
           name: 'Research Agent Renamed',
           description: 'before-main helper',
+          moduleIntergration: 'research-tools, citations',
+          finalOutputTemplate: '{{slot::mainOutput}}\n{{agent::research}}',
           maxConcurrency: 2,
           enabled: false,
         },
@@ -4579,10 +5591,19 @@ describe('Agent Preset command surface', () => {
     expect(updated.statusCode).toBe(200)
     expect(updated.json()).toMatchObject({
       presetId: createdBody.presetId,
-      acknowledgedKeys: ['name', 'description', 'maxConcurrency', 'enabled'],
+      acknowledgedKeys: [
+        'name',
+        'description',
+        'moduleIntergration',
+        'finalOutputTemplate',
+        'maxConcurrency',
+        'enabled',
+      ],
       canonicalValues: {
         name: 'Research Agent Renamed',
         description: 'before-main helper',
+        moduleIntergration: 'research-tools, citations',
+        finalOutputTemplate: '{{slot::mainOutput}}\n{{agent::research}}',
         maxConcurrency: 2,
         enabled: false,
       },
@@ -4659,21 +5680,23 @@ describe('Agent Preset command surface', () => {
       createdBody.presetId,
     ])
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.agentPresets).toHaveLength(2)
-    expect(bootstrap.json().database.agentPresets[1]).toMatchObject({
+    expect(bootstrap.resourceDatabase.agentPresets).toHaveLength(2)
+    expect(bootstrap.resourceDatabase.agentPresets[1]).toMatchObject({
       id: createdBody.presetId,
       name: 'Research Agent Renamed',
       description: 'before-main helper',
+      moduleIntergration: 'research-tools, citations',
+      finalOutputTemplate: '{{slot::mainOutput}}\n{{agent::research}}',
       maxConcurrency: 2,
       enabled: false,
       steps: [],
     })
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       agentContextEnabled: true,
       agentContextPrompt: 'legacy context prompt',
       agentContextMaxOutput: 999,
@@ -4681,7 +5704,7 @@ describe('Agent Preset command surface', () => {
     })
   })
 
-  it('validates step mutations and duplicates presets with fresh preset and step ids', async () => {
+  it('migrates step mutations to Agents and duplicates presets with fresh use ids while sharing Agents', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       agentPresets: [{ id: 'ap_source', name: 'Source', enabled: true, version: 1, steps: [] }],
@@ -4783,18 +5806,23 @@ describe('Agent Preset command surface', () => {
     const duplicatedPresetId = duplicatedPreset.json().presetId as string
     expect(duplicatedPresetId).not.toBe('ap_source')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    const presets = bootstrap.json().database.agentPresets as Array<{ id: string; steps: Array<{ id: string }> }>
+    const presets = bootstrap.resourceDatabase.agentPresets as Array<{
+      id: string
+      agentUses: Array<{ id: string; agentId: string }>
+    }>
     const source = presets.find((preset) => preset.id === 'ap_source')!
     const copy = presets.find((preset) => preset.id === duplicatedPresetId)!
-    expect(source.steps.map((candidate) => candidate.id)).toContain(stepId)
-    expect(source.steps.map((candidate) => candidate.id)).toContain(duplicatedStepId)
-    expect(copy.steps.map((candidate) => candidate.id)).not.toContain(stepId)
-    expect(copy.steps).toHaveLength(source.steps.length)
+    expect(source.agentUses.map((candidate) => candidate.id)).toContain(stepId)
+    expect(source.agentUses.map((candidate) => candidate.id)).toContain(duplicatedStepId)
+    expect(copy.agentUses.map((candidate) => candidate.id)).not.toContain(stepId)
+    expect(copy.agentUses).toHaveLength(source.agentUses.length)
+    expect(copy.agentUses.map((use) => use.agentId)).toEqual(source.agentUses.map((use) => use.agentId))
+    expect(bootstrap.resourceDatabase.agents).toHaveLength(2)
   })
 
   it('accepts a last before-main user-input modifier and rejects invalid phase or ordering', async () => {
@@ -4835,7 +5863,7 @@ describe('Agent Preset command surface', () => {
       },
     })
     expect(wrongPhase.statusCode).toBe(400)
-    expect(wrongPhase.json().error).toContain('Only before-main Agent Preset steps can modify user input')
+    expect(wrongPhase.json().error).toContain('Only before-main Agent uses can modify user input')
 
     const notLast = await harness.app.inject({
       method: 'POST',
@@ -4855,6 +5883,134 @@ describe('Agent Preset command surface', () => {
     expect(notLast.json().error).toContain('user-input modifier must be the last')
   })
 
+  it('reuses one standalone Agent across presets and blocks deletion while referenced', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      agentPresets: [
+        { id: 'ap_one', name: 'One', enabled: true, version: 1, steps: [] },
+        { id: 'ap_two', name: 'Two', enabled: true, version: 1, steps: [] },
+      ],
+    })
+    const contextBinding = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/agents',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        agent: { name: 'Out of scope', contextBinding: { source: 'chat' } },
+      },
+    })
+    expect(contextBinding.statusCode).toBe(400)
+    expect(contextBinding.json().error).toContain('agent.contextBinding is not supported')
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/agents',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        agent: {
+          name: 'Shared Researcher',
+          instruction:
+            '<|im_start|>user\nResearch with {{agentInput::reference}} using {{agentToggle::tone}}.<|im_end|>',
+          useChatML: true,
+          inputScopes: ['currentUserMessage'],
+          toggles: [{ key: 'tone', label: 'Tone', kind: 'select', options: ['Warm', 'Formal'] }],
+          lorebookInputs: [{ key: 'reference', displayName: 'Reference Notes', required: true }],
+          outputFormat: 'text',
+        },
+      },
+    })
+    expect(created.statusCode).toBe(200)
+    const agentId = created.json().agentId as string
+
+    let currentRevision = created.json().revision as number
+    const useIds = new Map<string, string>()
+    for (const [presetId, outputKey] of [
+      ['ap_one', 'research_one'],
+      ['ap_two', 'research_two'],
+    ]) {
+      const attached = await harness.app.inject({
+        method: 'POST',
+        url: `/api/v1/commands/agent-presets/${presetId}/uses`,
+        headers: { 'risu-auth': assertion },
+        payload: { baseRevision: currentRevision, use: { agentId, outputKey } },
+      })
+      expect(attached.statusCode).toBe(200)
+      currentRevision = attached.json().revision
+      useIds.set(presetId, attached.json().useId)
+    }
+
+    const firstUseId = useIds.get('ap_one')!
+    const secondUseId = useIds.get('ap_two')!
+    const updatedUse = await harness.app.inject({
+      method: 'PATCH',
+      url: `/api/v1/commands/agent-presets/ap_one/uses/${firstUseId}`,
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: currentRevision, patch: { runtimeOverride: { timeoutMs: 45_000 } } },
+    })
+    expect(updatedUse.statusCode).toBe(200)
+    expect(updatedUse.json()).toMatchObject({
+      useId: firstUseId,
+      agentId,
+      acknowledgedKeys: ['runtimeOverride'],
+      canonicalValues: { runtimeOverride: { timeoutMs: 45_000 } },
+      canonicalDeletedKeys: [],
+    })
+    currentRevision = updatedUse.json().revision
+
+    const reorderedUses = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/agent-presets/ap_two/uses/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: currentRevision, useIds: [secondUseId] },
+    })
+    expect(reorderedUses.statusCode).toBe(200)
+    currentRevision = reorderedUses.json().revision
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: `/api/v1/commands/agents/${agentId}`,
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: currentRevision,
+        patch: {
+          instruction: '<|im_start|>user\nUpdated once for both presets. {{agentInput::reference}}<|im_end|>',
+        },
+      },
+    })
+    expect(updated.statusCode).toBe(200)
+
+    const blockedDelete = await harness.app.inject({
+      method: 'DELETE',
+      url: `/api/v1/commands/agents/${agentId}`,
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: updated.json().revision },
+    })
+    expect(blockedDelete.statusCode).toBe(400)
+    expect(blockedDelete.json().error).toContain('still used by 2')
+
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.resourceDatabase.agents).toEqual([
+      expect.objectContaining({
+        id: agentId,
+        instruction: '<|im_start|>user\nUpdated once for both presets. {{agentInput::reference}}<|im_end|>',
+        useChatML: true,
+        toggles: [{ key: 'tone', label: 'Tone', kind: 'select', options: ['Warm', 'Formal'] }],
+        lorebookInputs: [{ key: 'reference', displayName: 'Reference Notes', required: true }],
+      }),
+    ])
+    expect(
+      bootstrap.resourceDatabase.agentPresets.map((preset: { agentUses: Array<{ agentId: string }> }) =>
+        preset.agentUses.map((use) => use.agentId),
+      ),
+    ).toEqual([[agentId], [agentId]])
+  })
+
   it('returns exact canonical field receipts for metadata and step PATCHes', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -4863,6 +6019,7 @@ describe('Agent Preset command surface', () => {
           id: 'ap_fields',
           name: 'Fields',
           description: 'Old description',
+          moduleIntergration: 'old-space',
           enabled: true,
           version: 1,
           maxConcurrency: 4,
@@ -4893,15 +6050,15 @@ describe('Agent Preset command surface', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: revision,
-        patch: { name: '  Trimmed Fields  ', description: '   ', maxConcurrency: null },
+        patch: { name: '  Trimmed Fields  ', description: '   ', moduleIntergration: null, maxConcurrency: null },
       },
     })
     expect(metadata.statusCode).toBe(200)
     expect(metadata.json()).toMatchObject({
       presetId: 'ap_fields',
-      acknowledgedKeys: ['name', 'description', 'maxConcurrency'],
+      acknowledgedKeys: ['name', 'description', 'moduleIntergration', 'maxConcurrency'],
       canonicalValues: { name: 'Trimmed Fields' },
-      canonicalDeletedKeys: ['description', 'maxConcurrency'],
+      canonicalDeletedKeys: ['description', 'moduleIntergration', 'maxConcurrency'],
       updatedAt: expect.any(Number),
     })
 
@@ -4935,7 +6092,7 @@ describe('Agent Preset command surface', () => {
     })
   })
 
-  it('withholds field acknowledgements when collection normalization repairs sibling state', async () => {
+  it('rejects Agent Preset updates when a sibling requires repair', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       agentPresets: [
@@ -4948,6 +6105,7 @@ describe('Agent Preset command surface', () => {
       const presets = settings.agentPresets as Array<Record<string, unknown>>
       presets[1] = { ...presets[1], name: '  Repaired Sibling  ', unexpected: true }
     })
+    const damagedRows = readAllDatabaseRows(harness.dataDir)
 
     const updated = await harness.app.inject({
       method: 'PATCH',
@@ -4956,30 +6114,12 @@ describe('Agent Preset command surface', () => {
       payload: { baseRevision: revision, patch: { enabled: false } },
     })
 
-    expect(updated.statusCode).toBe(200)
-    expect(updated.json()).toMatchObject({
-      presetId: 'ap_target',
-      acknowledgedKeys: [],
-      canonicalValues: {},
-      canonicalDeletedKeys: [],
-    })
-    expect(updated.json()).not.toHaveProperty('updatedAt')
-
-    const agents = await harness.app.inject({
-      method: 'GET',
-      url: '/api/v1/settings/agents',
-      headers: { 'risu-auth': assertion },
-    })
-    expect(agents.json().settings.agentPresets[1]).toEqual({
-      id: 'ap_sibling',
-      name: 'Repaired Sibling',
-      enabled: true,
-      version: 1,
-      steps: [],
-    })
+    expect(updated.statusCode).toBe(400)
+    expect(updated.json().error).toContain('Agent configuration must already be canonical')
+    expect(readAllDatabaseRows(harness.dataDir)).toEqual(damagedRows)
   })
 
-  it('withholds collection acknowledgements when reorder/default repairs non-canonical state', async () => {
+  it('rejects Agent Preset reorder/default when the collection requires repair', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       agentPresets: [
@@ -4992,6 +6132,7 @@ describe('Agent Preset command surface', () => {
       const presets = settings.agentPresets as Array<Record<string, unknown>>
       presets[1] = { ...presets[1], name: '  Repaired Sibling  ', unexpected: true }
     })
+    const damagedRows = readAllDatabaseRows(harness.dataDir)
 
     const reordered = await harness.app.inject({
       method: 'POST',
@@ -5000,24 +6141,20 @@ describe('Agent Preset command surface', () => {
       payload: { baseRevision: revision, presetIds: ['ap_sibling', 'ap_target'] },
     })
 
-    expect(reordered.statusCode).toBe(200)
-    expect(reordered.json()).not.toHaveProperty('certificate')
-    expect(reordered.json()).not.toHaveProperty('agentPresetIds')
+    expect(reordered.statusCode).toBe(400)
+    expect(reordered.json().error).toContain('Agent configuration must already be canonical')
+    expect(readAllDatabaseRows(harness.dataDir)).toEqual(damagedRows)
 
-    updateSettingsRow((settings) => {
-      const presets = settings.agentPresets as Array<Record<string, unknown>>
-      presets[0] = { ...presets[0], name: '  Repaired Again  ', unexpected: true }
-    })
     const defaulted = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/commands/agent-presets/default',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: reordered.json().revision, agentPresetId: 'ap_sibling' },
+      payload: { baseRevision: revision, agentPresetId: 'ap_sibling' },
     })
 
-    expect(defaulted.statusCode).toBe(200)
-    expect(defaulted.json()).not.toHaveProperty('certificate')
-    expect(defaulted.json()).not.toHaveProperty('agentPresetIds')
+    expect(defaulted.statusCode).toBe(400)
+    expect(defaulted.json().error).toContain('Agent configuration must already be canonical')
+    expect(readAllDatabaseRows(harness.dataDir)).toEqual(damagedRows)
   })
 
   it('deletes Agent Presets and clears default, chat, and loadout references atomically', async () => {
@@ -5093,7 +6230,6 @@ describe('Agent Preset command surface', () => {
       ],
       characterOrder: ['char-a'],
     })
-
     const deleted = await harness.app.inject({
       method: 'DELETE',
       url: '/api/v1/commands/agent-presets/ap_delete',
@@ -5121,24 +6257,24 @@ describe('Agent Preset command surface', () => {
     })
     expect(settings.statusCode).toBe(200)
     expect(settings.json().settings.agentPresets).toEqual([
-      { id: 'ap_keep', name: 'Keep Me', enabled: true, version: 1, steps: [] },
+      { id: 'ap_keep', name: 'Keep Me', enabled: true, version: 1, agentUses: [], steps: [] },
     ])
     expect(settings.json().settings.agentPresetDefaultId).toBeUndefined()
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.agentPresets.map((preset: { id: string }) => preset.id)).toEqual(['ap_keep'])
-    expect(bootstrap.json().database.agentPresetDefaultId).toBeUndefined()
-    const chats = bootstrap.json().database.characters[0].chats as Array<{
+    expect(bootstrap.resourceDatabase.agentPresets.map((preset: { id: string }) => preset.id)).toEqual(['ap_keep'])
+    expect(bootstrap.resourceDatabase.agentPresetDefaultId).toBeUndefined()
+    const chats = bootstrap.resourceDatabase.characters[0].chats as Array<{
       id: string
       generationSettings?: { agentPresetId?: string }
     }>
     expect(chats.find((chat) => chat.id === 'chat-delete')?.generationSettings).not.toHaveProperty('agentPresetId')
     expect(chats.find((chat) => chat.id === 'chat-keep')?.generationSettings?.agentPresetId).toBe('ap_keep')
-    const loadouts = bootstrap.json().database.loadouts as Array<{
+    const loadouts = bootstrap.resourceDatabase.loadouts as Array<{
       id: string
       agentPresetId?: string
       agentPresetName?: string
@@ -5149,11 +6285,11 @@ describe('Agent Preset command surface', () => {
       agentPresetId: 'ap_keep',
       agentPresetName: 'Keep Me',
     })
-    expect(bootstrap.json().database.agentContextEnabled).toBe(true)
+    expect(bootstrap.resourceDatabase.agentContextEnabled).toBe(true)
   })
 })
 
-describe('Phase 9-2c prompt template and item commands', () => {
+describe('prompt template and item commands', () => {
   it('patches prompt settings and emits the prompt settings event', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -5191,12 +6327,12 @@ describe('Phase 9-2c prompt template and item commands', () => {
       },
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       mainPrompt: 'MAIN',
       jailbreak: 'JB',
       globalNote: 'GN',
@@ -5322,9 +6458,9 @@ describe('Phase 9-2c prompt template and item commands', () => {
           promptTemplate: [
             {
               id: 'item-a',
-              type: 'plain',
+              type: 'description',
               text: 'before',
-              role: 'system',
+              role2: 'assistant',
               innerFormat: 'legacy format',
               removable: 'drop me',
               largeMetadata: 'x'.repeat(20_000),
@@ -5342,7 +6478,7 @@ describe('Phase 9-2c prompt template and item commands', () => {
       payload: {
         baseRevision: revision,
         promptPresetId: 'prompt-a',
-        patch: { id: 'item-a', text: 'after', innerFormat: null },
+        patch: { id: 'item-a', text: 'after', innerFormat: null, role2: 'char' },
         deleteKeys: ['removable'],
       },
     })
@@ -5369,9 +6505,9 @@ describe('Phase 9-2c prompt template and item commands', () => {
     expect(presetTemplate.json().promptTemplate).toEqual([
       {
         id: 'item-a',
-        type: 'plain',
+        type: 'description',
         text: 'after',
-        role: 'system',
+        role2: 'bot',
         innerFormat: null,
         largeMetadata: 'x'.repeat(20_000),
       },
@@ -5608,7 +6744,45 @@ describe('Phase 9-2c prompt template and item commands', () => {
   })
 })
 
-describe('Phase 9-2d persona commands', () => {
+describe('persona commands', () => {
+  it('rejects unknown, duplicate, and MCP Persona module links', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      personas: [{ id: 'persona-a', name: 'A', icon: '', personaPrompt: '', note: '' }],
+      selectedPersona: 0,
+      modules: [
+        { id: 'module-a', name: 'Module A', description: '' },
+        { id: 'mcp-a', name: 'MCP', description: '', mcp: { url: 'internal:risuai' } },
+      ],
+    })
+
+    for (const [moduleIds, message] of [
+      [['missing'], 'Unknown module id in persona.modules: missing'],
+      [['module-a', 'module-a'], 'Duplicate module id in persona.modules: module-a'],
+      [['mcp-a'], 'Unknown module id in persona.modules: mcp-a'],
+    ] as const) {
+      const response = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/commands/personas',
+        headers: { 'risu-auth': assertion },
+        payload: {
+          baseRevision: revision,
+          persona: {
+            id: `persona-${moduleIds[0]}`,
+            name: 'Linked Persona',
+            icon: '',
+            personaPrompt: '',
+            note: '',
+            modules: moduleIds,
+          },
+        },
+      })
+
+      expect(response.statusCode).toBe(400)
+      expect(response.json().error).toBe(message)
+    }
+  })
+
   it('creates, updates, deletes, and reorders personas by stable id', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const personaIconId = seedAssetMetadata(harness.dataDir)
@@ -5617,6 +6791,7 @@ describe('Phase 9-2d persona commands', () => {
       userIcon: 'assets/current.png',
       personaPrompt: 'Current prompt',
       userNote: 'Current note',
+      modules: [{ id: 'module-a', name: 'Module A', description: '' }],
       personas: [
         {
           id: 'persona-a',
@@ -5642,6 +6817,7 @@ describe('Phase 9-2d persona commands', () => {
           icon: personaIconId,
           personaPrompt: 'b prompt',
           note: 'b note',
+          modules: ['module-a'],
         },
       },
     })
@@ -5666,11 +6842,12 @@ describe('Phase 9-2d persona commands', () => {
           icon: personaIconId,
           personaPrompt: 'b prompt',
           note: 'b note',
+          modules: ['module-a'],
         },
       ]),
-      selectedPersonaId: 'persona-a',
+      selectedPersonaId: 'persona-b',
       collectionWritten: true,
-      settingsWritten: false,
+      settingsWritten: true,
       legacyProfileProjectionApplied: false,
       legacyProfileDigest: null,
     })
@@ -5681,7 +6858,7 @@ describe('Phase 9-2d persona commands', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: created.json().revision,
-        patch: { name: 'B renamed', displayName: 'Localized B', largePortrait: true },
+        patch: { name: 'B renamed', displayName: 'Localized B', largePortrait: true, modules: ['module-a'] },
       },
     })
     expect(updated.statusCode).toBe(200)
@@ -5694,7 +6871,7 @@ describe('Phase 9-2d persona commands', () => {
         id: 'persona-b',
       },
       personaId: 'persona-b',
-      acknowledgedKeys: ['name', 'displayName', 'largePortrait'],
+      acknowledgedKeys: ['name', 'displayName', 'largePortrait', 'modules'],
       legacyProfileProjectionApplied: false,
     })
 
@@ -5726,10 +6903,11 @@ describe('Phase 9-2d persona commands', () => {
           personaPrompt: 'b prompt',
           note: 'b note',
           largePortrait: true,
+          modules: ['module-a'],
         },
         { id: 'persona-a', name: 'A', icon: '', personaPrompt: 'a prompt', note: 'a note' },
       ]),
-      selectedPersonaId: 'persona-a',
+      selectedPersonaId: 'persona-b',
       collectionWritten: true,
       settingsWritten: true,
       legacyProfileProjectionApplied: false,
@@ -5767,6 +6945,7 @@ describe('Phase 9-2d persona commands', () => {
           personaPrompt: 'b prompt',
           note: 'b note',
           largePortrait: true,
+          modules: ['module-a'],
         },
       ]),
       selectedPersonaId: 'persona-b',
@@ -5781,19 +6960,19 @@ describe('Phase 9-2d persona commands', () => {
       }),
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       username: 'B renamed',
       userIcon: personaIconId,
       personaPrompt: 'b prompt',
       userNote: 'b note',
       selectedPersona: 0,
     })
-    expect(bootstrap.json().database.personas).toEqual([
+    expect(bootstrap.resourceDatabase.personas).toEqual([
       {
         id: 'persona-b',
         name: 'B renamed',
@@ -5802,6 +6981,7 @@ describe('Phase 9-2d persona commands', () => {
         personaPrompt: 'b prompt',
         note: 'b note',
         largePortrait: true,
+        modules: ['module-a'],
       },
     ])
   })
@@ -5879,19 +7059,19 @@ describe('Phase 9-2d persona commands', () => {
       }),
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       selectedPersona: 1,
       username: 'B',
       userIcon: personaIconId,
       personaPrompt: 'b prompt',
       userNote: 'b note',
     })
-    expect(bootstrap.json().database.personas[0]).toMatchObject({
+    expect(bootstrap.resourceDatabase.personas[0]).toMatchObject({
       id: 'persona-a',
       name: 'Edited A',
       icon: 'assets/edited-a.png',
@@ -5983,12 +7163,12 @@ describe('Phase 9-2d persona commands', () => {
     expect(updated.json()).not.toHaveProperty('persona')
     expect(updated.json()).not.toHaveProperty('settings')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       personaPrompt: 'New prompt',
       userNote: 'New note',
     })
@@ -6040,16 +7220,94 @@ describe('Phase 9-2d persona commands', () => {
     expect(reorder.statusCode).toBe(400)
     expect(reorder.json().error).toBe('Duplicate persona id: persona-a')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.personas.map((persona: { id: string }) => persona.id)).toEqual([
+    expect(bootstrap.resourceDatabase.personas.map((persona: { id: string }) => persona.id)).toEqual([
       'persona-a',
       'persona-b',
     ])
+  })
+
+  it('fails closed on missing or duplicate stable persona ownership without repairing persisted rows', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      personas: [
+        { id: 'persona-a', name: 'A', icon: '', personaPrompt: 'a prompt', note: '' },
+        { id: 'persona-b', name: 'B', icon: '', personaPrompt: 'b prompt', note: '' },
+      ],
+      selectedPersonaId: 'persona-a',
+      selectedPersona: 0,
+    })
+    const databasePath = path.join(harness.dataDir, 'risu.db')
+
+    const corruptSettings = new DatabaseSync(databasePath)
+    try {
+      const row = corruptSettings.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+        data_json: string
+      }
+      const settings = JSON.parse(row.data_json) as Record<string, unknown>
+      settings.selectedPersonaId = 'missing-persona'
+      settings.selectedPersona = 0
+      corruptSettings.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+    } finally {
+      corruptSettings.close()
+    }
+    expect((loadPersistedFromDir(harness.dataDir).database as Record<string, unknown>).selectedPersona).toBe(-1)
+
+    const missingSelection = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/personas/select',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, personaId: 'persona-b' },
+    })
+    expect(missingSelection.statusCode).toBe(400)
+    expect(missingSelection.json().error).toBe('selectedPersonaId must reference exactly one existing persona')
+
+    const duplicateRows = new DatabaseSync(databasePath)
+    try {
+      const settingsRow = duplicateRows.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+        data_json: string
+      }
+      const settings = JSON.parse(settingsRow.data_json) as Record<string, unknown>
+      settings.selectedPersonaId = 'persona-a'
+      duplicateRows.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+
+      const personaRow = duplicateRows.prepare('SELECT data_json FROM personas WHERE position = 1').get() as {
+        data_json: string
+      }
+      const persona = JSON.parse(personaRow.data_json) as Record<string, unknown>
+      persona.id = 'persona-a'
+      duplicateRows.prepare('UPDATE personas SET data_json = ? WHERE position = 1').run(JSON.stringify(persona))
+    } finally {
+      duplicateRows.close()
+    }
+
+    const duplicateSelection = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/personas/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, personaIds: ['persona-a', 'persona-b'] },
+    })
+    expect(duplicateSelection.statusCode).toBe(400)
+    expect(duplicateSelection.json().error).toBe('Duplicate persona id: persona-a')
+
+    const persisted = new DatabaseSync(databasePath)
+    try {
+      const rows = persisted.prepare('SELECT data_json FROM personas ORDER BY position').all() as Array<{
+        data_json: string
+      }>
+      expect(rows.map((row) => (JSON.parse(row.data_json) as { id: string }).id)).toEqual(['persona-a', 'persona-a'])
+      const settingsRow = persisted.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+        data_json: string
+      }
+      expect(JSON.parse(settingsRow.data_json)).toMatchObject({ selectedPersonaId: 'persona-a', selectedPersona: 0 })
+    } finally {
+      persisted.close()
+    }
   })
 
   it('returns 404 and 409 for missing personas and stale revisions', async () => {
@@ -6084,7 +7342,7 @@ describe('Phase 9-2d persona commands', () => {
   })
 })
 
-describe('Phase 9-2e translator preset commands', () => {
+describe('translator preset commands', () => {
   it('creates, updates, deletes, and selects translator presets by stable id', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -6099,6 +7357,24 @@ describe('Phase 9-2e translator preset commands', () => {
       translatorPresetId: 0,
       translatorPrompt: 'translate to A',
       translatorMaxResponse: 100,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'Bound chat',
+              note: '',
+              message: [],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
     })
 
     const created = await harness.app.inject({
@@ -6127,6 +7403,17 @@ describe('Phase 9-2e translator preset commands', () => {
       },
       presetId: 'translator-b',
     })
+    const bindingDb = openDatabase(harness.dataDir)
+    try {
+      const row = bindingDb.prepare('SELECT data_json FROM chats WHERE id = ?').get('chat-a') as {
+        data_json: string
+      }
+      const chat = JSON.parse(row.data_json)
+      chat.translatorPresetId = 'translator-b'
+      bindingDb.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(JSON.stringify(chat), 'chat-a')
+    } finally {
+      bindingDb.close()
+    }
 
     const updated = await harness.app.inject({
       method: 'PATCH',
@@ -6191,24 +7478,25 @@ describe('Phase 9-2e translator preset commands', () => {
       event: {
         type: 'translatorPreset.deleted',
         revision: 5,
-        resource: 'translatorPreset',
+        resource: 'state',
         id: 'translator-b',
       },
       presetId: 'translator-b',
       selectedPresetId: 'translator-a',
+      cascadedChatIds: ['chat-a'],
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database).toMatchObject({
-      translatorPresetId: 0,
+    expect(bootstrap.resourceDatabase).toMatchObject({
+      translatorPresetId: 'translator-a',
       translatorPrompt: 'translate to A',
       translatorMaxResponse: 100,
     })
-    expect(bootstrap.json().database.translatorPresets).toMatchObject([
+    expect(bootstrap.resourceDatabase.translatorPresets).toMatchObject([
       {
         id: 'translator-a',
         name: 'A',
@@ -6216,7 +7504,7 @@ describe('Phase 9-2e translator preset commands', () => {
         maxResponse: 100,
       },
     ])
-    expect(bootstrap.json().database.translatorPresets[0].steps).toMatchObject([
+    expect(bootstrap.resourceDatabase.translatorPresets[0].steps).toMatchObject([
       {
         enabled: true,
         prompt: 'translate to A',
@@ -6224,15 +7512,16 @@ describe('Phase 9-2e translator preset commands', () => {
         model: { mode: 'inheritTranslate' },
       },
     ])
+    expect(bootstrap.resourceDatabase.characters[0].chats[0]).not.toHaveProperty('translatorPresetId')
   })
 
-  it('syncs legacy translator fields when updating the selected preset', async () => {
+  it('leaves legacy translator fields unchanged when updating the selected preset', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       translatorPresets: [{ id: 'translator-a', name: 'A', prompt: 'old prompt', maxResponse: 100 }],
       translatorPresetId: 0,
-      translatorPrompt: 'old prompt',
-      translatorMaxResponse: 100,
+      translatorPrompt: 'stale scalar prompt',
+      translatorMaxResponse: 7,
     })
 
     const updated = await harness.app.inject({
@@ -6261,14 +7550,15 @@ describe('Phase 9-2e translator preset commands', () => {
       selectedPresetId: 'translator-a',
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database).toMatchObject({
-      translatorPrompt: 'new prompt',
-      translatorMaxResponse: 321,
+    expect(bootstrap.resourceDatabase).toMatchObject({
+      translatorPrompt: 'stale scalar prompt',
+      translatorMaxResponse: 7,
+      translatorPresets: [expect.objectContaining({ id: 'translator-a', prompt: 'new prompt', maxResponse: 321 })],
     })
   })
 
@@ -6309,7 +7599,7 @@ describe('Phase 9-2e translator preset commands', () => {
     })
   })
 
-  it('withholds the PATCH acknowledgement when legacy baseline normalization changes sibling state', async () => {
+  it('keeps PATCH acknowledgement scoped when sibling state is already canonical', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       translatorPresets: [
@@ -6355,17 +7645,17 @@ describe('Phase 9-2e translator preset commands', () => {
         id: 'translator-a',
       },
       presetId: 'translator-a',
-      acknowledgedKeys: [],
+      acknowledgedKeys: ['prompt'],
       selectedPresetId: 'translator-a',
     })
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.translatorPresets[1]).toMatchObject({
+    expect(bootstrap.resourceDatabase.translatorPresets[1]).toMatchObject({
       id: 'translator-b',
-      name: 'Preset 2',
+      name: '',
       prompt: 'b prompt',
       maxResponse: 200,
     })
@@ -6410,13 +7700,13 @@ describe('Phase 9-2e translator preset commands', () => {
     expect(create.statusCode).toBe(400)
     expect(create.json().error).toBe('Duplicate translator preset id: translator-a')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.translatorPresets.map((preset: { id: string }) => preset.id)).toEqual([
+    expect(bootstrap.resourceDatabase.translatorPresets.map((preset: { id: string }) => preset.id)).toEqual([
       'translator-a',
       'translator-b',
     ])
@@ -6455,7 +7745,7 @@ describe('Phase 9-2e translator preset commands', () => {
   })
 })
 
-describe('Phase 9-2f loadout commands', () => {
+describe('loadout commands', () => {
   it('creates, updates, favorites, touches, and deletes loadouts by stable id', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -6589,15 +7879,15 @@ describe('Phase 9-2f loadout commands', () => {
       loadoutId: 'loadout-a',
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database).toMatchObject({
+    expect(bootstrap.resourceDatabase).toMatchObject({
       lastLoadedLoadoutName: 'B renamed',
     })
-    expect(bootstrap.json().database.loadouts).toEqual([
+    expect(bootstrap.resourceDatabase.loadouts).toEqual([
       {
         id: 'loadout-b',
         name: 'B renamed',
@@ -6616,6 +7906,135 @@ describe('Phase 9-2f loadout commands', () => {
         personaId: 'persona-b',
       },
     ])
+  })
+
+  it('touches duplicate-named loadouts by stable id without inferring the last-touch name on rename or delete', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      loadouts: [
+        {
+          id: 'loadout-a',
+          name: 'Shared name',
+          lastUsed: 100,
+          favorite: false,
+          characterIds: [],
+          modules: [],
+          globalVariables: {},
+          presetName: '',
+          personaId: '',
+        },
+        {
+          id: 'loadout-b',
+          name: 'Shared name',
+          lastUsed: 200,
+          favorite: false,
+          characterIds: [],
+          modules: [],
+          globalVariables: {},
+          presetName: '',
+          personaId: '',
+        },
+      ],
+      lastLoadedLoadoutName: 'Before touch',
+    })
+
+    const touched = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/loadouts/loadout-b/touch',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, lastUsed: 300 },
+    })
+    expect(touched.statusCode).toBe(200)
+
+    const afterTouch = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(afterTouch.resourceDatabase.loadouts).toEqual([
+      expect.objectContaining({ id: 'loadout-a', name: 'Shared name', lastUsed: 100 }),
+      expect.objectContaining({ id: 'loadout-b', name: 'Shared name', lastUsed: 300 }),
+    ])
+    expect(afterTouch.resourceDatabase.lastLoadedLoadoutName).toBe('Shared name')
+
+    const renamed = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/loadouts/loadout-b',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: touched.json().revision, patch: { name: 'Renamed B' } },
+    })
+    expect(renamed.statusCode).toBe(200)
+
+    const afterRename = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(afterRename.resourceDatabase.loadouts[1]).toMatchObject({ id: 'loadout-b', name: 'Renamed B' })
+    expect(afterRename.resourceDatabase.lastLoadedLoadoutName).toBe('Shared name')
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/loadouts/loadout-b',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: renamed.json().revision },
+    })
+    expect(deleted.statusCode).toBe(200)
+
+    const afterDelete = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(afterDelete.resourceDatabase.loadouts).toEqual([
+      expect.objectContaining({ id: 'loadout-a', name: 'Shared name', lastUsed: 100 }),
+    ])
+    expect(afterDelete.resourceDatabase.lastLoadedLoadoutName).toBe('Shared name')
+  })
+
+  it('fails closed on duplicate persisted loadout ids without repairing sibling rows', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      loadouts: [
+        { id: 'loadout-a', name: 'A' },
+        { id: 'loadout-b', name: 'B' },
+      ],
+      lastLoadedLoadoutName: 'Before',
+    })
+    const databasePath = path.join(harness.dataDir, 'risu.db')
+    const corrupt = new DatabaseSync(databasePath)
+    try {
+      const sibling = corrupt.prepare('SELECT data_json FROM loadouts WHERE position = 1').get() as {
+        data_json: string
+      }
+      const row = JSON.parse(sibling.data_json) as Record<string, unknown>
+      row.id = 'loadout-a'
+      corrupt.prepare('UPDATE loadouts SET data_json = ? WHERE position = 1').run(JSON.stringify(row))
+    } finally {
+      corrupt.close()
+    }
+
+    const favorited = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/loadouts/loadout-a/favorite',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, favorite: true },
+    })
+    expect(favorited.statusCode).toBe(400)
+    expect(favorited.json().error).toBe('Duplicate loadout id: loadout-a')
+
+    const persisted = new DatabaseSync(databasePath, { readOnly: true })
+    try {
+      const rows = persisted.prepare('SELECT data_json FROM loadouts ORDER BY position').all() as Array<{
+        data_json: string
+      }>
+      expect(rows.map((row) => JSON.parse(row.data_json))).toEqual([
+        expect.objectContaining({ id: 'loadout-a', favorite: false }),
+        expect.objectContaining({ id: 'loadout-a', favorite: false }),
+      ])
+    } finally {
+      persisted.close()
+    }
   })
 
   it('does not duplicate an existing character membership when a loadout is touched', async () => {
@@ -6649,12 +8068,12 @@ describe('Phase 9-2f loadout commands', () => {
     })
     expect(touched.statusCode).toBe(200)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.loadouts[0]).toMatchObject({
+    expect(bootstrap.resourceDatabase.loadouts[0]).toMatchObject({
       lastUsed: 200,
       characterIds: ['char-a'],
     })
@@ -6712,13 +8131,13 @@ describe('Phase 9-2f loadout commands', () => {
     expect(create.statusCode).toBe(400)
     expect(create.json().error).toBe('Duplicate loadout id: loadout-a')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.loadouts).toEqual([
+    expect(bootstrap.resourceDatabase.loadouts).toEqual([
       {
         id: 'loadout-a',
         name: 'A',
@@ -6781,7 +8200,7 @@ describe('Phase 9-2f loadout commands', () => {
   })
 })
 
-describe('Phase 9-3a character commands', () => {
+describe('character commands', () => {
   it('adds writer origin only to live command events', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -6886,6 +8305,30 @@ describe('Phase 9-3a character commands', () => {
       ],
       characterOrder: ['char-a'],
     })
+    {
+      const db = openDatabase(harness.dataDir)
+      try {
+        for (const [greetingIndex, source] of [
+          [-1, 'primary'],
+          [0, 'zero'],
+          [1, 'one'],
+          [2, 'two'],
+        ] as const) {
+          upsertGreetingTranslation(db, 'char-a', greetingIndex, {
+            text: `${source} translated`,
+            source: 'raw',
+            sourceHash: sourceHash(source),
+            targetLanguage: 'ko',
+            inputLanguage: 'en',
+            translatorType: 'google',
+            settingsHash: 'settings-a',
+            updatedAt: 123,
+          })
+        }
+      } finally {
+        db.close()
+      }
+    }
 
     const deleted = await harness.app.inject({
       method: 'PATCH',
@@ -6922,6 +8365,17 @@ describe('Phase 9-3a character commands', () => {
         (chatId) => readJsonRow('chats', chatId).fmIndex,
       ),
     ).toEqual([-1, 0, -1, 1, -1, -1])
+    {
+      const db = openDatabase(harness.dataDir)
+      try {
+        expect(getGreetingTranslation(db, 'char-a', -1, 'settings-a')?.translation.text).toBe('primary translated')
+        expect(getGreetingTranslation(db, 'char-a', 0, 'settings-a')?.translation.text).toBe('zero translated')
+        expect(getGreetingTranslation(db, 'char-a', 1, 'settings-a')?.translation.text).toBe('two translated')
+        expect(getGreetingTranslation(db, 'char-a', 2, 'settings-a')).toBeNull()
+      } finally {
+        db.close()
+      }
+    }
 
     const swapped = await harness.app.inject({
       method: 'PATCH',
@@ -6938,6 +8392,112 @@ describe('Phase 9-3a character commands', () => {
     expect(readJsonRow('characters', 'char-a').alternateGreetings).toEqual(['two', 'zero'])
     expect(readJsonRow('chats', 'chat-before').fmIndex).toBe(1)
     expect(readJsonRow('chats', 'chat-after').fmIndex).toBe(0)
+    {
+      const db = openDatabase(harness.dataDir)
+      try {
+        expect(getGreetingTranslation(db, 'char-a', 0, 'settings-a')?.translation.text).toBe('two translated')
+        expect(getGreetingTranslation(db, 'char-a', 1, 'settings-a')?.translation.text).toBe('zero translated')
+        expect(getGreetingTranslation(db, 'char-a', -1, 'settings-a')?.translation.text).toBe('primary translated')
+      } finally {
+        db.close()
+      }
+    }
+  })
+
+  it('invalidates only greeting rows whose ordinary character patch changes their source', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          firstMessage: 'primary',
+          alternateGreetings: ['zero', 'one'],
+          chats: [],
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+    const db = openDatabase(harness.dataDir)
+    try {
+      for (const [greetingIndex, source] of [
+        [-1, 'primary'],
+        [0, 'zero'],
+        [1, 'one'],
+      ] as const) {
+        upsertGreetingTranslation(db, 'char-a', greetingIndex, {
+          text: `${source} translated`,
+          source: 'raw',
+          sourceHash: sourceHash(source),
+          targetLanguage: 'ko',
+          inputLanguage: 'en',
+          translatorType: 'google',
+          settingsHash: 'settings-a',
+          updatedAt: 123,
+        })
+      }
+    } finally {
+      db.close()
+    }
+
+    const patched = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { firstMessage: 'primary edited', alternateGreetings: ['zero', 'one edited'] },
+      },
+    })
+    expect(patched.statusCode).toBe(200)
+    const after = openDatabase(harness.dataDir)
+    try {
+      expect(getGreetingTranslation(after, 'char-a', -1, 'settings-a')).toBeNull()
+      expect(getGreetingTranslation(after, 'char-a', 0, 'settings-a')?.translation.text).toBe('zero translated')
+      expect(getGreetingTranslation(after, 'char-a', 1, 'settings-a')).toBeNull()
+    } finally {
+      after.close()
+    }
+  })
+
+  it('persists and validates character script model overrides as profile ids', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [{ chaId: 'char-a', name: 'A', chats: [], chatFolders: [] }],
+      characterOrder: ['char-a'],
+    })
+
+    const patched = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          scriptModelOverrides: {
+            llmProfileId: 'character-main-profile',
+            axLlmProfileId: 'character-aux-profile',
+          },
+        },
+      },
+    })
+    expect(patched.statusCode).toBe(200)
+    expect(readJsonRow('characters', 'char-a').scriptModelOverrides).toEqual({
+      llmProfileId: 'character-main-profile',
+      axLlmProfileId: 'character-aux-profile',
+    })
+
+    const invalid = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision + 1,
+        patch: { scriptModelOverrides: { llmProfileId: '' } },
+      },
+    })
+    expect(invalid.statusCode).toBe(400)
+    expect(invalid.json().error).toBe('patch.scriptModelOverrides.llmProfileId must be a non-empty string')
   })
 
   it('creates, updates, selects, reorders, and deletes characters by chaId', async () => {
@@ -7127,6 +8687,7 @@ describe('Phase 9-3a character commands', () => {
             name: 'Folder A',
             color: 'blue',
             data: ['char-b'],
+            askBeforeOpening: true,
           },
           'char-a',
         ],
@@ -7164,25 +8725,26 @@ describe('Phase 9-3a character commands', () => {
       selectedCharacterId: 'char-b',
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.currentChar).toBe(0)
-    expect(bootstrap.json().database.characters).toMatchObject([
+    expect(bootstrap.resourceDatabase.currentChar).toBe(0)
+    expect(bootstrap.resourceDatabase.characters).toMatchObject([
       {
         chaId: 'char-b',
         name: 'B renamed',
         desc: 'new desc',
       },
     ])
-    expect(bootstrap.json().database.characterOrder).toEqual([
+    expect(bootstrap.resourceDatabase.characterOrder).toEqual([
       {
         id: 'folder-a',
         name: 'Folder A',
         color: 'blue',
         data: ['char-b'],
+        askBeforeOpening: true,
       },
     ])
   })
@@ -7393,6 +8955,27 @@ describe('Phase 9-3a character commands', () => {
     expect(reorder.statusCode).toBe(400)
     expect(reorder.json().error).toBe('Duplicate character id in characterOrder: char-a')
 
+    const invalidFolderOpeningPreference = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        characterOrder: [
+          {
+            id: 'folder-a',
+            name: 'Folder A',
+            color: 'blue',
+            data: ['char-a'],
+            askBeforeOpening: 'yes',
+          },
+          'char-b',
+        ],
+      },
+    })
+    expect(invalidFolderOpeningPreference.statusCode).toBe(400)
+    expect(invalidFolderOpeningPreference.json().error).toBe('characterOrder[0].askBeforeOpening must be a boolean')
+
     const embeddedChatCreate = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/commands/characters',
@@ -7459,13 +9042,13 @@ describe('Phase 9-3a character commands', () => {
       'initialChat.message must be empty; create transcript messages with message commands',
     )
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.characterOrder).toEqual(['char-a', 'char-b'])
+    expect(bootstrap.resourceDatabase.characterOrder).toEqual(['char-a', 'char-b'])
   })
 
   it('returns 404 and 409 for missing characters and stale revisions', async () => {
@@ -7501,7 +9084,7 @@ describe('Phase 9-3a character commands', () => {
   })
 })
 
-describe('Phase 9-3b chat record and folder commands', () => {
+describe('chat record and folder commands', () => {
   it('creates, updates, forks, reorders, and deletes chats and chat folders by id', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -7560,12 +9143,12 @@ describe('Phase 9-3b chat record and folder commands', () => {
     await expect(persistedChatMessages(harness.app, assertion, 'chat-c')).resolves.toEqual([
       { role: 'user', data: 'created hello', chatId: 'msg-created' },
     ])
-    const createdBootstrap = await harness.app.inject({
+    const createdBootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    const createdCharacter = createdBootstrap.json().database.characters[0]
+    const createdCharacter = createdBootstrap.resourceDatabase.characters[0]
     expect(createdCharacter.chatPage).toBe(0)
     expect(createdCharacter.chats.map((chat: { id: string }) => chat.id)).toEqual(['chat-c', 'chat-a', 'chat-b'])
 
@@ -7580,6 +9163,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
           note: 'Author note',
           bookmarks: ['msg-a'],
           bookmarkNames: { 'msg-a': 'Pinned' },
+          pinned: true,
         },
         select: true,
       },
@@ -7740,12 +9324,12 @@ describe('Phase 9-3b chat record and folder commands', () => {
       selectedChatId: 'chat-c',
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    const character = bootstrap.json().database.characters[0]
+    const character = bootstrap.resourceDatabase.characters[0]
     expect(character.chatPage).toBe(2)
     expect(character.chats.map((chat: { id: string }) => chat.id)).toEqual(['chat-a', 'chat-fork', 'chat-c'])
     expect(character.chats.map((chat: { folderId?: string | null }) => chat.folderId ?? null)).toEqual([
@@ -7760,7 +9344,109 @@ describe('Phase 9-3b chat record and folder commands', () => {
       note: 'Author note',
       bookmarks: ['msg-a'],
       bookmarkNames: { 'msg-a': 'Pinned' },
+      pinned: true,
     })
+  })
+
+  it('atomically replaces every character chat with one empty Chat 1', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      currentChar: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [{ role: 'user', data: 'old a', chatId: 'message-a' }],
+              localLore: [],
+              hypaV3Data: { version: 3, summaries: [{ text: 'old memory', start: 0, end: 1 }] },
+            },
+            {
+              id: 'chat-b',
+              name: 'B chat',
+              note: '',
+              message: [{ role: 'char', data: 'old b', chatId: 'message-b' }],
+              localLore: [],
+              folderId: 'folder-a',
+            },
+          ],
+          chatFolders: [{ id: 'folder-a', name: 'Folder A', folded: false }],
+          chatPage: 1,
+        },
+        {
+          chaId: 'char-b',
+          name: 'B',
+          chats: [{ id: 'chat-other', name: 'Other', note: '', message: [], localLore: [] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+    })
+
+    const reset = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/chats',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        chat: {
+          id: 'chat-new',
+          name: 'Chat 1',
+          note: '',
+          message: [],
+          localLore: [],
+          fmIndex: -1,
+        },
+      },
+    })
+
+    expect(reset.statusCode).toBe(200)
+    expect(reset.json()).toMatchObject({
+      revision: revision + 1,
+      event: {
+        type: 'chats.reset',
+        resource: 'characterRow',
+        id: 'chat-new',
+        parentId: 'char-a',
+      },
+      chatId: 'chat-new',
+      selectedChatId: 'chat-new',
+    })
+
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const [characterA, characterB] = bootstrap.resourceDatabase.characters
+    expect(characterA).toMatchObject({
+      chaId: 'char-a',
+      chatPage: 0,
+      chats: [{ id: 'chat-new', name: 'Chat 1', note: '', localLore: [], fmIndex: -1 }],
+      chatFolders: [{ id: 'folder-a', name: 'Folder A', folded: false }],
+    })
+    expect(characterA.chats[0].message).toEqual([])
+    expect(characterB.chats.map((chat: { id: string }) => chat.id)).toEqual(['chat-other'])
+
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      expect(db.prepare("SELECT id FROM chats WHERE character_id = 'char-a' ORDER BY position").all()).toEqual([
+        { id: 'chat-new' },
+      ])
+      expect(db.prepare("SELECT uid FROM messages WHERE chat_id IN ('chat-a', 'chat-b') ORDER BY uid").all()).toEqual(
+        [],
+      )
+      expect(
+        db.prepare("SELECT chat_id FROM chat_hypa_v3 WHERE chat_id IN ('chat-a', 'chat-b') ORDER BY chat_id").all(),
+      ).toEqual([])
+    } finally {
+      db.close()
+    }
   })
 
   it('preserves omitted folder assignments in sparse chat reorder patches', async () => {
@@ -7812,18 +9498,16 @@ describe('Phase 9-3b chat record and folder commands', () => {
     })
     expect(pureReorder.statusCode).toBe(200)
 
-    const afterPureReorder = await harness.app.inject({
+    const afterPureReorder = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(
-      afterPureReorder
-        .json()
-        .database.characters[0].chats.map((chat: { id: string; folderId?: string | null }) => [
-          chat.id,
-          chat.folderId ?? null,
-        ]),
+      afterPureReorder.resourceDatabase.characters[0].chats.map((chat: { id: string; folderId?: string | null }) => [
+        chat.id,
+        chat.folderId ?? null,
+      ]),
     ).toEqual([
       ['chat-c', null],
       ['chat-b', 'folder-b'],
@@ -7843,18 +9527,16 @@ describe('Phase 9-3b chat record and folder commands', () => {
     })
     expect(sparseReorder.statusCode).toBe(200)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(
-      bootstrap
-        .json()
-        .database.characters[0].chats.map((chat: { id: string; folderId?: string | null }) => [
-          chat.id,
-          chat.folderId ?? null,
-        ]),
+      bootstrap.resourceDatabase.characters[0].chats.map((chat: { id: string; folderId?: string | null }) => [
+        chat.id,
+        chat.folderId ?? null,
+      ]),
     ).toEqual([
       ['chat-a', 'folder-a'],
       ['chat-c', null],
@@ -7914,12 +9596,12 @@ describe('Phase 9-3b chat record and folder commands', () => {
       },
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    const character = bootstrap.json().database.characters[0]
+    const character = bootstrap.resourceDatabase.characters[0]
     expect(character.chatPage).toBe(2)
     expect(character.chats.map((chat: { id: string }) => chat.id)).toEqual(['chat-c', 'chat-a', 'chat-b'])
     await expect(persistedChatMessages(harness.app, assertion, 'chat-c')).resolves.toEqual([
@@ -8106,12 +9788,12 @@ describe('Phase 9-3b chat record and folder commands', () => {
     expect(explicit.statusCode).toBe(200)
     expect(explicit.json().generationSettings).toEqual(explicitSettings)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    const chats = bootstrap.json().database.characters[0].chats as Array<{
+    const chats = bootstrap.resourceDatabase.characters[0].chats as Array<{
       id: string
       generationSettings?: Record<string, unknown>
     }>
@@ -8157,6 +9839,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
           note: 'metadata only',
           autoTranslate: true,
           autoTranslateBotOnly: true,
+          translatorPresetId: 'translator-preset-a',
           bilingualDisplay: true,
           bilingualEmphasis: 'translation',
           bookmarks: ['msg-a'],
@@ -8192,6 +9875,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       note: 'metadata only',
       autoTranslate: true,
       autoTranslateBotOnly: true,
+      translatorPresetId: 'translator-preset-a',
       bilingualDisplay: true,
       bilingualEmphasis: 'translation',
       bookmarks: ['msg-a'],
@@ -8249,12 +9933,63 @@ describe('Phase 9-3b chat record and folder commands', () => {
       )
     }
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
+  })
+
+  it('validates, persists, and clears stable translator preset chat bindings', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    let revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [{ id: 'chat-a', name: 'A chat', note: '', message: [], localLore: [] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const selected = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/chat-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { translatorPresetId: 'translator-preset-a' } },
+    })
+    expect(selected.statusCode).toBe(200)
+    revision = selected.json().revision
+    expect((loadPersistedFromDir(harness.dataDir) as any).database.characters[0].chats[0].translatorPresetId).toBe(
+      'translator-preset-a',
+    )
+
+    const cleared = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/chat-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { translatorPresetId: null } },
+    })
+    expect(cleared.statusCode).toBe(200)
+    revision = cleared.json().revision
+    expect((loadPersistedFromDir(harness.dataDir) as any).database.characters[0].chats[0]).not.toHaveProperty(
+      'translatorPresetId',
+    )
+
+    for (const value of ['', 1, false]) {
+      const rejected = await harness.app.inject({
+        method: 'PATCH',
+        url: '/api/v1/commands/chats/chat-a',
+        headers: { 'risu-auth': assertion },
+        payload: { baseRevision: revision, patch: { translatorPresetId: value } },
+      })
+      expect(rejected.statusCode).toBe(400)
+      expect(rejected.json().error).toBe('patch.translatorPresetId must be a non-empty string, null, or undefined')
+    }
   })
 
   it('persists chat generation settings with explicit off values and prunes stale toggles', async () => {
@@ -8327,6 +10062,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
           configured: true,
           personaId: 'persona-a',
           modelPresetId: 'model-a',
+          modelPresetSelectionSource: 'manual',
           promptPresetId: 'prompt-a',
           agentPresetId: 'agent-preset-a',
           togglePresetId: 'deleted-toggle-preset',
@@ -8356,15 +10092,16 @@ describe('Phase 9-3b chat record and folder commands', () => {
       },
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.characters[0].chats[0].generationSettings).toEqual({
+    expect(bootstrap.resourceDatabase.characters[0].chats[0].generationSettings).toEqual({
       configured: true,
       personaId: 'persona-a',
       modelPresetId: 'model-a',
+      modelPresetSelectionSource: 'manual',
       promptPresetId: 'prompt-a',
       agentPresetId: 'agent-preset-a',
       togglePresetId: 'deleted-toggle-preset',
@@ -8471,12 +10208,12 @@ describe('Phase 9-3b chat record and folder commands', () => {
       prunedSidebarToggleKeys: ['stale'],
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.characters[0].chats[0].generationSettings).toEqual({
+    expect(bootstrap.resourceDatabase.characters[0].chats[0].generationSettings).toEqual({
       configured: false,
       personaId: 'persona-a',
       modelPresetId: 'model-a',
@@ -8508,6 +10245,101 @@ describe('Phase 9-3b chat record and folder commands', () => {
       },
     })
     expect(staleBase.json()).not.toHaveProperty('certificate')
+  })
+
+  it('rejects removing a still-required Persona-module toggle value without advancing revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'prompt-a',
+      jailbreakToggle: false,
+      sidebarToggles: { personaFlag: '1' },
+    }
+    const revision = await importDatabase(harness.app, assertion, {
+      modelPresets: [{ id: 'model-a', name: 'Model A' }],
+      promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }],
+      personas: [
+        {
+          id: 'persona-a',
+          name: 'Persona A',
+          icon: '',
+          personaPrompt: '',
+          note: '',
+          modules: ['module-persona'],
+        },
+      ],
+      modules: [
+        {
+          id: 'module-persona',
+          name: 'Persona module',
+          description: '',
+          customModuleToggle: 'personaFlag=Persona flag',
+        },
+      ],
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [],
+              localLore: [],
+              generationSettings,
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+    const baseline = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const persistedGenerationSettings = baseline.resourceDatabase.characters[0].chats[0].generationSettings
+    expect(persistedGenerationSettings.sidebarToggles).toEqual({ personaFlag: '1' })
+
+    const sparseDelete = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        baseGenerationSettingsDigest: chatGenerationSettingsDigest(persistedGenerationSettings),
+        patch: {},
+        sidebarToggleDeleteKeys: ['personaFlag'],
+      },
+    })
+    expect(sparseDelete.statusCode).toBe(400)
+
+    const fullDelete = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        generationSettings: {
+          ...persistedGenerationSettings,
+          sidebarToggles: {},
+        },
+      },
+    })
+    expect(fullDelete.statusCode).toBe(400)
+
+    const unchanged = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(unchanged.json().revision).toBe(revision)
+    expect(unchanged.resourceDatabase.characters[0].chats[0].generationSettings).toEqual(persistedGenerationSettings)
   })
 
   it('rejects ambiguous sparse generation-settings updates without advancing the revision', async () => {
@@ -8566,13 +10398,13 @@ describe('Phase 9-3b chat record and folder commands', () => {
       expect(response.statusCode, JSON.stringify(response.json())).toBe(400)
     }
 
-    const unchanged = await harness.app.inject({
+    const unchanged = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(unchanged.json().revision).toBe(revision)
-    expect(unchanged.json().database.characters[0].chats[0].generationSettings).toEqual(initialSettings)
+    expect(unchanged.resourceDatabase.characters[0].chats[0].generationSettings).toEqual(initialSettings)
 
     const valid = await harness.app.inject({
       method: 'PUT',
@@ -8626,6 +10458,10 @@ describe('Phase 9-3b chat record and folder commands', () => {
         error: 'Unknown model preset id in generationSettings.modelPresetId: missing-model-preset',
       },
       {
+        generationSettings: { ...validBase, modelPresetSelectionSource: 'automatic' },
+        error: 'generationSettings.modelPresetSelectionSource must be manual or prompt-recommendation',
+      },
+      {
         generationSettings: { ...validBase, promptPresetId: 'missing-prompt-preset' },
         error: 'Unknown prompt preset id in generationSettings.promptPresetId: missing-prompt-preset',
       },
@@ -8671,13 +10507,13 @@ describe('Phase 9-3b chat record and folder commands', () => {
       expect(res.json().error).toBe(testCase.error)
     }
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    expect(bootstrap.json().database.characters[0].chats[0].generationSettings).toBeUndefined()
+    expect(bootstrap.resourceDatabase.characters[0].chats[0].generationSettings).toBeUndefined()
   })
 
   it('rejects generic chat patches that include generation settings', async () => {
@@ -8718,16 +10554,16 @@ describe('Phase 9-3b chat record and folder commands', () => {
     expect(patch.statusCode).toBe(400)
     expect(patch.json().error).toBe('patch.generationSettings is owned by a later command slice')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    expect(bootstrap.json().database.characters[0].chats[0].generationSettings).toBeUndefined()
+    expect(bootstrap.resourceDatabase.characters[0].chats[0].generationSettings).toBeUndefined()
   })
 
-  it('normalizes malformed stored chat generation settings on bootstrap', async () => {
+  it('returns malformed stored chat generation settings without repairing persisted rows', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDatabase(harness.app, assertion, {
       modelPresets: [{ id: 'model-a', name: 'Model A' }],
@@ -8774,32 +10610,45 @@ describe('Phase 9-3b chat record and folder commands', () => {
         unsupported: 'drop-me',
       },
     })
+    const damagedRows = readAllDatabaseRows(harness.dataDir)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
 
     expect(bootstrap.statusCode).toBe(200)
-    const chats = bootstrap.json().database.characters[0].chats as Array<{
+    const chats = bootstrap.resourceDatabase.characters[0].chats as Array<{
       generationSettings?: Record<string, unknown>
     }>
     expect(chats[0].generationSettings).toEqual({
       configured: true,
+      personaId: 123,
       modelPresetId: 'model-a',
       promptPresetId: 'prompt-a',
       togglePresetId: 'missing-is-valid',
-      sidebarToggles: { valid: 'on' },
+      jailbreakToggle: 'bad',
+      sidebarToggles: { valid: 'on', invalid: 1, '': 'blank-key' },
+      unsupported: 'drop-me',
     })
     expect(Object.keys(chats[0].generationSettings ?? {}).sort()).toEqual([
       'configured',
+      'jailbreakToggle',
       'modelPresetId',
+      'personaId',
       'promptPresetId',
       'sidebarToggles',
       'togglePresetId',
+      'unsupported',
     ])
-    expect(chats[1].generationSettings).toBeUndefined()
+    expect(chats[1].generationSettings).toEqual({
+      personaId: 123,
+      jailbreakToggle: 'bad',
+      sidebarToggles: { invalid: false },
+      unsupported: 'drop-me',
+    })
+    expect(readAllDatabaseRows(harness.dataDir)).toEqual(damagedRows)
   })
 
   it('leaves chat generation settings unchanged when global persona and preset selections move', async () => {
@@ -8882,12 +10731,12 @@ describe('Phase 9-3b chat record and folder commands', () => {
     })
     expect(preset.statusCode).toBe(200)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.characters[0].chats[0].generationSettings).toEqual(chatGenerationSettings)
+    expect(bootstrap.resourceDatabase.characters[0].chats[0].generationSettings).toEqual(chatGenerationSettings)
   })
 
   it('inherits complete and incomplete source generation settings on fork unless the fork supplies an explicit override', async () => {
@@ -9031,12 +10880,12 @@ describe('Phase 9-3b chat record and folder commands', () => {
     expect(incompleteInherited.statusCode).toBe(200)
     expect(incompleteInherited.json().generationSettings).toEqual(incompleteSettings)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    const chats = bootstrap.json().database.characters[0].chats as Array<{
+    const chats = bootstrap.resourceDatabase.characters[0].chats as Array<{
       id: string
       generationSettings?: Record<string, unknown>
     }>
@@ -9119,13 +10968,13 @@ describe('Phase 9-3b chat record and folder commands', () => {
     expect(duplicateChatId.statusCode).toBe(400)
     expect(duplicateChatId.json().error).toBe('Duplicate chat id: chat-b')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    expect(bootstrap.json().database.characters[0].chats.map((chat: { id: string }) => chat.id)).toEqual([
+    expect(bootstrap.resourceDatabase.characters[0].chats.map((chat: { id: string }) => chat.id)).toEqual([
       'chat-a',
       'chat-b',
     ])
@@ -9153,13 +11002,13 @@ describe('Phase 9-3b chat record and folder commands', () => {
       characterOrder: ['char-a', 'char-b'],
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    const [charA, charB] = bootstrap.json().database.characters
+    const [charA, charB] = bootstrap.resourceDatabase.characters
     expect(charA.chats[0].id).toBe('chat-shared')
     expect(charB.chats[0].id).not.toBe('chat-shared')
     expect(typeof charB.chats[0].id).toBe('string')
@@ -9255,16 +11104,16 @@ describe('Phase 9-3b chat record and folder commands', () => {
     expect(duplicateForkMessage.statusCode).toBe(400)
     expect(duplicateForkMessage.json().error).toBe('Duplicate message id: msg-a')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
     expect(
-      bootstrap
-        .json()
-        .database.characters.map((character: { chats: { id: string }[] }) => character.chats.map((chat) => chat.id)),
+      bootstrap.resourceDatabase.characters.map((character: { chats: { id: string }[] }) =>
+        character.chats.map((chat) => chat.id),
+      ),
     ).toEqual([['chat-a'], ['chat-b']])
   })
 
@@ -9358,12 +11207,12 @@ describe('Phase 9-3b chat record and folder commands', () => {
     })
     expect(folderDeleted.statusCode).toBe(200)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    const characters = bootstrap.json().database.characters
+    const characters = bootstrap.resourceDatabase.characters
     expect(characters[0].chatFolders).toEqual([])
     expect(characters[0].chats[0].folderId).toBeNull()
     expect(characters[1].chatFolders).toEqual([{ id: 'folder-b', name: 'Folder B renamed', folded: false }])
@@ -9410,13 +11259,13 @@ describe('Phase 9-3b chat record and folder commands', () => {
       characterOrder: ['char-a', 'char-b'],
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    const [charA, charB] = bootstrap.json().database.characters
+    const [charA, charB] = bootstrap.resourceDatabase.characters
     expect(charA.chatFolders[0].id).toBe('folder-a')
     expect(charA.chats[0].folderId).toBe('folder-a')
     expect(charB.chatFolders[0].id).not.toBe('folder-a')
@@ -9522,13 +11371,13 @@ describe('Phase 9-3b chat record and folder commands', () => {
     expect(missingForkChat.statusCode).toBe(400)
     expect(missingForkChat.json().error).toBe('Unknown module id in chat.modules: missing-module')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.characters[0].chats).toMatchObject([
+    expect(bootstrap.resourceDatabase.characters[0].chats).toMatchObject([
       {
         id: 'chat-a',
         name: 'A chat',
@@ -9595,13 +11444,13 @@ describe('Phase 9-3b chat record and folder commands', () => {
     expect(folder.statusCode).toBe(400)
     expect(folder.json().error).toBe('Unknown chat folder id in folderByChatId: missing-folder')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.characters[0].chats.map((chat: { id: string }) => chat.id)).toEqual([
+    expect(bootstrap.resourceDatabase.characters[0].chats.map((chat: { id: string }) => chat.id)).toEqual([
       'chat-a',
       'chat-b',
     ])
@@ -9648,7 +11497,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
   })
 })
 
-describe('Phase 4 slice 4.2 surgical message writes', () => {
+describe('surgical message writes', () => {
   function messageRowids(dataDir: string, chatId: string): { seq: number; rowid: number }[] {
     const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
     try {
@@ -9957,7 +11806,7 @@ describe('Phase 4 slice 4.2 surgical message writes', () => {
   })
 })
 
-describe('Phase 9-3c message history commands', () => {
+describe('message history commands', () => {
   it('appends, updates, deletes, truncates, and replaces messages by id', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -10112,6 +11961,109 @@ describe('Phase 9-3c message history commands', () => {
     ])
   })
 
+  it('invalidates unsummarized chunks and their jobs when persisted message content changes', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [{ role: 'user', data: 'stale source', chatId: 'msg-a' }],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+    const db = openDatabase(harness.dataDir)
+    try {
+      createMemoryChunk(db, {
+        id: 'chunk-stale',
+        chatId: 'chat-a',
+        messageId: 'msg-a',
+        rangeStartSeq: 0,
+        rangeEndSeq: 0,
+        text: 'user: stale source',
+      })
+      createMemoryJob(db, {
+        id: 'job-stale',
+        chatId: 'chat-a',
+        kind: 'summarize',
+        status: 'failed',
+        payload: { chunkId: 'chunk-stale', model: 'memory' },
+      })
+      createMemoryChunk(db, {
+        id: 'chunk-summarized',
+        chatId: 'chat-a',
+        messageId: 'msg-a',
+        rangeStartSeq: 0,
+        rangeEndSeq: 0,
+        text: 'user: summarized source',
+        status: 'summarized',
+      })
+      createMemorySummary(db, {
+        id: 'summary-keep',
+        chatId: 'chat-a',
+        chunkId: 'chunk-summarized',
+        model: 'memory',
+        text: 'retained summary',
+        tokens: 2,
+      })
+      createMemoryJob(db, {
+        id: 'job-summarized',
+        chatId: 'chat-a',
+        kind: 'summarize',
+        status: 'completed',
+        payload: { chunkId: 'chunk-summarized', model: 'memory' },
+      })
+      createMemoryChunk(db, {
+        id: 'chunk-other-chat',
+        chatId: 'chat-other',
+        messageId: 'msg-other',
+        rangeStartSeq: 0,
+        rangeEndSeq: 0,
+        text: 'user: other chat',
+      })
+      createMemoryJob(db, {
+        id: 'job-other-chat',
+        chatId: 'chat-other',
+        kind: 'summarize',
+        status: 'failed',
+        payload: { chunkId: 'chunk-other-chat', model: 'memory' },
+      })
+    } finally {
+      db.close()
+    }
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/messages/msg-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { data: 'fresh source' } },
+    })
+    expect(updated.statusCode).toBe(200)
+
+    const updatedDb = openDatabase(harness.dataDir)
+    try {
+      expect(listMemoryChunks(updatedDb, { chatId: 'chat-a' }).map((chunk) => chunk.id)).toEqual(['chunk-summarized'])
+      expect(listMemoryJobs(updatedDb, { chatId: 'chat-a' }).map((job) => job.id)).toEqual(['job-summarized'])
+      expect(listMemoryChunks(updatedDb, { chatId: 'chat-other' }).map((chunk) => chunk.id)).toEqual([
+        'chunk-other-chat',
+      ])
+      expect(listMemoryJobs(updatedDb, { chatId: 'chat-other' }).map((job) => job.id)).toEqual(['job-other-chat'])
+    } finally {
+      updatedDb.close()
+    }
+  })
+
   it('requires truncate and tail anchors to be present while accepting explicit null', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -10255,7 +12207,7 @@ describe('Phase 9-3c message history commands', () => {
       { role: 'char', data: 'second', chatId: 'duplicate-id' },
     ])
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -10263,7 +12215,7 @@ describe('Phase 9-3c message history commands', () => {
     expect(bootstrap.json().revision).toBe(revision)
   })
 
-  it('can preserve truncated assistant tail rows as reroll alternates', async () => {
+  it('rejects retired reroll-preserving truncates and leaves ordinary truncation destructive', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       characters: [
@@ -10290,7 +12242,7 @@ describe('Phase 9-3c message history commands', () => {
       characterOrder: ['char-a'],
     })
 
-    const truncated = await harness.app.inject({
+    const retired = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/commands/chats/chat-a/messages/truncate',
       headers: { 'risu-auth': assertion },
@@ -10298,6 +12250,19 @@ describe('Phase 9-3c message history commands', () => {
         baseRevision: revision,
         afterMessageId: 'msg-1',
         preserveRemovedAsAlternates: true,
+      },
+    })
+    expect(retired.statusCode).toBe(400)
+    expect(retired.json().error).toBe('preserveRemovedAsAlternates is no longer supported')
+    expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toHaveLength(3)
+
+    const truncated = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/messages/truncate',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        afterMessageId: 'msg-1',
       },
     })
 
@@ -10311,9 +12276,7 @@ describe('Phase 9-3c message history commands', () => {
     expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toEqual([
       { role: 'user', data: 'one', chatId: 'msg-1' },
     ])
-    expect(await persistedChatAlternates(harness.app, assertion, 'chat-a')).toEqual([
-      { role: 'char', data: 'two', chatId: 'msg-2', generationInfo: { model: 'm' } },
-    ])
+    expect(await persistedChatAlternates(harness.app, assertion, 'chat-a')).toEqual([])
   })
 
   it('replaces only the requested message tail', async () => {
@@ -10487,6 +12450,193 @@ describe('Phase 9-3c message history commands', () => {
     ])
   })
 
+  it('translates a server-resolved greeting and exposes only the current settings projection', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importGreetingTranslationFixture(harness.app, assertion, {
+      echoMessage: 'translated primary greeting',
+    })
+
+    const translated = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/greetings/-1/translate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, chatId: 'chat-a', jobId: 'greeting-job-a' },
+    })
+    expect(translated.statusCode).toBe(200)
+    expect(translated.json()).toMatchObject({
+      revision: revision + 1,
+      event: {
+        type: 'character.greetingTranslation.updated',
+        resource: 'greetingTranslation',
+        id: 'char-a',
+      },
+      jobId: 'greeting-job-a',
+      characterId: 'char-a',
+      chatId: 'chat-a',
+      greetingIndex: -1,
+      translation: { text: 'translated primary greeting', source: 'raw', translatorType: 'llm' },
+    })
+    expect(translated.json().settingsHash).toBe(translated.json().translation.settingsHash)
+
+    const projected = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters/char-a/greeting-translations?chatId=chat-a',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(projected.statusCode).toBe(200)
+    expect(projected.json()).toEqual({
+      revision: revision + 1,
+      characterId: 'char-a',
+      chatId: 'chat-a',
+      settingsHash: translated.json().settingsHash,
+      translations: [{ greetingIndex: -1, translation: translated.json().translation }],
+    })
+    expect(readJsonRow('characters', 'char-a')).not.toHaveProperty('greetingTranslations')
+
+    const invalid = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/greetings/1/translate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision + 1, chatId: 'chat-a', jobId: 'invalid-job' },
+    })
+    expect(invalid.statusCode).toBe(404)
+    expect(invalid.json().error).toBe('Greeting not found: char-a/1')
+
+    const disabled = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/language',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision + 1, patch: { translatorType: 'none' } },
+    })
+    expect(disabled.statusCode).toBe(200)
+    const disabledProjection = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters/char-a/greeting-translations?chatId=chat-a',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(disabledProjection.json()).toMatchObject({ settingsHash: null, translations: [] })
+  })
+
+  it('rejects a greeting translation whose source changes while the provider is running', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importGreetingTranslationFixture(harness.app, assertion, {
+      echoMessage: 'stale greeting translation',
+      echoDelay: 0.2,
+    })
+    const translating = harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/greetings/-1/translate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, chatId: 'chat-a', jobId: 'stale-greeting-job' },
+    })
+    await waitForActiveGreetingTranslation(harness.app, assertion, {
+      characterId: 'char-a',
+      chatId: 'chat-a',
+      greetingIndex: -1,
+    })
+
+    const edited = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { firstMessage: 'edited greeting' } },
+    })
+    expect(edited.statusCode).toBe(200)
+    const result = await translating
+    expect(result.statusCode).toBe(400)
+    expect(result.json().error).toBe('Greeting changed before translation could be saved: char-a/-1')
+    const db = openDatabase(harness.dataDir)
+    try {
+      expect(db.prepare('SELECT COUNT(*) AS count FROM greeting_translations').get()).toEqual({ count: 0 })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('preserves a greeting row changed while the provider request is pending', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importGreetingTranslationFixture(harness.app, assertion, {
+      echoMessage: 'provider greeting translation that must lose',
+      echoDelay: 0.2,
+    })
+    const translating = harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/greetings/-1/translate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, chatId: 'chat-a', jobId: 'stale-prior-greeting-job' },
+    })
+    const active = await waitForActiveGreetingTranslation(harness.app, assertion, {
+      characterId: 'char-a',
+      chatId: 'chat-a',
+      greetingIndex: -1,
+    })
+    const manualTranslation = {
+      text: 'manual greeting translation',
+      source: 'raw' as const,
+      sourceHash: sourceHash('primary greeting'),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm' as const,
+      settingsHash: active.settingsHash,
+      updatedAt: 123,
+    }
+    const db = openDatabase(harness.dataDir)
+    try {
+      upsertGreetingTranslation(db, 'char-a', -1, manualTranslation)
+    } finally {
+      db.close()
+    }
+
+    const result = await translating
+    expect(result.statusCode).toBe(400)
+    expect(result.json().error).toBe('Greeting translation changed before translation could be saved: char-a/-1')
+    const after = openDatabase(harness.dataDir)
+    try {
+      expect(getGreetingTranslation(after, 'char-a', -1, active.settingsHash)?.translation).toEqual(manualTranslation)
+    } finally {
+      after.close()
+    }
+  })
+
+  it('continues greeting translation after the requesting client disconnects', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importGreetingTranslationFixture(harness.app, assertion, {
+      echoMessage: 'greeting translated after disconnect',
+      echoDelay: 0.5,
+    })
+    await harness.app.listen({ host: '127.0.0.1', port: 0 })
+    await postAndDisconnect(
+      `${appBaseUrl(harness.app)}/api/v1/commands/characters/char-a/greetings/-1/translate`,
+      assertion,
+      { baseRevision: revision, chatId: 'chat-a', jobId: 'disconnected-greeting-job' },
+    )
+
+    const during = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(during.statusCode).toBe(200)
+    expect(during.json().activeGreetingTranslations).toEqual([
+      expect.objectContaining({
+        characterId: 'char-a',
+        chatId: 'chat-a',
+        greetingIndex: -1,
+        jobId: 'disconnected-greeting-job',
+        status: 'running',
+      }),
+    ])
+    await expect(
+      waitForProjectedGreetingTranslation(
+        harness.app,
+        assertion,
+        'char-a',
+        'chat-a',
+        'greeting translated after disconnect',
+      ),
+    ).resolves.toMatchObject({ text: 'greeting translated after disconnect', source: 'raw' })
+  })
+
   it('allows unrelated edits while raw translation is waiting on its provider', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importMessageTranslationFixture(harness.app, assertion, {
@@ -10608,7 +12758,7 @@ describe('Phase 9-3c message history commands', () => {
       },
     ])
 
-    const after = await harness.app.inject({
+    const after = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -10689,7 +12839,7 @@ describe('Phase 9-3c message history commands', () => {
       baseRevision: revision,
     })
 
-    const during = await harness.app.inject({
+    const during = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -10713,7 +12863,7 @@ describe('Phase 9-3c message history commands', () => {
       translatorType: 'llm',
     })
 
-    const after = await harness.app.inject({
+    const after = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -10820,7 +12970,7 @@ describe('Phase 9-3c message history commands', () => {
     expect(badTranslationPatch.statusCode).toBe(400)
     expect(badTranslationPatch.json().error).toBe('patch.translation.text must be a string')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -10872,7 +13022,7 @@ describe('Phase 9-3c message history commands', () => {
       characterOrder: ['char-a', 'char-b'],
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -10977,7 +13127,7 @@ describe('Phase 9-3c message history commands', () => {
     expect(duplicateGeneration.statusCode).toBe(400)
     expect(duplicateGeneration.json().error).toBe('Duplicate message id: msg-a')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -11037,7 +13187,7 @@ describe('Phase 9-3c message history commands', () => {
   })
 })
 
-describe('Phase 9-3d generation persistence command', () => {
+describe('generation persistence command', () => {
   it('persists generated assistant rows by appending or replacing the target message', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -11336,7 +13486,7 @@ describe('Phase 9-3d generation persistence command', () => {
     expect(missingMessageId.statusCode).toBe(400)
     expect(missingMessageId.json().error).toBe('generationResult.message.chatId must be a non-empty string')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -11428,7 +13578,7 @@ describe('Phase 9-3d generation persistence command', () => {
   })
 })
 
-describe('Phase 9-3e chat scriptstate command', () => {
+describe('chat scriptstate command', () => {
   it('applies partial scriptstate patches and delete keys with a command event', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -11477,12 +13627,12 @@ describe('Phase 9-3e chat scriptstate command', () => {
       chatId: 'chat-a',
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({
+    expect(bootstrap.resourceDatabase.characters[0].chats[0].scriptstate).toEqual({
       $keep: true,
       $score: '9',
       $count: 2,
@@ -11522,12 +13672,12 @@ describe('Phase 9-3e chat scriptstate command', () => {
     })
 
     expect(res.statusCode).toBe(200)
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toBeUndefined()
+    expect(bootstrap.resourceDatabase.characters[0].chats[0].scriptstate).toBeUndefined()
   })
 
   it('rejects malformed scriptstate payloads without bumping revision', async () => {
@@ -11563,13 +13713,13 @@ describe('Phase 9-3e chat scriptstate command', () => {
     expect(empty.statusCode).toBe(400)
     expect(empty.json().error).toBe('scriptstate command must include patch fields or deleteKeys')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toBeUndefined()
+    expect(bootstrap.resourceDatabase.characters[0].chats[0].scriptstate).toBeUndefined()
   })
 
   it('returns 404 and 409 for missing chats and stale scriptstate revisions', async () => {
@@ -11607,7 +13757,7 @@ describe('Phase 9-3e chat scriptstate command', () => {
   })
 })
 
-describe('Phase 9-4a lorebook commands', () => {
+describe('lorebook commands', () => {
   it('creates, updates, reorders, and deletes global lorebooks with command events', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -11681,14 +13831,14 @@ describe('Phase 9-4a lorebook commands', () => {
     expect(deleted.statusCode).toBe(200)
     expect(deleted.json().event.type).toBe('lorebook.deleted')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(6)
     expect(
-      bootstrap.json().database.loreBook.map((book: { id: string; name: string }) => ({
+      bootstrap.resourceDatabase.loreBook.map((book: { id: string; name: string }) => ({
         id: book.id,
         name: book.name,
       })),
@@ -11717,13 +13867,123 @@ describe('Phase 9-4a lorebook commands', () => {
     expect(deleted.statusCode).toBe(400)
     expect(deleted.json().error).toBe('Cannot delete the last lorebook')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    expect(bootstrap.json().database.loreBook).toEqual([{ id: 'book-a', name: 'A', data: [] }])
+    expect(bootstrap.resourceDatabase.loreBook).toEqual([{ id: 'book-a', name: 'A', data: [] }])
+  })
+
+  it('fails closed on malformed or duplicate persisted global and module target ids', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      loreBook: [
+        { id: 'book-a', name: 'A', data: [] },
+        { id: 'book-b', name: 'B', data: [] },
+      ],
+      loreBookPage: 0,
+      modules: [
+        { id: 'mod-a', name: 'A', description: '' },
+        { id: 'mod-b', name: 'B', description: '' },
+      ],
+    })
+    const rewriteRow = (
+      table: 'lore_books' | 'modules',
+      position: number,
+      mutate: (row: Record<string, unknown>) => void,
+    ): string => {
+      const db = openDatabase(harness.dataDir)
+      try {
+        const stored = db.prepare(`SELECT data_json FROM ${table} WHERE position = ?`).get(position) as {
+          data_json: string
+        }
+        const row = JSON.parse(stored.data_json) as Record<string, unknown>
+        mutate(row)
+        const dataJson = JSON.stringify(row)
+        db.prepare(`UPDATE ${table} SET data_json = ? WHERE position = ?`).run(dataJson, position)
+        return dataJson
+      } finally {
+        db.close()
+      }
+    }
+    const expectStoredRow = (table: 'lore_books' | 'modules', position: number, dataJson: string): void => {
+      const db = openDatabase(harness.dataDir)
+      try {
+        expect(
+          (db.prepare(`SELECT data_json FROM ${table} WHERE position = ?`).get(position) as { data_json: string })
+            .data_json,
+        ).toBe(dataJson)
+      } finally {
+        db.close()
+      }
+    }
+
+    const duplicateLorebook = rewriteRow('lore_books', 1, (row) => {
+      row.id = 'book-a'
+    })
+    let response = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/lorebooks/book-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { name: 'must not write' } },
+    })
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error).toBe('Duplicate lorebook id: book-a')
+    expectStoredRow('lore_books', 1, duplicateLorebook)
+    rewriteRow('lore_books', 1, (row) => {
+      row.id = 'book-b'
+    })
+
+    const malformedLorebook = rewriteRow('lore_books', 0, (row) => {
+      delete row.id
+    })
+    response = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/lorebooks/book-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { name: 'must not write' } },
+    })
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error).toBe('loreBook[0].id must be a non-empty string')
+    expectStoredRow('lore_books', 0, malformedLorebook)
+
+    const duplicateModule = rewriteRow('modules', 1, (row) => {
+      row.id = 'mod-a'
+    })
+    response = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/modules/mod-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { name: 'must not write' } },
+    })
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error).toBe('Duplicate module id: mod-a')
+    expectStoredRow('modules', 1, duplicateModule)
+    rewriteRow('modules', 1, (row) => {
+      row.id = 'mod-b'
+    })
+
+    const malformedModule = rewriteRow('modules', 0, (row) => {
+      delete row.id
+    })
+    response = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/modules/mod-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { name: 'must not write' } },
+    })
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error).toBe('module[0].id must be a non-empty string')
+    expectStoredRow('modules', 0, malformedModule)
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      expect(getSchemaState(db).revision).toBe(revision)
+    } finally {
+      db.close()
+    }
   })
 
   it('replaces global, character, chat, and module lorebook entry collections', async () => {
@@ -11806,12 +14066,12 @@ describe('Phase 9-4a lorebook commands', () => {
     // One module's lorebook is a single `modules`-row edit.
     expect(module.json().event).toMatchObject({ resource: 'moduleUpdated', id: 'mod-a' })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    const database = bootstrap.json().database
+    const database = bootstrap.resourceDatabase
     const persisted = loadPersistedFromDir(harness.dataDir).database as {
       modules: Array<{ lorebook?: Array<{ id: string }> }>
     }
@@ -11923,12 +14183,12 @@ describe('Phase 9-4a lorebook commands', () => {
     expect(reordered.statusCode).toBe(200)
     expect(reordered.json().event).toMatchObject({ resource: 'moduleUpdated', id: 'mod-a' })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    const database = bootstrap.json().database
+    const database = bootstrap.resourceDatabase
     const persisted = loadPersistedFromDir(harness.dataDir).database as {
       modules: Array<{ lorebook?: Array<{ comment: string }> }>
     }
@@ -11946,6 +14206,48 @@ describe('Phase 9-4a lorebook commands', () => {
       'Module A',
     ])
     expect(readJsonRow('modules', 'mod-b')).not.toHaveProperty('lorebook')
+  })
+
+  it('rejects degraded module lorebook ids before applying an entry command', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const entry = (id: string, comment: string) => ({
+      id,
+      key: comment.toLowerCase(),
+      secondkey: '',
+      insertorder: 100,
+      comment,
+      content: `${comment} content`,
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    })
+    const revision = await importDatabase(harness.app, assertion, {
+      modules: [{ id: 'mod-a', name: 'Mod', lorebook: [entry('legacy-id', 'Legacy')] }],
+    })
+    const degraded = entry('legacy-id', 'Legacy') as Record<string, unknown>
+    delete degraded.id
+    const degradedModule = {
+      ...readJsonRow('modules', 'mod-a'),
+      lorebook: [degraded],
+    }
+    writeJsonRow('modules', 'mod-a', degradedModule)
+
+    const response = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/modules/mod-a/lorebooks/entries/new-entry',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, entry: entry('new-entry', 'New') },
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error).toBe('module mod-a.lorebook[0].id must be a non-empty string')
+    expect(readJsonRow('modules', 'mod-a')).toStrictEqual(degradedModule)
+    const db = openDatabase(harness.dataDir)
+    try {
+      expect(getSchemaState(db).revision).toBe(revision)
+    } finally {
+      db.close()
+    }
   })
 
   it('applies sparse lorebook entry patches in every scope without replacing unchanged fields or siblings', async () => {
@@ -12019,12 +14321,12 @@ describe('Phase 9-4a lorebook commands', () => {
       revision = response.json().revision
     }
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    const database = bootstrap.json().database
+    const database = bootstrap.resourceDatabase
     const module = readJsonRow('modules', 'mod-a')
     const updatedEntries = [
       database.loreBook[0].data[0],
@@ -12054,7 +14356,7 @@ describe('Phase 9-4a lorebook commands', () => {
       })
       expect(missing.statusCode).toBe(404)
     }
-    const unchanged = await harness.app.inject({
+    const unchanged = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -12097,16 +14399,16 @@ describe('Phase 9-4a lorebook commands', () => {
       expect(response.statusCode, JSON.stringify(response.json())).toBe(400)
     }
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    expect(bootstrap.json().database.loreBook[0].data).toEqual([canonicalEntry])
+    expect(bootstrap.resourceDatabase.loreBook[0].data).toEqual([canonicalEntry])
   })
 
-  it('withholds sparse receipts when character or chat row normalization changes an untargeted sibling', async () => {
+  it('rejects sparse character and chat lorebook writes when an untargeted sibling is malformed', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const entry = (id: string, label: string) => ({
       id,
@@ -12156,10 +14458,8 @@ describe('Phase 9-4a lorebook commands', () => {
       headers: { 'risu-auth': assertion },
       payload: { baseRevision: revision, patch: { content: 'character update' } },
     })
-    expect(character.statusCode, JSON.stringify(character.json())).toBe(200)
-    expect(character.json()).not.toHaveProperty('patchedKeys')
-    expect(character.json()).not.toHaveProperty('deletedKeys')
-    revision = character.json().revision
+    expect(character.statusCode).toBe(400)
+    expect(character.json().error).toBe('character char-a.globalLore[1].comment must be a string')
 
     const chat = await harness.app.inject({
       method: 'PUT',
@@ -12167,11 +14467,20 @@ describe('Phase 9-4a lorebook commands', () => {
       headers: { 'risu-auth': assertion },
       payload: { baseRevision: revision, patch: { content: 'chat update' } },
     })
-    expect(chat.statusCode, JSON.stringify(chat.json())).toBe(200)
-    expect(chat.json()).not.toHaveProperty('patchedKeys')
-    expect(chat.json()).not.toHaveProperty('deletedKeys')
-    expect((readJsonRow('characters', 'char-a').globalLore as Array<Record<string, unknown>>)[1].comment).toBe('')
-    expect((readJsonRow('chats', 'chat-a').localLore as Array<Record<string, unknown>>)[1].comment).toBe('')
+    expect(chat.statusCode).toBe(400)
+    expect(chat.json().error).toBe('chat chat-a.localLore[1].comment must be a string')
+    expect((readJsonRow('characters', 'char-a').globalLore as Array<Record<string, unknown>>)[1]).not.toHaveProperty(
+      'comment',
+    )
+    expect((readJsonRow('chats', 'chat-a').localLore as Array<Record<string, unknown>>)[1]).not.toHaveProperty(
+      'comment',
+    )
+    const db = openDatabase(harness.dataDir)
+    try {
+      expect(getSchemaState(db).revision).toBe(revision)
+    } finally {
+      db.close()
+    }
   })
 
   it('rejects malformed lorebook commands without bumping revision', async () => {
@@ -12187,7 +14496,19 @@ describe('Phase 9-4a lorebook commands', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: revision,
-        entries: [{ id: 'entry-a', key: '', secondkey: '', insertorder: 'bad' }],
+        entries: [
+          {
+            id: 'entry-a',
+            key: '',
+            secondkey: '',
+            insertorder: 'bad',
+            comment: '',
+            content: '',
+            mode: 'normal',
+            alwaysActive: false,
+            selective: false,
+          },
+        ],
       },
     })
     expect(malformed.statusCode).toBe(400)
@@ -12260,16 +14581,16 @@ describe('Phase 9-4a lorebook commands', () => {
     expect(badReorder.statusCode).toBe(400)
     expect(badReorder.json().error).toBe('Duplicate lorebook id in lorebookIds: book-a')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.loreBook[0].data).toEqual([])
+    expect(bootstrap.resourceDatabase.loreBook[0].data).toEqual([])
   })
 
-  it('rejects POST /lorebooks payloads that omit nested entry ids (A4EC3 / B2)', async () => {
+  it('rejects POST /lorebooks payloads that omit nested entry ids', async () => {
     // The create route uses the no-mint validator so missing entry ids are
     // rejected instead of being silently minted.
     const { assertion } = await setupAuthedClient(harness.app)
@@ -12345,16 +14666,16 @@ describe('Phase 9-4a lorebook commands', () => {
     expect(duplicateId.json().error).toBe('Duplicate lorebook entry id: dup-entry')
 
     // Persisted state unchanged: only book-a from the import remains.
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    expect(bootstrap.json().database.loreBook.map((b: { id: string }) => b.id)).toEqual(['book-a'])
+    expect(bootstrap.resourceDatabase.loreBook.map((b: { id: string }) => b.id)).toEqual(['book-a'])
   })
 
-  it('rejects PUT /characters /chats /modules lorebook payloads with missing or duplicate entry ids (A4EC3 / B2)', async () => {
+  it('rejects PUT /characters /chats /modules lorebook payloads with missing or duplicate entry ids', async () => {
     // The replace routes use the no-mint validator so missing or duplicate entry
     // ids are rejected.
     const { assertion } = await setupAuthedClient(harness.app)
@@ -12420,13 +14741,13 @@ describe('Phase 9-4a lorebook commands', () => {
 
     // Persisted state is untouched by the rejected requests; revision is
     // still the post-import baseline.
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    const database = bootstrap.json().database
+    const database = bootstrap.resourceDatabase
     const persisted = loadPersistedFromDir(harness.dataDir).database as {
       modules: Array<{ lorebook?: unknown[] }>
     }
@@ -12435,7 +14756,7 @@ describe('Phase 9-4a lorebook commands', () => {
     expect(persisted.modules[0].lorebook).toEqual([])
   })
 
-  it('L12: global lorebook commands skip unrelated child-lore validation and keep target payload checks strict', async () => {
+  it('global lorebook commands skip unrelated child-lore validation and keep target payload checks strict', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       loreBook: [
@@ -12546,7 +14867,7 @@ describe('Phase 9-4a lorebook commands', () => {
   })
 })
 
-describe('Phase 9-4b script and trigger definition commands', () => {
+describe('script and trigger definition commands', () => {
   it('replaces character and module script and trigger definition collections', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -12636,12 +14957,12 @@ describe('Phase 9-4b script and trigger definition commands', () => {
       id: 'mod-a',
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    const database = bootstrap.json().database
+    const database = bootstrap.resourceDatabase
     const persisted = loadPersistedFromDir(harness.dataDir).database as {
       modules: Array<{ regex?: Array<{ id: string }>; trigger?: Array<{ id: string }> }>
     }
@@ -12747,14 +15068,14 @@ describe('Phase 9-4b script and trigger definition commands', () => {
     expect(duplicateTriggerId.statusCode).toBe(400)
     expect(duplicateTriggerId.json().error).toBe('Duplicate trigger definition id: trigger-a')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.characters[0].customscript).toEqual([])
-    expect(bootstrap.json().database.characters[0].triggerscript).toEqual([])
+    expect(bootstrap.resourceDatabase.characters[0].customscript).toEqual([])
+    expect(bootstrap.resourceDatabase.characters[0].triggerscript).toEqual([])
   })
 
   it('replaces only the owned definition field on sparse raw character and module rows', async () => {
@@ -12884,7 +15205,7 @@ describe('Phase 9-4b script and trigger definition commands', () => {
     }
   })
 
-  it('L12: script and trigger routes skip unrelated definition validation and keep target payload checks strict', async () => {
+  it('script and trigger routes skip unrelated definition validation and keep target payload checks strict', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       characters: [
@@ -13504,7 +15825,7 @@ describe('compact script and trigger definition mutations', () => {
   })
 })
 
-describe('Phase 9-4c module record and enablement commands', () => {
+describe('module record and enablement commands', () => {
   it('creates MCP modules while rejecting malformed MCP identifiers', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -13551,13 +15872,13 @@ describe('Phase 9-4c module record and enablement commands', () => {
       event: { type: 'module.created', id: 'mcp-dice' },
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision + 1)
-    expect(bootstrap.json().database.modules).toContainEqual(
+    expect(bootstrap.resourceDatabase.modules).toContainEqual(
       expect.objectContaining({
         id: 'mcp-dice',
         mcp: { url: 'internal:dice' },
@@ -13575,6 +15896,10 @@ describe('Phase 9-4c module record and enablement commands', () => {
         { id: 'mod-b', name: 'B', description: 'Beta' },
         { id: 'mcp-a', name: 'MCP', description: 'Bridge', mcp: { url: 'internal:risuai' } },
       ],
+      personas: [
+        { id: 'persona-a', name: 'Persona', icon: '', personaPrompt: '', note: '', modules: ['mod-a', 'mod-b'] },
+      ],
+      selectedPersona: 0,
       characters: [
         {
           chaId: 'char-a',
@@ -13630,6 +15955,7 @@ describe('Phase 9-4c module record and enablement commands', () => {
           hideIcon: true,
           backgroundEmbedding: '<style>.chattext .name { color: red; }</style>',
           customModuleToggle: 'toggle',
+          scriptModelOverrides: { llmProfileId: 'module-main-profile' },
         },
       },
     })
@@ -13681,12 +16007,12 @@ describe('Phase 9-4c module record and enablement commands', () => {
     expect(deleted.statusCode).toBe(200)
     expect(deleted.json().event.type).toBe('module.deleted')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    const database = bootstrap.json().database
+    const database = bootstrap.resourceDatabase
     expect(bootstrap.json().revision).toBe(7)
     expect(database.modules.map((module: { id: string }) => module.id)).toEqual(['mod-c', 'mod-a', 'mcp-a'])
     expect(database.modules[0]).toMatchObject({
@@ -13695,8 +16021,10 @@ describe('Phase 9-4c module record and enablement commands', () => {
       hideIcon: true,
       backgroundEmbedding: '<style>.chattext .name { color: red; }</style>',
       customModuleToggle: 'toggle',
+      scriptModelOverrides: { llmProfileId: 'module-main-profile' },
     })
     expect(database.enabledModules).toEqual(['mod-a'])
+    expect(database.personas[0].modules).toEqual(['mod-a'])
     expect(database.characters[0].modules).toEqual(['mod-a'])
     expect(database.characters[0].chats[0].modules).toEqual(['mod-a'])
     expect(database.loadouts[0].modules).toEqual(['mod-a'])
@@ -13712,6 +16040,103 @@ describe('Phase 9-4c module record and enablement commands', () => {
       'module.reordered',
       'character.modules.reordered',
       'module.deleted',
+    ])
+  })
+
+  it('creates, renames, reorders, assigns, and atomically deletes module folders', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      enabledModules: [],
+      moduleFolders: [],
+      modules: [
+        { id: 'mod-a', name: 'A', description: 'Alpha' },
+        { id: 'mod-b', name: 'B', description: 'Beta' },
+      ],
+    })
+
+    const createdA = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/module-folders',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, folder: { id: 'folder-a', name: 'Writing' } },
+    })
+    expect(createdA.statusCode).toBe(200)
+    expect(createdA.json()).toMatchObject({
+      revision: revision + 1,
+      folderId: 'folder-a',
+      event: { type: 'moduleFolder.created', resource: 'moduleFolders', id: 'folder-a' },
+    })
+
+    const renamed = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/module-folders/folder-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision + 1, patch: { name: 'Prompts' } },
+    })
+    expect(renamed.statusCode).toBe(200)
+
+    const createdB = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/module-folders',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision + 2, folder: { id: 'folder-b', name: 'Tools' } },
+    })
+    expect(createdB.statusCode).toBe(200)
+
+    const reorderedFolders = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/module-folders/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision + 3, folderIds: ['folder-b', 'folder-a'] },
+    })
+    expect(reorderedFolders.statusCode).toBe(200)
+
+    const organized = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/modules/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision + 4,
+        moduleIds: ['mod-b', 'mod-a'],
+        folderByModuleId: { 'mod-a': 'folder-a', 'mod-b': 'folder-b' },
+      },
+    })
+    expect(organized.statusCode).toBe(200)
+
+    const incomplete = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/modules/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision + 5,
+        moduleIds: ['mod-b', 'mod-a'],
+        folderByModuleId: { 'mod-a': 'folder-a' },
+      },
+    })
+    expect(incomplete.statusCode).toBe(400)
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/module-folders/folder-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision + 5 },
+    })
+    expect(deleted.statusCode).toBe(200)
+    expect(deleted.json().event).toMatchObject({
+      type: 'moduleFolder.deleted',
+      resource: 'moduleOrganization',
+      id: 'folder-a',
+    })
+
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.resourceDatabase.moduleFolders).toEqual([{ id: 'folder-b', name: 'Tools' }])
+    expect(bootstrap.resourceDatabase.modules).toEqual([
+      expect.objectContaining({ id: 'mod-b', folderId: 'folder-b' }),
+      expect.not.objectContaining({ folderId: expect.anything() }),
     ])
   })
 
@@ -13748,12 +16173,12 @@ describe('Phase 9-4c module record and enablement commands', () => {
       event: { type: 'module.deleted', id: 'mcp-a' },
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    const database = bootstrap.json().database
+    const database = bootstrap.resourceDatabase
     expect(database.modules).toEqual([])
     expect(database.enabledModules).toEqual([])
     expect(database.characters[0].modules).toEqual([])
@@ -13783,12 +16208,12 @@ describe('Phase 9-4c module record and enablement commands', () => {
       event: { type: 'module.enabled', id: 'mcp-a' },
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.enabledModules).toEqual(['mcp-a'])
+    expect(bootstrap.resourceDatabase.enabledModules).toEqual(['mcp-a'])
   })
 
   it('adds and removes character module links, not only reorders', async () => {
@@ -13827,12 +16252,12 @@ describe('Phase 9-4c module record and enablement commands', () => {
     })
     expect(addedSecond.statusCode).toBe(200)
 
-    let bootstrap = await harness.app.inject({
+    let bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.characters[0].modules).toEqual(['mod-a', 'mod-b'])
+    expect(bootstrap.resourceDatabase.characters[0].modules).toEqual(['mod-a', 'mod-b'])
 
     // Remove the first module, keeping the second.
     const removed = await harness.app.inject({
@@ -13843,13 +16268,13 @@ describe('Phase 9-4c module record and enablement commands', () => {
     })
     expect(removed.statusCode).toBe(200)
 
-    bootstrap = await harness.app.inject({
+    bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(4)
-    expect(bootstrap.json().database.characters[0].modules).toEqual(['mod-b'])
+    expect(bootstrap.resourceDatabase.characters[0].modules).toEqual(['mod-b'])
 
     // Unknown module ids are still rejected.
     const badAdd = await harness.app.inject({
@@ -13900,15 +16325,15 @@ describe('Phase 9-4c module record and enablement commands', () => {
     })
     expect(patched.statusCode).toBe(200)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.modules[0]).not.toHaveProperty('namespace')
-    expect(bootstrap.json().database.modules[0]).not.toHaveProperty('backgroundEmbedding')
-    expect(bootstrap.json().database.modules[0]).not.toHaveProperty('cjs')
-    expect(bootstrap.json().database.modules[0]).not.toHaveProperty('assets')
+    expect(bootstrap.resourceDatabase.modules[0]).not.toHaveProperty('namespace')
+    expect(bootstrap.resourceDatabase.modules[0]).not.toHaveProperty('backgroundEmbedding')
+    expect(bootstrap.resourceDatabase.modules[0]).not.toHaveProperty('cjs')
+    expect(bootstrap.resourceDatabase.modules[0]).not.toHaveProperty('assets')
 
     const invalidPatch = await harness.app.inject({
       method: 'PATCH',
@@ -13953,6 +16378,18 @@ describe('Phase 9-4c module record and enablement commands', () => {
     expect(badPatch.statusCode).toBe(400)
     expect(badPatch.json().error).toBe('patch.assets[0][1] must be a server asset id')
 
+    const badScriptModelOverrides = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/modules/mod-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { scriptModelOverrides: { modelId: 'raw-model' } },
+      },
+    })
+    expect(badScriptModelOverrides.statusCode).toBe(400)
+    expect(badScriptModelOverrides.json().error).toBe('patch.scriptModelOverrides.modelId is not supported')
+
     const badEnable = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/commands/modules/enable',
@@ -13971,13 +16408,13 @@ describe('Phase 9-4c module record and enablement commands', () => {
     expect(badReorder.statusCode).toBe(400)
     expect(badReorder.json().error).toBe('Duplicate module id in moduleIds: mod-a')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.modules).toEqual([{ id: 'mod-a', name: 'A', description: '' }])
+    expect(bootstrap.resourceDatabase.modules).toEqual([{ id: 'mod-a', name: 'A', description: '' }])
   })
 
   it('returns 404 for MCP module patches and 409 for stale module revisions', async () => {
@@ -14006,7 +16443,41 @@ describe('Phase 9-4c module record and enablement commands', () => {
   })
 })
 
-describe('Phase 9-4e plugin record and configuration commands', () => {
+describe('plugin record and configuration commands', () => {
+  it.each([2, '2.1'] as const)('rejects V%s-series plugin records without bumping revision', async (version) => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, { plugins: [] })
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/plugins',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        plugin: {
+          name: 'unsupported-plugin',
+          script: 'void 0',
+          arguments: {},
+          realArg: {},
+          customLink: [],
+          argMeta: {},
+          version,
+        },
+      },
+    })
+
+    expect(created.statusCode).toBe(400)
+    expect(created.json().error).toBe(`plugin.version must be "3.0"; Fastify does not support V2-series plugins`)
+
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(revision)
+    expect(bootstrap.resourceDatabase.plugins).toEqual([])
+  })
+
   it('creates, patches, enables, selects provider, reorders, and deletes plugins', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -14117,12 +16588,12 @@ describe('Phase 9-4e plugin record and configuration commands', () => {
     expect(deleted.statusCode).toBe(200)
     expect(deleted.json().event).toMatchObject({ type: 'plugin.deleted', resource: 'pluginCollection' })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    const database = bootstrap.json().database
+    const database = bootstrap.resourceDatabase
     expect(bootstrap.json().revision).toBe(7)
     expect(database.plugins.map((plugin: { name: string }) => plugin.name)).toEqual(['plugin-c', 'plugin-b'])
     expect(database.plugins[0]).toMatchObject({
@@ -14178,14 +16649,14 @@ describe('Phase 9-4e plugin record and configuration commands', () => {
     })
     expect(patched.statusCode).toBe(200)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.plugins[0]).not.toHaveProperty('displayName')
-    expect(bootstrap.json().database.plugins[0]).not.toHaveProperty('updateURL')
-    expect(bootstrap.json().database.plugins[0]).not.toHaveProperty('allowedIPC')
+    expect(bootstrap.resourceDatabase.plugins[0]).not.toHaveProperty('displayName')
+    expect(bootstrap.resourceDatabase.plugins[0]).not.toHaveProperty('updateURL')
+    expect(bootstrap.resourceDatabase.plugins[0]).not.toHaveProperty('allowedIPC')
 
     const invalid = await harness.app.inject({
       method: 'PATCH',
@@ -14208,6 +16679,7 @@ describe('Phase 9-4e plugin record and configuration commands', () => {
           realArg: {},
           customLink: [],
           argMeta: {},
+          version: '3.0',
         },
       ],
     })
@@ -14239,13 +16711,13 @@ describe('Phase 9-4e plugin record and configuration commands', () => {
     expect(badReorder.statusCode).toBe(400)
     expect(badReorder.json().error).toBe('Duplicate plugin id in pluginIds: plugin-a')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.plugins[0].name).toBe('plugin-a')
+    expect(bootstrap.resourceDatabase.plugins[0].name).toBe('plugin-a')
   })
 
   it('returns 404 for missing plugins and 409 for stale plugin revisions', async () => {
@@ -14259,6 +16731,7 @@ describe('Phase 9-4e plugin record and configuration commands', () => {
           realArg: {},
           customLink: [],
           argMeta: {},
+          version: '3.0',
         },
       ],
     })
@@ -14283,7 +16756,7 @@ describe('Phase 9-4e plugin record and configuration commands', () => {
   })
 })
 
-describe('Phase 9-4f plugin-storage commands', () => {
+describe('plugin-storage commands', () => {
   it('puts, deletes, and bulk updates plugin custom storage', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -14335,13 +16808,13 @@ describe('Phase 9-4f plugin-storage commands', () => {
       event: { type: 'pluginStorage.bulkUpdated', resource: 'pluginStorage' },
     })
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(4)
-    expect(bootstrap.json().database.pluginCustomStorage).toEqual({
+    expect(bootstrap.resourceDatabase.pluginCustomStorage).toEqual({
       theme: { mode: 'dark' },
       score: 42,
       nested: { ok: true },
@@ -14378,13 +16851,13 @@ describe('Phase 9-4f plugin-storage commands', () => {
     expect(badBulk.statusCode).toBe(400)
     expect(badBulk.json().error).toBe('bulk plugin storage command must change at least one key')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.pluginCustomStorage).toEqual({ existing: 'value' })
+    expect(bootstrap.resourceDatabase.pluginCustomStorage).toEqual({ existing: 'value' })
   })
 
   it('returns 409 for stale plugin-storage revisions', async () => {
@@ -14404,7 +16877,7 @@ describe('Phase 9-4f plugin-storage commands', () => {
   })
 })
 
-describe('Phase 9-4d asset reference commands', () => {
+describe('asset reference commands', () => {
   it('persists uploaded asset ids through owning character, module, persona, settings, and folder commands', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const firstAsset = await uploadAsset(harness.app, assertion, Buffer.from('first'))
@@ -14538,12 +17011,12 @@ describe('Phase 9-4d asset reference commands', () => {
     })
     expect(reordered.statusCode).toBe(200)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    const database = bootstrap.json().database
+    const database = bootstrap.resourceDatabase
     expect(database.characters[0]).toMatchObject({
       image: firstAsset.assetId,
       emotionImages: [['happy', firstAsset.assetId]],
@@ -14632,15 +17105,15 @@ describe('Phase 9-4d asset reference commands', () => {
     })
     expect(valid.statusCode).toBe(200)
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision + 1)
-    expect(bootstrap.json().database.characters[0].image).toBeUndefined()
-    expect(bootstrap.json().database.modules[0].assets).toBeUndefined()
-    expect(bootstrap.json().database.personas[0].icon).toBe(uploaded.assetId)
+    expect(bootstrap.resourceDatabase.characters[0].image).toBeUndefined()
+    expect(bootstrap.resourceDatabase.modules[0].assets).toBeUndefined()
+    expect(bootstrap.resourceDatabase.personas[0].icon).toBe(uploaded.assetId)
   })
 
   it('rejects malformed and missing character audio asset refs on create and patch', async () => {
@@ -14715,21 +17188,21 @@ describe('Phase 9-4d asset reference commands', () => {
     expect(missingPatch.statusCode).toBe(400)
     expect(missingPatch.json().error).toBe('patch.vits.files.greeting references a missing server asset')
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    expect(bootstrap.json().database.characters).toHaveLength(1)
-    expect(bootstrap.json().database.characters[0]).toMatchObject({
+    expect(bootstrap.resourceDatabase.characters).toHaveLength(1)
+    expect(bootstrap.resourceDatabase.characters[0]).toMatchObject({
       chaId: 'char-a',
       name: 'A',
       chats: [],
       chatFolders: [],
     })
-    expect(bootstrap.json().database.characters[0].vits).toBeUndefined()
-    expect(bootstrap.json().database.characters[0].gptSoVitsConfig).toBeUndefined()
+    expect(bootstrap.resourceDatabase.characters[0].vits).toBeUndefined()
+    expect(bootstrap.resourceDatabase.characters[0].gptSoVitsConfig).toBeUndefined()
   })
 
   it('accepts optional character audio clear refs on create and patch', async () => {
@@ -14778,7 +17251,7 @@ describe('Phase 9-4d asset reference commands', () => {
       revision = patched.json().revision
     }
 
-    const bootstrap = await harness.app.inject({
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },

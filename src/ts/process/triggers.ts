@@ -1,18 +1,9 @@
 import { parseChatML } from '../parser/chatML'
 import { risuChatParser } from '../parser/parser.svelte'
-import {
-  getCurrentCharacter,
-  getCurrentChat,
-  getDatabase,
-  setCurrentCharacter,
-  setDatabase,
-  type Chat,
-  type character,
-} from '../storage/database.svelte'
+import { type Chat, type character } from '../storage/database.svelte'
 import { setSelectedPersonaPromptFromTrigger } from '../persona'
-import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { tokenize } from '../tokenizer'
-import { getModuleTriggers } from './modules'
+import { getModuleTriggerOwner, getModuleTriggers } from './modules'
 import { get } from 'svelte/store'
 import { CurrentTriggerIdStore, refreshVariableOnlyGui, reloadChatAt } from '../stores.svelte'
 import { processMultiCommand } from './command'
@@ -24,10 +15,14 @@ import { alertError, alertInput, alertNormal, alertSelect } from '../alert'
 import type { OpenAIChat } from './index.svelte'
 import { HypaProcesser } from './memory/hypamemory'
 import { requestChatData } from './request/request'
-import type { ModelModeExtended } from './request/shared'
 import { generateAIImage } from './stableDiff'
 import { writeInlayImage } from './files/inlays'
 import { runScripted } from './scriptings'
+import {
+  scriptModelOverrideProfileId,
+  type ScriptModelOverrides,
+  type ScriptModelRole,
+} from '@risuai/shared-core/script-model-overrides'
 import { calcString } from './infunctions'
 import {
   currentChatScriptstateSnapshot,
@@ -35,7 +30,15 @@ import {
   dispatchUpdateChatNoteScoped,
   type ChatScriptstateSnapshot,
 } from '../chatCommands'
-import { dispatchReplaceCharacterLorebooks, scopedLorebookStateSnapshot } from '../server/lorebookBridge.svelte'
+import { replaceCharacterLorebookCollectionWithOutcome } from '../server/lorebookOwner.svelte'
+import {
+  applyChatMetadataOwnerPatch,
+  applyChatScriptstateOwnerValue,
+  charactersResourceState,
+  getPersonaOwnerStateSnapshot,
+  settingsResourceState,
+} from '../server/resourceState.svelte'
+import { applyCharacterRowMutationScoped } from '../characterCommands'
 
 export interface triggerscript {
   id?: string
@@ -44,6 +47,14 @@ export interface triggerscript {
   conditions: triggerCondition[]
   effect: triggerEffect[]
   lowLevelAccess?: boolean
+}
+
+function triggerSettings() {
+  return settingsResourceState.status === 'error' ? {} : settingsResourceState.value
+}
+
+function scriptModelOverridesForTrigger(trigger: triggerscript, char: character): ScriptModelOverrides | undefined {
+  return getModuleTriggerOwner(trigger)?.scriptModelOverrides ?? char.scriptModelOverrides
 }
 
 export type triggerCondition = triggerConditionsVar | triggerConditionsExists | triggerConditionsChatIndex
@@ -438,7 +449,7 @@ export type triggerV2RunLLM = {
   indent: number
 }
 
-function normalizeTriggerLLMMode(mode: triggerV2RunLLM['model']): ModelModeExtended {
+function normalizeTriggerLLMMode(mode: triggerV2RunLLM['model']): ScriptModelRole {
   if (mode === 'model') return 'scriptMain'
   if (mode === 'submodel' || mode === 'otherAx') return 'scriptAux'
   return mode
@@ -1176,21 +1187,20 @@ async function collectStreamingText(stream: ReadableStream<{ [key: string]: stri
   return lastChunk
 }
 
-// Persist an in-place `char.globalLore` edit from a v2 lorebook trigger effect.
-// Writes the mutated character back into the local projection WITHOUT capturing a
-// character-row snapshot or dispatching a character update (the lorebook is
-// excluded from character patches, so that dispatch was always an empty no-op),
-// then persists only the character's lorebook with a single-character scoped
-// rollback (`prevGlobalLore` is the entry list captured before the edit). Replaces
-// the former `currentLorebookStateSnapshot()` whole characters + modules clone.
-function persistCharacterLorebookEdit(char: character, prevGlobalLore: string): void {
-  setCurrentCharacter(char, { dispatchServerCommand: false })
-  dispatchReplaceCharacterLorebooks(
-    char.chaId,
-    char.globalLore ?? [],
-    scopedLorebookStateSnapshot('character:' + char.chaId, prevGlobalLore),
-    0,
-  )
+// Persist an in-place working-copy lorebook edit through the character lorebook
+// owner. The helper captures the live owner baseline, projects only that list,
+// and owns durable rollback/recovery.
+function persistCharacterLorebookEdit(char: character): void {
+  void replaceCharacterLorebookCollectionWithOutcome(char.chaId, char.globalLore ?? [], 0)
+}
+
+function persistCharacterRowField(char: character, mutate: (owner: character) => void): boolean {
+  if (charactersResourceState.status !== 'ready' || !char.chaId) return false
+  const matches = charactersResourceState.characters
+    .map((candidate, index) => ({ candidate, index }))
+    .filter(({ candidate }) => candidate?.chaId === char.chaId)
+  if (matches.length !== 1) return false
+  return applyCharacterRowMutationScoped(matches[0].index, char.chaId, mutate)
 }
 
 export const DEFAULT_TRIGGER_WALL_CLOCK_BUDGET_MS = 3_000
@@ -1402,9 +1412,10 @@ export async function runTrigger(
       lowLevelAccess: CharacterlowLevelAccess,
     }),
   )
-  const triggers: triggerscript[] = charTriggers.concat(getModuleTriggers())
-  const db = getDatabase()
-  const defaultVariables = parseKeyValue(char.defaultVariables).concat(parseKeyValue(db.templateDefaultVariables))
+  const triggers: triggerscript[] = charTriggers.concat(getModuleTriggers({ character: char, chat: arg.chat }))
+  const defaultVariables = parseKeyValue(char.defaultVariables).concat(
+    parseKeyValue(triggerSettings().templateDefaultVariables ?? ''),
+  )
 
   const previousTriggerId = get(CurrentTriggerIdStore)
   const shouldSetTriggerId = !arg.displayMode && mode !== 'display'
@@ -1473,13 +1484,13 @@ export async function runTrigger(
     return null
   }
 
-  function setLocalVar(key: string, value: string, indent: number) {
+  function setLocalVar(key: string, value: string, indent: number): boolean {
     if (!localVarScopes || localVarScopes.length === 0) {
       localVarScopes = [{}]
     }
     const currentScope = localVarScopes[localVarScopes.length - 1]
     if (!currentScope) {
-      return
+      return false
     }
 
     const finalValue = value === null || value === undefined ? 'null' : value
@@ -1498,7 +1509,12 @@ export async function runTrigger(
       currentScope[targetIndent] = {}
     }
 
+    if (currentScope[targetIndent][key] === finalValue) {
+      return false
+    }
+
     currentScope[targetIndent][key] = finalValue
+    return true
   }
 
   function declareLocalVar(key: string, value: string, indent: number) {
@@ -1546,50 +1562,39 @@ export async function runTrigger(
     return state.toString()
   }
 
-  // Optimistically reflect the pass's accumulated scriptstate on the live active
-  // chat. The write MUST run inside the resource guard and re-read the chat
-  // there: in the live Fastify runtime the projection rows are read-only, so a
-  // direct `currentChat.scriptstate = …` throws. Before the guard is enabled, the
-  // wrapper is a pass-through. This remains the same single live write the former
-  // three (identical, same-object) assignments produced. `getCurrentChat()` is the
-  // canonical active chat, so this also stays correct after a data effect (e.g. v2
-  // lorebook/desc) re-installs the character mid-pass.
-  function syncActiveChatScriptstate(): void {
-    if (!shouldApplyLiveChatSideEffects()) {
-      return
-    }
-    withTrustedResourceWrite(() => {
-      const liveChat = getCurrentChat()
-      if (liveChat) {
-        liveChat.scriptstate = chat.scriptstate
-      }
-    })
-  }
-
-  function setVar(key: string, value: string) {
+  function setVar(key: string, value: string): boolean {
     if (arg.displayMode) {
+      if (tempVars[key] === value) {
+        return false
+      }
       tempVars[key] = value
-      return
+      return true
     }
 
     const localVar = getLocalVar(key)
     if (localVar !== null) {
-      setLocalVar(key, value, currentIndent)
-      return
+      return setLocalVar(key, value, currentIndent)
+    }
+
+    const stateKey = '$' + key
+    if (chat.scriptstate?.[stateKey] === value) {
+      return false
     }
 
     const shouldDispatchLiveSideEffect = shouldApplyLiveChatSideEffects()
     const previous = shouldDispatchLiveSideEffect ? captureScriptstateRollback() : null
     varChanged = true
     chat.scriptstate ??= {}
-    const stateKey = '$' + key
     chat.scriptstate[stateKey] = value
-    if (shouldDispatchLiveSideEffect) {
-      syncActiveChatScriptstate()
-    }
-    if (chat.id && previous) {
+    if (
+      shouldDispatchLiveSideEffect &&
+      chat.id &&
+      previous &&
+      applyChatScriptstateOwnerValue(char.chaId, chat.id, stateKey, value)
+    ) {
       dispatchPatchChatScriptstateScoped(chat.id, { [stateKey]: value }, [], previous)
     }
+    return true
   }
 
   const buildResult = async () => {
@@ -1604,9 +1609,6 @@ export async function runTrigger(
       caculatedTokens += await tokenize(additonalSysPrompt.promptend)
     }
     if (varChanged) {
-      if (shouldApplyLiveChatSideEffects()) {
-        syncActiveChatScriptstate()
-      }
       if (isFresh()) {
         refreshVariableOnlyGui()
       }
@@ -1909,6 +1911,15 @@ export async function runTrigger(
               bias: {},
               useStreaming: false,
               noMultiGen: true,
+              ...(scriptModelOverrideProfileId(scriptModelOverridesForTrigger(trigger, char), 'scriptMain')
+                ? {
+                    profileIdOverride: scriptModelOverrideProfileId(
+                      scriptModelOverridesForTrigger(trigger, char),
+                      'scriptMain',
+                    ),
+                    strictProfileIdOverride: true,
+                  }
+                : {}),
             },
             'scriptMain',
           )
@@ -1977,6 +1988,7 @@ export async function runTrigger(
         }
 
         case 'triggerlua': {
+          const moduleOwner = getModuleTriggerOwner(trigger)
           const triggerCodeResult = await runScripted(effect.code, {
             lowLevelAccess: trigger.lowLevelAccess,
             mode: mode === 'manual' ? arg.manualName : mode,
@@ -1984,6 +1996,7 @@ export async function runTrigger(
             getVar: getVar,
             char: char,
             chat: chat,
+            scriptModelOverrides: moduleOwner ? moduleOwner.scriptModelOverrides : char.scriptModelOverrides,
           })
 
           if (triggerCodeResult.stopSending) {
@@ -2395,14 +2408,24 @@ export async function runTrigger(
           if (!promptbody) {
             promptbody = [{ role: 'user', content: value }]
           }
+          const modelRole = normalizeTriggerLLMMode(effect.model)
           let result = await requestChatData(
             {
               formated: promptbody,
               bias: {},
               useStreaming: effect.streaming ?? false,
               noMultiGen: true,
+              ...(scriptModelOverrideProfileId(scriptModelOverridesForTrigger(trigger, char), modelRole)
+                ? {
+                    profileIdOverride: scriptModelOverrideProfileId(
+                      scriptModelOverridesForTrigger(trigger, char),
+                      modelRole,
+                    ),
+                    strictProfileIdOverride: true,
+                  }
+                : {}),
             },
-            normalizeTriggerLLMMode(effect.model),
+            modelRole,
           )
 
           if (result.type === 'fail' || result.type === 'multiline') {
@@ -2496,13 +2519,12 @@ export async function runTrigger(
               ? risuChatParser(effect.value, { chara: char })
               : getVar(risuChatParser(effect.value, { chara: char }))
 
-          const prevGlobalLoreModify = JSON.stringify(char.globalLore ?? [])
           const index = char.globalLore.findIndex((v) => v[0] === target)
           if (index !== -1) {
             char.globalLore[index][1] = value
           }
 
-          persistCharacterLorebookEdit(char, prevGlobalLoreModify)
+          persistCharacterLorebookEdit(char)
           break
         }
         case 'v2GetLorebook': {
@@ -2540,10 +2562,9 @@ export async function runTrigger(
               ? Number(risuChatParser(effect.index, { chara: char }))
               : Number(getVar(risuChatParser(effect.index, { chara: char })))
           let value = effect.value
-          const prevGlobalLoreActivation = JSON.stringify(char.globalLore ?? [])
           char.globalLore[index][2] = value
 
-          persistCharacterLorebookEdit(char, prevGlobalLoreActivation)
+          persistCharacterLorebookEdit(char)
 
           break
         }
@@ -2690,14 +2711,19 @@ export async function runTrigger(
               ? risuChatParser(effect.value, { chara: char })
               : getVar(risuChatParser(effect.value, { chara: char }))
           char.desc = value
-          setCurrentCharacter(char)
+          persistCharacterRowField(char, (owner) => {
+            owner.desc = value
+          })
           break
         }
         case 'v2GetPersonaDesc': {
-          const db = getDatabase()
-          const currentPersonaPrompt = db.personaPrompt ?? ''
-          const savedPersonaPrompt = db.personas[db.selectedPersona]?.personaPrompt ?? ''
-          setVar(risuChatParser(effect.outputVar, { chara: char }), currentPersonaPrompt || savedPersonaPrompt)
+          const personaOwner = getPersonaOwnerStateSnapshot()
+          const selectedPersonaId = personaOwner?.selectedPersonaId
+          const matches = selectedPersonaId
+            ? (personaOwner?.personas.filter((persona) => persona.id === selectedPersonaId) ?? [])
+            : []
+          const savedPersonaPrompt = matches.length === 1 ? (matches[0].personaPrompt ?? '') : ''
+          setVar(risuChatParser(effect.outputVar, { chara: char }), personaOwner?.personaPrompt || savedPersonaPrompt)
           break
         }
         case 'v2SetPersonaDesc': {
@@ -2719,7 +2745,9 @@ export async function runTrigger(
               ? risuChatParser(effect.value, { chara: char })
               : getVar(risuChatParser(effect.value, { chara: char }))
           char.replaceGlobalNote = value
-          setCurrentCharacter(char)
+          persistCharacterRowField(char, (owner) => {
+            owner.replaceGlobalNote = value
+          })
           break
         }
         case 'v2MakeArrayVar': {
@@ -3187,7 +3215,6 @@ export async function runTrigger(
               ? Number(risuChatParser(effect.insertOrder, { chara: char }))
               : Number(getVar(risuChatParser(effect.insertOrder, { chara: char })))
 
-          const prevGlobalLoreCreate = JSON.stringify(char.globalLore ?? [])
           char.globalLore.push({
             key: key,
             comment: name,
@@ -3199,7 +3226,7 @@ export async function runTrigger(
             selective: false,
           })
 
-          persistCharacterLorebookEdit(char, prevGlobalLoreCreate)
+          persistCharacterLorebookEdit(char)
           break
         }
         case 'v2ModifyLorebookByIndex': {
@@ -3215,8 +3242,6 @@ export async function runTrigger(
           }
 
           const currentLore = char.globalLore[index]
-          const prevGlobalLoreModifyByIndex = JSON.stringify(char.globalLore ?? [])
-
           let name =
             effect.nameType === 'value'
               ? risuChatParser(effect.name, { chara: char })
@@ -3248,7 +3273,7 @@ export async function runTrigger(
             char.globalLore[index].insertorder = insertOrderNum
           }
 
-          persistCharacterLorebookEdit(char, prevGlobalLoreModifyByIndex)
+          persistCharacterLorebookEdit(char)
           break
         }
         case 'v2DeleteLorebookByIndex': {
@@ -3263,10 +3288,9 @@ export async function runTrigger(
             break
           }
 
-          const prevGlobalLoreDelete = JSON.stringify(char.globalLore ?? [])
           char.globalLore.splice(index, 1)
 
-          persistCharacterLorebookEdit(char, prevGlobalLoreDelete)
+          persistCharacterLorebookEdit(char)
           break
         }
         case 'v2GetLorebookCountNew': {
@@ -3286,10 +3310,9 @@ export async function runTrigger(
             break
           }
 
-          const prevGlobalLoreAlwaysActive = JSON.stringify(char.globalLore ?? [])
           char.globalLore[index].alwaysActive = effect.value
 
-          persistCharacterLorebookEdit(char, prevGlobalLoreAlwaysActive)
+          persistCharacterLorebookEdit(char)
           break
         }
         case 'v2RegexTest': {
@@ -3330,17 +3353,8 @@ export async function runTrigger(
             // scoped rollback restores the prior note (shared with the pass's
             // setVar snapshot).
             const noteRollback = captureScriptstateRollback()
-            let chatId: string | undefined
-            withTrustedResourceWrite(() => {
-              const currentCharacter = getCurrentCharacter()
-              const chatSlot = currentCharacter.chats?.[currentCharacter.chatPage]
-              if (chatSlot) {
-                chatSlot.note = value
-                chatId = chatSlot.id
-              }
-            })
-            if (chatId) {
-              dispatchUpdateChatNoteScoped(chatId, value, noteRollback)
+            if (chat.id && applyChatMetadataOwnerPatch(char.chaId, chat.id, { note: value })) {
+              dispatchUpdateChatNoteScoped(chat.id, value, noteRollback)
             }
           }
           break

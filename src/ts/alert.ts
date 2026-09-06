@@ -2,47 +2,10 @@ import { get, writable } from 'svelte/store'
 import { language } from '../lang'
 import type { MessageGenerationInfo } from './storage/database.svelte'
 import { alertStore as alertStoreImported, selectedCharID } from './stores/coreStores.svelte'
-import { getAlertDatabase } from './alertDatabase'
+import { charactersResourceState, settingsResourceState } from './server/resourceState.svelte'
+import type { alertData, AlertDialogHandle, AlertWaitHandle } from './types/alert'
 
-export interface alertData {
-  type:
-    | 'error'
-    | 'normal'
-    | 'none'
-    | 'ask'
-    | 'wait'
-    | 'selectChar'
-    | 'input'
-    | 'toast'
-    | 'wait2'
-    | 'markdown'
-    | 'select'
-    | 'login'
-    | 'tos'
-    | 'cardexport'
-    | 'requestdata'
-    | 'addchar'
-    | 'selectModule'
-    | 'chatOptions'
-    | 'pukmakkurit'
-    | 'branches'
-    | 'progress'
-    | 'pluginconfirm'
-    | 'requestlogs'
-  msg: string
-  title?: string
-  submsg?: string
-  datalist?: [string, string][]
-  stackTrace?: string
-  defaultValue?: string
-  progress?: number | null
-  waitOwner?: AlertWaitHandle
-  dialogOwner?: AlertDialogHandle
-  dismissible?: boolean
-}
-
-export type AlertWaitHandle = symbol
-export type AlertDialogHandle = symbol
+export type { alertData, AlertDialogHandle, AlertWaitHandle } from './types/alert'
 
 type ConfirmationAlertType = 'ask' | 'pluginconfirm'
 
@@ -73,7 +36,14 @@ interface InputRequest {
   resolve: (value: string) => void
 }
 
-type WorkflowAlertType = 'addchar' | 'chatOptions' | 'login' | 'selectChar' | 'cardexport' | 'tos' | 'selectModule'
+type WorkflowAlertType =
+  | 'addchar'
+  | 'chatOptions'
+  | 'login'
+  | 'selectChar'
+  | 'cardexport'
+  | 'realmTerms'
+  | 'selectModule'
 
 interface WorkflowRequest {
   kind: 'workflow'
@@ -126,7 +96,7 @@ const responseDialogTypes = new Set<alertData['type']>([
   'login',
   'selectChar',
   'cardexport',
-  'tos',
+  'realmTerms',
   'selectModule',
 ])
 const passivePresentationTypes = new Set<alertData['type']>([
@@ -443,7 +413,6 @@ export function resolveAlertWorkflow(owner: AlertDialogHandle | undefined, value
 
 export function alertError(msg: unknown) {
   console.error(msg)
-  const db = getAlertDatabase()
 
   let stackTrace: string | undefined = undefined
   let message: string
@@ -471,7 +440,9 @@ export function alertError(msg: unknown) {
 
   //check if it's a known error
   if (message.includes('Failed to fetch') || message.includes('NetworkError when attempting to fetch resource.')) {
-    submsg = db?.usePlainFetch ? language.errors.networkFetchPlain : language.errors.networkFetch
+    submsg = settingsResourceState.value.usePlainFetch
+      ? language.errors.networkFetchPlain
+      : language.errors.networkFetch
   }
 
   setPassiveAlert({
@@ -690,24 +661,20 @@ export async function alertCardExport(type: string = ''): Promise<CardExportResu
   return parseCardExportResult(await queueWorkflow('cardexport', '', type))
 }
 
-export async function alertTOS() {
-  if (import.meta.env.VITE_RISU_AGENT_DEV_IGNORE_TOS === 'TRUE') {
+export async function alertRealmTerms() {
+  if (import.meta.env.VITE_RISU_AGENT_DEV_IGNORE_REALM_TERMS === 'TRUE') {
     return true
   }
 
+  // Preserve acceptance recorded by the original shared application/Realm prompt.
   if (localStorage.getItem('tos4') === 'true') {
     return true
   }
 
-  const result = await queueWorkflow('tos', 'tos')
+  const result = await queueWorkflow('realmTerms', 'realmTerms')
 
   if (result === 'yes') {
     localStorage.setItem('tos4', 'true')
-    return true
-  }
-
-  if (localStorage.getItem('tos2') && Date.now() - new Date('2026-05-15').getTime() < 0) {
-    // The tos2 acceptance was honored only during the grace period ending 2026-05-15.
     return true
   }
 
@@ -723,7 +690,7 @@ export async function alertModuleSelect() {
 }
 
 export function alertRequestData(info: AlertGenerationInfoStoreData) {
-  const character = getAlertDatabase()?.characters?.[get(selectedCharID)]
+  const character = charactersResourceState.characters[get(selectedCharID)]
   const chat = character?.chats?.[character.chatPage]
   const messages = chat?.message ?? []
   const indexedMessage = messages[info.idx]

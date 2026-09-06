@@ -1,0 +1,626 @@
+{
+  "browserVersion": "151.0.7922.34",
+  "cpuThrottle": 1,
+  "results": [
+    {
+      "locale": "en",
+      "cache": "cold",
+      "repetition": 0,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 600,
+          "observer-ready": 651,
+          "writer-ready": 658.5,
+          "plugins-ready": 857.8999999761581,
+          "chat-ready": 910.8999999761581,
+          "background-ready": 911.6000000238419
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 600,
+          "observer-ready": 651,
+          "writer-ready": 658.5,
+          "plugins-ready": 857.8999999761581,
+          "chat-ready": 910.8999999761581,
+          "background-ready": 911.6000000238419
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 600.5,
+            "completedAtMs": 912
+          }
+        ]
+      },
+      "firstComposerLabel": "Message input",
+      "scripts": {
+        "closure": 0,
+        "fileCount": 112,
+        "transferBytes": 1429864,
+        "encodedBodyBytes": 1396264
+      },
+      "gzipBytes": 1393734
+    },
+    {
+      "locale": "en",
+      "cache": "warm",
+      "repetition": 0,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 177.10000002384186,
+          "observer-ready": 226.19999992847443,
+          "writer-ready": 230.5,
+          "plugins-ready": 381.89999997615814,
+          "chat-ready": 396.60000002384186,
+          "background-ready": 399
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 177.10000002384186,
+          "observer-ready": 226.19999992847443,
+          "writer-ready": 230.5,
+          "plugins-ready": 381.89999997615814,
+          "chat-ready": 396.60000002384186,
+          "background-ready": 399
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 177.29999995231628,
+            "completedAtMs": 399.39999997615814
+          }
+        ]
+      },
+      "firstComposerLabel": "Message input",
+      "scripts": {
+        "closure": 0,
+        "fileCount": 112,
+        "transferBytes": 0,
+        "encodedBodyBytes": 1396264
+      },
+      "gzipBytes": 1393734
+    },
+    {
+      "locale": "en",
+      "cache": "cold",
+      "repetition": 1,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 464.10000002384186,
+          "observer-ready": 505.3000000715256,
+          "writer-ready": 509.89999997615814,
+          "plugins-ready": 653.5,
+          "chat-ready": 689.1000000238419,
+          "background-ready": 689.8000000715256
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 464.10000002384186,
+          "observer-ready": 505.3000000715256,
+          "writer-ready": 509.89999997615814,
+          "plugins-ready": 653.5,
+          "chat-ready": 689.1000000238419,
+          "background-ready": 689.8000000715256
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 464.7000000476837,
+            "completedAtMs": 690.1000000238419
+          }
+        ]
+      },
+      "firstComposerLabel": "Message input",
+      "scripts": {
+        "closure": 0,
+        "fileCount": 112,
+        "transferBytes": 1429864,
+        "encodedBodyBytes": 1396264
+      },
+      "gzipBytes": 1393734
+    },
+    {
+      "locale": "en",
+      "cache": "warm",
+      "repetition": 1,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 203.79999995231628,
+          "observer-ready": 253.29999995231628,
+          "writer-ready": 257,
+          "plugins-ready": 415.6999999284744,
+          "chat-ready": 432.89999997615814,
+          "background-ready": 436.09999990463257
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 203.79999995231628,
+          "observer-ready": 253.29999995231628,
+          "writer-ready": 257,
+          "plugins-ready": 415.6999999284744,
+          "chat-ready": 432.89999997615814,
+          "background-ready": 436.09999990463257
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 204,
+            "completedAtMs": 436.59999990463257
+          }
+        ]
+      },
+      "firstComposerLabel": "Message input",
+      "scripts": {
+        "closure": 0,
+        "fileCount": 112,
+        "transferBytes": 0,
+        "encodedBodyBytes": 1396264
+      },
+      "gzipBytes": 1393734
+    },
+    {
+      "locale": "en",
+      "cache": "cold",
+      "repetition": 2,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 473.60000002384186,
+          "observer-ready": 520.8000000715256,
+          "writer-ready": 526.8999999761581,
+          "plugins-ready": 711,
+          "chat-ready": 752.8000000715256,
+          "background-ready": 753.8000000715256
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 473.60000002384186,
+          "observer-ready": 520.8000000715256,
+          "writer-ready": 526.8999999761581,
+          "plugins-ready": 711,
+          "chat-ready": 752.8000000715256,
+          "background-ready": 753.8000000715256
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 474.10000002384186,
+            "completedAtMs": 754
+          }
+        ]
+      },
+      "firstComposerLabel": "Message input",
+      "scripts": {
+        "closure": 0,
+        "fileCount": 112,
+        "transferBytes": 1429864,
+        "encodedBodyBytes": 1396264
+      },
+      "gzipBytes": 1393734
+    },
+    {
+      "locale": "en",
+      "cache": "warm",
+      "repetition": 2,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 191.40000009536743,
+          "observer-ready": 240.40000009536743,
+          "writer-ready": 245.20000004768372,
+          "plugins-ready": 416.40000009536743,
+          "chat-ready": 431.5,
+          "background-ready": 434
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 191.40000009536743,
+          "observer-ready": 240.40000009536743,
+          "writer-ready": 245.20000004768372,
+          "plugins-ready": 416.40000009536743,
+          "chat-ready": 431.5,
+          "background-ready": 434
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 191.60000002384186,
+            "completedAtMs": 434.5
+          }
+        ]
+      },
+      "firstComposerLabel": "Message input",
+      "scripts": {
+        "closure": 0,
+        "fileCount": 112,
+        "transferBytes": 0,
+        "encodedBodyBytes": 1396264
+      },
+      "gzipBytes": 1393734
+    },
+    {
+      "locale": "ko",
+      "cache": "cold",
+      "repetition": 0,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 497,
+          "observer-ready": 537.7000000476837,
+          "writer-ready": 545.1000000238419,
+          "plugins-ready": 711.2999999523163,
+          "chat-ready": 752.1000000238419,
+          "background-ready": 753
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 497,
+          "observer-ready": 537.7000000476837,
+          "writer-ready": 545.1000000238419,
+          "plugins-ready": 711.2999999523163,
+          "chat-ready": 752.1000000238419,
+          "background-ready": 753
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 497.5,
+            "completedAtMs": 753.2000000476837
+          }
+        ]
+      },
+      "firstComposerLabel": "\uba54\uc2dc\uc9c0 \uc785\ub825",
+      "scripts": {
+        "closure": 0,
+        "fileCount": 112,
+        "transferBytes": 1429864,
+        "encodedBodyBytes": 1396264
+      },
+      "gzipBytes": 1393734
+    },
+    {
+      "locale": "ko",
+      "cache": "warm",
+      "repetition": 0,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 216.89999997615814,
+          "observer-ready": 272.39999997615814,
+          "writer-ready": 277.10000002384186,
+          "plugins-ready": 439.60000002384186,
+          "chat-ready": 454.10000002384186,
+          "background-ready": 456.5
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 216.89999997615814,
+          "observer-ready": 272.39999997615814,
+          "writer-ready": 277.10000002384186,
+          "plugins-ready": 439.60000002384186,
+          "chat-ready": 454.10000002384186,
+          "background-ready": 456.5
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 217.20000004768372,
+            "completedAtMs": 456.7000000476837
+          }
+        ]
+      },
+      "firstComposerLabel": "\uba54\uc2dc\uc9c0 \uc785\ub825",
+      "scripts": {
+        "closure": 0,
+        "fileCount": 112,
+        "transferBytes": 0,
+        "encodedBodyBytes": 1396264
+      },
+      "gzipBytes": 1393734
+    },
+    {
+      "locale": "ko",
+      "cache": "cold",
+      "repetition": 1,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 628.5,
+          "observer-ready": 692.6999999284744,
+          "writer-ready": 700.7999999523163,
+          "plugins-ready": 932.5,
+          "chat-ready": 996.3999999761581,
+          "background-ready": 998.3999999761581
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 628.5,
+          "observer-ready": 692.6999999284744,
+          "writer-ready": 700.7999999523163,
+          "plugins-ready": 932.5,
+          "chat-ready": 996.3999999761581,
+          "background-ready": 998.3999999761581
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 629.1999999284744,
+            "completedAtMs": 998.6000000238419
+          }
+        ]
+      },
+      "firstComposerLabel": "\uba54\uc2dc\uc9c0 \uc785\ub825",
+      "scripts": {
+        "closure": 0,
+        "fileCount": 112,
+        "transferBytes": 1429864,
+        "encodedBodyBytes": 1396264
+      },
+      "gzipBytes": 1393734
+    },
+    {
+      "locale": "ko",
+      "cache": "warm",
+      "repetition": 1,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 105,
+          "observer-ready": 259.5,
+          "writer-ready": 264,
+          "plugins-ready": 434.40000009536743,
+          "chat-ready": 453.8000000715256,
+          "background-ready": 460.2000000476837
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 105,
+          "observer-ready": 259.5,
+          "writer-ready": 264,
+          "plugins-ready": 434.40000009536743,
+          "chat-ready": 453.8000000715256,
+          "background-ready": 460.2000000476837
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 105.10000002384186,
+            "completedAtMs": 460.5
+          }
+        ]
+      },
+      "firstComposerLabel": "\uba54\uc2dc\uc9c0 \uc785\ub825",
+      "scripts": {
+        "closure": 0,
+        "fileCount": 112,
+        "transferBytes": 0,
+        "encodedBodyBytes": 1396264
+      },
+      "gzipBytes": 1393734
+    },
+    {
+      "locale": "ko",
+      "cache": "cold",
+      "repetition": 2,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 499.1999999284744,
+          "observer-ready": 565.0999999046326,
+          "writer-ready": 571.6999999284744,
+          "plugins-ready": 789.5,
+          "chat-ready": 813.5999999046326,
+          "background-ready": 814.3999999761581
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 499.1999999284744,
+          "observer-ready": 565.0999999046326,
+          "writer-ready": 571.6999999284744,
+          "plugins-ready": 789.5,
+          "chat-ready": 813.5999999046326,
+          "background-ready": 814.3999999761581
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 499.6999999284744,
+            "completedAtMs": 814.5
+          }
+        ]
+      },
+      "firstComposerLabel": "\uba54\uc2dc\uc9c0 \uc785\ub825",
+      "scripts": {
+        "closure": 0,
+        "fileCount": 112,
+        "transferBytes": 1429864,
+        "encodedBodyBytes": 1396264
+      },
+      "gzipBytes": 1393734
+    },
+    {
+      "locale": "ko",
+      "cache": "warm",
+      "repetition": 2,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 197,
+          "observer-ready": 246.29999995231628,
+          "writer-ready": 251.89999997615814,
+          "plugins-ready": 408.2999999523163,
+          "chat-ready": 423.89999997615814,
+          "background-ready": 432
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 197,
+          "observer-ready": 246.29999995231628,
+          "writer-ready": 251.89999997615814,
+          "plugins-ready": 408.2999999523163,
+          "chat-ready": 423.89999997615814,
+          "background-ready": 432
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 197.09999990463257,
+            "completedAtMs": 432.59999990463257
+          }
+        ]
+      },
+      "firstComposerLabel": "\uba54\uc2dc\uc9c0 \uc785\ub825",
+      "scripts": {
+        "closure": 0,
+        "fileCount": 112,
+        "transferBytes": 0,
+        "encodedBodyBytes": 1396264
+      },
+      "gzipBytes": 1393734
+    }
+  ],
+  "closures": [
+    [
+      "assets/Accordion-DhN-_o-n.js",
+      "assets/BarIcon-8OvhNRC2.js",
+      "assets/BaseRoundedButton-bueIScil.js",
+      "assets/Button-5CVtb-ec.js",
+      "assets/Chat-By6X7PeY.js",
+      "assets/CheckInput-Dm9Tybf-.js",
+      "assets/CustomModelsSettings-Dq3y_xz2.js",
+      "assets/Help-Df3IZMNJ.js",
+      "assets/Icon-BhqSP8Ws.js",
+      "assets/NumberInput-BrcPZN3M.js",
+      "assets/OptionInput-tZlE9P-5.js",
+      "assets/PluginDefinedIcon-BtKj1tl-.js",
+      "assets/PushNotificationWarning-DMJFo3SU.js",
+      "assets/RealmPopUp-BjWVRn_P.js",
+      "assets/SecretInput-BtI7FCdh.js",
+      "assets/SelectInput-Di2yZ_nj.js",
+      "assets/SettingRenderer-Bpxmec9o.js",
+      "assets/SliderInput-BGoUh0Xn.js",
+      "assets/TextAreaInput-C9SN3zle.js",
+      "assets/TextInput-COxhjRWF.js",
+      "assets/Toggles-ALYvpSkk.js",
+      "assets/__vite-browser-external-B4XnkN8Y.js",
+      "assets/alert-C84Uo703.js",
+      "assets/appStartup-BtzmJfhT.js",
+      "assets/arrow-left-BGA27X-i.js",
+      "assets/arrow-up-PfCXzmD_.js",
+      "assets/assetList-CijAuDz0.js",
+      "assets/bardWikiJobEvents-DA1L6ew2.js",
+      "assets/bardWikiResource-Blqj94Ha.js",
+      "assets/book-open-D4IKAk4a.js",
+      "assets/bootstrap-BBZJmEqO.js",
+      "assets/bootstrap-BXumZG03.js",
+      "assets/bot-sjeyn-oD.js",
+      "assets/buffer-D46Mdhc-.js",
+      "assets/buffer-DCVZ7vEA.js",
+      "assets/cbsRegistry-CZFCIg6n.js",
+      "assets/character-CnR0BR5M.js",
+      "assets/characterAdditionalAssetUpload-tOmI5i7F.js",
+      "assets/characterCommands-Cz3XJ064.js",
+      "assets/characterDisplayName-CxHxBIPi.js",
+      "assets/chatGenerationTogglePresets-BpIB9mYV.js",
+      "assets/chatTranscriptOwner-DBJSp1aL.js",
+      "assets/check-CRkA2a97.js",
+      "assets/chevron-right-lPJDY1_X.js",
+      "assets/chunk-BneVvdWh.js",
+      "assets/client-BE7hO-r3.js",
+      "assets/commands-CmfmPb0P.js",
+      "assets/confirmSettingsItemRemoval-BSxVkz0o.js",
+      "assets/copy-Bhmbhng2.js",
+      "assets/coreStores.svelte-CNiHh1E9.js",
+      "assets/customBackgroundSetting-D5ttSO3D.js",
+      "assets/customBackgroundSetting-DeRDjS9B.js",
+      "assets/database.svelte-Bqdq4Ilo.js",
+      "assets/diagnostics-Dy9f1wiJ.js",
+      "assets/disclose-version-V8pQYR0f.js",
+      "assets/download-Cf7IQgj6.js",
+      "assets/effects-C53AlNcS.js",
+      "assets/folder-BrmAAIOo.js",
+      "assets/generationPersistenceState-B2qLhz6K.js",
+      "assets/generationRuntimeBridge-Dg3ZCemz.js",
+      "assets/globe-CejyTfwd.js",
+      "assets/hard-drive-upload-C4cXQPK0.js",
+      "assets/heightMode-DTfd8H_N.js",
+      "assets/index-PH3djlL0.js",
+      "assets/index-client-CzjUA2Mx.js",
+      "assets/index-client-RLx41PMj.js",
+      "assets/internalmcp-Bip5VcIT.js",
+      "assets/lang-BTGSkrSZ.js",
+      "assets/languages-W0vSEhAP.js",
+      "assets/legacy-BtwS3S0g.js",
+      "assets/legacyMemoryMigrationNotice-DZZiRx8y.js",
+      "assets/list-U0je-ho3.js",
+      "assets/maximize-2-CieR17BX.js",
+      "assets/memoryJobEvents-BKxf-tDt.js",
+      "assets/messageTranslationJobs-BeVFiuzS.js",
+      "assets/mobileCharacterRows-8_ZO4Zue.js",
+      "assets/modalBackdropDismiss-CbtZ-prI.js",
+      "assets/modalFocusTrap-DCFYVtz8.js",
+      "assets/modellist-BPF9RIgo.js",
+      "assets/moduleRenderRevision-BOMQYBbg.js",
+      "assets/modules-caHl0wrc.js",
+      "assets/observer.svelte-AyBomtrf.js",
+      "assets/observerRouteIntent-CSoigSFl.js",
+      "assets/package-DBfLYHmg.js",
+      "assets/pencil-hWUNT3UL.js",
+      "assets/plus-DZ6O540g.js",
+      "assets/polyfill-BtoTs0ao.js",
+      "assets/power-off-CpRTJb1k.js",
+      "assets/preload-helper-BqZ_R5ZR.js",
+      "assets/promptPresetModelOverrides.svelte-DMm9HiEx.js",
+      "assets/pushNotificationSetting-oHKuNdA8.js",
+      "assets/pushNotificationSetting-vFlvM0bO.js",
+      "assets/refresh-ccw-D90mfh9x.js",
+      "assets/resourceReads-BXjlfTzy.js",
+      "assets/resourceState.svelte-UIRoN_ji.js",
+      "assets/rotate-ccw-B9zrJXNh.js",
+      "assets/routeIntentPrefetch-u9JxOe5G.js",
+      "assets/routeOperation-Dia_UITB.js",
+      "assets/routerRoute-CWhuexxC.js",
+      "assets/runtimeEffects.svelte-ixGl1cfo.js",
+      "assets/save-uOoAMCPU.js",
+      "assets/settings-Cws-loa1.js",
+      "assets/smile-C19gc2bL.js",
+      "assets/sortable.core.esm-D1Nn_c6a.js",
+      "assets/stores.svelte-BwJUnvp8.js",
+      "assets/tooltip-B8urS1wH.js",
+      "assets/trash-B2zuwiHk.js",
+      "assets/user-ClBhAJN0.js",
+      "assets/util-CNIz7t7d.js",
+      "assets/utils-Lp85RBK2.js",
+      "assets/volume-2-DrXZHRst.js",
+      "assets/x-Dk9uaWG4.js"
+    ]
+  ]
+}

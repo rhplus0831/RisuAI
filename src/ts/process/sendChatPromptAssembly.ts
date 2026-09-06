@@ -1,6 +1,7 @@
 import { language } from '../../lang'
-import { getDatabase, type character, type Chat, type MessagePresetInfo } from '../storage/database.svelte'
+import { type character, type Chat, type Database, type MessagePresetInfo } from '../storage/database.svelte'
 import type { ChatTokenizer } from '../tokenizer'
+import { safeStructuredClone } from '../polyfill'
 import { findCharacterbyId } from '../characterState'
 import { risuChatParser } from './scripts'
 import { buildDescription } from './promptAssembly/buildDescription'
@@ -18,13 +19,13 @@ import { buildMemoryWindow } from './promptAssembly/buildMemoryWindow'
 import { renderFinalPrompt } from './promptAssembly/renderFinalPrompt'
 import { preflightTemplateTokens } from './promptBudget/preflightTemplateTokens'
 import { finalizeRequestBudget } from './promptBudget/finalizeRequestBudget'
-import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import {
   currentPromptTemplateOwnerId,
   ensurePromptTemplateHydrated,
   isPromptTemplateHydrated,
 } from '../server/promptTemplateHydration'
 import type { OpenAIChat } from './index.svelte'
+import { resolveModelProfile } from '../model/modelProfileResolver'
 
 export interface SendChatPromptStageTimings {
   stage1Start: number
@@ -74,6 +75,7 @@ function effectivePromptTemplateHydrationOwnerId(chat: Chat): string | null {
 export async function assembleLocalSendChatPrompt(args: {
   currentChar: character
   currentChat: Chat
+  database: Database
   nowChatroom: character
   selectedChar: number
   selectedChat: number
@@ -86,13 +88,11 @@ export async function assembleLocalSendChatPrompt(args: {
   throwError: (error: string) => void
   setProcessStage: (stage: number) => void
 }): Promise<LocalSendChatPromptResult> {
-  let currentChat = args.currentChat
-  withTrustedResourceWrite(() => {
-    const liveChat = getDatabase().characters[args.selectedChar].chats[args.selectedChat]
-    currentChat = runSendChatMessageVariables(liveChat, args.currentChar)
-    getDatabase().characters[args.selectedChar].chats[args.selectedChat] = currentChat
-  })
-  currentChat = getDatabase().characters[args.selectedChar].chats[args.selectedChat]
+  const database = args.database
+  // Prompt-variable expansion is request-local. The explicit generation
+  // snapshot remains unchanged so retries and concurrent owner projections do
+  // not observe partially parsed transcript rows.
+  let currentChat = runSendChatMessageVariables(safeStructuredClone(args.currentChat), args.currentChar)
 
   args.setProcessStage(1)
   args.stageTimings.stage1Start = Date.now()
@@ -120,26 +120,32 @@ export async function assembleLocalSendChatPrompt(args: {
   }
   const { promptTemplate, usingPromptTemplate } = normalizeTemplate(args.currentChar, {
     chatPromptPresetId: currentChat.generationSettings?.promptPresetId,
+    db: database,
   })
+  const mainProfile = resolveModelProfile({ database, role: 'chatMain' })
+  const mainModelId = mainProfile.modelId
+  const maxResponseTokens = mainProfile.runtimeOptions.maxResponse ?? database.maxResponse
 
   if (!args.currentChar.utilityBot && !promptTemplate) {
-    const sections = buildPlainPromptSections(args.currentChar)
+    const sections = buildPlainPromptSections(args.currentChar, database)
     unformated.main.push(...sections.main)
     unformated.jailbreak.push(...sections.jailbreak)
     unformated.globalNote.push(...sections.globalNote)
   }
 
   unformated.authorNote.push(...buildAuthorNote(args.currentChar, currentChat))
-  unformated.postEverything.push(...buildCotInstruction(usingPromptTemplate))
+  unformated.postEverything.push(...buildCotInstruction(usingPromptTemplate, database))
 
-  unformated.description.push(await buildDescription(args.currentChar, currentChat))
+  const descriptionBasePrompt = await buildDescription(args.currentChar, currentChat, database)
+  unformated.description.push(descriptionBasePrompt)
   unformated.personaPrompt.push(...buildPersona(args.currentChar))
   unformated.postEverything.push(...buildInlayViewInstruction(args.currentChar))
 
   const lore = await buildLorebookContext(args.currentChar, unformated)
   const { resolvePosition, positionParser, depthPrompts } = lore
+  const descriptionBaseIndex = unformated.description.indexOf(descriptionBasePrompt)
 
-  let currentTokens = getDatabase().maxResponse + 50
+  let currentTokens = maxResponseTokens + 50
 
   const preflight = await preflightTemplateTokens(
     promptTemplate,
@@ -148,17 +154,21 @@ export async function assembleLocalSendChatPrompt(args: {
     args.tokenizer,
     args.currentChar,
     positionParser,
+    database,
+    descriptionBaseIndex,
   )
   currentTokens += preflight.addedTokens
 
   const history = await buildHistoryWindow({
     currentChar: args.currentChar,
     currentChat,
+    modelId: mainModelId,
     usingPromptTemplate,
     tokenizer: args.tokenizer,
     findCharacterbyIdwithCache: args.findCharacterbyIdwithCache,
     depthPrompts,
     resolvePosition,
+    database,
   })
   if (history.stopSending === true) return { status: 'stopped' }
   currentTokens += history.addedTokens
@@ -179,20 +189,19 @@ export async function assembleLocalSendChatPrompt(args: {
     stageTimings: args.stageTimings,
     throwError: args.throwError,
     setProcessStage: args.setProcessStage,
+    database,
   })
   if (memWindow.stopSending === true) return { status: 'stopped' }
   currentChat = memWindow.currentChat
 
-  const biases = getDatabase()
-    .bias.concat(args.currentChar.bias)
-    .map((v) => {
-      return [
-        risuChatParser(v[0].replaceAll('\\n', '\n').replaceAll('\\r', '\r').replaceAll('\\\\', '\\'), {
-          chara: args.currentChar,
-        }),
-        v[1],
-      ] as [string, number]
-    })
+  const biases = database.bias.concat(args.currentChar.bias).map((v) => {
+    return [
+      risuChatParser(v[0].replaceAll('\\n', '\n').replaceAll('\\r', '\r').replaceAll('\\\\', '\\'), {
+        chara: args.currentChar,
+      }),
+      v[1],
+    ] as [string, number]
+  })
 
   for (const depthPrompt of depthPrompts) {
     const chat: OpenAIChat = {
@@ -225,13 +234,15 @@ export async function assembleLocalSendChatPrompt(args: {
     }
   }
 
-  const formatOrder = safeStructuredClone(getDatabase().formatingOrder)
+  const formatOrder = safeStructuredClone(database.formatingOrder)
   if (formatOrder) {
     formatOrder.push('postEverything')
   }
 
   const render = await renderFinalPrompt({
     currentChar: args.currentChar,
+    database,
+    modelId: mainModelId,
     unformated,
     promptTemplate,
     usingPromptTemplate,
@@ -240,17 +251,13 @@ export async function assembleLocalSendChatPrompt(args: {
     positionParser,
     hasCachePoint: preflight.hasCachePoint,
     isContinue: args.isContinue,
+    descriptionBaseIndex,
   })
   if (render.promptText) {
     args.promptInfo.promptText = render.promptText
   }
 
-  const budget = await finalizeRequestBudget(
-    render.formated,
-    args.maxContextTokens,
-    getDatabase().maxResponse,
-    args.tokenizer,
-  )
+  const budget = await finalizeRequestBudget(render.formated, args.maxContextTokens, maxResponseTokens, args.tokenizer)
   if (!budget.ok) {
     args.throwError(language.errors.toomuchtoken + '\n\nAt token rechecking. Required Tokens: ' + budget.inputTokens)
     return { status: 'stopped' }

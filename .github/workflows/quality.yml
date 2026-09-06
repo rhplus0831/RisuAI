@@ -14,18 +14,291 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
+  format:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 11.23.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsx util/test-topology.ts
+      - run: pnpm check
+
+  check-server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:server
+
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:docs
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # When the focused coverage job runs, let it own these six UI test files
+      # instead of executing them a second time in the ordinary frontend lane.
+      RISU_TEST_EXCLUDE_UI_MAP: 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The frontend lane owns the compatibility-register validator tests,
+          # which inspect the pinned first-parent commit range.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vitest run
+
+  initial-preload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:initial-preload
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: initial-preload-report
+          path: |
+            fast-bootstrap-results/initial-preload.*
+            fast-bootstrap-results/bundle-boundaries.*
+          if-no-files-found: error
+
+  gates-perf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RISU_TEST_INCLUDE_GATES: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vitest run src/ts/__tests__/renderCostHarness.test.ts src/ts/__tests__/sendCloneCountProbe.test.ts --no-file-parallelism --maxWorkers=1
+
+  ui-coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm coverage:ui-map
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-coverage
+          path: coverage/ui-map
+          if-no-files-found: error
+
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vitest run --config server/fastify/vitest.config.ts
+
+  realm-scale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/realmImport.test.ts -t 'imports Realm charx packages with thousands of display assets' --no-file-parallelism --maxWorkers=1
+
+  compat-registers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Register validation compares the complete pinned first-parent range.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm validate:compat-registers
+
+  compat-current:
+    needs: compat-registers
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsx test/compat-harness/run.ts --current-only
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: compatibility-current-${{ github.run_id }}
+          path: fast-bootstrap-results/compat-harness/
+          if-no-files-found: warn
+          retention-days: 14
+
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm test:all
+      - run: pnpm smoke:fastify-browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-test-results
+          path: |
+            test-results
+            fast-bootstrap-results/startup-matrix.*
+            fast-bootstrap-results/fast-bootstrap-integration.*
+          if-no-files-found: error
+
+  verify:
+    if: always()
+    needs:
+      - format
+      - check
+      - check-server
+      - docs
+      - frontend
+      - initial-preload
+      - gates-perf
+      - ui-coverage
+      - server
+      - realm-scale
+      - compat-registers
+      - compat-current
+      - smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every quality lane
+        env:
+          FORMAT_RESULT: ${{ needs.format.result }}
+          CHECK_RESULT: ${{ needs.check.result }}
+          CHECK_SERVER_RESULT: ${{ needs['check-server'].result }}
+          DOCS_RESULT: ${{ needs.docs.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          INITIAL_PRELOAD_RESULT: ${{ needs['initial-preload'].result }}
+          GATES_PERF_RESULT: ${{ needs['gates-perf'].result }}
+          UI_COVERAGE_RESULT: ${{ needs['ui-coverage'].result }}
+          SERVER_RESULT: ${{ needs.server.result }}
+          REALM_SCALE_RESULT: ${{ needs['realm-scale'].result }}
+          COMPAT_REGISTERS_RESULT: ${{ needs['compat-registers'].result }}
+          COMPAT_CURRENT_RESULT: ${{ needs['compat-current'].result }}
+          SMOKE_RESULT: ${{ needs.smoke.result }}
+        run: |
+          test "$FORMAT_RESULT" = success
+          test "$CHECK_RESULT" = success
+          test "$CHECK_SERVER_RESULT" = success
+          test "$DOCS_RESULT" = success
+          test "$FRONTEND_RESULT" = success
+          test "$INITIAL_PRELOAD_RESULT" = success
+          test "$GATES_PERF_RESULT" = success
+          test "$SERVER_RESULT" = success
+          test "$REALM_SCALE_RESULT" = success
+          test "$COMPAT_REGISTERS_RESULT" = success
+          test "$COMPAT_CURRENT_RESULT" = success
+          test "$SMOKE_RESULT" = success
+          test "$UI_COVERAGE_RESULT" = success

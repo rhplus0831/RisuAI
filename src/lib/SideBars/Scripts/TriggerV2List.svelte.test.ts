@@ -1,7 +1,9 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
+const triggerAlertMocks = vi.hoisted(() => ({ alertError: vi.fn() }))
+
+vi.mock('src/ts/server/settingsOwner.svelte', () => ({
   createServerBackedSettingDraft: <T>(_key: string, fallback: T) => ({ value: fallback }),
 }))
 
@@ -10,9 +12,7 @@ vi.mock('src/ts/process/triggers', () => ({
   requestAllowList: [],
 }))
 
-vi.mock('src/ts/alert', () => ({
-  alertError: vi.fn(),
-}))
+vi.mock('src/ts/alert', () => triggerAlertMocks)
 
 vi.mock('src/lib/UI/GUI/TextAreaInput.svelte', async () => {
   const mock = await import('../AuthorNoteEditor.testTextArea.svelte')
@@ -32,6 +32,7 @@ vi.mock('src/lib/UI/GUI/Portal.svelte', async () => {
 import TriggerV2ListHarness from './TriggerV2List.testHarness.svelte'
 import type { triggerscript } from 'src/ts/process/triggers'
 import { language } from 'src/lang'
+import { RISU_EFFECT_DRAG_TYPE, RISU_TRIGGER_DRAG_TYPE } from 'src/ts/dragTypes'
 import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
 type MountedComponent = Parameters<typeof unmount>[0] & {
@@ -117,18 +118,27 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   return { promise, resolve }
 }
 
-function createDragDataTransfer(): DataTransfer {
+function createDragDataTransfer(initialTypes: string[] = []): DataTransfer {
   const values = new Map<string, string>()
+  const types = [...initialTypes]
   return {
+    get types() {
+      return types
+    },
     getData: (type: string) => values.get(type) ?? '',
     setData: (type: string, value: string) => {
       values.set(type, value)
+      if (!types.includes(type)) types.push(type)
     },
     setDragImage: vi.fn(),
   } as unknown as DataTransfer
 }
 
-function dispatchDragEvent(element: Element, type: 'dragstart' | 'drop', dataTransfer: DataTransfer): Event {
+function dispatchDragEvent(
+  element: Element,
+  type: 'dragstart' | 'dragend' | 'drop',
+  dataTransfer: DataTransfer,
+): Event {
   const event = new Event(type, { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })
   element.dispatchEvent(event)
@@ -145,6 +155,7 @@ beforeEach(() => {
   delete (globalThis as XssTestGlobal).triggerV2Xss
   target = document.createElement('div')
   document.body.appendChild(target)
+  triggerAlertMocks.alertError.mockReset()
 })
 
 afterEach(() => {
@@ -159,6 +170,41 @@ afterEach(() => {
 })
 
 describe('TriggerV2List effect display', () => {
+  it('marks persistent-data, command, and privileged effect options as unsupported on the server', async () => {
+    component = mount(TriggerV2ListHarness, {
+      target,
+      props: {
+        lowLevelAble: true,
+        initialValue: [
+          { comment: 'Header', type: 'manual', conditions: [], effect: [] },
+          { comment: 'Trigger', type: 'start', conditions: [], effect: [] },
+        ],
+      },
+    }) as MountedComponent
+    await openEditor()
+
+    const addEffect = document.querySelector<HTMLButtonElement>(`[aria-label="${language.add}: ${language.effect}"]`)
+    addEffect?.click()
+    addEffect?.click()
+    await settle()
+
+    const unsupportedOption = (type: string) =>
+      document.querySelector<HTMLElement>(`[data-risu-server-unsupported-effect="${type}"]`)
+    expect(unsupportedOption('v2Command')?.textContent).toContain(language.triggerEffectUnsupportedOnServer)
+
+    const categoryButton = (category: string) =>
+      Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(
+        (button) => button.textContent?.trim() === language.triggerCategories[category],
+      )
+    categoryButton('Data')?.click()
+    await settle()
+    expect(unsupportedOption('v2SetCharacterDesc')?.textContent).toContain(language.triggerEffectUnsupportedOnServer)
+
+    categoryButton('Low Level')?.click()
+    await settle()
+    expect(unsupportedOption('v2RunLLM')?.textContent).toContain(language.triggerEffectUnsupportedOnServer)
+  })
+
   it('renders imported and edited effect text literally without creating executable elements', async () => {
     const commentPayload = '</span><img data-trigger-v2-comment-xss src=x onerror="globalThis.triggerV2Xss = true">'
     const variablePayload = '</span><svg data-trigger-v2-field-xss onload="globalThis.triggerV2Xss = true"></svg>'
@@ -344,6 +390,62 @@ describe('TriggerV2List effect display', () => {
     await settle()
 
     expect(component.getValue().map((trigger) => trigger.comment)).toEqual(['Header B', 'Alpha B'])
+  })
+
+  it('preserves imports and reports only definitions still unsupported by the server', async () => {
+    const imported: triggerscript[] = [
+      {
+        comment: 'Imported unsupported definitions',
+        type: 'start',
+        conditions: [],
+        effect: [
+          {
+            type: 'v2SetCharacterDesc',
+            value: 'must not persist',
+            valueType: 'value',
+            indent: 0,
+          },
+          {
+            type: 'v2SystemPrompt',
+            value: 'height={{screen_height}}',
+            valueType: 'value',
+            location: 'promptend',
+            indent: 0,
+          },
+        ],
+      },
+    ]
+    const file = { text: vi.fn(async () => JSON.stringify(imported)) } as unknown as File
+    const inputClick = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function () {
+      Object.defineProperty(this, 'files', { configurable: true, value: [file] })
+      this.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    component = mount(TriggerV2ListHarness, {
+      target,
+      props: {
+        initialValue: [
+          { comment: 'Header', type: 'manual', conditions: [], effect: [] },
+          { comment: 'Existing', type: 'manual', conditions: [], effect: [] },
+        ],
+      },
+    }) as MountedComponent
+    await openEditor()
+
+    document.querySelector<HTMLButtonElement>(`[aria-label="${language.import}: ${language.trigger}"]`)?.click()
+    await vi.waitFor(() => expect(file.text).toHaveBeenCalledOnce())
+    inputClick.mockRestore()
+    await vi.waitFor(() => expect(component?.getValue()).toHaveLength(3))
+
+    expect(component.getValue()[2]).toEqual(imported[0])
+    expect(triggerAlertMocks.alertError).toHaveBeenCalledWith(
+      language.triggerImportUnsupportedDiagnostic(['v2SetCharacterDesc'], []),
+    )
+    expect(target.querySelector('[data-risu-server-compatibility-diagnostic]')?.textContent).toContain(
+      'v2SetCharacterDesc',
+    )
+    expect(target.querySelector('[data-risu-server-compatibility-diagnostic]')?.textContent).not.toContain(
+      'screenheight',
+    )
   })
 
   it('renders array insertion fields without null or malformed placeholders', async () => {
@@ -539,6 +641,44 @@ describe('TriggerV2List effect display', () => {
       'Alpha',
       'Beta',
     ])
+  })
+
+  it('scopes trigger and effect drags and leaves external file drops unconsumed', async () => {
+    component = mount(TriggerV2ListHarness, {
+      target,
+      props: {
+        initialValue: [
+          { comment: 'Header', type: 'manual', conditions: [], effect: [] },
+          {
+            comment: 'Alpha',
+            type: 'manual',
+            conditions: [],
+            effect: [{ type: 'v2Comment', value: 'One', indent: 0 }],
+          },
+        ],
+      },
+    }) as MountedComponent
+    await settle()
+    await openEditor()
+
+    const triggerTransfer = createDragDataTransfer()
+    dispatchDragEvent(triggerButton('Alpha'), 'dragstart', triggerTransfer)
+    expect(Array.from(triggerTransfer.types)).toContain(RISU_TRIGGER_DRAG_TYPE)
+    dispatchDragEvent(triggerButton('Alpha'), 'dragend', triggerTransfer)
+
+    triggerButton('Alpha').click()
+    await settle()
+    const effectHandle = effectDragHandle('One')
+    const effectTransfer = createDragDataTransfer()
+    dispatchDragEvent(effectHandle, 'dragstart', effectTransfer)
+    expect(Array.from(effectTransfer.types)).toContain(RISU_EFFECT_DRAG_TYPE)
+    dispatchDragEvent(effectHandle, 'dragend', effectTransfer)
+
+    const dropTarget = target.querySelector<HTMLElement>('[role="listitem"]')
+    expect(dropTarget).toBeTruthy()
+    const externalDrop = dispatchDragEvent(dropTarget!, 'drop', createDragDataTransfer(['Files']))
+
+    expect(externalDrop.defaultPrevented).toBe(false)
   })
 
   it('rebases a multi-selection and its shift-selection anchor after an unselected drag', async () => {

@@ -1,4 +1,10 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const locale = vi.hoisted(() => ({ change: vi.fn<() => Promise<boolean>>() }))
+vi.mock('src/lang', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/lang')>()),
+  changeLanguage: locale.change,
+}))
 
 vi.mock('../alert', () => ({
   alertConfirm: vi.fn(),
@@ -26,9 +32,50 @@ vi.mock('src/ts/process/modules', () => ({
   moduleUpdate: vi.fn(),
 }))
 
-import { languageSettingsItems } from './languageSettingsData.svelte'
+import { langState, languageSettingsItems } from './languageSettingsData.svelte'
+import { alertError } from '../alert'
 
 describe('language settings actions', () => {
+  beforeEach(() => {
+    locale.change.mockReset().mockResolvedValue(true)
+    vi.mocked(alertError).mockClear()
+    langState.changed = false
+  })
+
+  it('does not mark a language switch applied until its selected pack is ready', async () => {
+    let finish!: (value: boolean) => void
+    locale.change.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+    )
+    const item = languageSettingsItems.find((candidate) => candidate.id === 'lang.uiLanguage')!
+    const changing = item.onChange!('ko', { db: { language: 'ko' } } as never)
+    expect(langState.changed).toBe(false)
+    expect(locale.change).toHaveBeenCalledWith('ko')
+    finish(true)
+    await changing
+    expect(langState.changed).toBe(true)
+  })
+
+  it('does not mark a superseded selection applied', async () => {
+    locale.change.mockResolvedValueOnce(false)
+    const item = languageSettingsItems.find((candidate) => candidate.id === 'lang.uiLanguage')!
+    await item.onChange!('ko', { db: { language: 'ko' } } as never)
+    expect(langState.changed).toBe(false)
+  })
+
+  it('handles chunk failure at the settings action and permits retry', async () => {
+    const failure = new Error('locale unavailable')
+    locale.change.mockRejectedValueOnce(failure)
+    const item = languageSettingsItems.find((candidate) => candidate.id === 'lang.uiLanguage')!
+    await item.onChange!('ko', { db: { language: 'ko' } } as never)
+    expect(langState.changed).toBe(false)
+    expect(alertError).toHaveBeenCalledExactlyOnceWith(failure)
+    await item.onChange!('ko', { db: { language: 'ko' } } as never)
+    expect(langState.changed).toBe(true)
+  })
+
   it('keeps non-language values out of the persisted UI-language select', () => {
     const languageSelect = languageSettingsItems.find((item) => item.id === 'lang.uiLanguage')
 
@@ -50,6 +97,29 @@ describe('language settings actions', () => {
     expect(item?.bindKey).toBe('translatorSendTextAsIs')
     expect(item?.getValue?.({ translatorSendTextAsIs: undefined } as never)).toBe(false)
     expect(item?.getValue?.({ translatorSendTextAsIs: true } as never)).toBe(true)
+  })
+
+  it('shows chain-of-thought exclusion only for active send-text-as-is LLM translation', () => {
+    const item = languageSettingsItems.find((candidate) => candidate.id === 'lang.translatorExcludeThoughts')
+
+    expect(item?.bindKey).toBe('translatorExcludeThoughts')
+    expect(item?.getValue?.({ translatorExcludeThoughts: undefined } as never)).toBe(false)
+    expect(item?.getValue?.({ translatorExcludeThoughts: true } as never)).toBe(true)
+    expect(
+      item?.condition?.({
+        db: { translator: 'ko', translatorType: 'llm', translatorSendTextAsIs: true },
+      } as never),
+    ).toBe(true)
+    expect(
+      item?.condition?.({
+        db: { translator: 'ko', translatorType: 'llm', translatorSendTextAsIs: false },
+      } as never),
+    ).toBe(false)
+    expect(
+      item?.condition?.({
+        db: { translator: 'ko', translatorType: 'google', translatorSendTextAsIs: true },
+      } as never),
+    ).toBe(false)
   })
 
   it('uses the default history token limit for missing or invalid existing values', () => {

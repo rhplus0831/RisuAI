@@ -6,6 +6,9 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { jsonPayloadBytes } from '../src/protocolMetrics.js'
 import { setupAuthedClient } from './helpers/auth.js'
+import { buildLargeCorpusFixture } from '../../../test/fixtures/largeCorpusFixture.js'
+import { isServerCharactersSummaryPayload } from '@risuai/protocol/character-summary-resource'
+import { isServerShellPayload } from '@risuai/protocol/shell-resource'
 
 interface Harness {
   app: FastifyInstance
@@ -17,6 +20,10 @@ interface PayloadMetric {
   resource?: string
   revision?: number
   payloadBytes?: number | null
+  durationMs?: number
+  requestUid?: string
+  cacheHits?: number
+  cacheMisses?: number
 }
 
 const capturedMetrics = vi.hoisted((): PayloadMetric[] => [])
@@ -49,6 +56,7 @@ async function startHarness(): Promise<Harness> {
       importMaxBytes: Infinity,
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
+      requestTrace: { mode: 'agent' },
     },
     assetGc: false,
     memoryWorker: false,
@@ -122,7 +130,7 @@ function latestMetric(name: string, resource?: string): PayloadMetric {
   return metric as PayloadMetric
 }
 
-describe('Phase 8 payload budgets', () => {
+describe('bootstrap and resource payload budgets', () => {
   it('emits bootstrap and resource payload metrics for message-light responses', async () => {
     const revision = await importDatabase(messageHeavyDatabase())
     capturedMetrics.length = 0
@@ -143,9 +151,31 @@ describe('Phase 8 payload budgets', () => {
     })
     expect(characters.statusCode).toBe(200)
     const charactersBody = characters.json()
-    const characterChat = charactersBody.characters[0].chats[0]
-    expect(characterChat.message).toEqual([])
-    expect(characterChat.hypaV3Data).toBeUndefined()
+    expect(isServerCharactersSummaryPayload(charactersBody)).toBe(true)
+    expect(charactersBody.characters[0]).toMatchObject({
+      chatCount: 1,
+      activeChatId: 'chat-a',
+      chatIds: ['chat-a'],
+    })
+    expect(charactersBody.characters[0]).not.toHaveProperty('chats')
+
+    const shell = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/resources/shell',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(shell.statusCode).toBe(200)
+    const shellBody = shell.json()
+    expect(isServerShellPayload(shellBody)).toBe(true)
+
+    const cachedCharacters = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/characters',
+      headers: { 'risu-auth': assertion, 'content-type': 'application/json' },
+      payload: { cache: { version: 2, hashes: { characters: [] } } },
+    })
+    expect(cachedCharacters.statusCode).toBe(200)
+    const cachedCharactersBody = cachedCharacters.json()
 
     const hydration = await harness.app.inject({
       method: 'GET',
@@ -157,13 +187,51 @@ describe('Phase 8 payload budgets', () => {
     expect(hydrationBody.message).toHaveLength(80)
 
     const bootstrapMetric = latestMetric('bootstrap_projection')
+    const shellMetric = latestMetric('resource_response', 'shell')
     const charactersMetric = latestMetric('resource_response', 'characters')
     const hydrationMetric = latestMetric('resource_response', 'chatMessages')
 
     expect(bootstrapMetric.payloadBytes).toBe(jsonPayloadBytes(bootstrapBody))
-    expect(charactersMetric.payloadBytes).toBe(jsonPayloadBytes(charactersBody))
+    expect(shellMetric.payloadBytes).toBe(jsonPayloadBytes(shellBody))
+    expect(charactersMetric.payloadBytes).toBe(jsonPayloadBytes(cachedCharactersBody))
     expect(hydrationMetric.payloadBytes).toBe(jsonPayloadBytes(hydrationBody))
+    expect(bootstrapMetric.durationMs).toBeGreaterThanOrEqual(0)
+    expect(charactersMetric.durationMs).toBeGreaterThanOrEqual(0)
+    expect(hydrationMetric.durationMs).toBeGreaterThanOrEqual(0)
+    expect(bootstrapMetric.requestUid).toBe(bootstrap.headers['x-request-uid'])
+    expect(charactersMetric.requestUid).toBe(cachedCharacters.headers['x-request-uid'])
+    expect(hydrationMetric.requestUid).toBe(hydration.headers['x-request-uid'])
+    expect(charactersMetric).toMatchObject({ cacheHits: 0, cacheMisses: 1 })
     expect(bootstrapMetric.payloadBytes).toBeLessThan(hydrationMetric.payloadBytes!)
+    expect(shellMetric.payloadBytes).toBeLessThan(hydrationMetric.payloadBytes!)
     expect(charactersMetric.payloadBytes).toBeLessThan(hydrationMetric.payloadBytes!)
+    expect(JSON.stringify(capturedMetrics)).not.toContain('char-a')
+    expect(JSON.stringify(capturedMetrics)).not.toContain('chat-a')
+    expect(JSON.stringify(capturedMetrics)).not.toContain('Large message')
+  })
+
+  it('keeps the large-corpus summary at least 80% smaller than the legacy aggregate', async () => {
+    await importDatabase(buildLargeCorpusFixture().database)
+    capturedMetrics.length = 0
+
+    const legacyCharacters = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters/aggregate',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(legacyCharacters.statusCode).toBe(200)
+
+    const characters = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters',
+      headers: { 'risu-auth': assertion },
+    })
+
+    expect(characters.statusCode).toBe(200)
+    expect(isServerCharactersSummaryPayload(characters.json())).toBe(true)
+    const summaryPayloadBytes = jsonPayloadBytes(characters.json())!
+    const legacyPayloadBytes = jsonPayloadBytes(legacyCharacters.json())!
+    expect(latestMetric('resource_response', 'characters').payloadBytes).toBe(summaryPayloadBytes)
+    expect(summaryPayloadBytes).toBeLessThanOrEqual(legacyPayloadBytes * 0.2)
   })
 })

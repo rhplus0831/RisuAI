@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { embedTextGroups, embedTexts } from '../src/memoryEmbeddingAdapter.js'
 import {
   MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
-  VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS,
+  VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS,
   VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS,
   VOYAGE_CONTEXTUAL_MAX_CHUNKS,
   VOYAGE_CONTEXTUAL_MAX_REQUEST_TOKENS,
@@ -32,8 +32,8 @@ function voyageRequest(overrides: Partial<MemoryEmbeddingModelRequest> = {}): Me
     endpoint: 'https://api.voyageai.com/v1/contextualizedembeddings',
     limits: {
       source: 'provider',
-      maxInputTokens: VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS,
-      maxInputBytes: VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
+      maxInputTokens: VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS,
+      maxInputBytes: VOYAGE_CONTEXTUAL_MAX_CONTEXT_CHUNK_TOKENS * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
       maxRequestTokens: VOYAGE_CONTEXTUAL_MAX_REQUEST_TOKENS,
       maxRequestChunks: VOYAGE_CONTEXTUAL_MAX_CHUNKS,
       contextualWindowTokens: VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS,
@@ -142,7 +142,7 @@ describe('memory embedding provider adapter', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('L21: rejects oversized inputs before constructing an embedding request body', async () => {
+  it('rejects oversized inputs before constructing an embedding request body', async () => {
     const fetch = vi.fn()
     vi.stubGlobal('fetch', fetch)
 
@@ -201,6 +201,21 @@ describe('memory embedding provider adapter', () => {
 
   it('rejects malformed vectors with non-finite values', async () => {
     vi.stubGlobal('fetch', async () => ok({ data: [{ embedding: [1, Number.NaN] }] }))
+
+    await expect(
+      embedTexts({
+        request: request(),
+        input: ['first'],
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toEqual({
+      error: 'embedding vector values must be finite numbers',
+      code: 'invalid-response',
+    })
+  })
+
+  it('rejects finite numbers that overflow during Float32 conversion', async () => {
+    vi.stubGlobal('fetch', async () => ok({ data: [{ embedding: [1e39] }] }))
 
     await expect(
       embedTexts({
@@ -313,7 +328,7 @@ describe('memory embedding provider adapter', () => {
     })
   })
 
-  it('L22: rejects grouped contextual inputs when the request has no context limit', async () => {
+  it('rejects grouped contextual inputs when the request has no context limit', async () => {
     const fetch = vi.fn()
     vi.stubGlobal('fetch', fetch)
 

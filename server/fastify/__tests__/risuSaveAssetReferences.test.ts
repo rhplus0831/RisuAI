@@ -25,8 +25,8 @@ function asset(id: string): PersistedAsset {
   return { id, ext: 'png', size: 1, contentType: 'image/png' }
 }
 
-describe('Phase 9-8c RISUSAVE asset reference walker', () => {
-  it('walks known Phase 9 server asset fields and compares repository metadata', () => {
+describe('RISUSAVE asset reference walker', () => {
+  it('walks known server asset fields and compares repository metadata', () => {
     const report = buildRisuSaveAssetReport(
       {
         userIcon: USER_ICON,

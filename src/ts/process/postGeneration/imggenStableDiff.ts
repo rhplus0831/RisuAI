@@ -1,15 +1,17 @@
-import { getDatabase, type character } from '../../storage/database.svelte'
+import type { character } from '../../storage/database.svelte'
 import { stableDiff } from '../stableDiff'
+import { resolveStablePostGenerationChat, type StablePostGenerationChatTarget } from './stableTarget'
 
 export interface RunImggenStableDiffOptions {
   abortSignal?: AbortSignal
   currentChar: character
-  selectedChar: number
-  selectedChat: number
+  target: StablePostGenerationChatTarget | null
 }
 
 export async function runImggenStableDiff(opts: RunImggenStableDiffOptions): Promise<void> {
-  const msgs = getDatabase().characters[opts.selectedChar].chats[opts.selectedChat].message
+  const resolution = resolveStablePostGenerationChat(opts.target)
+  if (!resolution) return
+  const msgs = resolution.chat.message
   let msgStr = ''
   for (let i = msgs.length - 1; i >= 0; i--) {
     if (msgs[i].role === 'char') {

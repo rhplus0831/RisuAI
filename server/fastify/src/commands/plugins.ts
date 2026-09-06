@@ -10,7 +10,7 @@ export interface PluginRecord extends JsonRecord {
   realArg: Record<string, string | number>
   customLink: Array<{ link: string; hoverText?: string }>
   argMeta: Record<string, Record<string, string>>
-  version?: 1 | 2 | '2.1' | '3.0'
+  version: '3.0'
   displayName?: string
   versionOfPlugin?: string
   updateURL?: string
@@ -19,14 +19,7 @@ export interface PluginRecord extends JsonRecord {
 }
 
 const PLUGIN_PATCH_EXCLUDED_KEYS = new Set(['name'])
-const PLUGIN_PATCH_DELETABLE_KEYS = new Set([
-  'version',
-  'displayName',
-  'versionOfPlugin',
-  'updateURL',
-  'enabled',
-  'allowedIPC',
-])
+const PLUGIN_PATCH_DELETABLE_KEYS = new Set(['displayName', 'versionOfPlugin', 'updateURL', 'enabled', 'allowedIPC'])
 
 const PLUGIN_SCALAR_FIELD_TYPES = new Map<string, readonly string[]>([
   ['script', ['string']],
@@ -136,6 +129,7 @@ function validatePluginRecord(record: JsonRecord, label: string): void {
     throw new ValidationError(`${label}.name must be a non-empty string`)
   }
   validatePluginPatch(record, label, { allowName: true })
+  validatePluginVersion(record.version, `${label}.version`, true)
 }
 
 function validatePluginPatch(
@@ -206,10 +200,10 @@ function validatePluginPatch(
   }
 }
 
-function validatePluginVersion(value: unknown, label: string): void {
-  if (value === undefined) return
-  if (![1, 2, '2.1', '3.0'].includes(value as never)) {
-    throw new ValidationError(`${label} must be 1, 2, "2.1", or "3.0"`)
+function validatePluginVersion(value: unknown, label: string, required = false): void {
+  if (value === undefined && !required) return
+  if (value !== '3.0') {
+    throw new ValidationError(`${label} must be "3.0"; Fastify does not support V2-series plugins`)
   }
 }
 

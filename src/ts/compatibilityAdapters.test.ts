@@ -23,7 +23,7 @@ vi.mock('./process/coldstorage.svelte', () => ({
 }))
 
 import { clearCachedServerCommandRevision, type CommandEvent } from './server/commands'
-import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
+
 import {
   currentCharacterSelectionSnapshot,
   currentCharacterStateSnapshot,
@@ -38,13 +38,14 @@ import {
 } from './chatCommands'
 import { CharacterHandler } from './process/mcp/risuaccess/characters'
 import { ModuleHandler } from './process/mcp/risuaccess/modules'
-import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+import { charactersResourceState, replaceResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 import { isServerCharacterShell, type Chat, type character, type Database } from './storage/database.svelte'
 import { changeChar, changeCharImage, createNewCharacter, rmCharEmotion } from './characters'
 import { alertError } from './alert'
 import { recoverColdStorageCharacter } from './process/coldstorage.svelte'
-import { isCharacterLorebookMutationReady, resetLorebookHydration } from './server/lorebookBridge.svelte'
+import { isCharacterLorebookMutationReady, resetLorebookHydration } from './server/lorebookOwner.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {
@@ -150,7 +151,6 @@ function seedCharacter(): character {
 beforeEach(() => {
   clearCachedServerCommandRevision()
   resetLorebookHydration()
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
   selectedCharID.set(0)
   testDatabaseState.db = {
@@ -160,11 +160,9 @@ beforeEach(() => {
   } as any
 })
 
-afterEach(() => {
-  setResourceWriteGuardEnabled(false)
-})
+afterEach(() => {})
 
-describe('Phase 9-3f compatibility adapters', () => {
+describe('compatibility adapters', () => {
   it('routes whole-character compatibility setters through character scalar commands', async () => {
     const calls = stubCommandFetch()
     const previousCharacter = snapshot(testDatabaseState.db.characters[0])
@@ -370,46 +368,28 @@ describe('Phase 9-3f compatibility adapters', () => {
     })
   })
 
-  it('keeps character asset helper writes behind trusted projection updates', async () => {
+  it('keeps character asset helper writes on the character owner projection', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      testDatabaseState.db.characters[0].image = 'direct'
-    }).toThrow()
 
     changeCharImage(0, 0)
     rmCharEmotion(0, 0)
 
     expect(testDatabaseState.db.characters[0].image).toBe('asset-old')
     expect(testDatabaseState.db.characters[0].emotionImages).toEqual([])
-    expect(() => {
-      testDatabaseState.db.characters[0].image = 'direct'
-    }).toThrow()
-
     await vi.waitFor(() => {
       expect(calls.filter((call) => call.url === '/api/v1/commands/characters/char-a')).toHaveLength(2)
     })
   })
 
-  it('creates characters through trusted optimistic projection writes under the guard', async () => {
+  it('creates characters through optimistic character-owner projection writes', async () => {
     const calls = stubCommandFetch()
     ;(testDatabaseState.db as { enableLorebookStubs?: boolean }).enableLorebookStubs = true
-    setResourceWriteGuardEnabled(true)
 
-    expect(() => {
-      testDatabaseState.db.characters.push({ chaId: 'direct', name: 'Direct', chats: [] } as any)
-    }).toThrow()
+    const outcome = await createNewCharacter()
 
-    const index = createNewCharacter()
-
-    expect(index).toBe(1)
+    expect(outcome).toMatchObject({ status: 'accepted', index: 1 })
     expect(testDatabaseState.db.characters[1].name).toBe('')
     expect(isCharacterLorebookMutationReady(testDatabaseState.db.characters[1].chaId)).toBe(true)
-    expect(() => {
-      testDatabaseState.db.characters.push({ chaId: 'direct-2', name: 'Direct', chats: [] } as any)
-    }).toThrow()
-
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/characters')).toBe(true)
     })
@@ -424,19 +404,13 @@ describe('Phase 9-3f compatibility adapters', () => {
     })
   })
 
-  it('creates and selects scratch characters with one server command under the guard', async () => {
+  it('creates and selects scratch characters with one server command', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
+    const outcome = await createNewCharacter({ select: true })
 
-    const index = createNewCharacter({ select: true })
-
-    expect(index).toBe(1)
+    expect(outcome).toMatchObject({ status: 'accepted', index: 1 })
     expect(get(selectedCharID)).toBe(1)
     expect(testDatabaseState.db.characters[1].lastInteraction).toEqual(expect.any(Number))
-    expect(() => {
-      testDatabaseState.db.characters[1].lastInteraction = 1
-    }).toThrow()
-
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/characters/create-and-select')).toBe(true)
     })
@@ -459,14 +433,77 @@ describe('Phase 9-3f compatibility adapters', () => {
     })
   })
 
+  it('waits for durable scratch-character acceptance before navigating to it', async () => {
+    let resolveCreate!: (response: Response) => void
+    const createResponse = new Promise<Response>((resolve) => {
+      resolveCreate = resolve
+    })
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        calls.push({ url, method: init.method ?? 'GET', body })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/characters/create-and-select') return createResponse
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    const creating = createNewCharacter({ select: true })
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/create-and-select')).toBe(true)
+    })
+
+    expect(testDatabaseState.db.characters).toHaveLength(2)
+    expect(get(selectedCharID)).toBe(0)
+    expect(charactersResourceState.currentChar).toBe(0)
+
+    const characterId = testDatabaseState.db.characters[1].chaId
+    resolveCreate(
+      jsonResponse({
+        revision: 11,
+        event: { type: 'character.createdAndSelected', revision: 11, resource: 'character' },
+        characterId,
+      }),
+    )
+
+    await expect(creating).resolves.toMatchObject({ status: 'accepted', characterId, index: 1 })
+    expect(get(selectedCharID)).toBe(1)
+    expect(charactersResourceState.currentChar).toBe(1)
+  })
+
+  it('returns failed without an index and removes the provisional scratch character after rejection', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/characters/create-and-select') {
+          return jsonResponse({ error: 'scratch create rejected' }, 400)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    const outcome = await createNewCharacter({ select: true })
+
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      result: { status: 'error', reason: 'invalid-request' },
+    })
+    expect(outcome).not.toHaveProperty('characterId')
+    expect(outcome).not.toHaveProperty('index')
+    expect(testDatabaseState.db.characters.map((character) => character.chaId)).toEqual(['char-a'])
+    expect(get(selectedCharID)).toBe(0)
+    expect(charactersResourceState.currentChar).toBe(0)
+  })
+
   it('selects characters without formatting the guarded server projection', async () => {
     const calls = stubCommandFetch()
     testDatabaseState.db.characters[0] = {
       ...testDatabaseState.db.characters[0],
       triggerscript: undefined,
     } as character
-    setResourceWriteGuardEnabled(true)
-
     await changeChar(0)
 
     expect(get(selectedCharID)).toBe(0)
@@ -536,8 +573,6 @@ describe('Phase 9-3f compatibility adapters', () => {
       characterOrder: ['char-a', 'char-b'],
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
-
     await changeChar(1)
 
     expect(get(selectedCharID)).toBe(1)
@@ -593,8 +628,6 @@ describe('Phase 9-3f compatibility adapters', () => {
       characterOrder: ['char-a', 'char-b'],
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
-
     await changeChar(1)
 
     // Optimistic selection lands immediately, before the command resolves.
@@ -605,7 +638,7 @@ describe('Phase 9-3f compatibility adapters', () => {
     await vi.waitFor(() => {
       expect(get(selectedCharID)).toBe(0)
     })
-    expect((testDatabaseState.db as any).currentChar).toBe(0)
+    expect(charactersResourceState.currentChar).toBe(0)
     expect(testDatabaseState.db.characters[1].lastInteraction).toBe(1234)
     expect(testDatabaseState.db.characters[1].name).toBe('Char B')
   })
@@ -614,7 +647,6 @@ describe('Phase 9-3f compatibility adapters', () => {
     const calls = stubCommandFetch()
     testDatabaseState.db.characters[0].coldstorage = 'cold-char-a'
     selectedCharID.set(-1)
-    setResourceWriteGuardEnabled(true)
     vi.mocked(recoverColdStorageCharacter).mockResolvedValueOnce(true)
 
     await changeChar(0)
@@ -630,11 +662,6 @@ describe('Phase 9-3f compatibility adapters', () => {
   it('routes MCP character lorebook writes through lorebook commands in server-backed web mode', async () => {
     const calls = stubCommandFetch()
     const handler = new CharacterHandler()
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      testDatabaseState.db.characters[0].globalLore = []
-    }).toThrow()
 
     const result = await handler.setCharacterLorebook('char-a', 'Lore', 'content', ['key'])
 
@@ -671,11 +698,6 @@ describe('Phase 9-3f compatibility adapters', () => {
       },
     ]
     const handler = new CharacterHandler()
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      testDatabaseState.db.characters[0].customscript = []
-    }).toThrow()
 
     const regexResult = await handler.setCharacterRegexScripts('char-a', 'Regex', undefined, 'in', 'out', 'editdisplay')
     expect(regexResult[0]).toMatchObject({
@@ -745,11 +767,6 @@ describe('Phase 9-3f compatibility adapters', () => {
       },
     ]
     const handler = new ModuleHandler()
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      testDatabaseState.db.modules[0].regex = []
-    }).toThrow()
 
     const regexResult = await handler.setModuleRegexScript('mod-a', 'Regex', undefined, 'in', 'out', 'editdisplay')
     expect(regexResult[0]).toMatchObject({
@@ -805,11 +822,6 @@ describe('Phase 9-3f compatibility adapters', () => {
     testDatabaseState.db.modules = [{ id: 'mod-a', name: 'Module', description: '' }]
     testDatabaseState.db.enabledModules = []
     const handler = new ModuleHandler()
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      testDatabaseState.db.enabledModules.push('mod-a')
-    }).toThrow()
 
     const result = await handler.setModuleInfo('mod-a', {
       name: 'Renamed module',

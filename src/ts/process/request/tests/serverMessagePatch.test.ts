@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { Chat, Message } from '../../../storage/database.svelte'
-import type { ServerChatMessagePatch } from '../serverChatEvents'
+import type { character, Chat, Message } from '../../../storage/database.svelte'
+import type { ServerChatMessagePatch } from '@risuai/protocol/generation-sse'
 import { applyServerMessagePatch } from '../serverMessagePatch'
 
 function patch(overrides: Partial<ServerChatMessagePatch>): ServerChatMessagePatch {
@@ -18,6 +18,49 @@ function patch(overrides: Partial<ServerChatMessagePatch>): ServerChatMessagePat
 }
 
 describe('applyServerMessagePatch', () => {
+  it('treats an authoritative transcript replay as a semantic no-op', () => {
+    const user = { role: 'user', data: 'hello', chatId: 'user-1' } as const
+    const assistant = {
+      role: 'char',
+      data: 'persisted reply',
+      chatId: 'generation-1',
+      generationInfo: { generationId: 'generation-1' },
+    } as const
+    const chat = {
+      message: [user, assistant],
+      note: '',
+      name: '',
+      localLore: [],
+      scriptstate: { $score: '1' },
+    } as Chat
+    const messagesBefore = chat.message
+    const userBefore = chat.message[0]
+    const assistantBefore = chat.message[1]
+    const scriptstateBefore = chat.scriptstate
+
+    applyServerMessagePatch(
+      chat,
+      patch({
+        messageMutations: [
+          {
+            type: 'replace_all',
+            source: 'output_trigger',
+            beforeLength: 1,
+            afterLength: 2,
+            firstChangedIndex: 1,
+            messages: [structuredClone(assistant)],
+          },
+        ],
+        chatVarMutations: [{ key: '$score', before: '0', after: '1' }],
+      }),
+    )
+
+    expect(chat.message).toBe(messagesBefore)
+    expect(chat.message[0]).toBe(userBefore)
+    expect(chat.message[1]).toBe(assistantBefore)
+    expect(chat.scriptstate).toBe(scriptstateBefore)
+  })
+
   it('preserves append single-message detach while normalizing an already-local user append', () => {
     const serverMessage = {
       role: 'user',
@@ -72,7 +115,7 @@ describe('applyServerMessagePatch', () => {
     })
   })
 
-  it('M7: replace_all applies a byte-identical transcript with zero structuredClone calls', () => {
+  it('replace_all applies a byte-identical transcript with zero structuredClone calls', () => {
     const replacementMessages = [
       {
         role: 'user',
@@ -179,6 +222,38 @@ describe('applyServerMessagePatch', () => {
     expect(chat.scriptstate).toEqual({ $old: '2' })
   })
 
+  it('applies @@inject rewrites by message identity after local rows shift', () => {
+    const chat = {
+      message: [
+        { role: 'user', data: 'inserted locally', chatId: 'local-row' },
+        { role: 'user', data: 'before inject', chatId: 'inject-row' },
+      ],
+      note: '',
+      name: '',
+      localLore: [],
+    } satisfies Chat
+
+    applyServerMessagePatch(
+      chat,
+      patch({
+        messageMutations: [
+          {
+            type: 'replace_by_id',
+            source: 'history_inject',
+            messageId: 'inject-row',
+            before: { role: 'user', data: 'before inject', chatId: 'inject-row' },
+            message: { role: 'user', data: 'expanded before inject', chatId: 'inject-row' },
+          },
+        ],
+      }),
+    )
+
+    expect(chat.message).toEqual([
+      { role: 'user', data: 'inserted locally', chatId: 'local-row' },
+      { role: 'user', data: 'expanded before inject', chatId: 'inject-row' },
+    ])
+  })
+
   it('applies the persisted memory cutoff to the live chat projection', () => {
     const chat = {
       message: [{ role: 'user', data: 'first', chatId: 'message-1' }],
@@ -196,6 +271,69 @@ describe('applyServerMessagePatch', () => {
     )
 
     expect(chat.lastMemory).toBe('message-1')
+  })
+
+  it('does not overwrite newer identity-addressed, chat-var, or metadata projections', () => {
+    const chat = {
+      message: [{ role: 'user', data: 'newer message edit', chatId: 'message-1' }],
+      note: '',
+      name: '',
+      localLore: [],
+      scriptstate: { $mood: 'newer mood' },
+      lastMemory: 'newer-memory',
+    } satisfies Chat
+
+    applyServerMessagePatch(
+      chat,
+      patch({
+        messageMutations: [
+          {
+            type: 'replace_by_id',
+            source: 'history_inject',
+            messageId: 'message-1',
+            before: { role: 'user', data: 'older message', chatId: 'message-1' },
+            message: { role: 'user', data: 'stale scripted message', chatId: 'message-1' },
+          },
+        ],
+        chatVarMutations: [{ key: '$mood', before: 'older mood', after: 'stale scripted mood' }],
+        chatMetadataMutations: [{ key: 'lastMemory', before: 'older-memory', after: 'stale-memory' }],
+      }),
+    )
+
+    expect(chat.message[0].data).toBe('newer message edit')
+    expect(chat.scriptstate).toEqual({ $mood: 'newer mood' })
+    expect(chat.lastMemory).toBe('newer-memory')
+  })
+
+  it('applies trusted terminal character and local-lore mutations only to fresh targets', () => {
+    const character = { name: 'Tess', desc: 'old description' } as character
+    const chat = {
+      message: [],
+      note: '',
+      name: '',
+      localLore: [{ id: 'lore-a', comment: 'note', content: 'old' }],
+    } as Chat
+    const terminalPatch = patch({
+      characterFieldMutations: [
+        { key: 'name', before: 'Tess', after: 'Output Tess' },
+        { key: 'desc', before: 'old description', after: 'new description' },
+      ],
+      localLoreMutation: {
+        before: [{ id: 'lore-a', comment: 'note', content: 'old' }],
+        after: [{ id: 'lore-a', comment: 'note', content: 'scripted' }],
+      },
+    })
+
+    applyServerMessagePatch(chat, terminalPatch, character)
+
+    expect(character).toMatchObject({ name: 'Output Tess', desc: 'new description' })
+    expect(chat.localLore).toEqual([{ id: 'lore-a', comment: 'note', content: 'scripted' }])
+
+    character.desc = 'newer user description'
+    chat.localLore = [{ id: 'user-lore', comment: 'user note', content: 'newer' }] as Chat['localLore']
+    applyServerMessagePatch(chat, terminalPatch, character)
+    expect(character.desc).toBe('newer user description')
+    expect(chat.localLore).toEqual([{ id: 'user-lore', comment: 'user note', content: 'newer' }])
   })
 
   it('applies compact replace-all suffix mutations from firstChangedIndex', () => {

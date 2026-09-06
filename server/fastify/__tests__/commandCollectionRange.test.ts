@@ -5,6 +5,9 @@ import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
+import { loadPersisted } from '../src/repository.js'
+import { normalizeTemplate } from '../src/prompt/templates.js'
+import type { FastifyDatabase as Database } from '../src/prompt/serverTypes.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
@@ -61,12 +64,12 @@ function seedDatabase(): Record<string, unknown> {
     // A "current" settings scalar + prompt items that legacy `applyPreset` must leave alone.
     temperature: 0.5,
     selectedPersona: 0,
-    // Legacy profile mirror scalars (settings) that select/delete/patch refresh.
+    // Legacy profile mirror scalars retained as stale compatibility fields.
     username: 'legacy-user',
     userIcon: '',
     personaPrompt: 'legacy-prompt',
     userNote: 'legacy-note',
-    // Translator legacy scalars (settings) re-synced on every translator command.
+    // Translator legacy scalars (settings) retained as stale compatibility fields.
     translatorPresetId: 0,
     translatorPrompt: 'pa-prompt',
     translatorMaxResponse: 500,
@@ -129,6 +132,7 @@ function pluginRecord(name: string): Record<string, unknown> {
     realArg: {},
     customLink: [],
     argMeta: {},
+    version: '3.0',
     enabled: false,
   }
 }
@@ -249,7 +253,7 @@ afterEach(async () => {
   rmSync(harness.dataDir, { recursive: true, force: true })
 })
 
-describe('Phase 4 plugins collection range', () => {
+describe('plugins collection range', () => {
   it('POST plugins rewrites only the plugins table', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
@@ -379,7 +383,7 @@ describe('Phase 4 plugins collection range', () => {
   })
 })
 
-describe('Phase 4 presets collection range', () => {
+describe('presets collection range', () => {
   it('POST presets rewrites only the bot_presets table', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
@@ -565,7 +569,7 @@ describe('Phase 4 presets collection range', () => {
     ])
   })
 
-  it('POST prompt-presets/select persists applied promptTemplate + settings', async () => {
+  it('POST prompt-presets/select persists only selection settings', async () => {
     const seed = seedDatabase()
     seed.modelPresets = [{ id: 'model-0', name: 'Model 0' }]
     seed.promptPresetsId = 0
@@ -583,15 +587,49 @@ describe('Phase 4 presets collection range', () => {
     })
 
     expect(metric.mutationPath).toBe('targeted-collection')
-    expect(metric.writtenTables).toEqual(['prompt_templates', 'settings'])
+    expect(metric.writtenTables).toEqual(['settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect(readSettings().promptPresetsId).toBe(1)
     expect(readSettings().mainPrompt).toBe('prompt 1')
-    expect(readCollection('prompt_templates')).toEqual([{ id: expect.any(String), type: 'plain', text: 'sp-1' }])
+    expect(readCollection('prompt_templates')).toMatchObject([{ type: 'plain', text: 'current', role: 'system' }])
   })
 
-  it('PATCH selected prompt-presets/:id persists touched settings and promptTemplate projections', async () => {
+  it('POST prompt-presets and reorder persist only the modern owner table', async () => {
+    const seed = seedDatabase()
+    seed.promptPresetsId = 0
+    seed.promptPresets = [{ id: 'prompt-0', name: 'Prompt 0' }]
+    seed.promptTemplate = [{ type: 'plain', text: 'stale-legacy-table' }]
+    let revision = await importDatabase(seed)
+
+    const created = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-presets',
+      payload: {
+        baseRevision: revision,
+        preset: { id: 'prompt-1', name: 'Prompt 1', promptTemplate: [{ type: 'plain', text: 'owner-1' }] },
+      },
+    })
+    expect(created.metric.writtenTables).toEqual(['prompt_presets'])
+    expect(readCollection('prompt_templates')).toMatchObject([
+      { type: 'plain', text: 'stale-legacy-table', role: 'system' },
+    ])
+    revision = created.revision
+
+    const reordered = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-presets/reorder',
+      payload: { baseRevision: revision, promptPresetIds: ['prompt-1', 'prompt-0'] },
+    })
+    expect(reordered.metric.writtenTables).toEqual(['prompt_presets', 'settings'])
+    expect(reordered.body.selectedPromptPresetId).toBe('prompt-0')
+    expect(readSettings().promptPresetsId).toBe(1)
+    expect(readCollection('prompt_templates')).toMatchObject([
+      { type: 'plain', text: 'stale-legacy-table', role: 'system' },
+    ])
+  })
+
+  it('PATCH selected prompt-presets/:id persists the owner row and touched settings only', async () => {
     const seed = seedDatabase()
     seed.modelPresets = [{ id: 'model-0', name: 'Model 0' }]
     seed.promptPresetsId = 0
@@ -616,14 +654,12 @@ describe('Phase 4 presets collection range', () => {
     })
 
     expect(metric.mutationPath).toBe('targeted-collection')
-    expect(metric.writtenTables).toEqual(['prompt_presets', 'prompt_templates', 'settings'])
+    expect(metric.writtenTables).toEqual(['prompt_presets', 'settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect(collectionRowidsByPosition('prompt_presets')).toEqual(beforeRowids)
     expect(readSettings().mainPrompt).toBe('prompt 0 patched')
-    expect(readCollection('prompt_templates')).toEqual([
-      { id: expect.any(String), type: 'plain', text: 'sp-0 patched' },
-    ])
+    expect(readCollection('prompt_templates')).toMatchObject([{ type: 'plain', text: 'current', role: 'system' }])
     expect(body).toMatchObject({
       promptPresetId: 'prompt-0',
       acknowledgedKeys: ['mainPrompt', 'promptTemplate'],
@@ -732,6 +768,24 @@ describe('Phase 4 presets collection range', () => {
       ownerProjectionApplied: false,
       selectedPromptPresetId: null,
     })
+    const mainPromptBeforeArchive = readSettings().mainPrompt
+
+    const archiveResult = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/prompt-presets/prompt-0',
+      payload: { baseRevision: revision, patch: { archived: true } },
+    })
+    revision = archiveResult.revision
+    expect(archiveResult.metric.writtenTables).toEqual(['prompt_presets'])
+    expect(archiveResult.body).toMatchObject({
+      acknowledgedKeys: ['archived'],
+      preset: {},
+      settings: {},
+      selectedProjectionApplied: false,
+      ownerProjectionApplied: false,
+    })
+    expect(readCollection('prompt_presets')[0]).toMatchObject({ archived: true })
+    expect(readSettings().mainPrompt).toBe(mainPromptBeforeArchive)
 
     const promptResult = await runCommand({
       method: 'PATCH',
@@ -746,10 +800,12 @@ describe('Phase 4 presets collection range', () => {
       selectedProjectionApplied: true,
       ownerProjectionApplied: false,
     })
-    expect(readCollection('prompt_templates')).toEqual([{ id: expect.any(String), type: 'plain', text: 'current' }])
+    expect(readCollection('prompt_templates')).toEqual([
+      { id: expect.any(String), type: 'plain', text: 'current', role: 'system' },
+    ])
   })
 
-  it('DELETE selected prompt-presets/:id persists the next selected promptTemplate + settings', async () => {
+  it('DELETE selected prompt-presets/:id persists the next selection and settings only', async () => {
     const seed = seedDatabase()
     seed.modelPresets = [{ id: 'model-0', name: 'Model 0' }]
     seed.promptPresetsId = 1
@@ -768,18 +824,156 @@ describe('Phase 4 presets collection range', () => {
     })
 
     expect(metric.mutationPath).toBe('targeted-collection')
-    expect(metric.writtenTables).toEqual(['prompt_presets', 'prompt_templates', 'settings'])
+    expect(metric.writtenTables).toEqual(['prompt_presets', 'settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect(readCollection('prompt_presets').map((p) => (p as { id: string }).id)).toEqual(['prompt-0'])
     expect(readSettings().promptPresetsId).toBe(0)
     expect(body.selectedPromptPresetId).toBe('prompt-0')
     expect(readSettings().mainPrompt).toBe('prompt 0')
-    expect(readCollection('prompt_templates')).toEqual([{ id: expect.any(String), type: 'plain', text: 'sp-0' }])
+    expect(readCollection('prompt_templates')).toMatchObject([{ type: 'plain', text: 'sp-1', role: 'system' }])
+  })
+
+  it.each([
+    { selected: false, references: false },
+    { selected: true, references: false },
+    { selected: false, references: true },
+    { selected: true, references: true },
+  ])(
+    'deletes a prompt preset without a stored last-loaded name (selected=$selected, references=$references)',
+    async ({ selected, references }) => {
+      const seed = seedDatabase()
+      seed.promptPresetsId = selected ? 1 : 0
+      seed.mainPrompt = selected ? 'deleted prompt' : 'retained prompt'
+      seed.promptPresets = [
+        { id: 'prompt-0', name: 'Prompt 0', mainPrompt: 'retained prompt' },
+        { id: 'prompt-1', name: 'Prompt 1', mainPrompt: 'deleted prompt' },
+      ]
+      seed.loadouts = references
+        ? [{ id: 'loadout-a', name: 'Loadout A', promptPresetId: 'prompt-1', promptPresetName: 'Prompt 1' }]
+        : []
+      seed.characters = [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a-1',
+              name: 'A1',
+              message: [],
+              ...(references ? { generationSettings: { promptPresetId: 'prompt-1' } } : {}),
+            },
+          ],
+        },
+      ]
+      const revision = await importDatabase(seed)
+      const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+      try {
+        // Import fills defaults; reproduce an existing save where this display-only
+        // setting was never persisted, as in the reported DELETE requests.
+        sqlite
+          .prepare("UPDATE settings SET data_json = json_remove(data_json, '$.lastLoadedLoadoutName') WHERE id = 1")
+          .run()
+      } finally {
+        sqlite.close()
+      }
+      const before = rowidSnapshot()
+
+      const { body, metric } = await runCommand({
+        method: 'DELETE',
+        url: '/api/v1/commands/prompt-presets/prompt-1',
+        payload: { baseRevision: revision, promptPresetId: 'prompt-0' },
+      })
+
+      expect(body).toMatchObject({
+        revision: revision + 1,
+        selectedPromptPresetId: 'prompt-0',
+        cascadedChatCount: references ? 1 : 0,
+        cascadedLoadoutCount: references ? 1 : 0,
+      })
+      expect(metric.writtenTables).toEqual(
+        ['prompt_presets', ...(selected ? ['settings'] : []), ...(references ? ['chats', 'loadouts'] : [])].sort(),
+      )
+      expect(readCollection('prompt_presets')).toMatchObject([{ id: 'prompt-0' }])
+      expect(readSettings().promptPresetsId).toBe(0)
+      expect(readSettings().mainPrompt).toBe('retained prompt')
+      expect(readSettings()).not.toHaveProperty('lastLoadedLoadoutName')
+      expect(readCollection('loadouts')).toMatchObject(
+        references ? [{ id: 'loadout-a', promptPresetId: 'prompt-0', promptPresetName: 'Prompt 0' }] : [],
+      )
+      if (references) {
+        expect(readCollection('chats')).toMatchObject([
+          { id: 'chat-a-1', generationSettings: { promptPresetId: 'prompt-0' } },
+        ])
+      } else {
+        expectNoCharacterOrChatChurn(before)
+      }
+
+      const retry = await runCommand({
+        method: 'DELETE',
+        url: '/api/v1/commands/prompt-presets/prompt-1',
+        payload: { baseRevision: revision + 1, promptPresetId: 'prompt-0' },
+      })
+      expect(retry.body).toMatchObject({
+        revision: revision + 2,
+        selectedPromptPresetId: 'prompt-0',
+        cascadedChatCount: 0,
+        cascadedLoadoutCount: 0,
+      })
+      expect(retry.metric.writtenTables).toEqual([])
+    },
+  )
+
+  it('keeps stale legacy prompt_templates out of selected modern generation after reopen', async () => {
+    const seed = seedDatabase()
+    seed.promptPresetsId = 0
+    seed.promptPresets = [
+      { id: 'prompt-0', name: 'Prompt 0', promptTemplate: [{ type: 'plain', text: 'owner-0' }] },
+      { id: 'prompt-1', name: 'Prompt 1', promptTemplate: [{ type: 'plain', text: 'owner-1' }] },
+    ]
+    seed.promptTemplate = [{ type: 'plain', text: 'stale-legacy-table' }]
+    const revision = await importDatabase(seed)
+
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-presets/select',
+      payload: { baseRevision: revision, promptPresetId: 'prompt-1' },
+    })
+    expect(metric.writtenTables).toEqual(['settings'])
+    expect(readCollection('prompt_templates')).toMatchObject([
+      { type: 'plain', text: 'stale-legacy-table', role: 'system' },
+    ])
+
+    await harness.app.close()
+    const reopened = await buildApp({
+      config: {
+        host: '127.0.0.1',
+        port: 0,
+        dataDir: harness.dataDir,
+        bodyLimit: 20 * 1024 * 1024,
+        importMaxBytes: Infinity,
+        trustProxy: false,
+        hubUrl: 'https://sv.risuai.xyz',
+      },
+      assetGc: false,
+      memoryWorker: false,
+    })
+    harness.app = reopened.app
+
+    const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      const persisted = loadPersisted(sqlite, harness.dataDir).database as Database
+      const generated = normalizeTemplate(persisted, { utilityBot: false } as Parameters<typeof normalizeTemplate>[1])
+      expect(generated.promptTemplate).toHaveLength(2)
+      expect(generated.promptTemplate?.[0]).toMatchObject({ type: 'plain', text: 'owner-1', role: 'system' })
+      expect(generated.promptTemplate?.[1]).toEqual({ type: 'postEverything' })
+    } finally {
+      sqlite.close()
+    }
   })
 })
 
-describe('Phase 4 prompt-items collection range', () => {
+describe('prompt-items collection range', () => {
   // Seed prompt items (with stable ids so per-id routes resolve them).
   async function importWithPromptItems(): Promise<number> {
     const seed = seedDatabase()
@@ -940,7 +1134,9 @@ describe('Phase 4 prompt-items collection range', () => {
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect(promptPresetTemplate('prompt-a').map((i) => i.id)).toEqual(['item-0', 'item-1', 'item-2', 'item-3'])
-    expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
+    expect(readCollection('prompt_templates')).toEqual([
+      { id: 'legacy-item', type: 'plain', text: 'legacy', role: 'system' },
+    ])
   })
 
   it('PATCH prompt-items/:id with promptPresetId updates only the selected prompt_presets row', async () => {
@@ -960,7 +1156,9 @@ describe('Phase 4 prompt-items collection range', () => {
     expectNoCharacterOrChatChurn(before)
     expect(collectionRowidsByPosition('prompt_presets')).toEqual(beforeRowids)
     expect(promptPresetTemplate('prompt-a')[1]).toMatchObject({ id: 'item-1', text: 'patched scoped' })
-    expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
+    expect(readCollection('prompt_templates')).toEqual([
+      { id: 'legacy-item', type: 'plain', text: 'legacy', role: 'system' },
+    ])
   })
 
   it('normalizes id-less selected prompt preset rows before scoped prompt item patches', async () => {
@@ -989,7 +1187,9 @@ describe('Phase 4 prompt-items collection range', () => {
       id: normalizedRow.id,
       text: 'patched normalized scoped',
     })
-    expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
+    expect(readCollection('prompt_templates')).toEqual([
+      { id: 'legacy-item', type: 'plain', text: 'legacy', role: 'system' },
+    ])
   })
 
   it('DELETE prompt-items/:id with promptPresetId updates only the selected prompt_presets row', async () => {
@@ -1007,7 +1207,9 @@ describe('Phase 4 prompt-items collection range', () => {
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect(promptPresetTemplate('prompt-a').map((i) => i.id)).toEqual(['item-0', 'item-2'])
-    expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
+    expect(readCollection('prompt_templates')).toEqual([
+      { id: 'legacy-item', type: 'plain', text: 'legacy', role: 'system' },
+    ])
   })
 
   it('POST prompt-items/reorder with promptPresetId updates only the selected prompt_presets row', async () => {
@@ -1025,7 +1227,9 @@ describe('Phase 4 prompt-items collection range', () => {
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect(promptPresetTemplate('prompt-a').map((i) => i.id)).toEqual(['item-2', 'item-0', 'item-1'])
-    expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
+    expect(readCollection('prompt_templates')).toEqual([
+      { id: 'legacy-item', type: 'plain', text: 'legacy', role: 'system' },
+    ])
   })
 
   it('POST prompt-items/enable=false with promptPresetId clears only the selected prompt preset template', async () => {
@@ -1043,8 +1247,10 @@ describe('Phase 4 prompt-items collection range', () => {
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect(promptPresetTemplate('prompt-a')).toEqual([])
-    expect(promptPresetTemplate('prompt-b')).toEqual([{ id: 'item-b', type: 'plain', text: 'b0' }])
-    expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
+    expect(promptPresetTemplate('prompt-b')).toEqual([{ id: 'item-b', type: 'plain', text: 'b0', role: 'system' }])
+    expect(readCollection('prompt_templates')).toEqual([
+      { id: 'legacy-item', type: 'plain', text: 'legacy', role: 'system' },
+    ])
   })
 
   it('rejects scoped prompt item commands when the prompt preset selection is stale', async () => {
@@ -1059,12 +1265,14 @@ describe('Phase 4 prompt-items collection range', () => {
 
     expect(result.statusCode).toBe(400)
     expect(promptPresetTemplate('prompt-a')[1]).toMatchObject({ id: 'item-1', text: 'a1' })
-    expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
+    expect(readCollection('prompt_templates')).toEqual([
+      { id: 'legacy-item', type: 'plain', text: 'legacy', role: 'system' },
+    ])
   })
 })
 
-describe('Phase 4 personas collection range', () => {
-  it('POST personas (no mirror) rewrites only the personas table', async () => {
+describe('personas collection range', () => {
+  it('POST personas (no mirror) atomically writes the stable selection projection', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
 
@@ -1075,7 +1283,7 @@ describe('Phase 4 personas collection range', () => {
     })
 
     expect(metric.mutationPath).toBe('targeted-collection')
-    expect(metric.writtenTables).toEqual(['personas'])
+    expect(metric.writtenTables).toEqual(['personas', 'settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect((readCollection('personas') as Array<{ id: string }>).map((p) => p.id)).toEqual([
@@ -1083,9 +1291,11 @@ describe('Phase 4 personas collection range', () => {
       'persona-b',
       'persona-c',
     ])
-    // No mirror: pointer + legacy scalars untouched.
-    expect(readSettings().selectedPersona).toBe(0)
-    expect(readSettings().username).toBe('legacy-user')
+    const settings = readSettings()
+    expect(settings.selectedPersonaId).toBe('persona-c')
+    expect(settings.selectedPersona).toBe(2)
+    // No mirror: legacy profile aliases stay untouched.
+    expect(settings.username).toBe('legacy-user')
   })
 
   it('POST personas with mirror co-writes settings (pointer + legacy scalars)', async () => {
@@ -1107,6 +1317,7 @@ describe('Phase 4 personas collection range', () => {
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     const settings = readSettings()
+    expect(settings.selectedPersonaId).toBe('persona-c')
     expect(settings.selectedPersona).toBe(2)
     expect(settings.username).toBe('Persona C')
     expect(settings.personaPrompt).toBe('pc-prompt')
@@ -1134,7 +1345,7 @@ describe('Phase 4 personas collection range', () => {
     expect(personas[0].name).toBe('Persona A')
   })
 
-  it('POST personas/select writes personas + settings (default mirror + save)', async () => {
+  it('POST personas/select writes only the stable selection settings by default', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
 
@@ -1144,17 +1355,17 @@ describe('Phase 4 personas collection range', () => {
       payload: { baseRevision: revision, personaId: 'persona-b' },
     })
 
-    // Default saveCurrent snapshots the outgoing persona into the table; default
-    // mirror copies persona-b's profile into the legacy settings scalars.
+    // Ordinary selection does not snapshot or mirror legacy aliases.
     expect(metric.mutationPath).toBe('targeted-collection')
-    expect(metric.writtenTables).toEqual(['personas', 'settings'])
+    expect(metric.writtenTables).toEqual(['settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     const settings = readSettings()
+    expect(settings.selectedPersonaId).toBe('persona-b')
     expect(settings.selectedPersona).toBe(1)
-    expect(settings.username).toBe('Persona B')
-    expect(settings.personaPrompt).toBe('pb-prompt')
-    expect(settings.userNote).toBe('pb-note')
+    expect(settings.username).toBe('legacy-user')
+    expect(settings.personaPrompt).toBe('legacy-prompt')
+    expect(settings.userNote).toBe('legacy-note')
   })
 
   it('POST personas/select (no save, no mirror) writes only settings (pointer)', async () => {
@@ -1177,12 +1388,12 @@ describe('Phase 4 personas collection range', () => {
     expect(metric.writtenTables).toEqual(['settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
-    expect(readSettings().selectedPersona).toBe(1)
+    expect(readSettings()).toMatchObject({ selectedPersonaId: 'persona-b', selectedPersona: 1 })
     // Mirror off: legacy scalars unchanged.
     expect(readSettings().username).toBe('legacy-user')
   })
 
-  it('DELETE personas/:id writes personas + settings (default mirror)', async () => {
+  it('DELETE personas/:id writes personas + stable selection settings without mirroring', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
 
@@ -1197,10 +1408,9 @@ describe('Phase 4 personas collection range', () => {
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect((readCollection('personas') as Array<{ id: string }>).map((p) => p.id)).toEqual(['persona-b'])
-    expect(readSettings().selectedPersona).toBe(0)
+    expect(readSettings()).toMatchObject({ selectedPersonaId: 'persona-b', selectedPersona: 0 })
     expect(body.selectedPersonaId).toBe('persona-b')
-    // Default mirror refreshed the legacy scalars from the new selection.
-    expect(readSettings().username).toBe('Persona B')
+    expect(readSettings().username).toBe('legacy-user')
   })
 
   it('POST personas/reorder co-writes settings when the selected index moves', async () => {
@@ -1219,13 +1429,13 @@ describe('Phase 4 personas collection range', () => {
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect((readCollection('personas') as Array<{ id: string }>).map((p) => p.id)).toEqual(['persona-b', 'persona-a'])
-    expect(readSettings().selectedPersona).toBe(1)
+    expect(readSettings()).toMatchObject({ selectedPersonaId: 'persona-a', selectedPersona: 1 })
   })
 })
 
-describe('Phase 4 translator-presets collection range', () => {
-  // Every translator route re-syncs the legacy scalars, so all four write the
-  // table + settings unconditionally.
+describe('translator-presets collection range', () => {
+  // Translator routes persist stable selection metadata alongside the table;
+  // legacy prompt/max-response scalars remain unchanged.
   const EXPECTED = ['settings', 'translator_presets']
 
   it('POST translator-presets writes translator_presets + settings', async () => {
@@ -1250,12 +1460,12 @@ describe('Phase 4 translator-presets collection range', () => {
       'tp-b',
       'tp-c',
     ])
-    // No select: pointer + legacy fields still reflect tp-a.
-    expect(readSettings().translatorPresetId).toBe(0)
+    // No select: stable identity and legacy compatibility scalars stay put.
+    expect(readSettings().translatorPresetId).toBe('tp-a')
     expect(readSettings().translatorPrompt).toBe('pa-prompt')
   })
 
-  it('PATCH translator-presets/:id rewrites the table + re-syncs settings', async () => {
+  it('PATCH translator-presets/:id rewrites the canonical table without syncing settings', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
 
@@ -1269,8 +1479,9 @@ describe('Phase 4 translator-presets collection range', () => {
     expect(metric.writtenTables).toEqual(EXPECTED)
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
-    // tp-a is selected, so its edited prompt mirrors into the legacy scalar.
-    expect(readSettings().translatorPrompt).toBe('pa-edited')
+    // The selected canonical row owns the edited prompt; the legacy scalar is unchanged.
+    expect(readSettings().translatorPrompt).toBe('pa-prompt')
+    expect((readCollection('translator_presets') as Array<{ prompt: string }>)[0].prompt).toBe('pa-edited')
   })
 
   it('DELETE translator-presets/:id writes translator_presets + settings', async () => {
@@ -1306,13 +1517,13 @@ describe('Phase 4 translator-presets collection range', () => {
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     const settings = readSettings()
-    expect(settings.translatorPresetId).toBe(1)
-    expect(settings.translatorPrompt).toBe('pb-prompt')
-    expect(settings.translatorMaxResponse).toBe(800)
+    expect(settings.translatorPresetId).toBe('tp-b')
+    expect(settings.translatorPrompt).toBe('pa-prompt')
+    expect(settings.translatorMaxResponse).toBe(500)
   })
 })
 
-describe('Phase 4 loadouts collection range', () => {
+describe('loadouts collection range', () => {
   it('POST loadouts rewrites only the loadouts table', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
@@ -1410,7 +1621,7 @@ describe('Phase 4 loadouts collection range', () => {
   })
 })
 
-describe('Phase 4 lorebooks collection range', () => {
+describe('lorebooks collection range', () => {
   it('POST lorebooks rewrites only the lore_books table', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
@@ -1522,7 +1733,7 @@ describe('Phase 4 lorebooks collection range', () => {
   })
 })
 
-describe('Phase 4 modules collection range', () => {
+describe('modules collection range', () => {
   const SCRIPT = {
     id: 'script-a',
     comment: 'Regex',

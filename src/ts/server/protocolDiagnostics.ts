@@ -1,3 +1,5 @@
+import { recordClientDiagnostic } from '../diagnostics'
+
 type HydrationKind = 'chat' | 'characterLorebook'
 
 export const EXPECTED_FULL_RESOURCE_REFRESH_REASONS = [
@@ -34,6 +36,35 @@ interface AssetByteReadDiagnostics {
   maxReadsForSingleId: number
 }
 
+export type GenerationRecoveryCounter =
+  | 'stale_attempt_redirect'
+  | 'terminal_reconciliation'
+  | 'compatibility_job_expiry'
+  | 'observer_exhaustion'
+  | 'foreground_retry_reset'
+  | 'superseded_bootstrap'
+  | 'authority_timeout'
+
+export interface GenerationRecoveryEvent {
+  trigger: string
+  recoveryEpoch: number
+  disposition: string
+  operationId?: string
+  attemptNo?: number
+  jobId?: string
+  priorDurableState?: string
+  nextDurableState?: string
+  priorObserverState?: string
+  nextObserverState?: string
+  requestUid?: string
+  recordedAt: number
+}
+
+interface GenerationRecoveryDiagnostics {
+  counters: Record<GenerationRecoveryCounter, number>
+  recentEvents: GenerationRecoveryEvent[]
+}
+
 interface ProtocolDiagnostics {
   fullResourceRefresh: Record<string, number>
   unexpectedFullResourceRefresh: Record<string, number>
@@ -45,6 +76,7 @@ interface ProtocolDiagnostics {
   fullResourceRefreshResources: Record<string, number>
   hydration: Record<HydrationKind, HydrationDiagnostics>
   assetByteReads: AssetByteReadDiagnostics
+  generationRecovery: GenerationRecoveryDiagnostics
 }
 
 const diagnostics: ProtocolDiagnostics = {
@@ -60,6 +92,18 @@ const diagnostics: ProtocolDiagnostics = {
     uniqueIds: 0,
     repeatedReads: 0,
     maxReadsForSingleId: 0,
+  },
+  generationRecovery: {
+    counters: {
+      stale_attempt_redirect: 0,
+      terminal_reconciliation: 0,
+      compatibility_job_expiry: 0,
+      observer_exhaustion: 0,
+      foreground_retry_reset: 0,
+      superseded_bootstrap: 0,
+      authority_timeout: 0,
+    },
+    recentEvents: [],
   },
 }
 
@@ -149,6 +193,36 @@ export function recordAssetByteRead(assetId: string): void {
     reads.maxReadsForSingleId = next
   }
   debugProtocol('asset-byte-read', { assetId, reads: next })
+}
+
+const MAX_GENERATION_RECOVERY_EVENTS = 100
+
+/**
+ * Record content-free generation recovery metadata. Prompts, generated text,
+ * credentials, and request/response bodies must never be passed here.
+ */
+export function recordGenerationRecoveryEvent(
+  event: Omit<GenerationRecoveryEvent, 'recordedAt'>,
+  counter?: GenerationRecoveryCounter,
+): void {
+  recordClientDiagnostic({
+    event: 'generation-recovery',
+    level: counter === 'observer_exhaustion' || counter === 'authority_timeout' ? 'warn' : 'info',
+    code: counter,
+    requestUid: event.requestUid,
+    outcome: event.nextDurableState,
+  })
+  if (counter) {
+    diagnostics.generationRecovery.counters[counter] += 1
+  }
+  diagnostics.generationRecovery.recentEvents.push({ ...event, recordedAt: Date.now() })
+  if (diagnostics.generationRecovery.recentEvents.length > MAX_GENERATION_RECOVERY_EVENTS) {
+    diagnostics.generationRecovery.recentEvents.splice(
+      0,
+      diagnostics.generationRecovery.recentEvents.length - MAX_GENERATION_RECOVERY_EVENTS,
+    )
+  }
+  debugProtocol('generation-recovery', event)
 }
 
 export function getProtocolDiagnosticsSnapshot(): ProtocolDiagnostics {

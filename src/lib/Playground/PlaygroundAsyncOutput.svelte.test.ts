@@ -19,7 +19,6 @@ vi.mock('src/ts/tokenizer', async (importActual) => {
   return {
     ...actual,
     encodeWithTokenizer: playgroundMocks.encodeWithTokenizer,
-    tokenizerList: [['tik', 'Default']],
   }
 })
 

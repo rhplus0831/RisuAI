@@ -1,0 +1,1138 @@
+{
+  "schemaVersion": 1,
+  "openingAnchor": "c0df82d5240a29a33efa5995e08cc970e0147573",
+  "conventionRelease": "b01e88b03461753afe8f573029ce2e5ab47892ef",
+  "decisionPolicy": "Each row has one disposition. Missing or malformed current-schema state validates or fails locally; automatic repair is limited to versioned migration/import. Damaged databases require explicit quarantine/recovery. Legacy output is reconstructed only by explicit export or backup paths.",
+  "surfaces": [
+    {
+      "id": "model-durable-profiles",
+      "family": "model-configuration",
+      "surface": "modelProfiles records and modelProfileOrder",
+      "currentOwner": "settings repository with model profile commands",
+      "roles": [
+        "read",
+        "write"
+      ],
+      "currentPrecedence": "A valid role binding to a durable profile wins over legacy model fields.",
+      "missingBehavior": "Normal readers require durable profile/binding state; explicit compatibility boundaries retain supported legacy resolution.",
+      "malformedBehavior": "Strict command readers reject malformed records; lenient hydration normalizes supported old shapes.",
+      "damagedDatabaseBehavior": "Do not mint replacement profiles during ordinary reads; use migration or explicit recovery.",
+      "historicalFixture": "server/fastify/__tests__/commands.test.ts",
+      "provenance": "Fastify model-profile command integration fixtures plus compatibility baseline 71c476e9c.",
+      "disposition": "canonical",
+      "targetOwner": "durable model profile records, order, credentials, runtime defaults, and role bindings",
+      "migrationPhase": "Phase 2 model configuration ownership",
+      "oldReaderOrExporter": "resolveModelProfileWithLegacyCompatibility and explicit legacy export",
+      "rollbackProof": "Restore pre-migration backup and legacy resolver while retaining profile rows.",
+      "workstream3Cursor": "Normal model consumers released at Phase 2 cursor 6020f6009; retain explicit compatibility boundaries.",
+      "probes": [
+        {
+          "path": "packages/shared-core/src/modelProfileResolver.ts",
+          "kind": "identifier",
+          "value": "normalizeModelProfiles",
+          "expectedCount": 2
+        },
+        {
+          "path": "server/fastify/src/commands/modelProfiles.ts",
+          "kind": "identifier",
+          "value": "modelProfiles",
+          "expectedCount": 10
+        }
+      ]
+    },
+    {
+      "id": "model-role-bindings",
+      "family": "model-configuration",
+      "surface": "modelRoleProfiles role-to-profile bindings",
+      "currentOwner": "settings repository and model role binding command",
+      "roles": [
+        "read",
+        "write",
+        "fallback"
+      ],
+      "currentPrecedence": "Durable profile bindings own normal role resolution; explicit compatibility/static/import/export paths may resolve legacy role fields.",
+      "missingBehavior": "Normal migrated state requires a durable role binding; explicit compatibility boundaries preserve supported legacy modes.",
+      "malformedBehavior": "Lenient normalization restores invalid bindings to legacy; strict commands reject invalid shapes.",
+      "damagedDatabaseBehavior": "Ordinary resolution must not rewrite bindings; explicit recovery may restore defaults.",
+      "historicalFixture": "src/ts/model/modelProfileRecords.test.ts",
+      "provenance": "Model role normalization fixtures derived from live pre-profile settings and compatibility cursor 71c476e9c.",
+      "disposition": "canonical",
+      "targetOwner": "durable stable-id role bindings with no normal legacy mode after migration",
+      "migrationPhase": "Phase 2 model configuration ownership",
+      "oldReaderOrExporter": "modelRoleToLegacyModelMode and resolveModelForRole",
+      "rollbackProof": "Retain flat role fields and old resolver through restart/export proof.",
+      "workstream3Cursor": "Normal model settings/facade consumers released at Phase 2 cursor 6020f6009; retain explicit compatibility boundaries.",
+      "probes": [
+        {
+          "path": "packages/shared-core/src/modelProfileResolver.ts",
+          "kind": "identifier",
+          "value": "normalizeModelRoleProfiles",
+          "expectedCount": 2
+        },
+        {
+          "path": "server/fastify/src/commands/modelProfiles.ts",
+          "kind": "identifier",
+          "value": "modelRoleProfiles",
+          "expectedCount": 7
+        }
+      ]
+    },
+    {
+      "id": "model-legacy-flat-fields",
+      "family": "model-configuration",
+      "surface": "aiModel, subModel, modelRoles, separate model selections/options, and fallback model arrays",
+      "currentOwner": "aggregate settings compatibility envelope",
+      "roles": [
+        "read",
+        "write",
+        "fallback",
+        "import",
+        "export"
+      ],
+      "currentPrecedence": "Normal consumers use durable profiles/bindings; flat fields are read only through named static, import/export, explicit compatibility, effective-projection, or repair boundaries.",
+      "missingBehavior": "Normal resolution requires durable state; explicit compatibility uses provider/runtime defaults and supported role inheritance.",
+      "malformedBehavior": "Normalizers drop unusable selections and preserve supported opaque export fields.",
+      "damagedDatabaseBehavior": "Do not opportunistically convert during generation; require migration/recovery.",
+      "historicalFixture": "test/compat-harness/fixture.ts",
+      "provenance": "Pinned pre-Fastify compatibility fixture with provenance in test/compat-harness/fixture-provenance.json.",
+      "disposition": "explicit-compatibility",
+      "targetOwner": "durable profiles, credentials, runtime defaults, and role bindings",
+      "migrationPhase": "Phase 2 model configuration ownership",
+      "oldReaderOrExporter": "resolveModelProfile legacy source branches and explicit legacy export",
+      "rollbackProof": "Keep flat fields and old resolver until migrated generation and export parity pass.",
+      "workstream3Cursor": "No normal model-consumer hold after Phase 2 release; retain explicit compatibility and Phase 5/6 repair boundaries.",
+      "probes": [
+        {
+          "path": "packages/shared-core/src/modelProfileResolver.ts",
+          "kind": "text",
+          "value": "legacy-aiModel",
+          "expectedCount": 2
+        },
+        {
+          "path": "packages/shared-core/src/modelProfileResolver.ts",
+          "kind": "identifier",
+          "value": "resolveModelForRole",
+          "expectedCount": 2
+        },
+        {
+          "path": "server/fastify/src/databaseDefaults.ts",
+          "kind": "identifier",
+          "value": "normalizeFallbackModels",
+          "expectedCount": 2
+        },
+        {
+          "path": "packages/shared-core/src/presetSplit.ts",
+          "kind": "identifier",
+          "value": "applyLegacyModelPresetCompatibilitySelection",
+          "expectedCount": 2
+        }
+      ]
+    },
+    {
+      "id": "model-explicit-legacy-conversion",
+      "family": "model-configuration",
+      "surface": "POST /model-profiles/convert-legacy",
+      "currentOwner": "Fastify explicit compatibility command",
+      "roles": [
+        "read",
+        "write",
+        "repair"
+      ],
+      "currentPrecedence": "User-invoked conversion creates profiles and changes role bindings in one revisioned command.",
+      "missingBehavior": "No-op or validation result when no usable legacy selections exist.",
+      "malformedBehavior": "Command validation refuses unusable legacy inputs rather than partially converting.",
+      "damagedDatabaseBehavior": "Not an automatic damaged-database repair action.",
+      "historicalFixture": "server/fastify/__tests__/commands.test.ts",
+      "provenance": "Fastify command fixtures covering legacy conversion and mutation events.",
+      "disposition": "explicit-compatibility",
+      "targetOwner": "Phase 2 versioned migration plus retained explicit conversion only for supported external/static cases",
+      "migrationPhase": "Phase 2 model configuration ownership",
+      "oldReaderOrExporter": "convertLegacyModelProfilesCommand",
+      "rollbackProof": "Command receipt/event and pre-command database snapshot restore prove atomic rollback.",
+      "workstream3Cursor": "No normal browser model hold after Phase 2 migration; retain the user-invoked conversion boundary.",
+      "probes": [
+        {
+          "path": "server/fastify/src/commands/modelProfiles.ts",
+          "kind": "identifier",
+          "value": "convertLegacyModelProfilesCommand",
+          "expectedCount": 1
+        },
+        {
+          "path": "server/fastify/src/routes/commands.ts",
+          "kind": "text",
+          "value": "/model-profiles/convert-legacy",
+          "expectedCount": 1
+        }
+      ]
+    },
+    {
+      "id": "model-inline-secret-repair",
+      "family": "repair",
+      "surface": "inline model-profile secret scrubbing and credential extraction",
+      "currentOwner": "repository boot/import/restore repair",
+      "roles": [
+        "repair",
+        "import",
+        "recovery"
+      ],
+      "currentPrecedence": "Credential-store references are canonical; stale inline values are scrubbed.",
+      "missingBehavior": "No repair is needed when no inline secret exists.",
+      "malformedBehavior": "Unusable profile records remain subject to strict model-profile validation.",
+      "damagedDatabaseBehavior": "Security scrub may run at migration/import/recovery boundaries, never as unrelated command repair.",
+      "historicalFixture": "server/fastify/__tests__/commands.test.ts",
+      "provenance": "Repository security repair fixtures and archived compatibility decision for stale inline secrets.",
+      "disposition": "explicit-compatibility",
+      "targetOwner": "versioned migration/import security normalization",
+      "migrationPhase": "Phase 1 foundation and Phase 5 repair boundary",
+      "oldReaderOrExporter": "repairPersistedModelProfileInlineSecretsInSqlite",
+      "rollbackProof": "Transactional migration rollback plus restore fixture with masked exports.",
+      "workstream3Cursor": "Released: inline-secret normalization is confined to migration/import/recovery security boundaries.",
+      "probes": [
+        {
+          "path": "server/fastify/src/repository.ts",
+          "kind": "identifier",
+          "value": "repairPersistedModelProfileInlineSecretsInSqlite",
+          "expectedCount": 3
+        }
+      ]
+    },
+    {
+      "id": "persona-collection",
+      "family": "persona",
+      "surface": "personas[] canonical persona rows",
+      "currentOwner": "persona collection owner and persona commands",
+      "roles": [
+        "read",
+        "write",
+        "import",
+        "export"
+      ],
+      "currentPrecedence": "The selected stable-id persona row owns profile values; legacy scalar fields are projections only.",
+      "missingBehavior": "Explicit migration/import creates a supported default persona collection; ordinary reads do not mint rows.",
+      "malformedBehavior": "Persona collection boundaries validate rows and stable ids; unsupported records fail the owning command.",
+      "damagedDatabaseBehavior": "Do not repair sibling personas during ordinary reads; stable-id repair remains a migration/import/recovery concern.",
+      "historicalFixture": "src/ts/persona.test.ts",
+      "provenance": "Persona row, selected-profile projection, optimistic mutation, and rollback fixtures.",
+      "disposition": "canonical",
+      "targetOwner": "personas[] rows keyed by stable persona id",
+      "migrationPhase": "Phase 4 translator and smaller mirrors",
+      "oldReaderOrExporter": "legacy username/userIcon/personaPrompt/userNote projection and selectedPersona index",
+      "rollbackProof": "Persona collection and selected-profile mutation fixtures preserve row identity and rollback ordering.",
+      "workstream3Cursor": "Released: persona rows and selectedPersonaId own normal reads and writes.",
+      "reviewTriggers": [
+        "Any normal persona/profile read outside the persona row owner or its explicit selected-profile projection.",
+        "Any command that mints or rewrites persona ids during ordinary render, selection, or reload."
+      ],
+      "probes": [
+        {
+          "path": "server/fastify/src/commands/personas.ts",
+          "kind": "identifier",
+          "value": "ensurePersonaCollection",
+          "expectedCount": 2
+        },
+        {
+          "path": "src/ts/persona.ts",
+          "kind": "identifier",
+          "value": "currentSelectedPersonaProjectionSnapshot",
+          "expectedCount": 1
+        },
+        {
+          "path": "src/ts/server/resourceState.svelte.ts",
+          "kind": "text",
+          "value": "collectionsResourceState.values.personas",
+          "expectedCount": 6
+        }
+      ]
+    },
+    {
+      "id": "persona-profile-mirrors",
+      "family": "persona",
+      "surface": "username, userIcon, personaPrompt, and userNote scalar mirrors",
+      "currentOwner": "selected persona row profile projection",
+      "roles": [
+        "read",
+        "write",
+        "fallback",
+        "import",
+        "export"
+      ],
+      "currentPrecedence": "The selected persona row owns name/icon/prompt/note; scalar values remain aliases for explicit import/export and projection compatibility.",
+      "missingBehavior": "Import normalization may synthesize scalar aliases from the selected row; normal runtime reads use the row projection.",
+      "malformedBehavior": "Scalar aliases normalize to supported empty/default values at import or settings boundaries.",
+      "damagedDatabaseBehavior": "Do not reconcile stale scalar aliases with unrelated rows during ordinary commands.",
+      "historicalFixture": "src/ts/persona.test.ts",
+      "provenance": "Selected persona profile projection and stale-field rollback fixtures.",
+      "disposition": "explicit-compatibility",
+      "targetOwner": "selected persona row fields name, icon, personaPrompt, and note",
+      "migrationPhase": "Phase 4 translator and smaller mirrors",
+      "oldReaderOrExporter": "database username/userIcon/personaPrompt/userNote settings aliases",
+      "rollbackProof": "Selected-persona projection fixtures preserve scalar aliases through accepted, queued, and failed row writes.",
+      "workstream3Cursor": "Released: normal persona consumers use stable-id rows; scalar aliases remain only at explicit compatibility/interchange projections.",
+      "reviewTriggers": [
+        "Any normal render/generation reader that treats username, userIcon, personaPrompt, or userNote as independent truth.",
+        "Any write that updates a scalar alias without a selected persona row projection or an explicit import/export boundary."
+      ],
+      "probes": [
+        {
+          "path": "src/ts/persona.ts",
+          "kind": "identifier",
+          "value": "personaProfileMirrorFields",
+          "expectedCount": 5
+        },
+        {
+          "path": "src/ts/persona.ts",
+          "kind": "identifier",
+          "value": "selectedPersonaFieldProjectionValue",
+          "expectedCount": 5
+        }
+      ]
+    },
+    {
+      "id": "persona-selected-pointer",
+      "family": "persona",
+      "surface": "derived numeric selectedPersona compatibility pointer",
+      "currentOwner": "stable selectedPersonaId owner with a derived numeric projection",
+      "roles": [
+        "read",
+        "write",
+        "fallback",
+        "import",
+        "export"
+      ],
+      "currentPrecedence": "Stable persona id identifies the selected row; selectedPersona remains a numeric compatibility pointer for current database projections.",
+      "missingBehavior": "Selection resolves to the first valid row or no selection at explicit normalization boundaries.",
+      "malformedBehavior": "Missing, out-of-range, or duplicate-id selections are rejected or normalized by the selection boundary.",
+      "damagedDatabaseBehavior": "Ordinary selection does not renumber or mint rows; repair remains explicit.",
+      "historicalFixture": "src/ts/persona.test.ts",
+      "provenance": "Selected persona id, stale selection, and rollback ordering fixtures.",
+      "disposition": "explicit-compatibility",
+      "targetOwner": "stable selected persona id with a derived numeric UI pointer",
+      "migrationPhase": "Phase 4 translator and smaller mirrors",
+      "oldReaderOrExporter": "database.selectedPersona numeric index",
+      "rollbackProof": "Selection fixtures retain the selected stable id across reorder, delete, reload, and failed mutation paths.",
+      "workstream3Cursor": "Released: selectedPersonaId is canonical across reload and commands; selectedPersona is retained as a derived interchange/plugin projection.",
+      "reviewTriggers": [
+        "Any new consumer persisting or comparing selectedPersona as canonical identity instead of selectedPersonaId.",
+        "Any reorder/delete path that changes the pointer without proving stable selected-id preservation."
+      ],
+      "probes": [
+        {
+          "path": "src/ts/persona.ts",
+          "kind": "identifier",
+          "value": "selectedPersonaId",
+          "expectedCount": 76
+        },
+        {
+          "path": "server/fastify/src/commands/personas.ts",
+          "kind": "identifier",
+          "value": "selectedPersonaId",
+          "expectedCount": 5
+        }
+      ]
+    },
+    {
+      "id": "hypa-v3-presets",
+      "family": "memory",
+      "surface": "hypaV3Presets[] canonical memory preset records",
+      "currentOwner": "HypaV3 preset collection and settings owner",
+      "roles": [
+        "read",
+        "write",
+        "import",
+        "export"
+      ],
+      "currentPrecedence": "The selected HypaV3 preset settings own memory behavior; legacy scalar settings are aliases only.",
+      "missingBehavior": "Explicit initialization/import creates a supported default preset collection; ordinary memory reads do not repair it.",
+      "malformedBehavior": "Preset boundaries normalize supported settings and reject unsupported imported shapes.",
+      "damagedDatabaseBehavior": "Memory jobs validate selected preset data without repairing unrelated presets.",
+      "historicalFixture": "src/ts/process/memory/hypav3ModelOwnership.test.ts",
+      "provenance": "HypaV3 selected-preset, budgeting, settings, and memory-job fixtures.",
+      "disposition": "canonical",
+      "targetOwner": "hypaV3Presets[] selected by stable preset selection state",
+      "migrationPhase": "Phase 4 translator and smaller mirrors",
+      "oldReaderOrExporter": "hypaV3Settings/supaMemoryPrompt/supaMemoryKey aliases and numeric hypaV3PresetId",
+      "rollbackProof": "HypaV3 settings and memory-job fixtures preserve selected preset behavior across reload and failed writes.",
+      "workstream3Cursor": "Released: HypaV3 preset rows and selectedHypaV3PresetId own normal reads and writes.",
+      "reviewTriggers": [
+        "Any normal memory UI/job reader that prefers hypaV3Settings or scalar aliases when a selected preset exists.",
+        "Any preset mutation that repairs or rewrites sibling preset rows during an ordinary settings operation."
+      ],
+      "probes": [
+        {
+          "path": "src/ts/process/memory/hypav3.ts",
+          "kind": "text",
+          "value": "export function getCurrentHypaV3Preset",
+          "expectedCount": 1
+        },
+        {
+          "path": "src/lib/Setting/Pages/OtherBotSettings.svelte",
+          "kind": "text",
+          "value": "const hypaV3PresetsDraft",
+          "expectedCount": 1
+        },
+        {
+          "path": "server/fastify/src/memoryEmbedJobHandler.ts",
+          "kind": "text",
+          "value": "function resolveHypaV3Settings",
+          "expectedCount": 1
+        },
+        {
+          "path": "server/fastify/src/memorySummarizeJobHandler.ts",
+          "kind": "text",
+          "value": "function resolveHypaV3Settings",
+          "expectedCount": 1
+        }
+      ]
+    },
+    {
+      "id": "hypa-v3-legacy-aliases",
+      "family": "memory",
+      "surface": "hypaV3Settings, supaMemoryPrompt, and supaMemoryKey scalar aliases",
+      "currentOwner": "HypaV3 preset import/legacy-alias boundary",
+      "roles": [
+        "fallback",
+        "import",
+        "export"
+      ],
+      "currentPrecedence": "Selected hypaV3Presets settings win; scalar aliases are read only for import/default synthesis and explicit legacy export.",
+      "missingBehavior": "Alias absence uses the selected preset/default settings at explicit normalization boundaries.",
+      "malformedBehavior": "Alias values normalize or are rejected by database/import validation without changing sibling presets.",
+      "damagedDatabaseBehavior": "Do not repair scalar aliases from arbitrary preset rows during ordinary memory execution.",
+      "historicalFixture": "server/fastify/__tests__/memoryLegacyImport.test.ts",
+      "provenance": "Legacy memory settings import and selected HypaV3 preset compatibility behavior.",
+      "disposition": "import-only",
+      "targetOwner": "selected hypaV3Presets[].settings fields",
+      "migrationPhase": "Phase 4 translator and smaller mirrors",
+      "oldReaderOrExporter": "databaseDefaults and storage initialization aliases for supaMemoryKey/supaMemoryPrompt/hypaV3Settings",
+      "rollbackProof": "Legacy import fixtures retain alias values while canonical preset settings are selected and persisted.",
+      "workstream3Cursor": "Released: normal memory execution uses the selected preset owner; aliases remain import/default synthesis inputs only.",
+      "reviewTriggers": [
+        "Any new ordinary memory reader of hypaV3Settings, supaMemoryPrompt, or supaMemoryKey outside default/import alias code.",
+        "Any change to alias synthesis that changes selected preset settings or provider-secret masking."
+      ],
+      "probes": [
+        {
+          "path": "server/fastify/src/databaseDefaults.ts",
+          "kind": "text",
+          "value": "database.supaMemoryPrompt",
+          "expectedCount": 2
+        },
+        {
+          "path": "server/fastify/src/databaseDefaults.ts",
+          "kind": "text",
+          "value": "database.supaMemoryKey",
+          "expectedCount": 2
+        },
+        {
+          "path": "src/ts/storage/database.svelte.ts",
+          "kind": "text",
+          "value": "data.supaMemoryKey",
+          "expectedCount": 3
+        }
+      ]
+    },
+    {
+      "id": "hypa-v3-selected-pointer",
+      "family": "memory",
+      "surface": "derived numeric hypaV3PresetId compatibility pointer",
+      "currentOwner": "stable selectedHypaV3PresetId owner with a derived numeric projection",
+      "roles": [
+        "read",
+        "write",
+        "fallback",
+        "import",
+        "export"
+      ],
+      "currentPrecedence": "hypaV3PresetId selects the current collection row while stable preset identity remains the intended owner contract.",
+      "missingBehavior": "Selection defaults to the first preset at explicit initialization/import boundaries.",
+      "malformedBehavior": "Invalid indexes normalize to zero or fail the owning settings command.",
+      "damagedDatabaseBehavior": "Memory execution does not renumber or mint presets while resolving a pointer.",
+      "historicalFixture": "src/lib/Setting/Pages/OtherBotSettings.svelte",
+      "provenance": "HypaV3 preset selection, add/delete, import, export, and settings draft flows.",
+      "disposition": "explicit-compatibility",
+      "targetOwner": "stable selected HypaV3 preset id with a derived collection index",
+      "migrationPhase": "Phase 4 translator and smaller mirrors",
+      "oldReaderOrExporter": "database.hypaV3PresetId numeric index",
+      "rollbackProof": "Preset selection fixtures preserve the selected row across add/delete/import and failed persistence.",
+      "workstream3Cursor": "Released: selectedHypaV3PresetId is canonical across reload and commands; hypaV3PresetId is a validated derived projection.",
+      "reviewTriggers": [
+        "Any new consumer comparing hypaV3PresetId as canonical identity rather than the selected preset row.",
+        "Any preset delete/import path that changes the pointer without proving selected-row preservation."
+      ],
+      "probes": [
+        {
+          "path": "src/lib/Setting/Pages/OtherBotSettings.svelte",
+          "kind": "text",
+          "value": "const selectedHypaV3PresetIdDraft",
+          "expectedCount": 1
+        },
+        {
+          "path": "server/fastify/src/promptMemoryQuery.ts",
+          "kind": "text",
+          "value": "function resolveHypaV3PresetSettings",
+          "expectedCount": 1
+        }
+      ]
+    },
+    {
+      "id": "loadout-snapshot-projection-hold",
+      "family": "loadout",
+      "surface": "loadout snapshot fields sent through create/apply mutation projections",
+      "currentOwner": "canonical loadout collection with explicit client snapshot adapter",
+      "roles": [
+        "read",
+        "write",
+        "import",
+        "export",
+        "rollback"
+      ],
+      "currentPrecedence": "Canonical loadout rows own stable ids and fields; toLoadoutSnapshot is an explicit mutation/interchange projection.",
+      "missingBehavior": "Explicit loadout initialization/import supplies supported defaults; ordinary apply does not synthesize sibling state.",
+      "malformedBehavior": "Loadout command validation rejects unsupported snapshot fields and normalizes only its declared collection boundary.",
+      "damagedDatabaseBehavior": "Do not repair unrelated settings or preset collections while applying a loadout snapshot.",
+      "historicalFixture": "src/ts/loadout.test.ts",
+      "provenance": "Loadout create/apply, split-preset references, mutation sequencing, and rollback fixtures.",
+      "disposition": "explicit-compatibility",
+      "targetOwner": "canonical loadouts[] rows and explicit loadout mutation payloads",
+      "migrationPhase": "Phase 4 translator and smaller mirrors",
+      "oldReaderOrExporter": "toLoadoutSnapshot and legacy preset-name/reference fields in loadout payloads",
+      "rollbackProof": "Loadout mutation fixtures preserve exact attempted snapshots and selective rollback across concurrent projections.",
+      "workstream3Cursor": "Released: the snapshot is an explicit command/interchange DTO and normal reads use stable loadout owners.",
+      "reviewTriggers": [
+        "Any change to toLoadoutSnapshot that drops, rewrites, or derives a cross-family field without an updated rollback fixture.",
+        "Any loadout apply path that writes a mirrored family outside its declared durable mutation step."
+      ],
+      "probes": [
+        {
+          "path": "src/ts/loadout.ts",
+          "kind": "text",
+          "value": "function toLoadoutSnapshot",
+          "expectedCount": 1
+        },
+        {
+          "path": "server/fastify/src/commands/loadouts.ts",
+          "kind": "identifier",
+          "value": "ensureLoadoutCollection",
+          "expectedCount": 1
+        },
+        {
+          "path": "src/ts/server/loadoutCanonical.ts",
+          "kind": "identifier",
+          "value": "isCanonicalLoadoutCollection",
+          "expectedCount": 1
+        }
+      ]
+    },
+    {
+      "id": "loadout-last-touched-hold",
+      "family": "loadout",
+      "surface": "lastLoadedLoadoutName and last-touched loadout settings projection",
+      "currentOwner": "explicit loadout touch command plus settings compatibility projection",
+      "roles": [
+        "read",
+        "write",
+        "fallback",
+        "rollback"
+      ],
+      "currentPrecedence": "A successful loadout touch owns lastLoadedLoadoutName; failed or superseded touches restore only their still-current projection.",
+      "missingBehavior": "The touch projection defaults to an empty name until a loadout is explicitly touched.",
+      "malformedBehavior": "Non-string settings values normalize at the loadout command boundary.",
+      "damagedDatabaseBehavior": "Do not infer or rewrite the last-touched name from unrelated collection reads.",
+      "historicalFixture": "server/fastify/__tests__/commandCollectionRange.test.ts",
+      "provenance": "Loadout touch co-write, optimistic projection, authoritative replacement, and rollback fixtures.",
+      "disposition": "explicit-compatibility",
+      "targetOwner": "loadout touch event/row plus a narrowly scoped last-touched projection",
+      "migrationPhase": "Phase 4 translator and smaller mirrors",
+      "oldReaderOrExporter": "database.lastLoadedLoadoutName and loadout touch response projection",
+      "rollbackProof": "Touch fixtures preserve lastLoadedLoadoutName only when the attempted row and projection fence remain current.",
+      "workstream3Cursor": "Released: the retained field is owned by the explicit touch command and guarded settings-owner projection.",
+      "reviewTriggers": [
+        "Any write to lastLoadedLoadoutName outside the explicit loadout touch command or its guarded rollback.",
+        "Any change to touch co-write range, projection fences, or settings reload precedence without command-range tests."
+      ],
+      "probes": [
+        {
+          "path": "src/ts/loadout.ts",
+          "kind": "text",
+          "value": "replaceSettingsOwnerFields({ lastLoadedLoadoutName",
+          "expectedCount": 1
+        },
+        {
+          "path": "server/fastify/src/routes/commands.ts",
+          "kind": "text",
+          "value": "target.lastLoadedLoadoutName",
+          "expectedCount": 7
+        },
+        {
+          "path": "server/fastify/__tests__/commandCollectionRange.test.ts",
+          "kind": "text",
+          "value": "co-writes settings (lastLoadedLoadoutName)",
+          "expectedCount": 1
+        }
+      ]
+    },
+    {
+      "id": "prompt-modern-presets",
+      "family": "prompt-template",
+      "surface": "promptPresets[].promptTemplate bodies and promptPresetsId selection",
+      "currentOwner": "prompt preset collection and split-preset commands",
+      "roles": [
+        "read",
+        "write",
+        "import",
+        "export"
+      ],
+      "currentPrecedence": "Selected chat-scoped or global modern prompt preset wins; an explicit missing/null body disables fallback.",
+      "missingBehavior": "Selection without a body resolves disabled/null rather than stale top-level data.",
+      "malformedBehavior": "Prompt normalizers validate rows, normalize roles, and mint stable row ids at explicit boundaries.",
+      "damagedDatabaseBehavior": "Ordinary generation must validate without rewriting the preset body.",
+      "historicalFixture": "server/fastify/__tests__/templates.test.ts",
+      "provenance": "Prompt precedence/parity fixtures including stale top-level and chat-scoped selections.",
+      "disposition": "canonical",
+      "targetOwner": "modern prompt preset body selected by stable preset id",
+      "migrationPhase": "Phase 3 prompt-template ownership",
+      "oldReaderOrExporter": "resolveEffectivePromptTemplate with current explicit compatibility branches",
+      "rollbackProof": "Retain old top-level/table reader until restart, generation, and export proofs pass.",
+      "workstream3Cursor": "Released: editor, hydration, generation, loadout, and commands resolve uniquely selected modern preset owners.",
+      "probes": [
+        {
+          "path": "server/fastify/src/commands/splitPresets.ts",
+          "kind": "identifier",
+          "value": "promptPresets",
+          "expectedCount": 2
+        },
+        {
+          "path": "packages/shared-core/src/effectivePromptTemplate.ts",
+          "kind": "identifier",
+          "value": "promptPresetsId",
+          "expectedCount": 2
+        }
+      ]
+    },
+    {
+      "id": "prompt-top-level-projection",
+      "family": "prompt-template",
+      "surface": "legacy/default database.promptTemplate compatibility owner",
+      "currentOwner": "explicit root prompt-template owner outside selected modern presets",
+      "roles": [
+        "read",
+        "write",
+        "fallback",
+        "import",
+        "export"
+      ],
+      "currentPrecedence": "Fallback only when no selected modern preset owns a body; explicit selected absence/null blocks stale fallback.",
+      "missingBehavior": "Generation resolves null/default formatting according to the effective-template contract.",
+      "malformedBehavior": "Boundary normalization repairs supported legacy row shapes; commands reject unsupported prompt settings.",
+      "damagedDatabaseBehavior": "Do not recreate this projection from stale data during unrelated commands.",
+      "historicalFixture": "test/compat-harness/fixture.ts",
+      "provenance": "Pinned compatibility fixture and prompt parity tests for null, empty, stale, and selected owners.",
+      "disposition": "explicit-compatibility",
+      "targetOwner": "selected modern prompt preset body",
+      "migrationPhase": "Phase 3 prompt-template ownership",
+      "oldReaderOrExporter": "top-level promptTemplate reader retained for supported old saves/export",
+      "rollbackProof": "Keep pre-migration backup and top-level reader until prompt output/restart/export parity passes.",
+      "workstream3Cursor": "Released: selected modern presets own normal prompt bodies; the root owner remains only for legacy/default scaffolds.",
+      "probes": [
+        {
+          "path": "server/fastify/src/repository.ts",
+          "kind": "identifier",
+          "value": "projectSelectedPromptTemplate",
+          "expectedCount": 4
+        },
+        {
+          "path": "src/ts/storage/database.svelte.ts",
+          "kind": "identifier",
+          "value": "promptTemplate",
+          "expectedCount": 18
+        }
+      ]
+    },
+    {
+      "id": "prompt-sqlite-mirror",
+      "family": "prompt-template",
+      "surface": "prompt_templates SQLite legacy/default root collection",
+      "currentOwner": "repository wrappers for the explicit root compatibility owner",
+      "roles": [
+        "read",
+        "write",
+        "backup",
+        "recovery"
+      ],
+      "currentPrecedence": "The extracted table supplies the aggregate promptTemplate projection and prompt-item commands.",
+      "missingBehavior": "Empty table currently yields an empty/absent compatibility projection depending on caller.",
+      "malformedBehavior": "Rows are JSON-decoded and normalized at repository/command boundaries.",
+      "damagedDatabaseBehavior": "Corrupt SQLite remains a database recovery concern, not a prompt command repair.",
+      "historicalFixture": "server/fastify/__tests__/commandCollectionRange.test.ts",
+      "provenance": "Command range/write-table fixtures prove current table ownership and mutation range.",
+      "disposition": "explicit-compatibility",
+      "targetOwner": "prompt_presets rows for selected modern bodies; prompt_templates only for the explicit root owner",
+      "migrationPhase": "Phase 3 then Phase 6 obsolete storage cleanup",
+      "oldReaderOrExporter": "prompt_templates table reader and backup allowlist",
+      "rollbackProof": "Retain the table and old reader through post-migration restart/export proof.",
+      "workstream3Cursor": "Released: the table cannot supersede a selected modern prompt-preset body and remains backup-compatible root storage only.",
+      "probes": [
+        {
+          "path": "server/fastify/src/repository.ts",
+          "kind": "text",
+          "value": "prompt_templates",
+          "expectedCount": 4
+        }
+      ]
+    },
+    {
+      "id": "prompt-legacy-bot-preset",
+      "family": "prompt-template",
+      "surface": "legacy botPresets[].promptTemplate bodies and extraction command",
+      "currentOwner": "legacy bot preset collection",
+      "roles": [
+        "read",
+        "import",
+        "export"
+      ],
+      "currentPrecedence": "Used only by explicit legacy preset extraction/import; it must not supersede a selected modern prompt preset.",
+      "missingBehavior": "Extraction reports no usable prompt body without changing current selection.",
+      "malformedBehavior": "Supported rows normalize during explicit extraction/import; invalid shapes fail that action.",
+      "damagedDatabaseBehavior": "No automatic selection or command-time repair from bot presets.",
+      "historicalFixture": "server/fastify/__tests__/splitPresets.test.ts",
+      "provenance": "Legacy split-preset extraction fixtures plus pinned compatibility baseline.",
+      "disposition": "import-only",
+      "targetOwner": "explicit extraction into a new modern prompt preset",
+      "migrationPhase": "Phase 3 prompt-template ownership",
+      "oldReaderOrExporter": "ensureLegacyBotPresetCollection and extract command",
+      "rollbackProof": "Extraction is independently revisioned; retain source legacy preset unchanged until acceptance.",
+      "workstream3Cursor": "Does not block prompt bridge removal after explicit import/export boundary is proven.",
+      "probes": [
+        {
+          "path": "server/fastify/src/commands/splitPresets.ts",
+          "kind": "identifier",
+          "value": "ensureLegacyBotPresetCollection",
+          "expectedCount": 2
+        },
+        {
+          "path": "server/fastify/src/routes/commands.ts",
+          "kind": "text",
+          "value": "/legacy-bot-presets/",
+          "expectedCount": 1
+        }
+      ]
+    },
+    {
+      "id": "prompt-effective-fallback",
+      "family": "prompt-template",
+      "surface": "effective prompt-template precedence resolver",
+      "currentOwner": "@risuai/shared-core/effective-prompt-template",
+      "roles": [
+        "read",
+        "fallback"
+      ],
+      "currentPrecedence": "Chat-scoped preset, selected global preset, then legacy top-level compatibility only when no modern owner applies.",
+      "missingBehavior": "Returns null/default formatting without mutating persisted state.",
+      "malformedBehavior": "Consumes normalized rows; malformed persisted data is a boundary validation error.",
+      "damagedDatabaseBehavior": "Never repairs or selects a sibling preset while resolving.",
+      "historicalFixture": "server/fastify/__tests__/templates.test.ts",
+      "provenance": "Cross-runtime prompt precedence and stale-mirror parity cases.",
+      "disposition": "explicit-compatibility",
+      "targetOwner": "canonical modern-preset resolver with no top-level runtime fallback",
+      "migrationPhase": "Phase 3 prompt-template ownership",
+      "oldReaderOrExporter": "resolveEffectivePromptTemplate legacy fallback branch",
+      "rollbackProof": "Differential prompt output fixtures preserve the old resolver until migration proof passes.",
+      "workstream3Cursor": "Released: modern preset ownership is canonical; the top-level branch remains the explicit legacy/default fallback.",
+      "probes": [
+        {
+          "path": "packages/shared-core/src/effectivePromptTemplate.ts",
+          "kind": "identifier",
+          "value": "resolveEffectivePromptTemplate",
+          "expectedCount": 1
+        }
+      ]
+    },
+    {
+      "id": "translator-preset-pipelines",
+      "family": "translator",
+      "surface": "translatorPresets records and step pipelines",
+      "currentOwner": "translator preset collection",
+      "roles": [
+        "read",
+        "write",
+        "import",
+        "export"
+      ],
+      "currentPrecedence": "Selected/bound preset steps own prompt, max response, model binding, and output chaining.",
+      "missingBehavior": "Normalizer creates a supported default preset at explicit initialization/import boundaries.",
+      "malformedBehavior": "Preset/step validation rejects unsupported shapes and bounds step count.",
+      "damagedDatabaseBehavior": "Ordinary translation validates state without repairing unrelated presets.",
+      "historicalFixture": "src/ts/translator/pipeline.test.ts",
+      "provenance": "Legacy scalar and modern multi-step translator pipeline parity fixtures.",
+      "disposition": "canonical",
+      "targetOwner": "stable-id selected translator preset and steps",
+      "migrationPhase": "Phase 4 translator ownership",
+      "oldReaderOrExporter": "legacy scalar normalization remains until migration fixtures pass",
+      "rollbackProof": "Retain scalar fields and selected index through restart/translation/export proof.",
+      "workstream3Cursor": "Released: normal translation and authoring use stable-id preset pipelines.",
+      "probes": [
+        {
+          "path": "server/fastify/src/commands/translatorPresets.ts",
+          "kind": "identifier",
+          "value": "normalizeTranslatorPresetCollectionWithLegacyCompatibility",
+          "expectedCount": 1
+        },
+        {
+          "path": "packages/shared-core/src/translatorPipeline.ts",
+          "kind": "identifier",
+          "value": "resolveTranslatorPipeline",
+          "expectedCount": 1
+        }
+      ]
+    },
+    {
+      "id": "translator-legacy-scalars",
+      "family": "translator",
+      "surface": "translatorPrompt and translatorMaxResponse first-step mirrors",
+      "currentOwner": "aggregate settings compatibility fields",
+      "roles": [
+        "read",
+        "write",
+        "fallback",
+        "import",
+        "export"
+      ],
+      "currentPrecedence": "Used to synthesize/repair a first step only when canonical preset data is unavailable or during explicit compatibility.",
+      "missingBehavior": "Default translator prompt/max response apply during normalization.",
+      "malformedBehavior": "String/finite-number normalization falls back to supported defaults.",
+      "damagedDatabaseBehavior": "Ordinary preset selection must not synchronize these mirrors after Phase 4.",
+      "historicalFixture": "src/ts/translator/pipeline.test.ts",
+      "provenance": "Legacy scalar resolution fixture from supported pre-preset translator state.",
+      "disposition": "import-only",
+      "targetOwner": "selected translator preset first enabled step",
+      "migrationPhase": "Phase 4 translator ownership",
+      "oldReaderOrExporter": "legacy scalar import/export projection",
+      "rollbackProof": "Keep scalars until migrated translation output and legacy export parity pass.",
+      "workstream3Cursor": "Released: translatorPrompt and translatorMaxResponse are consumed only when importing a database without canonical presets.",
+      "probes": [
+        {
+          "path": "server/fastify/src/commands/translatorPresets.ts",
+          "kind": "identifier",
+          "value": "translatorPrompt",
+          "expectedCount": 2
+        },
+        {
+          "path": "server/fastify/src/commands/translatorPresets.ts",
+          "kind": "identifier",
+          "value": "translatorMaxResponse",
+          "expectedCount": 2
+        },
+        {
+          "path": "packages/shared-core/src/translatorPresets.ts",
+          "kind": "identifier",
+          "value": "translatorPrompt",
+          "expectedCount": 3
+        }
+      ]
+    },
+    {
+      "id": "translator-selected-index",
+      "family": "translator",
+      "surface": "stable database.translatorPresetId and chat-scoped stable-id binding",
+      "currentOwner": "stable global preset id plus chat metadata binding",
+      "roles": [
+        "read",
+        "write",
+        "fallback",
+        "import",
+        "export"
+      ],
+      "currentPrecedence": "Chat stable-id binding wins when present; otherwise the stable global preset id selects the preset.",
+      "missingBehavior": "Falls back to the first preset/default pipeline.",
+      "malformedBehavior": "Invalid numeric index normalizes to zero; unknown chat binding is cleared by owned delete behavior.",
+      "damagedDatabaseBehavior": "Do not renumber or mint preset ids during ordinary translation.",
+      "historicalFixture": "server/fastify/__tests__/commands.test.ts",
+      "provenance": "Translator selection/delete/chat-binding command fixtures; schema v37 and backup restore repair legacy numeric selections into existing stable preset IDs.",
+      "disposition": "canonical",
+      "targetOwner": "stable global selected translator preset id plus explicit chat binding",
+      "migrationPhase": "Phase 4 translator ownership",
+      "oldReaderOrExporter": "numeric index reader and legacy export projection",
+      "rollbackProof": "db.test.ts covers migration rollback, retry, restart, and unchanged preset bodies; backups.test.ts covers legacy selection restore.",
+      "workstream3Cursor": "Released: numeric inputs are normalized at migration/import, while normal commands require a stable preset id.",
+      "probes": [
+        {
+          "path": "server/fastify/src/commands/translatorPresets.ts",
+          "kind": "identifier",
+          "value": "translatorPresetId",
+          "expectedCount": 10
+        },
+        {
+          "path": "server/fastify/src/repository.ts",
+          "kind": "identifier",
+          "value": "translatorPresetId",
+          "expectedCount": 4
+        }
+      ]
+    },
+    {
+      "id": "translator-selection-mirror-sync",
+      "family": "translator",
+      "surface": "syncSelectedTranslatorPresetToLegacyFields",
+      "currentOwner": "import/migration-only translator compatibility normalizer",
+      "roles": [
+        "write",
+        "repair",
+        "export"
+      ],
+      "currentPrecedence": "Only a legacy database missing canonical presets synthesizes the first preset and scalar compatibility projection.",
+      "missingBehavior": "No synchronization occurs when the selected preset is missing.",
+      "malformedBehavior": "Relies on normalized preset rows before synchronization.",
+      "damagedDatabaseBehavior": "Must not repair unrelated translator records during selection after Phase 4.",
+      "historicalFixture": "server/fastify/__tests__/commands.test.ts",
+      "provenance": "Selection command tests pin current scalar synchronization behavior.",
+      "disposition": "import-only",
+      "targetOwner": "legacy export adapter reconstructs scalars from the canonical selected step",
+      "migrationPhase": "Phase 4 translator ownership",
+      "oldReaderOrExporter": "syncSelectedTranslatorPresetToLegacyFields retained until migration and export proof",
+      "rollbackProof": "Re-enable mirror sync while scalar fields remain readable during staged rollout.",
+      "workstream3Cursor": "Released: ordinary selection commands do not synchronize legacy scalars; the helper remains import/migration-only.",
+      "probes": [
+        {
+          "path": "server/fastify/src/commands/translatorPresets.ts",
+          "kind": "identifier",
+          "value": "syncSelectedTranslatorPresetToLegacyFields",
+          "expectedCount": 2
+        }
+      ]
+    },
+    {
+      "id": "command-ensure-collections",
+      "family": "repair",
+      "surface": "preset collection validators plus explicit import/extraction normalizers",
+      "currentOwner": "strict ordinary command reads and bounded compatibility actions",
+      "roles": [
+        "read",
+        "write",
+        "repair"
+      ],
+      "currentPrecedence": "Ordinary commands validate canonical rows; explicit import, onboarding, and legacy extraction may normalize only their declared compatibility payload.",
+      "missingBehavior": "Ordinary commands reject missing canonical collections; explicit compatibility actions may create their declared records.",
+      "malformedBehavior": "Ordinary commands reject malformed or duplicate stable ids without persisting sibling repair.",
+      "damagedDatabaseBehavior": "Repair is owned by migration/import/recovery; normal commands remain validate-only outside their declared range.",
+      "historicalFixture": "server/fastify/__tests__/commands.test.ts",
+      "provenance": "Command integration and mutation-range fixtures across split presets, prompts, and translators.",
+      "disposition": "explicit-compatibility",
+      "targetOwner": "versioned migration/import repair plus validate-only command readers",
+      "migrationPhase": "Phase 5 repair boundary",
+      "oldReaderOrExporter": "existing ensure* helpers retained until migration fixtures cover every supported old shape",
+      "rollbackProof": "Compare whole-database snapshots before/after ordinary commands and restore helper behind migration boundary.",
+      "workstream3Cursor": "Released: mutation-range tests prove ordinary commands do not persist unrelated repair; retained normalizers are explicit compatibility actions.",
+      "probes": [
+        {
+          "path": "server/fastify/src/commands/splitPresets.ts",
+          "kind": "identifier",
+          "value": "ensureModelPresetCollection",
+          "expectedCount": 3
+        },
+        {
+          "path": "server/fastify/src/commands/splitPresets.ts",
+          "kind": "identifier",
+          "value": "ensurePromptPresetCollection",
+          "expectedCount": 3
+        },
+        {
+          "path": "server/fastify/src/commands/translatorPresets.ts",
+          "kind": "identifier",
+          "value": "ensureTranslatorPresetCollection",
+          "expectedCount": 1
+        }
+      ]
+    },
+    {
+      "id": "repository-stable-id-repair",
+      "family": "repair",
+      "surface": "repairChatIds and global lorebook stable-id repair",
+      "currentOwner": "repository boot/import/write helpers and schema migration",
+      "roles": [
+        "repair",
+        "import",
+        "recovery"
+      ],
+      "currentPrecedence": "Existing valid ids survive; deterministic/unique ids are minted for missing legacy records.",
+      "missingBehavior": "Migration/import assigns ids before canonical rows are addressed.",
+      "malformedBehavior": "Malformed collection envelopes follow import validation or explicit recovery policy.",
+      "damagedDatabaseBehavior": "Ordinary resource commands must not repair unrelated ids.",
+      "historicalFixture": "server/fastify/__tests__/lorebookIdentityRepair.test.ts",
+      "provenance": "Stable-id migration/import regression fixtures and database schema migration tests.",
+      "disposition": "explicit-compatibility",
+      "targetOwner": "versioned migration, import normalization, and explicit recovery only",
+      "migrationPhase": "Phase 1 foundation and Phase 5 repair boundary",
+      "oldReaderOrExporter": "repository broad reader with legacy embedded fallback",
+      "rollbackProof": "Transactional migration retry plus pre-migration backup and deterministic-id fixture.",
+      "workstream3Cursor": "Released: stable-id repair is confined to schema migration, legacy import, and explicit recovery paths.",
+      "probes": [
+        {
+          "path": "server/fastify/src/repository.ts",
+          "kind": "identifier",
+          "value": "repairChatIds",
+          "expectedCount": 3
+        },
+        {
+          "path": "server/fastify/src/repository.ts",
+          "kind": "identifier",
+          "value": "repairPersistedGlobalLorebookIds",
+          "expectedCount": 5
+        }
+      ]
+    },
+    {
+      "id": "legacy-db-json-import",
+      "family": "interchange",
+      "surface": "one-time data/db.json import and quarantine",
+      "currentOwner": "repository boot import boundary",
+      "roles": [
+        "import",
+        "repair",
+        "recovery"
+      ],
+      "currentPrecedence": "A present valid legacy snapshot imports into SQLite once; existing authoritative SQLite/marker state prevents reimport.",
+      "missingBehavior": "No-op when db.json is absent.",
+      "malformedBehavior": "Invalid envelope is quarantined; parse failure remains in place and blocks startup with actionable error.",
+      "damagedDatabaseBehavior": "Never silently replaces authoritative SQLite; explicit restore/recovery decides precedence.",
+      "historicalFixture": "server/fastify/__tests__/legacyDatabaseImport.test.ts",
+      "provenance": "Restart, injected failure, quarantine, and idempotency fixtures for real db.json boot import.",
+      "disposition": "import-only",
+      "targetOwner": "versioned one-time SQLite import boundary",
+      "migrationPhase": "Phase 1 foundation and Phase 6 interchange cleanup",
+      "oldReaderOrExporter": "readLegacyDatabaseSnapshot/importLegacyDatabaseSnapshot",
+      "rollbackProof": "Legacy file remains or is recoverably quarantined until transaction and restart proof pass.",
+      "workstream3Cursor": "No browser owner release dependency; retain explicit import compatibility.",
+      "probes": [
+        {
+          "path": "server/fastify/src/repository.ts",
+          "kind": "identifier",
+          "value": "ensureDbJsonImported",
+          "expectedCount": 1
+        },
+        {
+          "path": "server/fastify/src/repository.ts",
+          "kind": "identifier",
+          "value": "quarantineInvalidLegacyDatabaseSnapshot",
+          "expectedCount": 2
+        }
+      ]
+    },
+    {
+      "id": "risusave-import-normalization",
+      "family": "interchange",
+      "surface": "legacy/current .risu envelope decode and canonical import normalization",
+      "currentOwner": "Fastify RisuSave import boundary",
+      "roles": [
+        "import",
+        "repair"
+      ],
+      "currentPrecedence": "Envelope classifier chooses supported legacy/raw/compressed/stream or block format, then normalizes once into current database state.",
+      "missingBehavior": "Missing optional families receive current defaults; absent content required by the format is rejected.",
+      "malformedBehavior": "Untrusted malformed envelopes and unsupported references fail validation without mutating active state.",
+      "damagedDatabaseBehavior": "Import operates transactionally against a prepared snapshot and cannot become automatic database recovery.",
+      "historicalFixture": "server/fastify/__tests__/risuSaveImportRoute.test.ts",
+      "provenance": "Route fixtures cover legacy envelopes, current blocks, malformed inputs, unsupported groups, and atomic refusal.",
+      "disposition": "import-only",
+      "targetOwner": "explicit import normalizers producing canonical current state",
+      "migrationPhase": "Phase 6 interchange and obsolete storage",
+      "oldReaderOrExporter": "legacyEnvelopeCodec and normalizeRisuSaveImportDatabase",
+      "rollbackProof": "Active database snapshot remains unchanged on every validation failure fixture.",
+      "workstream3Cursor": "No normal browser facade hold after supported imports hydrate canonical owners.",
+      "probes": [
+        {
+          "path": "server/fastify/src/risuSave/importSnapshot.ts",
+          "kind": "identifier",
+          "value": "normalizeRisuSaveImportDatabase",
+          "expectedCount": 1
+        },
+        {
+          "path": "server/fastify/src/risuSave/importSnapshot.ts",
+          "kind": "identifier",
+          "value": "decodeLegacyRisuSaveEnvelope",
+          "expectedCount": 2
+        }
+      ]
+    },
+    {
+      "id": "legacy-backup-restore",
+      "family": "interchange",
+      "surface": "backup db.json acceptance and legacy-only restore path",
+      "currentOwner": "Fastify backup/restore repository",
+      "roles": [
+        "backup",
+        "import",
+        "recovery"
+      ],
+      "currentPrecedence": "A valid SQLite backup is preferred; a valid legacy db.json is also imported, and legacy-only backups remain restorable.",
+      "missingBehavior": "Restore refuses when both SQLite and db.json are missing.",
+      "malformedBehavior": "Invalid legacy JSON is rejected even when present; restore journal preserves recoverability.",
+      "damagedDatabaseBehavior": "Restore uses explicit journaled swap/lineage behavior rather than automatic current-database repair.",
+      "historicalFixture": "server/fastify/__tests__/backups.test.ts",
+      "provenance": "Backup/restore fixtures cover SQLite, legacy-only, invalid payload, journal recovery, and lineage.",
+      "disposition": "explicit-compatibility",
+      "targetOwner": "explicit backup restore adapter normalizing legacy payloads into canonical SQLite",
+      "migrationPhase": "Phase 1 foundation and Phase 6 interchange cleanup",
+      "oldReaderOrExporter": "validateBackupLegacyJson and importLegacyDatabaseSnapshot",
+      "rollbackProof": "Restore swap journal, backup payload validation, and lineage tests remain mandatory.",
+      "workstream3Cursor": "No browser owner hold; explicit restore remains server-owned.",
+      "probes": [
+        {
+          "path": "server/fastify/src/repository.ts",
+          "kind": "identifier",
+          "value": "validateBackupLegacyJson",
+          "expectedCount": 2
+        },
+        {
+          "path": "server/fastify/src/repository.ts",
+          "kind": "identifier",
+          "value": "importLegacyDatabaseSnapshot",
+          "expectedCount": 3
+        }
+      ]
+    },
+    {
+      "id": "client-lorebook-page-compatibility",
+      "family": "client-resource",
+      "surface": "owner-backed lorebook page pointer with an explicit plugin refusal boundary",
+      "currentOwner": "lorebookPageOwner",
+      "roles": [
+        "read",
+        "mutation",
+        "plugin",
+        "recovery"
+      ],
+      "currentPrecedence": "The hydrated owner pointer is authoritative; normal process and UI reads never fall back to an aggregate database scalar.",
+      "missingBehavior": "Owner-backed UI and process actions use page zero until the narrow owner hydrates.",
+      "malformedBehavior": "Negative/non-integer pages and non-unique lorebook ids are refused by owner selection; the repository remains responsible for legacy bounds and stable-id repair.",
+      "damagedDatabaseBehavior": "The compatibility replica never repairs lorebook bodies or broad settings and cannot widen bootstrap, shell, or focused resource payloads.",
+      "historicalFixture": "src/ts/process/__tests__/lorebook.owner.test.ts",
+      "provenance": "Focused route, invalidation, owner, modal, process, and structural bridge tests cover hydration, durable settlement, rollback, stable-id repair, and cold fallback.",
+      "disposition": "remove",
+      "targetOwner": "lorebookPageOwner only; the unsupported plugin key is an explicit refusal, not a replica",
+      "migrationPhase": "Workstream 3 Phase 4 bridge removal and Phase 6 plugin/legacy disposition",
+      "oldReaderOrExporter": "unsupportedServerBridgeKeys loreBookPage refusal",
+      "rollbackProof": "Owner current-attempt rollback plus bridge delete/reorder stable-id rollback and authoritative reload tests remain mandatory.",
+      "workstream3Cursor": "Released: the compatibility replica and cold aggregate fallback are removed; the legacy plugin key fails closed in server mode.",
+      "probes": [
+        {
+          "path": "src/ts/plugins/plugins.svelte.ts",
+          "kind": "text",
+          "value": "loreBookPage",
+          "expectedCount": 1
+        },
+        {
+          "path": "src/ts/process/lorebook.svelte.ts",
+          "kind": "identifier",
+          "value": "currentLorebookPageIndex",
+          "expectedCount": 2
+        },
+        {
+          "path": "src/ts/server/lorebookPageOwner.svelte.ts",
+          "kind": "text",
+          "value": "export function currentLorebookPageIndex",
+          "expectedCount": 1
+        }
+      ]
+    }
+  ]
+}

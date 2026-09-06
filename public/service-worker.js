@@ -15,6 +15,10 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(focusOrOpenApp(event.notification.data?.url ?? '/'))
 })
 
+const NOTIFICATION_ROUTE_MESSAGE_TYPE = 'risuai:notification-route'
+const NOTIFICATION_ROUTE_ACK_TYPE = 'risuai:notification-route-ack'
+const NOTIFICATION_ROUTE_ACK_TIMEOUT_MS = 1000
+
 async function focusOrOpenApp(path) {
   const targetUrl = new URL(path, self.location.origin).href
   const windowClients = await self.clients.matchAll({
@@ -24,14 +28,55 @@ async function focusOrOpenApp(path) {
 
   for (const client of windowClients) {
     if (new URL(client.url).origin === self.location.origin && 'focus' in client) {
-      const navigatedClient = 'navigate' in client ? await navigateClient(client, targetUrl) : client
-      return (navigatedClient ?? client).focus()
+      const focusedClient = (await client.focus()) ?? client
+      if (focusedClient.url === targetUrl) return focusedClient
+
+      const acknowledged = await requestClientNavigation(focusedClient, targetUrl)
+      if (acknowledged || focusedClient.url === targetUrl) return focusedClient
+
+      return 'navigate' in focusedClient ? navigateClient(focusedClient, targetUrl) : focusedClient
     }
   }
 
   if (self.clients.openWindow) {
     return self.clients.openWindow(targetUrl)
   }
+}
+
+function requestClientNavigation(client, targetUrl) {
+  if (!('postMessage' in client) || typeof MessageChannel !== 'function') {
+    return Promise.resolve(false)
+  }
+
+  const channel = new MessageChannel()
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (acknowledged) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      channel.port1.close()
+      resolve(acknowledged)
+    }
+    const timeout = setTimeout(() => finish(false), NOTIFICATION_ROUTE_ACK_TIMEOUT_MS)
+
+    channel.port1.onmessage = (event) => {
+      if (event.data?.type === NOTIFICATION_ROUTE_ACK_TYPE) finish(true)
+    }
+    channel.port1.onmessageerror = () => finish(false)
+
+    try {
+      client.postMessage(
+        {
+          type: NOTIFICATION_ROUTE_MESSAGE_TYPE,
+          url: targetUrl,
+        },
+        [channel.port2],
+      )
+    } catch {
+      finish(false)
+    }
+  })
 }
 
 async function navigateClient(client, targetUrl) {

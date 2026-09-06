@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { selectedCharID } from './stores.svelte'
 import { testDatabaseState } from './__tests__/resourceDatabaseState'
+import { charactersResourceState } from './server/resourceState.svelte'
 import {
   checkPersonaBinded,
   getPersonaPrompt,
@@ -8,15 +9,19 @@ import {
   getUserIcon,
   getUserIconProtrait,
   getUserName,
+  replacePlaceholders,
+  resolveUserPersonaPresentation,
 } from './utilState'
 
 function seedPersonaDisplayState(chatPatch: Record<string, unknown>): void {
   selectedCharID.set(0)
   testDatabaseState.db = {
+    selectedPersonaId: 'global-persona',
     selectedPersona: 1,
     username: 'Global Persona',
     userIcon: 'global.png',
     personaPrompt: 'global prompt',
+    userNote: '',
     personas: [
       {
         id: 'chat-persona',
@@ -45,6 +50,7 @@ function seedPersonaDisplayState(chatPatch: Record<string, unknown>): void {
         largePortrait: false,
       },
     ],
+    currentChar: 0,
     characters: [
       {
         chaId: 'char-a',
@@ -75,6 +81,34 @@ afterEach(() => {
 })
 
 describe('active chat persona display helpers', () => {
+  it('uses the selected persona row over stale legacy profile scalars', () => {
+    const db = testDatabaseState.db
+    db.username = 'STALE NAME'
+    db.userIcon = 'stale.png'
+    db.personaPrompt = 'STALE PROMPT'
+    db.personas[1] = {
+      ...db.personas[1],
+      name: 'Canonical Name',
+      icon: 'canonical.png',
+      personaPrompt: 'CANONICAL PROMPT',
+    }
+
+    expect(getUserName()).toBe('Canonical Name')
+    expect(getUserIcon()).toBe('canonical.png')
+    expect(getPersonaPrompt()).toBe('CANONICAL PROMPT')
+  })
+
+  it('fails closed instead of falling back to legacy compatibility when selection is ambiguous', () => {
+    const db = testDatabaseState.db
+    db.username = 'Compatibility Name'
+    db.personaPrompt = 'Compatibility Prompt'
+    db.personas[1] = { ...db.personas[1], id: 'duplicate-persona', name: 'Ambiguous Name' }
+    db.personas[2] = { ...db.personas[2], id: 'duplicate-persona', personaPrompt: 'Ambiguous Prompt' }
+
+    expect(getUserName()).toBe('User')
+    expect(getPersonaPrompt()).toBe('')
+  })
+
   it('uses the chat generation-settings persona before the global selected persona', () => {
     seedPersonaDisplayState({
       generationSettings: {
@@ -107,8 +141,91 @@ describe('active chat persona display helpers', () => {
     expect(getUserIconProtrait()).toBe(false)
   })
 
+  it('does not let a legacy binding override an authoritative modern settings object', () => {
+    seedPersonaDisplayState({
+      bindedPersona: 'legacy-persona',
+      generationSettings: {},
+    })
+
+    expect(checkPersonaBinded()).toBeNull()
+    expect(getUserDisplayName()).toBe('Visible Global Persona')
+    expect(getUserIcon()).toBe('global.png')
+  })
+
+  it('resolves presentation from an explicitly supplied chat instead of navigation globals', () => {
+    seedPersonaDisplayState({})
+    const db = testDatabaseState.db
+    const presentation = resolveUserPersonaPresentation(db, {
+      id: 'supplied-chat',
+      name: 'Supplied chat',
+      message: [],
+      note: '',
+      localLore: [],
+      generationSettings: { personaId: 'chat-persona' },
+    } as never)
+
+    expect(presentation).toEqual({
+      currentUsername: 'Visible Chat Persona',
+      userIcon: 'chat.png',
+      userIconPortrait: true,
+    })
+  })
+
   it('uses the selected persona display name only for visible labels', () => {
     expect(getUserName()).toBe('Global Persona')
     expect(getUserDisplayName()).toBe('Visible Global Persona')
+  })
+
+  it('uses the ready character selection owner instead of a stale selected-index mirror', () => {
+    testDatabaseState.db.characters.push({
+      chaId: 'char-b',
+      name: 'Stale Character',
+      chatPage: 0,
+      chats: [],
+    } as never)
+    selectedCharID.set(1)
+
+    expect(replacePlaceholders('{{char}} greets {{user}}', 'Explicit Character')).toBe(
+      'Character A greets Global Persona',
+    )
+  })
+
+  it('fails closed when the active chat id has more than one owner', () => {
+    testDatabaseState.db.characters.push({
+      chaId: 'char-b',
+      name: 'Character B',
+      chatPage: 0,
+      chats: [{ id: 'chat-a', name: 'Duplicate chat', message: [], note: '', localLore: [] }],
+    } as never)
+    testDatabaseState.db.characters[0].chats[0].generationSettings = { personaId: 'chat-persona' } as never
+
+    expect(checkPersonaBinded()).toBeNull()
+    expect(getUserDisplayName()).toBe('Visible Global Persona')
+  })
+
+  it('fails closed when a chat-bound persona id has more than one owner', () => {
+    testDatabaseState.db.personas[2] = {
+      ...testDatabaseState.db.personas[2],
+      id: 'chat-persona',
+      displayName: 'Ambiguous persona',
+    }
+    testDatabaseState.db.characters[0].chats[0].generationSettings = { personaId: 'chat-persona' } as never
+
+    expect(checkPersonaBinded()).toBeNull()
+    expect(getUserDisplayName()).toBe('User')
+  })
+
+  it('does not fall back to the selected-index mirror after the character owner is ready', () => {
+    charactersResourceState.currentChar = 9
+
+    expect(replacePlaceholders('{{char}}', 'Explicit Character')).toBe('Explicit Character')
+    expect(checkPersonaBinded()).toBeNull()
+  })
+
+  it('does not reuse compatibility character rows after the owner resource fails', () => {
+    charactersResourceState.status = 'error'
+
+    expect(replacePlaceholders('{{char}}', 'Explicit Character')).toBe('Explicit Character')
+    expect(checkPersonaBinded()).toBeNull()
   })
 })

@@ -12,20 +12,24 @@
   } from 'src/ts/activeChatGenerationSettings'
   import {
     applyChatGenerationTogglePresetWithOutcome,
-    compareChatGenerationTogglePresetToActiveState,
-    createChatGenerationTogglePresetPickValues,
     deleteChatGenerationTogglePreset,
-    getChatGenerationTogglePresetPickEligibility,
     getChatGenerationTogglePresets,
     overwriteCurrentChatGenerationTogglePreset,
     renameChatGenerationTogglePreset,
     saveCurrentChatGenerationTogglePreset,
-    sortChatGenerationTogglePresetsBySimilarity,
     type ChatGenerationTogglePreset,
-    type ChatGenerationToggleSimilarityToggle,
   } from 'src/ts/chatGenerationTogglePresets'
+  import {
+    compareChatGenerationTogglePresetToActiveState,
+    createChatGenerationTogglePresetPickValues,
+    getChatGenerationTogglePresetPickEligibility,
+    sortChatGenerationTogglePresetsBySimilarity,
+    type ChatGenerationToggleSimilarityToggle,
+  } from 'src/ts/chatGenerationTogglePresetPlanning'
   import type { ChatGenerationRequiredSidebarToggle } from 'src/ts/chatGenerationSettings'
   import type { ActiveChatTarget, ChatGenerationSettingsSaveOperation } from 'src/ts/chatCommands'
+  import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { chatGenerationTogglePresetListModalStore, selectedCharID } from 'src/ts/stores.svelte'
   import Button from '../UI/GUI/Button.svelte'
@@ -203,10 +207,6 @@
     if (persistenceStatus !== 'pending') close()
   }
 
-  function handleBackdropClick(event: MouseEvent): void {
-    if (event.target === event.currentTarget && persistenceStatus !== 'pending') close()
-  }
-
   function ineligibilityReasons(preset: ChatGenerationTogglePreset, source: ToggleSource): string[] {
     const eligibility = getChatGenerationTogglePresetPickEligibility(preset, source.toggles)
     const reasons: string[] = []
@@ -241,7 +241,11 @@
     const grouped = new Map<string, ChatGenerationRequiredSidebarToggle[]>()
     for (const toggle of state.requiredSidebarToggles) {
       const sourceId =
-        toggle.source === 'preset' ? `preset:${toggle.presetId ?? ''}` : `module:${toggle.moduleId ?? ''}`
+        toggle.source === 'preset'
+          ? `preset:${toggle.presetId ?? ''}`
+          : toggle.source === 'module'
+            ? `module:${toggle.moduleId ?? ''}`
+            : `agent:${toggle.agentId ?? ''}`
       const existing = grouped.get(sourceId)
       if (existing) existing.push(toggle)
       else grouped.set(sourceId, [toggle])
@@ -250,9 +254,13 @@
     return [...grouped.entries()].map(([id, toggles]) => {
       const first = toggles[0]
       if (first.source === 'preset') {
-        const preset = state.db.promptPresets?.find((candidate) => candidate.id === first.presetId)
+        const preset = resolveUniquePromptPreset(state.db.promptPresets, first.presetId)
         const name = preset?.name?.trim() || first.presetId || ''
         return { id, name: language.chatGenerationTogglePresetPickPromptSource(name), toggles }
+      }
+      if (first.source === 'agent') {
+        const name = first.agentName?.trim() || first.agentId || ''
+        return { id, name: language.chatGenerationTogglePresetPickAgentSource(name), toggles }
       }
       const module = state.db.modules?.find((candidate) => candidate.id === first.moduleId)
       const name = module?.name?.trim() || first.moduleNamespace || first.moduleId || ''
@@ -264,9 +272,11 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  use:modalBackdropDismiss={() => {
+    if (persistenceStatus !== 'pending') close()
+  }}
   data-modal-root
-  class="fixed inset-0 z-[60] bg-black/50 flex justify-center items-center"
-  onclick={handleBackdropClick}>
+  class="fixed inset-0 z-[60] bg-black/50 flex justify-center items-center">
   <div
     use:modalFocusTrap
     class="bg-darkbg p-4 break-any rounded-md flex flex-col max-h-full overflow-y-auto toggle-preset-modal"

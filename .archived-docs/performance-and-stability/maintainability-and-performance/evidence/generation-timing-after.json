@@ -1,0 +1,1477 @@
+{
+  "beforeSource": "b3873f52d",
+  "afterSource": "cb914e641 plus accompanying standalone-validator commit",
+  "method": "Three alternating fresh test processes per source, each fixture with one warmup and three measured repetitions; medians pool all nine samples. Maintenance-only handlers in the root worktree were not invoked; all other test/build tools were idle. Original timing budgets unchanged.",
+  "cycles": [
+    {
+      "source": "before",
+      "cycle": 1,
+      "runtime": "v24.19.0",
+      "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+      "samples": [
+        {
+          "axis": "unrelated",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.4197189999999864,
+              0.3267720000001191,
+              0.4424109999999928
+            ],
+            "assemblyMs": [
+              2.436142000000018,
+              1.94017000000008,
+              2.214300000000094
+            ]
+          }
+        },
+        {
+          "axis": "unrelated",
+          "dimensions": {
+            "unrelatedCharacters": 12,
+            "unrelatedChats": 36,
+            "unrelatedHistoryRows": 288,
+            "unusedRowsPerCollection": 12,
+            "unrelatedAssets": 96,
+            "targetHistory": 4
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              1.3040189999999257,
+              1.0915350000000217,
+              1.0952640000000429
+            ],
+            "assemblyMs": [
+              3.1485170000000835,
+              2.8785740000000715,
+              3.1869420000000446
+            ]
+          }
+        },
+        {
+          "axis": "unrelated",
+          "dimensions": {
+            "unrelatedCharacters": 48,
+            "unrelatedChats": 144,
+            "unrelatedHistoryRows": 1152,
+            "unusedRowsPerCollection": 48,
+            "unrelatedAssets": 384,
+            "targetHistory": 4
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              3.2951359999999568,
+              2.4370960000001105,
+              2.0798039999999673
+            ],
+            "assemblyMs": [
+              8.23062200000004,
+              3.6813300000001163,
+              3.9760909999999967
+            ]
+          }
+        },
+        {
+          "axis": "history",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.3145079999999325,
+              0.2832789999999932,
+              0.28935999999998785
+            ],
+            "assemblyMs": [
+              1.4330139999999574,
+              1.394892000000027,
+              1.3006729999999607
+            ]
+          }
+        },
+        {
+          "axis": "history",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 40
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.35760000000004766,
+              0.3244969999998375,
+              0.48750700000005054
+            ],
+            "assemblyMs": [
+              5.860434999999825,
+              4.578175999999985,
+              4.95184600000016
+            ]
+          }
+        },
+        {
+          "axis": "history",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 160
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.7748149999999896,
+              0.7637219999999161,
+              0.8255500000000211
+            ],
+            "assemblyMs": [
+              14.296628000000055,
+              13.216062000000193,
+              12.473989999999958
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "after",
+      "cycle": 1,
+      "runtime": "v24.19.0",
+      "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+      "samples": [
+        {
+          "axis": "unrelated",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.3289050000003044,
+              0.3254690000003393,
+              0.3851529999997183
+            ],
+            "assemblyMs": [
+              2.2244699999996556,
+              2.5991519999997763,
+              2.301676000000043
+            ]
+          }
+        },
+        {
+          "axis": "unrelated",
+          "dimensions": {
+            "unrelatedCharacters": 12,
+            "unrelatedChats": 36,
+            "unrelatedHistoryRows": 288,
+            "unusedRowsPerCollection": 12,
+            "unrelatedAssets": 96,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.34388399999988906,
+              0.3154500000000553,
+              0.28013300000020536
+            ],
+            "assemblyMs": [
+              1.5172150000003057,
+              1.7356509999999616,
+              1.862322999999833
+            ]
+          }
+        },
+        {
+          "axis": "unrelated",
+          "dimensions": {
+            "unrelatedCharacters": 48,
+            "unrelatedChats": 144,
+            "unrelatedHistoryRows": 1152,
+            "unusedRowsPerCollection": 48,
+            "unrelatedAssets": 384,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.35438299999987066,
+              0.4204800000002251,
+              0.24814199999991615
+            ],
+            "assemblyMs": [
+              2.42769700000008,
+              2.1005849999996826,
+              1.4863759999998365
+            ]
+          }
+        },
+        {
+          "axis": "history",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.2824579999996786,
+              0.3795110000000932,
+              2.0825199999999313
+            ],
+            "assemblyMs": [
+              1.63316500000019,
+              2.2083489999999983,
+              1.2881500000003143
+            ]
+          }
+        },
+        {
+          "axis": "history",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 40,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.3552050000002964,
+              0.28332799999998315,
+              0.2625399999997171
+            ],
+            "assemblyMs": [
+              5.488898000000063,
+              4.314926000000014,
+              4.310537000000295
+            ]
+          }
+        },
+        {
+          "axis": "history",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 160,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.6402779999998529,
+              0.35807199999999284,
+              0.5083669999999074
+            ],
+            "assemblyMs": [
+              13.704331000000366,
+              12.888159000000087,
+              12.71408700000029
+            ]
+          }
+        },
+        {
+          "axis": "configuration-row",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.2864439999998467,
+              0.205391000000418,
+              0.20300600000018676
+            ],
+            "assemblyMs": [
+              1.2734410000002754,
+              1.1958230000000185,
+              1.1577619999998205
+            ]
+          }
+        },
+        {
+          "axis": "configuration-row",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 12,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.3647040000000743,
+              0.3487119999999777,
+              0.3306280000001607
+            ],
+            "assemblyMs": [
+              1.8196709999997438,
+              1.7852450000000317,
+              2.146331999999802
+            ]
+          }
+        },
+        {
+          "axis": "configuration-row",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 48,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              2.830441999999948,
+              0.6358289999998306,
+              0.5573889999996027
+            ],
+            "assemblyMs": [
+              2.5059570000003077,
+              4.027630000000045,
+              1.4260020000001532
+            ]
+          }
+        },
+        {
+          "axis": "legacy-embedded",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": true
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.3103110000001834,
+              0.2830579999999827,
+              0.26587600000038947
+            ],
+            "assemblyMs": [
+              1.830862999999681,
+              1.8088089999996555,
+              1.1318030000002182
+            ]
+          }
+        },
+        {
+          "axis": "legacy-embedded",
+          "dimensions": {
+            "unrelatedCharacters": 12,
+            "unrelatedChats": 36,
+            "unrelatedHistoryRows": 288,
+            "unusedRowsPerCollection": 12,
+            "unrelatedAssets": 96,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": true
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              1.2337469999997666,
+              0.9981079999997746,
+              1.1910859999998138
+            ],
+            "assemblyMs": [
+              2.0091889999998784,
+              2.548055000000204,
+              2.5189009999999143
+            ]
+          }
+        },
+        {
+          "axis": "legacy-embedded",
+          "dimensions": {
+            "unrelatedCharacters": 48,
+            "unrelatedChats": 144,
+            "unrelatedHistoryRows": 1152,
+            "unusedRowsPerCollection": 48,
+            "unrelatedAssets": 384,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": true
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              2.6906260000000657,
+              2.90362099999993,
+              3.2511610000001383
+            ],
+            "assemblyMs": [
+              3.8401739999999336,
+              5.14721899999995,
+              4.436075999999957
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "before",
+      "cycle": 2,
+      "runtime": "v24.19.0",
+      "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+      "samples": [
+        {
+          "axis": "unrelated",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.5884389999998803,
+              0.45158999999989646,
+              0.38303800000016963
+            ],
+            "assemblyMs": [
+              3.2806490000000395,
+              2.5003260000000864,
+              2.279504999999972
+            ]
+          }
+        },
+        {
+          "axis": "unrelated",
+          "dimensions": {
+            "unrelatedCharacters": 12,
+            "unrelatedChats": 36,
+            "unrelatedHistoryRows": 288,
+            "unusedRowsPerCollection": 12,
+            "unrelatedAssets": 96,
+            "targetHistory": 4
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              1.8383460000000014,
+              2.540862000000061,
+              2.199833000000126
+            ],
+            "assemblyMs": [
+              5.345876000000089,
+              5.083876999999802,
+              5.570082000000184
+            ]
+          }
+        },
+        {
+          "axis": "unrelated",
+          "dimensions": {
+            "unrelatedCharacters": 48,
+            "unrelatedChats": 144,
+            "unrelatedHistoryRows": 1152,
+            "unusedRowsPerCollection": 48,
+            "unrelatedAssets": 384,
+            "targetHistory": 4
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              3.374846999999818,
+              5.918304999999918,
+              2.049927999999909
+            ],
+            "assemblyMs": [
+              5.702354999999898,
+              3.9603199999999106,
+              3.893823999999995
+            ]
+          }
+        },
+        {
+          "axis": "history",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.3003720000001522,
+              0.31773500000008426,
+              0.2498440000001665
+            ],
+            "assemblyMs": [
+              1.4323530000001483,
+              1.4233570000001237,
+              1.130369999999857
+            ]
+          }
+        },
+        {
+          "axis": "history",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 40
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.4589819999998781,
+              0.4631010000000515,
+              0.4373129999999037
+            ],
+            "assemblyMs": [
+              5.550375000000031,
+              4.3732659999998305,
+              6.008295000000089
+            ]
+          }
+        },
+        {
+          "axis": "history",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 160
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.8425419999998667,
+              1.1480739999999514,
+              1.658633000000009
+            ],
+            "assemblyMs": [
+              15.756232000000182,
+              14.39331100000004,
+              13.328976999999895
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "after",
+      "cycle": 2,
+      "runtime": "v24.19.0",
+      "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+      "samples": [
+        {
+          "axis": "unrelated",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.5882300000002942,
+              0.3790600000002087,
+              0.4372920000000704
+            ],
+            "assemblyMs": [
+              2.8845860000001267,
+              2.475167000000056,
+              2.308230000000094
+            ]
+          }
+        },
+        {
+          "axis": "unrelated",
+          "dimensions": {
+            "unrelatedCharacters": 12,
+            "unrelatedChats": 36,
+            "unrelatedHistoryRows": 288,
+            "unusedRowsPerCollection": 12,
+            "unrelatedAssets": 96,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.36892100000022765,
+              0.35832200000004377,
+              0.3586630000004334
+            ],
+            "assemblyMs": [
+              1.788401999999678,
+              1.8251510000000053,
+              2.216906000000108
+            ]
+          }
+        },
+        {
+          "axis": "unrelated",
+          "dimensions": {
+            "unrelatedCharacters": 48,
+            "unrelatedChats": 144,
+            "unrelatedHistoryRows": 1152,
+            "unusedRowsPerCollection": 48,
+            "unrelatedAssets": 384,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.26217799999994895,
+              0.22776399999975183,
+              0.28983199999993303
+            ],
+            "assemblyMs": [
+              1.5704359999999724,
+              1.6077770000001692,
+              1.495683999999983
+            ]
+          }
+        },
+        {
+          "axis": "history",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.31104099999993196,
+              0.2701250000000073,
+              0.2568380000002435
+            ],
+            "assemblyMs": [
+              1.7369220000000496,
+              1.3255309999999554,
+              1.2706069999999272
+            ]
+          }
+        },
+        {
+          "axis": "history",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 40,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.309577999999874,
+              0.4011619999996583,
+              0.5868359999999484
+            ],
+            "assemblyMs": [
+              5.62303299999985,
+              5.128242000000228,
+              5.251416000000063
+            ]
+          }
+        },
+        {
+          "axis": "history",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 160,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.5834690000001501,
+              0.6794530000001942,
+              0.45736100000021906
+            ],
+            "assemblyMs": [
+              15.309184000000187,
+              15.935542999999598,
+              15.525323999999728
+            ]
+          }
+        },
+        {
+          "axis": "configuration-row",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.27249799999981406,
+              0.2827580000002854,
+              0.21310500000026877
+            ],
+            "assemblyMs": [
+              1.4942919999998594,
+              1.2974970000000212,
+              1.2583639999998013
+            ]
+          }
+        },
+        {
+          "axis": "configuration-row",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 12,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.3398779999997714,
+              0.3594140000000152,
+              0.2650140000000647
+            ],
+            "assemblyMs": [
+              1.5309609999999338,
+              1.3769479999996292,
+              1.5346489999997175
+            ]
+          }
+        },
+        {
+          "axis": "configuration-row",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 48,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.5614680000003318,
+              0.5863949999998113,
+              0.6635419999997794
+            ],
+            "assemblyMs": [
+              1.7278759999999238,
+              1.7313019999996868,
+              1.465216000000055
+            ]
+          }
+        },
+        {
+          "axis": "legacy-embedded",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": true
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.2638409999999567,
+              0.2649330000003829,
+              0.22163200000022698
+            ],
+            "assemblyMs": [
+              1.2795430000001033,
+              1.134045000000242,
+              1.032242999999653
+            ]
+          }
+        },
+        {
+          "axis": "legacy-embedded",
+          "dimensions": {
+            "unrelatedCharacters": 12,
+            "unrelatedChats": 36,
+            "unrelatedHistoryRows": 288,
+            "unusedRowsPerCollection": 12,
+            "unrelatedAssets": 96,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": true
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              1.1413510000002134,
+              0.9045499999997446,
+              1.0914950000001227
+            ],
+            "assemblyMs": [
+              1.920741999999791,
+              1.9788830000002235,
+              1.855829999999969
+            ]
+          }
+        },
+        {
+          "axis": "legacy-embedded",
+          "dimensions": {
+            "unrelatedCharacters": 48,
+            "unrelatedChats": 144,
+            "unrelatedHistoryRows": 1152,
+            "unusedRowsPerCollection": 48,
+            "unrelatedAssets": 384,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": true
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              2.745310000000245,
+              2.6403110000001107,
+              3.175960000000032
+            ],
+            "assemblyMs": [
+              4.105307000000266,
+              4.894136999999773,
+              3.4490780000000996
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "before",
+      "cycle": 3,
+      "runtime": "v24.19.0",
+      "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+      "samples": [
+        {
+          "axis": "unrelated",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.4824060000000827,
+              0.3809039999998731,
+              0.34374400000001515
+            ],
+            "assemblyMs": [
+              2.6608309999999165,
+              2.0959250000000793,
+              3.3388699999998153
+            ]
+          }
+        },
+        {
+          "axis": "unrelated",
+          "dimensions": {
+            "unrelatedCharacters": 12,
+            "unrelatedChats": 36,
+            "unrelatedHistoryRows": 288,
+            "unusedRowsPerCollection": 12,
+            "unrelatedAssets": 96,
+            "targetHistory": 4
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              1.6782920000000559,
+              1.7363419999999223,
+              1.0503469999998742
+            ],
+            "assemblyMs": [
+              3.5853490000001784,
+              3.283873999999969,
+              3.3755690000000413
+            ]
+          }
+        },
+        {
+          "axis": "unrelated",
+          "dimensions": {
+            "unrelatedCharacters": 48,
+            "unrelatedChats": 144,
+            "unrelatedHistoryRows": 1152,
+            "unusedRowsPerCollection": 48,
+            "unrelatedAssets": 384,
+            "targetHistory": 4
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              17.426099000000022,
+              2.3662589999999,
+              1.9734530000000632
+            ],
+            "assemblyMs": [
+              4.490098999999873,
+              3.604714999999942,
+              3.460982000000058
+            ]
+          }
+        },
+        {
+          "axis": "history",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.2537119999999504,
+              0.294399999999996,
+              0.9498149999999441
+            ],
+            "assemblyMs": [
+              1.4789319999999861,
+              1.6453699999999571,
+              1.4737330000000384
+            ]
+          }
+        },
+        {
+          "axis": "history",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 40
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.4605659999999716,
+              0.5342669999999998,
+              0.4557270000000244
+            ],
+            "assemblyMs": [
+              9.870469000000185,
+              4.813212000000021,
+              4.2792679999997745
+            ]
+          }
+        },
+        {
+          "axis": "history",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 160
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.8539539999999306,
+              0.9649540000000343,
+              0.8122650000000249
+            ],
+            "assemblyMs": [
+              13.94359600000007,
+              13.972821000000067,
+              14.27622899999983
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "after",
+      "cycle": 3,
+      "runtime": "v24.19.0",
+      "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+      "samples": [
+        {
+          "axis": "unrelated",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.3415599999998449,
+              0.3052210000000741,
+              0.47482300000001487
+            ],
+            "assemblyMs": [
+              2.326814999999897,
+              2.3162139999999454,
+              3.572534999999789
+            ]
+          }
+        },
+        {
+          "axis": "unrelated",
+          "dimensions": {
+            "unrelatedCharacters": 12,
+            "unrelatedChats": 36,
+            "unrelatedHistoryRows": 288,
+            "unusedRowsPerCollection": 12,
+            "unrelatedAssets": 96,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.2822270000001481,
+              0.2895920000000842,
+              0.22509900000022753
+            ],
+            "assemblyMs": [
+              1.5730419999999867,
+              1.8750549999999748,
+              1.9671400000001995
+            ]
+          }
+        },
+        {
+          "axis": "unrelated",
+          "dimensions": {
+            "unrelatedCharacters": 48,
+            "unrelatedChats": 144,
+            "unrelatedHistoryRows": 1152,
+            "unusedRowsPerCollection": 48,
+            "unrelatedAssets": 384,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.27544399999987945,
+              0.26201899999978195,
+              0.21958799999993062
+            ],
+            "assemblyMs": [
+              1.6992209999998522,
+              1.604772000000139,
+              2.0330660000004173
+            ]
+          }
+        },
+        {
+          "axis": "history",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.21229300000004514,
+              0.21002999999973326,
+              0.23842400000012276
+            ],
+            "assemblyMs": [
+              1.5997929999998632,
+              1.5709569999999076,
+              1.411804999999731
+            ]
+          }
+        },
+        {
+          "axis": "history",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 40,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.3991299999997864,
+              0.3496350000000348,
+              0.341921000000184
+            ],
+            "assemblyMs": [
+              5.714908999999807,
+              4.534483999999793,
+              4.357304999999997
+            ]
+          }
+        },
+        {
+          "axis": "history",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 160,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.6885200000001532,
+              0.4444340000000011,
+              0.40534999999999854
+            ],
+            "assemblyMs": [
+              16.0891059999999,
+              13.224207000000206,
+              12.628132999999707
+            ]
+          }
+        },
+        {
+          "axis": "configuration-row",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.23727099999996426,
+              0.20840599999974074,
+              0.20492000000012922
+            ],
+            "assemblyMs": [
+              1.2784609999998793,
+              1.1813970000002882,
+              1.1570910000000367
+            ]
+          }
+        },
+        {
+          "axis": "configuration-row",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 12,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.26673799999980474,
+              0.36127799999985655,
+              0.2581119999999828
+            ],
+            "assemblyMs": [
+              1.1900220000002264,
+              1.2744330000000446,
+              1.4054519999999684
+            ]
+          }
+        },
+        {
+          "axis": "configuration-row",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 48,
+            "legacyEmbedded": false
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.8168029999997088,
+              0.5167830000000322,
+              0.6780699999999342
+            ],
+            "assemblyMs": [
+              1.5473419999998441,
+              1.557111999999961,
+              1.340910000000349
+            ]
+          }
+        },
+        {
+          "axis": "legacy-embedded",
+          "dimensions": {
+            "unrelatedCharacters": 0,
+            "unrelatedChats": 0,
+            "unrelatedHistoryRows": 0,
+            "unusedRowsPerCollection": 0,
+            "unrelatedAssets": 0,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": true
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              0.28298799999993207,
+              0.2528109999998378,
+              0.25644699999975273
+            ],
+            "assemblyMs": [
+              1.2713069999999789,
+              1.1728699999998753,
+              1.1351380000000972
+            ]
+          }
+        },
+        {
+          "axis": "legacy-embedded",
+          "dimensions": {
+            "unrelatedCharacters": 12,
+            "unrelatedChats": 36,
+            "unrelatedHistoryRows": 288,
+            "unusedRowsPerCollection": 12,
+            "unrelatedAssets": 96,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": true
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              1.0098809999999503,
+              0.8525109999995948,
+              0.9655459999999039
+            ],
+            "assemblyMs": [
+              2.6038430000003245,
+              2.4304030000002967,
+              2.2151119999998627
+            ]
+          }
+        },
+        {
+          "axis": "legacy-embedded",
+          "dimensions": {
+            "unrelatedCharacters": 48,
+            "unrelatedChats": 144,
+            "unrelatedHistoryRows": 1152,
+            "unusedRowsPerCollection": 48,
+            "unrelatedAssets": 384,
+            "targetHistory": 4,
+            "unusedConfigurationRecords": 0,
+            "legacyEmbedded": true
+          },
+          "timing": {
+            "warmup": 1,
+            "repetitions": 3,
+            "preflightMs": [
+              3.3055159999998978,
+              3.0202540000000226,
+              3.901879999999892
+            ],
+            "assemblyMs": [
+              5.361966999999822,
+              4.846918000000187,
+              4.548680000000331
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

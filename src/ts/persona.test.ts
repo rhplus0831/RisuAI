@@ -15,8 +15,8 @@ import {
   type ServerCommandLocalEffect,
 } from './server/commands'
 import { serializePersonaCollectionDigestInput, serializePersonaProfileDigestInput } from './personaMutationCertificate'
-import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
-import { flushRegisteredPendingBridgePatches } from './server/pendingBridgeFlushRegistry'
+
+import { flushRegisteredPendingOwnerMutations } from './server/pendingOwnerMutationRegistry'
 import {
   beginPendingMutationDispatch,
   clearPendingMutationOutbox,
@@ -36,7 +36,7 @@ import {
   isSettingsAcknowledgementTainted,
 } from './server/resourceState.svelte'
 import './stores.svelte'
-import { getDatabase, setDatabaseLite } from './storage/database.svelte'
+import { setDatabaseLite } from './storage/database.svelte'
 import {
   beginPersonaReorder,
   changeUserPersona,
@@ -60,7 +60,9 @@ import {
   updateSelectedPersonaField,
   updateSelectedPersonaFieldWithOutcome,
   updateSelectedPersonaLargePortrait,
+  updateSelectedPersonaModules,
 } from './persona'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 function cloneJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
@@ -98,15 +100,29 @@ function makePersona(patch: Record<string, unknown>): Record<string, unknown> {
 }
 
 function seedPersonaState(personas: Array<Record<string, unknown>>, selectedPersona = 0): void {
+  const selectedId = personas[selectedPersona]?.id
+  const selectedPersonaId =
+    typeof selectedId === 'string' &&
+    selectedId.trim() !== '' &&
+    personas.filter((persona) => persona.id === selectedId).length === 1
+      ? selectedId
+      : null
   setDatabaseLite({
     characters: [],
     personas,
+    selectedPersonaId,
     selectedPersona,
     username: 'Unsaved User Name',
     userIcon: 'unsaved-user-icon.png',
     personaPrompt: 'Unsaved persona prompt',
     userNote: 'Unsaved user note',
   } as any)
+}
+
+function setSelectedPersonaIndex(index: number): void {
+  const personaId = getDatabase().personas[index]?.id
+  getDatabase().selectedPersonaId = typeof personaId === 'string' ? personaId : null
+  getDatabase().selectedPersona = index
 }
 
 function applySelectedPersonaProjection(
@@ -153,7 +169,6 @@ function mockNextDeferredCommandFailure(error = 'persona command failed') {
 beforeEach(() => {
   clearCachedServerCommandRevision()
   setServerCommandSuccessReconciler(null)
-  setResourceWriteGuardEnabled(false)
   vi.stubGlobal(
     'fetch',
     vi.fn(async () => {
@@ -166,7 +181,6 @@ beforeEach(() => {
 
 afterEach(() => {
   setServerCommandSuccessReconciler(null)
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
@@ -188,6 +202,7 @@ describe('persona ID read and command preparation', () => {
     })
     const previous = {
       personas: [personaA, personaB],
+      selectedPersonaId: 'persona-a',
       selectedPersona: 0,
       username: 'Edited A',
       userIcon: 'edited-a.png',
@@ -205,6 +220,7 @@ describe('persona ID read and command preparation', () => {
         },
         personaB,
       ],
+      selectedPersonaId: 'persona-b',
       selectedPersona: 1,
       username: 'B',
       userIcon: 'b.png',
@@ -245,8 +261,13 @@ describe('persona ID read and command preparation', () => {
     expect(
       personaMutationOptimisticAcknowledgement({
         operation: 'reorder',
-        previous: { ...attempted, selectedPersona: 1 },
-        attempted: { ...attempted, personas: [personaB, attempted.personas[0]], selectedPersona: 0 },
+        previous: { ...attempted, selectedPersonaId: 'persona-b', selectedPersona: 1 },
+        attempted: {
+          ...attempted,
+          personas: [personaB, attempted.personas[0]],
+          selectedPersonaId: 'persona-b',
+          selectedPersona: 0,
+        },
         mirrorLegacyProfile: false,
         saveCurrent: false,
         collectionProjectionEpoch: 8,
@@ -265,7 +286,7 @@ describe('persona ID read and command preparation', () => {
     })
   })
 
-  it('mirrors selected text fields into the selected persona row immediately', () => {
+  it('updates the selected persona row without mirroring legacy scalars', () => {
     seedPersonaState(
       [
         makePersona({
@@ -289,9 +310,9 @@ describe('persona ID read and command preparation', () => {
     updateSelectedPersonaField('userNote', 'Fresh note')
     updateSelectedPersonaField('personaPrompt', 'Fresh prompt')
 
-    expect(getDatabase().username).toBe('Fresh Name')
-    expect(getDatabase().userNote).toBe('Fresh note')
-    expect(getDatabase().personaPrompt).toBe('Fresh prompt')
+    expect(getDatabase().username).toBe('Unsaved User Name')
+    expect(getDatabase().userNote).toBe('Unsaved user note')
+    expect(getDatabase().personaPrompt).toBe('Unsaved persona prompt')
     expect(getDatabase().personas[0]).toMatchObject({
       id: 'persona-a',
       name: 'Fresh Name',
@@ -307,7 +328,7 @@ describe('persona ID read and command preparation', () => {
     })
   })
 
-  it('persists an onboarding-style username through the selected persona owner', async () => {
+  it('persists an onboarding-style username through the selected persona owner without scalar mirroring', async () => {
     seedPersonaState(
       [
         makePersona({
@@ -343,15 +364,15 @@ describe('persona ID read and command preparation', () => {
 
     await expect(updateSelectedPersonaFieldWithOutcome('username', 'Ada')).resolves.toBe('accepted')
 
-    expect(getDatabase().username).toBe('Ada')
+    expect(getDatabase().username).toBe('User')
     expect(getDatabase().personas[0].name).toBe('Ada')
     expect(calls.find((call) => call.url.endsWith('/personas/default-persona'))?.body).toMatchObject({
       patch: { name: 'Ada' },
-      mirrorLegacyProfile: true,
+      mirrorLegacyProfile: false,
     })
   })
 
-  it('rolls back both username projections when the persona owner rejects the edit', async () => {
+  it('rolls back the selected persona row while leaving legacy scalars unchanged', async () => {
     seedPersonaState(
       [
         makePersona({
@@ -417,9 +438,14 @@ describe('persona ID read and command preparation', () => {
       ],
       0,
     )
+    getDatabase().modules = [
+      { id: 'module-a', name: 'Module A' },
+      { id: 'module-b', name: 'Module B' },
+    ] as any
     const previous = currentPersonaStateSnapshot()
     updateSelectedPersonaField('personaPrompt', 'Unsaved prompt')
     updateSelectedPersonaDisplayName('Unsaved display name')
+    updateSelectedPersonaModules(['module-a', 'module-b'])
     const attempted = currentPersonaStateSnapshot()
     queueSelectedPersonaUpdate(previous, attempted)
 
@@ -440,10 +466,11 @@ describe('persona ID read and command preparation', () => {
 
     expect(result).toEqual({ status: 'error', error: 'persona save failed' })
     expect(isCollectionAcknowledgementTainted('personas')).toBe(true)
-    expect(isSettingsAcknowledgementTainted()).toBe(true)
+    expect(isSettingsAcknowledgementTainted()).toBe(false)
     expect(fetch).toHaveBeenCalledTimes(2)
     expect(updateBody.patch).toEqual({
       displayName: 'Unsaved display name',
+      modules: ['module-a', 'module-b'],
       personaPrompt: 'Unsaved prompt',
     })
     expect(currentPersonaStateSnapshot()).toEqual(previous)
@@ -476,7 +503,7 @@ describe('persona ID read and command preparation', () => {
       }),
     )
 
-    flushRegisteredPendingBridgePatches({ keepalive: true })
+    flushRegisteredPendingOwnerMutations({ keepalive: true })
     await flushPendingSelectedPersonaUpdate()
 
     expect(fetch).toHaveBeenCalledTimes(2)
@@ -539,7 +566,7 @@ describe('persona ID read and command preparation', () => {
       expect(JSON.parse(String(commandCall?.[1]?.body))).toEqual({
         baseRevision: 1,
         patch: { personaPrompt: 'Crash-safe prompt' },
-        mirrorLegacyProfile: true,
+        mirrorLegacyProfile: false,
       })
     } finally {
       await clearPendingMutationOutbox()
@@ -612,7 +639,7 @@ describe('persona ID read and command preparation', () => {
     expect(JSON.parse(String(vi.mocked(fetch).mock.calls[2][1]?.body))).toMatchObject({
       baseRevision: 2,
       personaId: 'persona-b',
-      saveCurrent: true,
+      saveCurrent: false,
     })
     await flushCommandEffects()
   })
@@ -708,7 +735,7 @@ describe('persona ID read and command preparation', () => {
       ['/api/v1/commands/personas/persona-delete-a', 'PATCH'],
       ['/api/v1/commands/personas/persona-delete-a', 'DELETE'],
     ])
-    expect(observedEffects.map((effect) => effect.kind)).toEqual(['personaPatch'])
+    expect(observedEffects.map((effect) => effect.kind)).toEqual([])
     expect(getDatabase().personas).toEqual([personaB])
 
     getDatabase().personas.push(
@@ -720,7 +747,7 @@ describe('persona ID read and command preparation', () => {
         note: 'Server A note',
       }) as any,
     )
-    getDatabase().selectedPersona = 1
+    setSelectedPersonaIndex(1)
     getDatabase().username = 'Server Persona A'
     getDatabase().userIcon = 'server-a.png'
     getDatabase().personaPrompt = 'Server A prompt'
@@ -728,7 +755,7 @@ describe('persona ID read and command preparation', () => {
     reconcileSelectedPersonaProjectionEpoch()
 
     expect(getDatabase().personaPrompt).toBe('Server A prompt')
-    expect(getDatabase().personas[1].personaPrompt).toBe('Server A prompt')
+    expect(getDatabase().personas[1].personaPrompt).toBe('Edited A prompt')
   })
 
   it('holds persona DELETE behind a transient profile PATCH and recovers without a late request', async () => {
@@ -843,8 +870,8 @@ describe('persona ID read and command preparation', () => {
       expect(retainedDelete.intent.dependencyKeys).toEqual(['persona-profile:persona-transient-delete-a'])
       expect(retainedDelete.intent.requests[0].body).toEqual({
         selectPersonaId: 'persona-transient-delete-b',
-        mirrorLegacyProfile: true,
-        saveCurrent: true,
+        mirrorLegacyProfile: false,
+        saveCurrent: false,
       })
 
       recover = true
@@ -861,10 +888,10 @@ describe('persona ID read and command preparation', () => {
       // newer selected-persona projection stays visible through replay.
       expect(getDatabase()).toMatchObject({
         selectedPersona: 0,
-        username: 'Persona B',
-        userIcon: 'b.png',
-        personaPrompt: 'B prompt',
-        userNote: 'B note',
+        username: 'Persona A',
+        userIcon: 'a.png',
+        personaPrompt: 'A prompt',
+        userNote: 'A note',
       })
       expect(getDatabase().personas).toEqual([personaB])
     } finally {
@@ -1339,7 +1366,7 @@ describe('persona ID read and command preparation', () => {
           personaPrompt: 'Temporary prompt',
           note: 'Baseline note',
         },
-        mirrorLegacyProfile: true,
+        mirrorLegacyProfile: false,
       })
       await expect(flushPendingSelectedPersonaUpdate()).resolves.toMatchObject({ status: 'ok' })
     } finally {
@@ -1372,7 +1399,7 @@ describe('persona ID read and command preparation', () => {
 
     try {
       await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(1))
-      getDatabase().selectedPersona = 1
+      setSelectedPersonaIndex(1)
       getDatabase().username = 'Persona B'
       getDatabase().userIcon = ''
       getDatabase().personaPrompt = 'B prompt'
@@ -1464,11 +1491,11 @@ describe('persona ID read and command preparation', () => {
       ).toEqual([
         {
           key: 'persona-profile:persona-total-revert',
-          body: { patch: { personaPrompt: 'Temporary prompt' }, mirrorLegacyProfile: true },
+          body: { patch: { personaPrompt: 'Temporary prompt' }, mirrorLegacyProfile: false },
         },
         {
           key: 'persona-profile:persona-total-revert',
-          body: { patch: { personaPrompt: 'Baseline prompt' }, mirrorLegacyProfile: true },
+          body: { patch: { personaPrompt: 'Baseline prompt' }, mirrorLegacyProfile: false },
         },
       ])
 
@@ -1532,6 +1559,7 @@ describe('persona ID read and command preparation', () => {
     applySettingsResource({
       revision: 1,
       settings: {
+        selectedPersonaId: 'persona-a',
         selectedPersona: 0,
         username: 'Persona A',
         userIcon: 'a.png',
@@ -1564,13 +1592,7 @@ describe('persona ID read and command preparation', () => {
 
     await flushPendingSelectedPersonaUpdate()
 
-    expect(observedEffects).toEqual([
-      expect.objectContaining({
-        kind: 'personaPatch',
-        collectionProjectionEpoch,
-        settingsProjectionEpoch,
-      }),
-    ])
+    expect(observedEffects).toEqual([])
   })
 
   it('keeps a dirty value when a successful response does not validate as an applied acknowledgement', async () => {
@@ -1615,12 +1637,18 @@ describe('persona ID read and command preparation', () => {
     )
 
     expect(await flushPendingSelectedPersonaUpdate()).toMatchObject({ status: 'ok' })
-    expect(observedEffects).toEqual([])
+    expect(observedEffects).toEqual([
+      expect.objectContaining({
+        kind: 'personaPatch',
+        personaId: 'persona-rejected-ack',
+        legacyProfileProjectionApplied: false,
+      }),
+    ])
 
     applySelectedPersonaProjection({ id: 'persona-rejected-ack', name: 'Baseline' }, { username: 'Baseline' })
     reconcileSelectedPersonaProjectionEpoch()
 
-    expect(getDatabase().username).toBe('Optimistic name')
+    expect(getDatabase().username).toBe('Baseline')
     expect(getDatabase().personas[0].name).toBe('Optimistic name')
   })
 
@@ -1667,7 +1695,7 @@ describe('persona ID read and command preparation', () => {
       ...getDatabase().personas[1],
       name: 'Persona B edited after dispatch',
     } as any
-    getDatabase().selectedPersona = 1
+    setSelectedPersonaIndex(1)
     getDatabase().username = 'Persona B live name'
     getDatabase().userIcon = 'b-live.png'
     getDatabase().personaPrompt = 'Persona B live prompt'
@@ -1713,13 +1741,18 @@ describe('persona ID read and command preparation', () => {
       ],
       0,
     )
-    getDatabase().username = 'Persona A draft'
-    getDatabase().userIcon = 'a-draft.png'
-    getDatabase().personaPrompt = 'A draft prompt'
-    getDatabase().userNote = 'A draft note'
+    const previous = currentPersonaStateSnapshot()
+    getDatabase().personas[0] = {
+      ...getDatabase().personas[0],
+      name: 'Persona A draft',
+      icon: 'a-draft.png',
+      personaPrompt: 'A draft prompt',
+      note: 'A draft note',
+    } as any
     const failure = mockNextDeferredCommandFailure()
 
-    saveUserPersona()
+    queueSelectedPersonaUpdate(previous, currentPersonaStateSnapshot())
+    void flushPendingSelectedPersonaUpdate()
     await vi.waitFor(() => {
       expect(fetch).toHaveBeenCalledTimes(2)
     })
@@ -1732,7 +1765,7 @@ describe('persona ID read and command preparation', () => {
       ...getDatabase().personas[1],
       name: 'Persona B edited after dispatch',
     } as any
-    getDatabase().selectedPersona = 1
+    setSelectedPersonaIndex(1)
     getDatabase().username = 'Persona B live name'
     getDatabase().userIcon = 'b-live.png'
     getDatabase().personaPrompt = 'Persona B live prompt'
@@ -1741,7 +1774,7 @@ describe('persona ID read and command preparation', () => {
     await flushCommandEffects()
 
     expect(isCollectionAcknowledgementTainted('personas')).toBe(true)
-    expect(isSettingsAcknowledgementTainted()).toBe(true)
+    expect(isSettingsAcknowledgementTainted()).toBe(false)
 
     expect(getDatabase().personas[0]).toMatchObject({
       id: 'persona-a',
@@ -1779,7 +1812,8 @@ describe('persona ID read and command preparation', () => {
     getDatabase().username = 'Persona A'
     getDatabase().userIcon = 'a.png'
     getDatabase().personaPrompt = 'Old prompt'
-    getDatabase().userNote = 'New note'
+    const previous = currentPersonaStateSnapshot()
+    getDatabase().personas[0].note = 'New note'
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ revision: 1 }))
     vi.mocked(fetch).mockResolvedValueOnce(
       jsonResponse({
@@ -1792,11 +1826,12 @@ describe('persona ID read and command preparation', () => {
         },
         personaId: 'persona-a',
         acknowledgedKeys: ['note'],
-        legacyProfileProjectionApplied: true,
+        legacyProfileProjectionApplied: false,
       }),
     )
 
-    saveUserPersona()
+    queueSelectedPersonaUpdate(previous, currentPersonaStateSnapshot())
+    void flushPendingSelectedPersonaUpdate()
     await vi.waitFor(() => {
       expect(fetch).toHaveBeenCalledTimes(2)
     })
@@ -1830,34 +1865,32 @@ describe('persona ID read and command preparation', () => {
       ],
       0,
     )
-    getDatabase().username = 'Persona A'
-    getDatabase().userIcon = 'a.png'
-    getDatabase().personaPrompt = 'Old prompt'
-    getDatabase().userNote = 'Queued note'
+    const previous = currentPersonaStateSnapshot()
+    updateSelectedPersonaField('userNote', 'Queued note')
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ revision: 1 }))
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ error: 'temporarily unavailable' }, 500))
 
     try {
-      await expect(saveUserPersona()).resolves.toBe('queued')
+      queueSelectedPersonaUpdate(previous, currentPersonaStateSnapshot())
+      await expect(flushPendingSelectedPersonaUpdate()).resolves.toMatchObject({ status: 'error' })
       expect((await listPendingMutations()).map((entry) => entry.intent.requests[0])).toMatchObject([
         {
           method: 'PATCH',
           path: '/personas/persona-direct-save-retained',
-          body: { patch: { note: 'Queued note' }, mirrorLegacyProfile: true },
+          body: { patch: { note: 'Queued note' }, mirrorLegacyProfile: false },
         },
       ])
 
       getDatabase().personas[0].note = 'Old note'
-      getDatabase().userNote = 'Old note'
       reconcileSelectedPersonaProjectionEpoch()
 
       expect(getDatabase().personas[0].note).toBe('Queued note')
-      expect(getDatabase().userNote).toBe('Queued note')
+      expect(getDatabase().userNote).toBe('Unsaved user note')
       settleAcceptedPersonaPatchDirtyFields(
         'persona-direct-save-retained',
         { note: 'Queued note' },
         { id: 'persona-direct-save-retained', note: 'Queued note' },
-        true,
+        false,
       )
     } finally {
       await clearPendingMutationOutbox()
@@ -1897,7 +1930,7 @@ describe('persona ID read and command preparation', () => {
 
     expect(getDatabase()).toMatchObject({
       selectedPersona: 0,
-      username: 'Newer Persona A name',
+      username: 'Persona A',
       userIcon: 'a.png',
       personaPrompt: 'Old prompt',
       userNote: 'Old note',
@@ -2002,7 +2035,7 @@ describe('persona ID read and command preparation', () => {
 
     await expect(first).resolves.toBe('failed')
     await expect(second).resolves.toBe('accepted')
-    expect(getDatabase().personaPrompt).toBe('Later prompt')
+    expect(getDatabase().personaPrompt).toBe('Old prompt')
     expect(getDatabase().personas[0].personaPrompt).toBe('Later prompt')
   })
 
@@ -2048,7 +2081,7 @@ describe('persona ID read and command preparation', () => {
       ...getDatabase().personas[1],
       name: 'Persona B edited after dispatch',
     } as any
-    getDatabase().selectedPersona = 2
+    setSelectedPersonaIndex(2)
     getDatabase().username = 'Persona C live name'
     getDatabase().userIcon = 'c-live.png'
     getDatabase().personaPrompt = 'Persona C live prompt'
@@ -2129,8 +2162,8 @@ describe('persona ID read and command preparation', () => {
       await expect(persistence!).resolves.toBe('queued')
       expect(getDatabase()).toMatchObject({
         selectedPersona: 1,
-        username: 'B',
-        personaPrompt: 'B prompt',
+        username: 'A',
+        personaPrompt: 'A prompt',
       })
       expect(await listPendingMutations()).toHaveLength(1)
     } finally {
@@ -2139,7 +2172,7 @@ describe('persona ID read and command preparation', () => {
     }
   })
 
-  it('selectedPersonaId returns null for missing and duplicate IDs without mutating the projection', () => {
+  it('selectedPersonaId fails closed for missing, duplicate, or mismatched owners without mutation', () => {
     seedPersonaState([makePersona({ name: 'Missing ID' }), makePersona({ id: 'persona-b', name: 'B' })], 0)
     const missingBefore = cloneJsonValue(getDatabase())
 
@@ -2157,6 +2190,13 @@ describe('persona ID read and command preparation', () => {
 
     expect(selectedPersonaId()).toBeNull()
     expect(getDatabase({ snapshot: true })).toEqual(duplicateBefore)
+
+    seedPersonaState([makePersona({ id: 'persona-a', name: 'A' }), makePersona({ id: 'persona-b', name: 'B' })], 0)
+    getDatabase().selectedPersona = 1
+    const mismatchBefore = cloneJsonValue(getDatabase())
+
+    expect(selectedPersonaId()).toBeNull()
+    expect(getDatabase({ snapshot: true })).toEqual(mismatchBefore)
   })
 
   it('does not assign IDs or save profile fields while preparing an invalid reorder', () => {
@@ -2192,7 +2232,7 @@ describe('persona ID read and command preparation', () => {
       0,
     )
     const confirmedPersonaId = selectedPersonaId()
-    getDatabase().selectedPersona = 1
+    setSelectedPersonaIndex(1)
     const before = cloneJsonValue(getDatabase())
 
     expect(confirmedPersonaId).toBe('persona-a')
@@ -2220,6 +2260,24 @@ describe('persona ID read and command preparation', () => {
 })
 
 describe('persona collection rollback guards', () => {
+  it('failed first create restores the canonical empty owner selection', async () => {
+    seedPersonaState([], -1)
+    mockNextCommandFailure()
+
+    const mutation = createNewUserPersonaWithOutcome()
+    await expect(mutation.persistence).resolves.toBe('failed')
+
+    expect(getDatabase().personas).toEqual([])
+    expect(getDatabase()).toMatchObject({
+      selectedPersonaId: null,
+      selectedPersona: -1,
+      username: 'Unsaved User Name',
+      userIcon: 'unsaved-user-icon.png',
+      personaPrompt: 'Unsaved persona prompt',
+      userNote: 'Unsaved user note',
+    })
+  })
+
   it('failed create removes only the still-attempted new persona and preserves newer sibling edit', async () => {
     seedPersonaState(
       [
@@ -2401,10 +2459,10 @@ describe('persona collection rollback guards', () => {
     })
     expect(getDatabase()).toMatchObject({
       selectedPersona: 1,
-      username: 'Latest optimistic Persona B',
+      username: 'Persona B',
       userIcon: 'latest-b.png',
-      personaPrompt: 'Latest optimistic Prompt B',
-      userNote: 'Latest optimistic Note B',
+      personaPrompt: 'Prompt B',
+      userNote: 'Note B',
     })
     expect(getDatabase().characters[0].chats[0].generationSettings?.personaId).toBe('persona-b')
     expect(getDatabase().loadouts[0].personaId).toBe('persona-b')
@@ -2453,7 +2511,7 @@ describe('persona collection rollback guards', () => {
 
     expect(reorderUserPersonasByIndices([2, 0, 1], 'persona-b')).toBe(true)
     getDatabase().personas = [getDatabase().personas[2], getDatabase().personas[0], getDatabase().personas[1]]
-    getDatabase().selectedPersona = 0
+    setSelectedPersonaIndex(0)
     await flushCommandEffects()
 
     expect(getDatabase().personas.map((persona) => persona.id)).toEqual(['persona-b', 'persona-c', 'persona-a'])
@@ -2496,7 +2554,7 @@ describe('selected persona dirty projection reconciliation', () => {
       { username: 'First accepted value' },
     )
     reconcileSelectedPersonaProjectionEpoch()
-    expect(getDatabase().username).toBe('Later queued value')
+    expect(getDatabase().username).toBe('First accepted value')
     expect(getDatabase().personas[0].name).toBe('Later queued value')
 
     settleAcceptedPersonaPatchDirtyFields(
@@ -2552,9 +2610,9 @@ describe('selected persona dirty projection reconciliation', () => {
 
     reconcileSelectedPersonaProjectionEpoch()
 
-    expect(getDatabase().username).toBe('Local Name')
-    expect(getDatabase().personaPrompt).toBe('Local prompt')
-    expect(getDatabase().userNote).toBe('Local note')
+    expect(getDatabase().username).toBe('Stale Name')
+    expect(getDatabase().personaPrompt).toBe('Stale prompt')
+    expect(getDatabase().userNote).toBe('Stale note')
     expect(getDatabase().userIcon).toBe('fresh-icon.png')
     expect(getDatabase().personas[0]).toMatchObject({
       id: 'persona-dirty-profile',
@@ -2566,7 +2624,7 @@ describe('selected persona dirty projection reconciliation', () => {
     })
   })
 
-  it('reasserts still-dirty values into both legacy fields and the selected persona row', () => {
+  it('reasserts still-dirty values into the selected persona row without mirroring legacy fields', () => {
     seedPersonaState(
       [
         makePersona({
@@ -2599,9 +2657,9 @@ describe('selected persona dirty projection reconciliation', () => {
     reconcileSelectedPersonaProjectionEpoch()
 
     expect(getDatabase()).toMatchObject({
-      username: 'Local Name',
-      personaPrompt: 'Local prompt',
-      userNote: 'Local note',
+      username: 'Server Name',
+      personaPrompt: 'Server prompt',
+      userNote: 'Server note',
     })
     expect(getDatabase().personas[0]).toMatchObject({
       name: 'Local Name',

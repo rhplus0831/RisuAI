@@ -2,20 +2,31 @@
   import { ArrowLeft } from '@lucide/svelte'
   import { language } from 'src/lang'
   import { PlaygroundStore, SizeStore } from 'src/ts/stores.svelte'
-  import PlaygroundEmbedding from './PlaygroundEmbedding.svelte'
-  import PlaygroundTokenizer from './PlaygroundTokenizer.svelte'
-  import PlaygroundJinja from './PlaygroundJinja.svelte'
-  import PlaygroundSyntax from './PlaygroundSyntax.svelte'
-  import PlaygroundImageGen from './PlaygroundImageGen.svelte'
-  import PlaygroundParser from './PlaygroundParser.svelte'
-  import ToolConversion from './ToolConversion.svelte'
-  import PlaygroundSubtitle from './PlaygroundSubtitle.svelte'
-  import PlaygroundImageTrans from './PlaygroundImageTrans.svelte'
-  import PlaygroundTranslation from './PlaygroundTranslation.svelte'
-  import PlaygroundMcp from './PlaygroundMCP.svelte'
-  import PlaygroundDocs from './PlaygroundDocs.svelte'
-  import PlaygroundInlayExplorer from './PlaygroundInlayExplorer.svelte'
   import { navigate } from 'src/ts/router'
+  import { prefetchRouteIntent } from 'src/ts/routeIntentPrefetch'
+  import {
+    loadPlaygroundDocs,
+    loadPlaygroundEmbedding,
+    loadPlaygroundImageGen,
+    loadPlaygroundImageTrans,
+    loadPlaygroundInlayExplorer,
+    loadPlaygroundJinja,
+    loadPlaygroundMcp,
+    loadPlaygroundParser,
+    loadPlaygroundSubtitle,
+    loadPlaygroundSyntax,
+    loadPlaygroundTokenizer,
+    loadPlaygroundTranslation,
+    loadToolConversion,
+  } from 'src/ts/routeComponentPreload'
+  import LazyComponent from '../UI/LazyComponent.svelte'
+
+  function preloadPlaygroundRouteFromEvent(event: Event): void {
+    if (!(event.target instanceof Element)) return
+    const target = event.target.closest<HTMLElement>('[data-risu-route-intent]')
+    const path = target?.dataset.risuRouteIntent
+    if (path) prefetchRouteIntent(path)
+  }
 
   let easterEggTouch = $state(0)
 </script>
@@ -25,9 +36,15 @@
     <h2 class="text-4xl text-textcolor my-6 font-black relative">
       {language.playground.playground}
     </h2>
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 w-full max-w-4xl p-2">
+    <div
+      class="grid grid-cols-1 gap-4 md:grid-cols-2 w-full max-w-4xl p-2"
+      role="group"
+      aria-label={language.playground.playground}
+      onpointerover={preloadPlaygroundRouteFromEvent}
+      onfocusin={preloadPlaygroundRouteFromEvent}>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1 md:col-span-2"
+        data-risu-route-intent="/playground/chat"
         onclick={() => {
           navigate('/playground/chat')
         }}>
@@ -35,6 +52,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/cbs"
         onclick={() => {
           navigate('/playground/cbs')
         }}>
@@ -42,6 +60,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/embedding"
         onclick={() => {
           navigate('/playground/embedding')
         }}>
@@ -49,6 +68,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/tokenizer"
         onclick={() => {
           navigate('/playground/tokenizer')
         }}>
@@ -56,6 +76,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/syntax"
         onclick={() => {
           navigate('/playground/syntax')
         }}>
@@ -63,6 +84,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/jinja"
         onclick={() => {
           navigate('/playground/jinja')
         }}>
@@ -70,6 +92,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/image-gen"
         onclick={() => {
           navigate('/playground/image-gen')
         }}>
@@ -77,6 +100,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/parser"
         onclick={() => {
           navigate('/playground/parser')
         }}>
@@ -84,6 +108,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/subtitles"
         onclick={() => {
           navigate('/playground/subtitles')
         }}>
@@ -91,6 +116,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/image-trans"
         onclick={() => {
           navigate('/playground/image-trans')
         }}>
@@ -98,6 +124,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/translation"
         onclick={() => {
           navigate('/playground/translation')
         }}>
@@ -105,6 +132,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/mcp"
         onclick={() => {
           navigate('/playground/mcp')
         }}>
@@ -112,6 +140,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/inlay"
         onclick={() => {
           navigate('/inlay')
         }}>
@@ -119,6 +148,7 @@
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
+        data-risu-route-intent="/playground/tools"
         onclick={() => {
           navigate('/playground/tools')
         }}>
@@ -158,43 +188,43 @@
         <!-- The synthetic Playground character renders through the normal chat shell. -->
       {/if}
       {#if $PlaygroundStore === 3}
-        <PlaygroundEmbedding />
+        <LazyComponent loader={loadPlaygroundEmbedding} testId="playground-embedding" />
       {/if}
       {#if $PlaygroundStore === 4}
-        <PlaygroundTokenizer />
+        <LazyComponent loader={loadPlaygroundTokenizer} testId="playground-tokenizer" />
       {/if}
       {#if $PlaygroundStore === 5}
-        <PlaygroundSyntax />
+        <LazyComponent loader={loadPlaygroundSyntax} testId="playground-syntax" />
       {/if}
       {#if $PlaygroundStore === 6}
-        <PlaygroundJinja />
+        <LazyComponent loader={loadPlaygroundJinja} testId="playground-jinja" />
       {/if}
       {#if $PlaygroundStore === 7}
-        <PlaygroundImageGen />
+        <LazyComponent loader={loadPlaygroundImageGen} testId="playground-image-gen" />
       {/if}
       {#if $PlaygroundStore === 8}
-        <PlaygroundParser />
+        <LazyComponent loader={loadPlaygroundParser} testId="playground-parser" />
       {/if}
       {#if $PlaygroundStore === 9}
-        <PlaygroundSubtitle />
+        <LazyComponent loader={loadPlaygroundSubtitle} testId="playground-subtitles" />
       {/if}
       {#if $PlaygroundStore === 10}
-        <PlaygroundImageTrans />
+        <LazyComponent loader={loadPlaygroundImageTrans} testId="playground-image-translation" />
       {/if}
       {#if $PlaygroundStore === 11}
-        <PlaygroundTranslation />
+        <LazyComponent loader={loadPlaygroundTranslation} testId="playground-translation" />
       {/if}
       {#if $PlaygroundStore === 12}
-        <PlaygroundMcp />
+        <LazyComponent loader={loadPlaygroundMcp} testId="playground-mcp" />
       {/if}
       {#if $PlaygroundStore === 13}
-        <PlaygroundDocs />
+        <LazyComponent loader={loadPlaygroundDocs} testId="playground-docs" />
       {/if}
       {#if $PlaygroundStore === 14}
-        <PlaygroundInlayExplorer />
+        <LazyComponent loader={loadPlaygroundInlayExplorer} testId="playground-inlays" />
       {/if}
       {#if $PlaygroundStore === 101}
-        <ToolConversion />
+        <LazyComponent loader={loadToolConversion} testId="playground-tools" />
       {/if}
     </div>
   {/if}

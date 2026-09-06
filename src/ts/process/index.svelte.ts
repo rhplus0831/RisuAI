@@ -1,9 +1,10 @@
 import { get, writable } from 'svelte/store'
-import { type character, type MessageGenerationInfo } from '../storage/database.svelte'
-import { getResourceDatabase as getDatabase } from '../server/resourceState.svelte'
+import { isServerCharacterShell, type character, type MessageGenerationInfo } from '../storage/database.svelte'
+import { settingsResourceState } from '../server/resourceState.svelte'
 import { reportSendChatError } from './sendChatErrors'
 import { setupSendChatContext } from './sendChatContext'
 import { orchestrateResponse } from './postGeneration/orchestrateResponse'
+import { evaluateIgp } from './postGeneration/igp'
 import { runStage4 } from './postGeneration/runStage4'
 import { dispatchRequest } from './dispatch/dispatchRequest'
 import type { DispatchSuccessReq } from './dispatch/dispatchRequest'
@@ -20,7 +21,10 @@ import {
   createSendChatCharacterCache,
   runSendChatMessageVariables,
 } from './sendChatPromptAssembly'
-import { guardActiveChatGenerationSettingsForSend } from '../activeChatGenerationSettings'
+import {
+  guardActiveChatGenerationSettingsForSend,
+  resolveActiveChatGenerationSettings,
+} from '../activeChatGenerationSettings'
 import { alertError } from '../alert'
 import {
   captureActiveChatTarget,
@@ -30,6 +34,36 @@ import {
 } from '../chatCommands'
 import { flushPendingSelectedPersonaUpdate } from '../persona'
 import { language } from '../../lang'
+import {
+  activeChatGenerations,
+  beginChatGenerationActivity,
+  findChatGenerationActivity,
+  finishChatGenerationActivity,
+  updateChatGenerationActivityMetadata,
+  updateChatGenerationActivityPhase,
+  updateChatGenerationActivityStage,
+  type ChatGenerationActivity,
+} from './generationActivity.svelte'
+import { playMessageCompletionSoundIfEnabled } from './messageCompletionSound'
+import type { SendChatFailure } from './sendChatFailure'
+import type { GenerationReattachOutcome } from './generationReattachOutcome'
+import type { ServerChatOperationStream } from './request/serverChat'
+import { abortChat } from './generationStop.svelte'
+export { abortActiveGeneration, abortChat } from './generationStop.svelte'
+import {
+  stablePostGenerationChatTarget,
+  stablePostGenerationMessageTarget,
+  type StablePostGenerationChatTarget,
+} from './postGeneration/stableTarget'
+import {
+  completedGenerationEffect,
+  runLedgeredGenerationEffect,
+  skippedGenerationEffect,
+} from './generationEffectLedger'
+import type { ServerGenerationEffectLedgerRef } from '@risuai/protocol/generation-sse'
+import { isChatVisible, markChatUnread } from './chatUnread.svelte'
+import { registerGenerationProcessRuntime } from './generationRuntimeBridge'
+import { hydrateCharacterShell } from '../server/characterShellHydration.svelte'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -55,15 +89,15 @@ export interface requestTokenPart {
   tokens: number
 }
 
+/** Aggregate compatibility projection. Chat-owned gates must use `activeChatGenerations`. */
 export const doingChat = writable(false)
 export const activeGenerationTarget = writable<ActiveChatTarget | null>(null)
 export const chatProcessStage = writable(0)
-export const abortChat = writable(false)
 export let requestTokenParts: { [key: string]: requestTokenPart[] } = {}
 export let previewFormated: OpenAIChat[] = []
 export let previewBody: string = ''
 
-let activeGenerationAbortController: AbortController | null = null
+const generationControllerBySignal = new WeakMap<AbortSignal, AbortController>()
 const MAX_SERVER_RESEND_DEPTH = 1
 const SERVER_RESEND_CAP_ERROR = 'Server-requested resend limit reached. Stopping to avoid a repeated generation loop.'
 const CHAT_GENERATION_SETTINGS_SAVE_ERROR =
@@ -77,7 +111,13 @@ export interface SendChatArgs {
   preview?: boolean
   previewPrompt?: boolean
   regenerateMessageId?: string
+  /** True only for the UI-created `*says nothing*` empty-send sentinel. */
+  syntheticSayNothing?: boolean
   expectedTarget?: ActiveChatTarget | null
+  /** Receives classified start failures without changing the legacy boolean result. */
+  onFailure?: (failure: SendChatFailure) => void
+  /** Internal typed result channel for a durable-job reattach. */
+  onReattachOutcome?: (outcome: GenerationReattachOutcome) => void
   /** Internal circuit-breaker depth for server-owned postGeneration resends. */
   serverResendDepth?: number
   /**
@@ -86,6 +126,8 @@ export interface SendChatArgs {
    * replays the in-flight stream.
    */
   reattachJobId?: string
+  /** Attach the just-accepted protocol-v1 operation without issuing a legacy generation POST. */
+  generationOperationStream?: ServerChatOperationStream
 }
 
 function chatGenerationSettingsSaveError(
@@ -104,31 +146,31 @@ function selectedPersonaSaveError(
   return SELECTED_PERSONA_SAVE_ERROR
 }
 
-function isExpectedTargetFresh(target: ActiveChatTarget | null | undefined): boolean {
-  return target === undefined || isActiveChatTargetFresh(target)
-}
-
 export function createActiveGenerationAbortController(): AbortController {
   const controller = new AbortController()
-  activeGenerationAbortController = controller
+  generationControllerBySignal.set(controller.signal, controller)
   abortChat.set(false)
   return controller
 }
 
 export function clearActiveGenerationAbortController(controller: AbortController): void {
-  if (activeGenerationAbortController === controller) {
-    activeGenerationAbortController = null
-  }
+  generationControllerBySignal.delete(controller.signal)
 }
 
-export function abortActiveGeneration(): void {
-  abortChat.set(true)
-  activeGenerationAbortController?.abort()
+function refreshLegacyGenerationProjection(): void {
+  const activities = get(activeChatGenerations)
+  const latest = activities.at(-1)
+  doingChat.set(activities.length > 0)
+  activeGenerationTarget.set(latest?.target ?? null)
+  // Preserve the completed stage when the final activity leaves, matching the
+  // legacy store contract. A new send resets it to zero on entry.
+  if (latest) chatProcessStage.set(latest.stage)
 }
 
 export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): Promise<boolean> {
   chatProcessStage.set(0)
   const abortSignal = arg.signal ?? new AbortController().signal
+  const attachesDurableGeneration = !!arg.reattachJobId || !!arg.generationOperationStream
 
   // NOTE: `throwError()` can be called before these are populated (e.g. HypaV3 early validation errors).
   // Keep them declared up-front to avoid TDZ ReferenceErrors in production builds.
@@ -136,6 +178,15 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
   let selectedChat = -1
   let currentChar: character
   let generationInfo: MessageGenerationInfo | undefined = undefined
+  let reattachOutcome: GenerationReattachOutcome | undefined
+  let errorTarget: StablePostGenerationChatTarget | null = null
+  let errorTargetMessageId: string | undefined
+
+  const isObserverFailure = (status: GenerationReattachOutcome['status'] | undefined): boolean =>
+    status === 'retryable_transport_failure' ||
+    status === 'missing_job' ||
+    status === 'authority_reconciliation_required' ||
+    status === 'observer_superseded'
 
   const stageTimings = {
     stage1Start: 0,
@@ -161,19 +212,32 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
 
   function throwError(error: string) {
     reportSendChatError(error, {
-      selectedChar,
-      selectedChat,
-      currentChar,
+      target: errorTarget,
+      ...(errorTargetMessageId ? { messageId: errorTargetMessageId } : {}),
       generationInfo,
     })
   }
 
-  let isDoing = get(doingChat)
   const generationTarget = arg.expectedTarget === undefined ? captureActiveChatTarget() : arg.expectedTarget
-
-  if (!isExpectedTargetFresh(generationTarget)) {
-    return false
+  if (!generationTarget) return false
+  let generationSettingsState = resolveActiveChatGenerationSettings({ target: generationTarget })
+  if (generationSettingsState.character && isServerCharacterShell(generationSettingsState.character)) {
+    const characterId = generationSettingsState.character.chaId
+    if (!characterId || !(await hydrateCharacterShell(characterId))) return false
+    if (!isActiveChatTargetFresh(generationTarget)) return false
+    generationSettingsState = resolveActiveChatGenerationSettings({ target: generationTarget })
   }
+  if (!generationSettingsState.character || !generationSettingsState.chat) return false
+  errorTarget = stablePostGenerationChatTarget(generationTarget.characterId, generationTarget.chatId)
+  errorTargetMessageId =
+    arg.regenerateMessageId ?? (arg.continue ? generationSettingsState.chat.message.at(-1)?.chatId : undefined)
+
+  const existingActivity = findChatGenerationActivity(generationTarget)
+  // Tests and compatibility callers can still drive the legacy store directly.
+  // In the live app, a non-empty activity registry is the source of truth and
+  // permits a different chat to start concurrently.
+  const legacyOnlyDoing = get(doingChat) && get(activeChatGenerations).length === 0
+  const isDoing = existingActivity !== undefined || legacyOnlyDoing
 
   if (isDoing) {
     if (chatProcessIndex === -1) {
@@ -181,41 +245,56 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     }
   }
 
-  if (!arg.reattachJobId) {
-    const generationSettingsGuard = guardActiveChatGenerationSettingsForSend()
+  if (!attachesDurableGeneration) {
+    const generationSettingsGuard = guardActiveChatGenerationSettingsForSend(generationSettingsState)
     if (generationSettingsGuard.status === 'error') {
       alertError(generationSettingsGuard.error)
       return false
     }
   }
 
-  // iOwnDoingChat contract: this call sets `doingChat = true` on entry and
-  // the `finally` clears it on exit only when this flag is true. Three states:
-  //   (a) own         — fresh call, finally clears.
-  //   (b) reentrant   — chatProcessIndex !== -1 while doingChat is already
-  //                     true; we never took ownership, finally must not clear.
-  //   (c) handoff     — a stage-4 `resend` recurses into
-  //                     sendChat. The inner call's entry guard refuses on
-  //                     `chatProcessIndex === -1` while doingChat is true, so
-  //                     before recursing we clear `doingChat` manually AND
-  //                     set `iOwnDoingChat = false` so the outer finally
-  //                     does not re-clear after the inner finally already did.
-  let iOwnDoingChat = false
-  if (!isDoing) {
-    activeGenerationTarget.set(generationTarget)
-    doingChat.set(true)
-    iOwnDoingChat = true
+  // This call owns only its chat-keyed activity. Re-entrant compatibility calls
+  // do not add one; a stage-4 resend explicitly hands the activity off to the
+  // recursive call before the outer `finally` runs.
+  let ownsGenerationActivity = false
+  let generationActivity: ChatGenerationActivity | undefined = existingActivity
+  if (!isDoing && generationTarget) {
+    generationActivity =
+      beginChatGenerationActivity({
+        target: generationTarget,
+        kind: arg.preview || arg.previewPrompt ? 'preview' : 'message',
+        controller: generationControllerBySignal.get(abortSignal),
+        operationId: arg.generationOperationStream?.operationId,
+        acceptedMessageId: arg.generationOperationStream?.acceptedMessageId,
+        mode: arg.regenerateMessageId ? 'regenerate' : arg.continue ? 'continue' : 'send',
+        targetMessageId: arg.regenerateMessageId,
+        attemptNo: arg.generationOperationStream?.attemptNo,
+        projectionEpoch: arg.generationOperationStream?.projectionEpoch,
+      }) ?? undefined
+    if (!generationActivity) return false
+    refreshLegacyGenerationProjection()
+    ownsGenerationActivity = true
   }
 
   try {
-    const setProcessStage = (stage: number) => chatProcessStage.set(stage)
-    if (!isExpectedTargetFresh(generationTarget)) {
-      return false
+    const setProcessStage = (stage: number) => {
+      if (!generationActivity) {
+        chatProcessStage.set(stage)
+        return
+      }
+      updateChatGenerationActivityStage(generationActivity.id, stage)
+      refreshLegacyGenerationProjection()
+    }
+    const setGenerationPhase = (phase: Parameters<typeof updateChatGenerationActivityPhase>[1]) => {
+      if (!generationActivity) return
+      updateChatGenerationActivityPhase(generationActivity.id, phase)
     }
     const ctx = setupSendChatContext({
+      database: generationSettingsState.db,
       chatProcessIndex,
       chatAdditonalTokens: arg.chatAdditonalTokens,
-      writeMaintenance: !arg.reattachJobId,
+      writeMaintenance: !attachesDurableGeneration,
+      target: generationTarget,
     })
     selectedChar = ctx.selectedChar
     selectedChat = ctx.selectedChat
@@ -227,43 +306,31 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     currentChar = nowChatroom
     let currentChat = nowChatroom.chats[selectedChat]
 
-    if (!arg.reattachJobId) {
+    if (!attachesDurableGeneration) {
       const contextPersistence = await ctx.persistence
-      if (!isExpectedTargetFresh(generationTarget)) {
-        return false
-      }
       if (contextPersistence.status !== 'ok') {
         alertError(language.errors.sendContextPersistenceFailed)
         return false
       }
       const settingsSaveResult = await waitForPendingChatGenerationSettingsSave(currentChat.id)
-      if (!isExpectedTargetFresh(generationTarget)) {
-        return false
-      }
       if (settingsSaveResult && settingsSaveResult.status !== 'ok') {
         throwError(chatGenerationSettingsSaveError(settingsSaveResult))
         return false
       }
       const personaSaveResult = await flushPendingSelectedPersonaUpdate()
-      if (!isExpectedTargetFresh(generationTarget)) {
-        return false
-      }
       if (personaSaveResult && personaSaveResult.status !== 'ok') {
         throwError(selectedPersonaSaveError(personaSaveResult))
         return false
       }
       currentChat = nowChatroom.chats[selectedChat]
-      const generationSettingsGuard = guardActiveChatGenerationSettingsForSend()
-      if (generationSettingsGuard.status === 'error') {
-        alertError(generationSettingsGuard.error)
-        return false
-      }
     }
 
     let formated: OpenAIChat[] = []
     let biases: [string, number][] = []
     let inputTokens = 0
-    let outputTokens = getDatabase().maxResponse
+    // Every dispatch path replaces this with the assembled server/profile
+    // budget before it is consumed. Keep the initialization model-neutral.
+    let outputTokens = 0
     let assembledByServer = false
     let serverDispatch: ServerBackedDispatch | undefined
     // When the send is durable-eligible, the server runs it as a detached job and
@@ -276,7 +343,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     // prompt payload. In Fastify mode, supported text sends are server-mandatory
     // and out-of-subset sends hard-fail instead of silently falling through to
     // local assembly. The local branch remains for compatibility tests.
-    if (arg.reattachJobId) {
+    if (attachesDurableGeneration) {
       // Re-attach to a live durable generation instead of assembling and
       // dispatching a fresh send. The job is server-persisted, so the browser only
       // renders the replayed stream.
@@ -290,14 +357,22 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
         stageTimings,
         abortSignal,
         setProcessStage,
-        jobId: arg.reattachJobId,
+        jobId: arg.generationOperationStream?.jobId ?? arg.reattachJobId!,
+        operationStream: arg.generationOperationStream,
         // Carry the running job's mode so the replayed stream renders on the
         // correct row; see `serverGenerationTargetMessageId`.
         continue: arg.continue,
         regenerateMessageId: arg.regenerateMessageId,
       })
-      if (reattached.status === 'aborted') return false
+      if (reattached.status === 'aborted') {
+        reattachOutcome = { status: 'aborted' }
+        return false
+      }
       if (reattached.status === 'failed') {
+        reattachOutcome = {
+          status: reattached.reattachOutcome ?? 'terminal_failure',
+          error: reattached.error,
+        }
         // Job GC'd / already completed: the result is persisted, so the
         // projection refresh surfaces it. Nothing to render live.
         return false
@@ -314,9 +389,10 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       }
     }
 
-    const assemblyRoute = arg.reattachJobId
+    const assemblyRoute = attachesDurableGeneration
       ? ({ type: 'local' } as const)
       : resolveServerPromptAssembly({
+          database: generationSettingsState.db,
           currentChar,
           currentChat,
           preview: arg.preview,
@@ -334,6 +410,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       // the server.
       serverDurable =
         resolveDurableGeneration({
+          database: generationSettingsState.db,
           currentChar,
           currentChat,
           preview: arg.preview,
@@ -354,6 +431,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
         previewPrompt: arg.previewPrompt,
         continue: arg.continue,
         regenerateMessageId: arg.regenerateMessageId,
+        syntheticSayNothing: arg.syntheticSayNothing,
         durable: serverDurable,
       })
       if (serverAssembly.status === 'aborted') {
@@ -361,10 +439,18 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       }
       if (serverAssembly.status === 'failed') {
         currentChat = serverAssembly.currentChat
-        throwError(serverAssembly.error)
+        if (serverAssembly.failure) {
+          try {
+            arg.onFailure?.(serverAssembly.failure)
+          } catch (error) {
+            console.error(error)
+          }
+        }
+        if (!isObserverFailure(serverAssembly.reattachOutcome)) throwError(serverAssembly.error)
         return false
       }
       if (serverAssembly.status === 'preview') {
+        if (!isActiveChatTargetFresh(generationTarget)) return false
         if (serverAssembly.body !== undefined) previewBody = serverAssembly.body
         if (serverAssembly.formated !== undefined) previewFormated = serverAssembly.formated
         return true
@@ -384,6 +470,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
 
     if (!assembledByServer) {
       const localAssembly = await assembleLocalSendChatPrompt({
+        database: generationSettingsState.db,
         currentChar,
         currentChat,
         nowChatroom,
@@ -411,10 +498,16 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     let req: DispatchSuccessReq
     let generationId: string
     let serverTerminal: ServerBackedDispatch['terminal'] | undefined
+    let effectLedger: ServerGenerationEffectLedgerRef | undefined
     const serverGenerationTargetCharacterId = serverDispatch ? currentChar.chaId : undefined
     const serverGenerationTargetChatId = serverDispatch ? currentChat.id : undefined
     const serverGenerationTargetMessageId =
-      serverDispatch && arg.continue ? currentChat.message.at(-1)?.chatId : undefined
+      serverDispatch &&
+      (arg.regenerateMessageId ||
+        (arg.continue &&
+          (serverDispatch.req.type !== 'streaming' || serverDispatch.req.continueDisposition !== 'append')))
+        ? (arg.regenerateMessageId ?? currentChat.message.at(-1)?.chatId)
+        : undefined
     if (serverDispatch) {
       setProcessStage(3)
       stageTimings.stage3Start = Date.now()
@@ -422,12 +515,27 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       generationId = serverDispatch.generationId
       generationInfo = serverDispatch.generationInfo
       serverTerminal = serverDispatch.terminal
+      if (generationTarget && generationActivity) {
+        updateChatGenerationActivityMetadata(generationTarget, {
+          generationId,
+          ...(serverDispatch.req.type === 'streaming' && serverDispatch.req.generationDisplayProjection
+            ? {
+                operationId: serverDispatch.req.generationDisplayProjection.operationId,
+                mode: serverDispatch.req.generationDisplayProjection.mode,
+                targetMessageId: serverDispatch.req.generationDisplayProjection.targetMessageId,
+                attemptNo: serverDispatch.req.generationDisplayProjection.attemptNo,
+                projectionEpoch: serverDispatch.req.generationDisplayProjection.projectionEpoch,
+              }
+            : {}),
+        })
+      }
       // Durable cancel-on-abort is owned by the SSE consumer
       // (`requestServerChatGeneration`): it captures the jobId from `job_accepted`
       // and issues the DELETE on any abort — including mid-assembly — so it is not
       // wired here (a bare disconnect only detaches; an explicit stop cancels).
     } else {
       const dispatch = await dispatchRequest({
+        database: generationSettingsState.db,
         formated,
         biases,
         currentChar,
@@ -443,10 +551,12 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
         setProcessStage,
       })
       if (dispatch.status === 'preview') {
+        if (!isActiveChatTargetFresh(generationTarget)) return false
         previewFormated = dispatch.formated
         return true
       }
       if (dispatch.status === 'previewPrompt') {
+        if (!isActiveChatTargetFresh(generationTarget)) return false
         previewBody = dispatch.body
         return true
       }
@@ -461,7 +571,13 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       req = dispatch.req
       generationId = dispatch.generationId
       generationInfo = dispatch.generationInfo
+      if (generationTarget && generationActivity) {
+        updateChatGenerationActivityMetadata(generationTarget, { generationId })
+      }
     }
+    // New/append-style generations own the row keyed by generationId. In-place
+    // Continue and regenerate keep the pre-dispatch target identity.
+    errorTargetMessageId ??= generationId
 
     const orchestrate = await orchestrateResponse({
       req,
@@ -480,6 +596,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       reformatContent,
       runCurrentChatFunction,
       suppressStreamingTts: !!serverDispatch,
+      onGenerationText: () => setGenerationPhase('generating'),
       // The server owns post-gen derivation on the server-dispatch path; the
       // browser relays the stream and applies the terminal patch instead.
       serverOwnsPostGeneration: !!serverDispatch,
@@ -488,6 +605,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       return false
     }
     currentChat = orchestrate.currentChat
+    if (orchestrate.messageId) errorTargetMessageId = orchestrate.messageId
     const result = orchestrate.result
     const emoChanged = orchestrate.emoChanged
     // On the server-dispatch path, the resend request rides the terminal
@@ -511,10 +629,42 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
         streamProjection: orchestrate.streamProjection,
       })
       currentChat = terminalResult.currentChat
-      if (terminalResult.status === 'failed') {
-        throwError(terminalResult.error)
+      if (terminalResult.status === 'cancelled') {
+        if (attachesDurableGeneration) {
+          reattachOutcome = { status: terminalResult.reattachOutcome ?? 'cancelled' }
+        }
         return false
       }
+      if (terminalResult.status === 'failed') {
+        if (attachesDurableGeneration) {
+          reattachOutcome = {
+            status: terminalResult.reattachOutcome ?? 'terminal_failure',
+            error: terminalResult.error,
+          }
+        }
+        if (!isObserverFailure(terminalResult.reattachOutcome)) throwError(terminalResult.error)
+        return false
+      }
+      effectLedger = terminalResult.effectLedger
+      // Server-backed streams only expose the derived editoutput/trigger/inlay
+      // text after the terminal frame is reconciled. Append IGP to that exact
+      // stable row; if the terminal cannot identify it safely, do not fall back
+      // to whichever chat happens to be selected now.
+      await runLedgeredGenerationEffect(effectLedger, 'igp', 'live_terminal', async () => {
+        const promptTemplate =
+          settingsResourceState.status === 'ready' ? String(settingsResourceState.value.igpPrompt ?? '') : ''
+        if (!terminalResult.igpTarget || !promptTemplate.trim()) {
+          return skippedGenerationEffect('not_configured')
+        }
+        errorTargetMessageId = terminalResult.igpTarget.messageId
+        const updated = await evaluateIgp({
+          promptTemplate,
+          abortSignal,
+          waitForPersistence: !!effectLedger,
+          target: terminalResult.igpTarget,
+        })
+        return updated ? completedGenerationEffect(undefined) : skippedGenerationEffect('target_changed')
+      })
       if (terminalResult.resendChat) {
         serverRequestedResend = true
         if ((arg.serverResendDepth ?? 0) >= MAX_SERVER_RESEND_DEPTH) {
@@ -526,28 +676,35 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     }
 
     const stage4 = await runStage4({
+      database: generationSettingsState.db,
       req,
       currentChar,
       result,
       resendChat,
       emoChanged,
       abortSignal,
-      selectedChar,
-      selectedChat,
+      target: stablePostGenerationMessageTarget(errorTarget?.characterId, errorTarget?.chatId, errorTargetMessageId),
       stageTimings,
       generationInfo,
       throwError,
       setProcessStage,
+      effectLedger,
+      effectDelivery: 'live_terminal',
     })
     if (stage4.status === 'resend') {
-      // Handoff — see iOwnDoingChat contract above.
-      activeGenerationTarget.set(null)
-      doingChat.set(false)
-      iOwnDoingChat = false
+      await runLedgeredGenerationEffect(effectLedger, 'completion_sound', 'live_terminal', () =>
+        skippedGenerationEffect('resend'),
+      )
+      // Handoff — see the activity ownership contract above.
+      if (generationActivity && ownsGenerationActivity) {
+        finishChatGenerationActivity(generationActivity.id)
+        refreshLegacyGenerationProjection()
+      }
+      ownsGenerationActivity = false
       return await sendChat(chatProcessIndex, {
         signal: abortSignal,
-        continue: serverRequestedResend ? true : undefined,
         ...(arg.expectedTarget !== undefined ? { expectedTarget: arg.expectedTarget } : {}),
+        ...(arg.onFailure ? { onFailure: arg.onFailure } : {}),
         serverResendDepth: serverRequestedResend ? (arg.serverResendDepth ?? 0) + 1 : 0,
       })
     }
@@ -556,11 +713,36 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     // continue/regenerate persists in the post-gen pass. The browser only
     // reconciles the terminal-frame revision and issues no generation-result
     // commands.
+    await runLedgeredGenerationEffect(effectLedger, 'completion_sound', 'live_terminal', () =>
+      playMessageCompletionSoundIfEnabled()
+        ? completedGenerationEffect(undefined)
+        : skippedGenerationEffect('not_configured'),
+    )
+    if (attachesDurableGeneration) reattachOutcome = { status: 'completed' }
+    if (!arg.preview && !arg.previewPrompt && generationTarget.chatId && !isChatVisible(generationTarget.chatId)) {
+      markChatUnread(generationTarget.chatId)
+    }
     return true
   } finally {
-    if (iOwnDoingChat) {
-      activeGenerationTarget.set(null)
-      doingChat.set(false)
+    if (ownsGenerationActivity && generationActivity) {
+      finishChatGenerationActivity(generationActivity.id)
+      refreshLegacyGenerationProjection()
+    }
+    if (attachesDurableGeneration) {
+      const outcome: GenerationReattachOutcome = reattachOutcome ?? {
+        status: abortSignal.aborted ? 'aborted' : 'terminal_failure',
+      }
+      try {
+        arg.onReattachOutcome?.(outcome)
+      } catch (error) {
+        console.error(error)
+      }
     }
   }
 }
+
+registerGenerationProcessRuntime({
+  clearActiveGenerationAbortController,
+  createActiveGenerationAbortController,
+  sendChat,
+})

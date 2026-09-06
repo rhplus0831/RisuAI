@@ -1,16 +1,22 @@
 import type { Tiktoken } from '@dqbd/tiktoken'
 import type { Tokenizer } from '@mlc-ai/web-tokenizers'
-import { type character, type Chat, getCurrentCharacter, getDatabase } from './storage/database.svelte'
+import { type character, type Chat, type Database, getCurrentCharacter } from './storage/database.svelte'
 import type { MultiModal, OpenAIChat } from './process/index.svelte'
 import { supportsInlayImage } from './process/files/inlays'
 import { risuChatParser } from './parser/parser.svelte'
 import { tokenizeGGUFModel } from './process/models/local'
 import { globalFetch } from './globalApi.svelte'
 import { getModelInfo, LLMTokenizer, type LLMModel } from './model/modellist'
-import { pluginV2 } from './plugins/plugins.svelte'
+import { isPluginRuntimeReady, pluginV2 } from './plugins/plugins.svelte'
 import type { GemmaTokenizer } from '@huggingface/transformers'
 import { LRUMap } from 'mnemonist'
 import { providerOperationCredential, requestProviderOperation } from './server/providerOperations'
+import {
+  resolveModelProfile,
+  resolveModelProfileTokenizerSelection,
+  type ResolvedModelProfile,
+} from './model/modelProfileResolver'
+import { settingsResourceState } from './server/resourceState.svelte'
 
 const MAX_CACHE_SIZE = 1500
 export const GOOGLE_CLOUD_TOKENIZED_CACHE_LIMIT = MAX_CACHE_SIZE
@@ -29,12 +35,6 @@ function getHash(
   const combined = `${data}::${aiModel}::${customTokenizer}::${currentPluginProvider}::${googleClaudeTokenizing ? '1' : '0'}::${modelInfo.tokenizer}::${pluginTokenizer}`
   return combined
 }
-
-export const tokenizerList = [
-  ['tik', 'Tiktoken (Automatic)'],
-  ['cl100k_base', 'Tiktoken (cl100k_base)'],
-  ['o200k_base', 'Tiktoken (o200k_base)'],
-] as const
 
 export async function encodeWithTokenizer(
   data: string,
@@ -76,17 +76,51 @@ export async function encodeWithTokenizer(
   }
 }
 
-export async function encode(data: string): Promise<number[] | Uint32Array | Int32Array> {
-  const db = getDatabase()
-  const modelInfo = getModelInfo(db.aiModel)
-  const pluginTokenizer = pluginV2.providerOptions.get(db.currentPluginProvider)?.tokenizer ?? 'none'
+/**
+ * Resolve the settings snapshot used by tokenizer-only public helpers.
+ *
+ * Normal runtime reads the authoritative settings owner. Public callers that
+ * need to run outside owner readiness must provide an explicit captured
+ * snapshot.
+ */
+export function resolveTokenizerDatabaseSnapshot(database?: Database): Database {
+  if (database) return database
+  if (settingsResourceState.status === 'ready') {
+    return settingsResourceState.value as Database
+  }
+  throw new Error('Tokenizer settings owner unavailable')
+}
+
+export function resolveMainTokenizerProfile(database?: Database): ResolvedModelProfile {
+  const resolvedDatabase = resolveTokenizerDatabaseSnapshot(database)
+  return resolveModelProfile({
+    database: resolvedDatabase,
+    role: 'chatMain',
+    lookupModelInfo: (_modelDatabase, modelId) => getModelInfo(modelId, resolvedDatabase),
+  })
+}
+
+export async function encode(
+  data: string,
+  profile?: ResolvedModelProfile,
+  tokenizerSelection?: string,
+  database?: Database,
+): Promise<number[] | Uint32Array | Int32Array> {
+  const db = resolveTokenizerDatabaseSnapshot(database)
+  const resolvedProfile = profile ?? resolveMainTokenizerProfile(db)
+  const aiModel = resolvedProfile.modelId
+  const modelInfo = resolvedProfile.modelInfo
+  const customTokenizer = tokenizerSelection ?? resolveModelProfileTokenizerSelection(db, resolvedProfile)
+  const pluginTokenizer = isPluginRuntimeReady()
+    ? (pluginV2.providerOptions.get(db.currentPluginProvider)?.tokenizer ?? 'none')
+    : 'none'
 
   let cacheKey = ''
   if (db.useTokenizerCaching) {
     cacheKey = getHash(
       data,
-      db.aiModel,
-      db.customTokenizer,
+      aiModel,
+      customTokenizer,
       db.currentPluginProvider,
       db.googleClaudeTokenizing,
       modelInfo,
@@ -100,8 +134,8 @@ export async function encode(data: string): Promise<number[] | Uint32Array | Int
 
   let result: number[] | Uint32Array | Int32Array
 
-  if (db.aiModel === 'openrouter' || db.aiModel === 'reverse_proxy') {
-    switch (db.customTokenizer) {
+  if (aiModel === 'openrouter' || aiModel === 'reverse_proxy') {
+    switch (customTokenizer) {
       case 'cl100k_base':
         result = await tikJS(data, 'cl100k_base')
         break
@@ -148,7 +182,7 @@ export async function encode(data: string): Promise<number[] | Uint32Array | Int
         result = await tikJS(data, 'o200k_base')
         break
     }
-  } else if (db.aiModel === 'custom' && pluginTokenizer) {
+  } else if (aiModel === 'custom' && pluginTokenizer) {
     switch (pluginTokenizer) {
       case 'mistral':
         result = await tokenizeWebTokenizers(data, 'mistral')
@@ -193,7 +227,9 @@ export async function encode(data: string): Promise<number[] | Uint32Array | Int
         result = await tikJS(data, 'cl100k_base')
         break
       case 'custom':
-        result = (await pluginV2.providerOptions.get(db.currentPluginProvider)?.tokenizerFunc?.(data)) ?? [0]
+        result = isPluginRuntimeReady()
+          ? ((await pluginV2.providerOptions.get(db.currentPluginProvider)?.tokenizerFunc?.(data)) ?? [0])
+          : [0]
         break
       default:
         result = await tikJS(data, 'o200k_base')
@@ -218,7 +254,7 @@ export async function encode(data: string): Promise<number[] | Uint32Array | Int
     } else if (modelInfo.tokenizer === LLMTokenizer.tiktokenO200Base) {
       result = await tikJS(data, 'o200k_base')
     } else if (modelInfo.tokenizer === LLMTokenizer.GoogleCloud && db.googleClaudeTokenizing) {
-      result = await tokenizeGoogleCloud(data)
+      result = await tokenizeGoogleCloud(data, resolvedProfile)
     } else if (modelInfo.tokenizer === LLMTokenizer.Gemma || modelInfo.tokenizer === LLMTokenizer.GoogleCloud) {
       result = await gemmaTokenize(data)
     } else if (modelInfo.tokenizer === LLMTokenizer.DeepSeek) {
@@ -268,10 +304,9 @@ function getGoogleCloudTokenizedCacheKey(text: string, aiModel: string, internal
   return JSON.stringify(['googleCloud', aiModel, internalID, text])
 }
 
-async function tokenizeGoogleCloud(text: string) {
-  const db = getDatabase()
-  const model = getModelInfo(db.aiModel)
-  const cacheKey = getGoogleCloudTokenizedCacheKey(text, db.aiModel, model.internalID)
+async function tokenizeGoogleCloud(text: string, profile: ResolvedModelProfile) {
+  const model = profile.modelInfo
+  const cacheKey = getGoogleCloudTokenizedCacheKey(text, profile.modelId, model.internalID)
 
   const cachedCount = googleCloudTokenizedCache.get(cacheKey)
   if (cachedCount !== undefined) {
@@ -282,7 +317,7 @@ async function tokenizeGoogleCloud(text: string) {
   let count: number
   try {
     const result = await requestProviderOperation<{ totalTokens?: unknown }>('google.count-tokens', {
-      credential: providerOperationCredential(db.google?.accessToken),
+      credential: providerOperationCredential(profile.providerOptions.apiKey),
       input: { modelId: model.internalID, text },
     })
     if (
@@ -332,14 +367,13 @@ async function tikJS(text: string, model = 'cl100k_base') {
   return tikParser.encode(text)
 }
 
-async function geminiTokenizer(text: string) {
-  const db = getDatabase()
+async function geminiTokenizer(text: string, profile: ResolvedModelProfile) {
   const fetchResult = await globalFetch(
-    `https://generativelanguage.googleapis.com/v1beta/${db.aiModel}:countTextTokens`,
+    `https://generativelanguage.googleapis.com/v1beta/${profile.modelId}:countTextTokens`,
     {
       headers: {
         'content-type': 'application/json',
-        authorization: `Bearer ${db.google.accessToken}`,
+        authorization: `Bearer ${profile.providerOptions.apiKey ?? ''}`,
       },
       body: JSON.stringify({
         prompt: {
@@ -431,32 +465,44 @@ async function tokenizeWebTokenizers(text: string, type: tokenizerType) {
   return tokenizersTokenizer.encode(text)
 }
 
-export async function tokenizerChar(char: character) {
-  const encoded = await encode(char.name + '\n' + char.firstMessage + '\n' + char.desc)
+export async function tokenizerChar(char: character, database?: Database) {
+  const encoded = await encode(char.name + '\n' + char.firstMessage + '\n' + char.desc, undefined, undefined, database)
   return encoded.length
 }
 
-export async function tokenize(data: string) {
-  const encoded = await encode(data)
+export async function tokenize(data: string, database?: Database) {
+  const encoded = await encode(data, undefined, undefined, database)
   return encoded.length
 }
 
-export async function tokenizeAccurate(data: string, consistantChar?: boolean) {
+export async function tokenizeAccurate(data: string, consistantChar?: boolean, database?: Database) {
   data = risuChatParser(data.replace('{{slot}}', ''), {
     tokenizeAccurate: true,
     consistantChar: consistantChar,
   })
-  const encoded = await encode(data)
+  const encoded = await encode(data, undefined, undefined, database)
   return encoded.length
 }
 
 export class ChatTokenizer {
   private chatAdditionalTokens: number
   private useName: 'name' | 'noName'
+  private profile?: ResolvedModelProfile
+  private tokenizerSelection?: string
+  private database?: Database
 
-  constructor(chatAdditionalTokens: number, useName: 'name' | 'noName') {
+  constructor(
+    chatAdditionalTokens: number,
+    useName: 'name' | 'noName',
+    profile?: ResolvedModelProfile,
+    tokenizerSelection?: string,
+    database?: Database,
+  ) {
     this.chatAdditionalTokens = chatAdditionalTokens
     this.useName = useName
+    this.profile = profile
+    this.tokenizerSelection = tokenizerSelection
+    this.database = database
   }
   async tokenizeChat(
     data: OpenAIChat,
@@ -464,9 +510,11 @@ export class ChatTokenizer {
       countThoughts?: boolean
     } = {},
   ) {
-    let encoded = (await encode(data.content)).length + this.chatAdditionalTokens
+    let encoded =
+      (await encode(data.content, this.profile, this.tokenizerSelection, this.database)).length +
+      this.chatAdditionalTokens
     if (data.name && this.useName === 'name') {
-      encoded += (await encode(data.name)).length + 1
+      encoded += (await encode(data.name, this.profile, this.tokenizerSelection, this.database)).length + 1
     }
     if (data.multimodals && data.multimodals.length > 0) {
       for (const multimodal of data.multimodals) {
@@ -475,7 +523,7 @@ export class ChatTokenizer {
     }
     if (data.thoughts && data.thoughts.length > 0 && args.countThoughts) {
       for (const thought of data.thoughts) {
-        encoded += (await encode(thought)).length + 1
+        encoded += (await encode(thought, this.profile, this.tokenizerSelection, this.database)).length + 1
       }
     }
     return encoded
@@ -489,8 +537,8 @@ export class ChatTokenizer {
   }
 
   tokenizeMultiModal(data: MultiModal) {
-    const db = getDatabase()
-    if (!supportsInlayImage()) {
+    const db = resolveTokenizerDatabaseSnapshot(this.database)
+    if (!supportsInlayImage(this.profile?.modelInfo)) {
       return this.chatAdditionalTokens
     }
     if (db.gptVisionQuality === 'low') {
@@ -526,12 +574,12 @@ export class ChatTokenizer {
   }
 }
 
-export async function tokenizeNum(data: string) {
-  const encoded = await encode(data)
+export async function tokenizeNum(data: string, database?: Database) {
+  const encoded = await encode(data, undefined, undefined, database)
   return encoded
 }
 
-export async function strongBan(data: string, bias: { [key: number]: number }) {
+export async function strongBan(data: string, bias: { [key: number]: number }, database?: Database) {
   if (localStorage.getItem('strongBan_' + data)) {
     return JSON.parse(localStorage.getItem('strongBan_' + data))
   }
@@ -550,11 +598,11 @@ export async function strongBan(data: string, bias: { [key: number]: number }) {
   let unbanChars: number[] = []
 
   for (const char of banChars) {
-    unbanChars.push((await tokenizeNum(char))[0])
+    unbanChars.push((await tokenizeNum(char, database))[0])
   }
 
   for (const char of banChars) {
-    const encoded = await tokenizeNum(char)
+    const encoded = await tokenizeNum(char, database)
     if (encoded.length > 0) {
       if (!unbanChars.includes(encoded[0])) {
         bias[encoded[0]] = -100
@@ -563,13 +611,13 @@ export async function strongBan(data: string, bias: { [key: number]: number }) {
     for (const alt of charAlt) {
       let fchar = char
 
-      const encoded = await tokenizeNum(alt + fchar)
+      const encoded = await tokenizeNum(alt + fchar, database)
       if (encoded.length > 0) {
         if (!unbanChars.includes(encoded[0])) {
           bias[encoded[0]] = -100
         }
       }
-      const encoded2 = await tokenizeNum(fchar + alt)
+      const encoded2 = await tokenizeNum(fchar + alt, database)
       if (encoded2.length > 0) {
         if (!unbanChars.includes(encoded2[0])) {
           bias[encoded2[0]] = -100
@@ -581,7 +629,7 @@ export async function strongBan(data: string, bias: { [key: number]: number }) {
   return bias
 }
 
-export async function getCharToken(char?: character | null) {
+export async function getCharToken(char?: character | null, database?: Database) {
   let persistant = 0
   let dynamic = 0
 
@@ -595,7 +643,7 @@ export async function getCharToken(char?: character | null) {
 
   const basicTokenize = async (data: string) => {
     data = data.replace(/{{char}}/g, char.name).replace(/<char>/g, char.name)
-    return await tokenize(data)
+    return await tokenize(data, database)
   }
 
   persistant += await basicTokenize(char.desc)
@@ -620,10 +668,10 @@ export async function getCharToken(char?: character | null) {
   return { persistant, dynamic }
 }
 
-export async function getChatToken(chat: Chat) {
+export async function getChatToken(chat: Chat, database?: Database) {
   let persistant = 0
 
-  const chatTokenizer = new ChatTokenizer(0, 'name')
+  const chatTokenizer = new ChatTokenizer(0, 'name', undefined, undefined, database)
   const chatf = chat.message.map((d) => {
     return {
       role: d.role === 'user' ? 'user' : 'assistant',

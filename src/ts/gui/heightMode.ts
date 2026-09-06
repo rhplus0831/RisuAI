@@ -1,4 +1,5 @@
-import { getDatabase } from '../storage/database.svelte'
+import { runtimeDisplaySettingsOwner } from './displaySettings'
+import { applyDisplayStyles } from './displaySettingsCache'
 
 export function resolveHeightModeCssValue(heightMode: unknown): string {
   switch (heightMode) {
@@ -20,5 +21,7 @@ export function resolveHeightModeCssValue(heightMode: unknown): string {
 
 export function updateHeightMode(): void {
   if (typeof document === 'undefined') return
-  document.documentElement.style.setProperty('--risu-height-size', resolveHeightModeCssValue(getDatabase().heightMode))
+  const settings = runtimeDisplaySettingsOwner()
+  if (!settings) return
+  applyDisplayStyles({ '--risu-height-size': resolveHeightModeCssValue(settings.heightMode) })
 }

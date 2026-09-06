@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 1,
+  "openingAnchor": "c0df82d5240a29a33efa5995e08cc970e0147573",
+  "conventions": {
+    "protocol": "Serialized requests, responses, events, versions, and taxonomies live in browser-safe @risuai/protocol subpaths.",
+    "sharedRuntime": "Only framework-neutral leaf behavior may enter an audited shared runtime package; it cannot depend on Svelte, DOM, Fastify, Node hosts, persistence, or aggregate Database state.",
+    "server": "Security, active-writer policy, persistence, credentials, filesystem, process, and host behavior remain under server/fastify.",
+    "fixtures": "Historical compatibility fixtures remain test-owned; shared fixture data may move without moving browser application modules into a server dependency."
+  },
+  "policies": {
+    "protocol-wire-contract": {
+      "category": "wire-contract",
+      "targetOwner": "@risuai/protocol explicit subpath",
+      "migrationPhase": "Workstream 1 Phase 1, then consuming Phase 4/5 slice",
+      "exceptionOwner": "Cross-runtime boundaries maintainers",
+      "reviewTrigger": "Protocol parity is proven and all consumers use the explicit package subpath."
+    },
+    "shared-pure-runtime": {
+      "category": "pure-runtime-behavior",
+      "targetOwner": "audited framework-neutral shared runtime package",
+      "migrationPhase": "Workstream 1 Phase 3, then consuming Phase 4/5 slice",
+      "exceptionOwner": "Cross-runtime boundaries maintainers",
+      "reviewTrigger": "A neutral leaf extraction passes browser/server parity and the shared import audit."
+    },
+    "browser-application-model": {
+      "category": "browser-application-model",
+      "targetOwner": "narrow protocol/shared domain input plus runtime-owned adapter",
+      "migrationPhase": "Workstream 1 Phase 4",
+      "exceptionOwner": "Fastify domain owner",
+      "reviewTrigger": "The server consumer no longer needs a browser aggregate or application model declaration."
+    },
+    "test-fixture": {
+      "category": "test-fixture",
+      "targetOwner": "runtime-neutral test fixture adjacent to its owning lane",
+      "migrationPhase": "Workstream 1 Phase 4",
+      "exceptionOwner": "Owning test lane maintainer",
+      "reviewTrigger": "The fixture is moved or the retained test-only exception receives an explicit closeout decision."
+    },
+    "server-only-extraction": {
+      "category": "server-only-behavior",
+      "targetOwner": "server/fastify narrow server-owned implementation",
+      "migrationPhase": "Workstream 1 Phase 4",
+      "exceptionOwner": "Fastify domain owner",
+      "reviewTrigger": "The server-owned behavior no longer imports its browser implementation."
+    },
+    "accidental-browser-support": {
+      "category": "accidental-dependency",
+      "targetOwner": "owning browser-smoke/server-test support boundary",
+      "migrationPhase": "Workstream 1 Phase 4 or 5",
+      "exceptionOwner": "Owning smoke or server-test maintainer",
+      "reviewTrigger": "Equivalent neutral support exists or the exception is explicitly retained at closeout."
+    }
+  },
+  "edges": [],
+  "nonLiteralModuleReferences": [],
+  "projectReferences": [],
+  "metadata": [
+    {
+      "id": "browser-operation-bindings",
+      "owner": "Browser-safe route operation relations; never a security authority",
+      "path": "src/ts/server/browserOperationManifest.ts#BROWSER_OPERATION_BINDINGS",
+      "count": 56,
+      "authority": "Browser-safe route operation relations; never a security authority",
+      "migrationPhase": "Workstream 1 Phase 2 exact operation/policy catalog",
+      "driftRule": "Count and owner changes require a reviewed baseline update; policy parity is established in Phase 2.",
+      "reviewTrigger": "A route, durable operation, resource surface, cache/stream class, or command event is added or removed."
+    },
+    {
+      "id": "browser-operation-non-overlaps",
+      "owner": "Reviewed browser-only operation vocabulary distinctions",
+      "path": "src/ts/server/browserOperationManifest.ts#BROWSER_OPERATION_NON_OVERLAPS",
+      "count": 7,
+      "authority": "Reviewed browser-only operation vocabulary distinctions",
+      "migrationPhase": "Workstream 1 Phase 2 exact operation/policy catalog",
+      "driftRule": "Count and owner changes require a reviewed baseline update; policy parity is established in Phase 2.",
+      "reviewTrigger": "A route, durable operation, resource surface, cache/stream class, or command event is added or removed."
+    },
+    {
+      "id": "browser-resource-surfaces",
+      "owner": "Shared browser hydration and cache resource metadata",
+      "path": "packages/shared-core/src/resourceManifest.ts#RESOURCE_SURFACE_MANIFEST",
+      "count": 61,
+      "authority": "Shared browser hydration and cache resource metadata",
+      "migrationPhase": "Workstream 1 Phase 2 exact operation/policy catalog",
+      "driftRule": "Count and owner changes require a reviewed baseline update; policy parity is established in Phase 2.",
+      "reviewTrigger": "A route, durable operation, resource surface, cache/stream class, or command event is added or removed."
+    },
+    {
+      "id": "literal-route-registrations",
+      "owner": "Fastify route modules (observation only; prefixes and generated registrations need separate parity)",
+      "path": "server/fastify/src/routes/**/*.ts#app.<method>(literal)",
+      "count": 264,
+      "authority": "Fastify route modules (observation only; prefixes and generated registrations need separate parity)",
+      "migrationPhase": "Workstream 1 Phase 2 exact operation/policy catalog",
+      "driftRule": "Count and owner changes require a reviewed baseline update; policy parity is established in Phase 2.",
+      "reviewTrigger": "A route, durable operation, resource surface, cache/stream class, or command event is added or removed."
+    },
+    {
+      "id": "server-command-event-catalog",
+      "owner": "Fastify persisted command event vocabulary",
+      "path": "server/fastify/src/commands/events.ts#COMMAND_EVENT_CATALOG",
+      "count": 150,
+      "authority": "Fastify persisted command event vocabulary",
+      "migrationPhase": "Workstream 1 Phase 2 exact operation/policy catalog",
+      "driftRule": "Count and owner changes require a reviewed baseline update; policy parity is established in Phase 2.",
+      "reviewTrigger": "A route, durable operation, resource surface, cache/stream class, or command event is added or removed."
+    },
+    {
+      "id": "server-route-policy",
+      "owner": "Fastify authentication and active-writer authority",
+      "path": "server/fastify/src/routeManifest.ts#PROTOCOL_ROUTE_POLICIES",
+      "count": 108,
+      "authority": "Fastify authentication and active-writer authority",
+      "migrationPhase": "Workstream 1 Phase 2 exact operation/policy catalog",
+      "driftRule": "Count and owner changes require a reviewed baseline update; policy parity is established in Phase 2.",
+      "reviewTrigger": "A route, durable operation, resource surface, cache/stream class, or command event is added or removed."
+    },
+    {
+      "id": "shared-durable-command-operation-catalog",
+      "owner": "Browser-safe retained-intent operation catalog; never a security authority",
+      "path": "packages/protocol/src/durableCommandOperation.ts#PROTOCOL_DURABLE_COMMAND_OPERATION_CATALOG",
+      "count": 134,
+      "authority": "Browser-safe retained-intent operation catalog; never a security authority",
+      "migrationPhase": "Workstream 1 Phase 2 exact operation/policy catalog",
+      "driftRule": "Count and owner changes require a reviewed baseline update; policy parity is established in Phase 2.",
+      "reviewTrigger": "A route, durable operation, resource surface, cache/stream class, or command event is added or removed."
+    },
+    {
+      "id": "shared-route-operation-catalog",
+      "owner": "Browser-safe non-authoritative route transport metadata",
+      "path": "packages/protocol/src/routeOperation.ts#PROTOCOL_ROUTE_OPERATION_CATALOG",
+      "count": 108,
+      "authority": "Browser-safe non-authoritative route transport metadata",
+      "migrationPhase": "Workstream 1 Phase 2 exact operation/policy catalog",
+      "driftRule": "Count and owner changes require a reviewed baseline update; policy parity is established in Phase 2.",
+      "reviewTrigger": "A route, durable operation, resource surface, cache/stream class, or command event is added or removed."
+    }
+  ]
+}

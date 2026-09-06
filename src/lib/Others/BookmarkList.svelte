@@ -2,37 +2,55 @@
   import { XIcon, TrashIcon, PencilIcon, BookOpenCheckIcon, BookLockIcon, ArrowRightIcon } from '@lucide/svelte'
   import { onDestroy, untrack } from 'svelte'
   import Chat from '../ChatScreens/Chat.svelte'
-  import { getCharImage } from 'src/ts/characters'
+  import { getCharImage } from 'src/ts/characterImage'
   import { getUserDisplayName, getUserIcon } from 'src/ts/utilState'
-  import { createSimpleCharacter, bookmarkListOpen, selectedCharID } from 'src/ts/stores.svelte'
-  import { RegexDisplayReloadPointer } from 'src/ts/process/regexDisplayReload'
+  import { bookmarkListOpen } from 'src/ts/stores.svelte'
+  import { createSimpleCharacter } from 'src/ts/simpleCharacter'
+  import {
+    RegexDisplayReloadPointer,
+    RegexDisplayReloadScope,
+    regexDisplayReloadTokenForContext,
+  } from 'src/ts/process/regexDisplayReload'
   import { language } from 'src/lang'
   import { alertError, alertInput, alertNormal } from 'src/ts/alert'
   import {
     currentChatScopedSnapshot,
-    currentChatStateSnapshot,
-    dispatchUpdateChat,
     dispatchUpdateChatScopedWithOutcome,
+    restoreChatRowMetadata,
     type ChatMutationOutcome,
   } from 'src/ts/chatCommands'
   import { reportWriterAccessLostMutation } from 'src/ts/server/activeWriterSession'
   import { canUseServerCommands } from 'src/ts/server/commands'
-  import {
-    rollbackServerBackedChatRowMetadata,
-    syncServerBackedChatMetadataBaselines,
-  } from 'src/ts/server/chatBridge.svelte'
-  import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import {
+    applyChatMetadataOwnerPatch,
+    charactersResourceState,
+    getCharacterResourceOwner,
+    getChatMetadataOwnerSnapshot,
+    getChatMetadataOwnerState,
+  } from 'src/ts/server/resourceState.svelte'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
+  import { getChatMessageOwnerState } from 'src/ts/server/chatMessageHydration.svelte'
   import { navigateToCharacterChatMessage } from 'src/ts/router'
   import type { Chat as ChatData, character } from 'src/ts/storage/database.svelte'
 
   const close = () => ($bookmarkListOpen = false)
-  let chara = $derived(getDatabase().characters[$selectedCharID])
+  let chara = $derived(resolveBookmarkCharacter())
+  let activeBookmarkMetadata = $derived(chara ? readBookmarkMetadataOwner(chara) : undefined)
+  let chatMessageOwner = $derived.by(() => {
+    const chat = chara?.chats?.[chara.chatPage]
+    return chat?.id ? getChatMessageOwnerState(chat.id) : undefined
+  })
+  let regexDisplayReloadToken = $derived(
+    regexDisplayReloadTokenForContext($RegexDisplayReloadPointer, $RegexDisplayReloadScope, {
+      characterId: chara?.chaId,
+      chatId: chara?.chats?.[chara.chatPage]?.id,
+    }),
+  )
   const simpleChar = $derived.by(() => {
-    void $RegexDisplayReloadPointer
+    void regexDisplayReloadToken
     if (!chara) return null
     return createSimpleCharacter(
       chara,
@@ -49,6 +67,11 @@
     chatId?: string
     chatReference: ChatData
   }
+  type BookmarkMetadataOwner = {
+    chatId: string
+    bookmarks: string[]
+    bookmarkNames: Record<string, string>
+  }
   let preparedBookmarkOwner: BookmarkHydrationOwner | null | undefined
   type BookmarkMutationOperation = 'rename' | 'remove'
   interface BookmarkMutationState {
@@ -56,9 +79,11 @@
     messageId: string
     operation: BookmarkMutationOperation
     label: string
+    sequence: number
     status: 'pending' | 'queued' | 'failed'
   }
   let bookmarkMutations = $state<Record<string, BookmarkMutationState>>({})
+  let bookmarkMutationSequence = 0
 
   function bookmarkMutationKey(chatId: string, messageId: string, operation: BookmarkMutationOperation): string {
     return `${chatId}::${messageId}::${operation}`
@@ -74,7 +99,12 @@
     const matching = Object.values(bookmarkMutations).filter(
       (mutation) => mutation.chatId === chatId && mutation.messageId === messageId,
     )
-    return matching.find((mutation) => mutation.status === 'pending')?.status ?? matching.at(-1)?.status ?? 'idle'
+    return (
+      matching.reduce<BookmarkMutationState | undefined>(
+        (latest, mutation) => (!latest || mutation.sequence > latest.sequence ? mutation : latest),
+        undefined,
+      )?.status ?? 'idle'
+    )
   }
 
   function bookmarkMutationMessage(mutation: BookmarkMutationState): string {
@@ -97,20 +127,47 @@
   ): Promise<void> {
     if (isBookmarkMutationPending(chatId, messageId)) return
     const key = bookmarkMutationKey(chatId, messageId, operation)
-    bookmarkMutations[key] = { chatId, messageId, operation, label, status: 'pending' }
+    const sequence = ++bookmarkMutationSequence
+    const mutation = { chatId, messageId, operation, label, sequence }
+
+    function setCurrentMutationStatus(status: BookmarkMutationState['status']): BookmarkMutationState {
+      const next = { ...mutation, status }
+      if (bookmarkMutations[key]?.sequence === sequence) bookmarkMutations[key] = next
+      return next
+    }
+
+    function clearCurrentMutation(): void {
+      if (bookmarkMutations[key]?.sequence === sequence) delete bookmarkMutations[key]
+    }
+
+    function reportFailure(): void {
+      alertError(bookmarkMutationMessage(setCurrentMutationStatus('failed')))
+    }
+
+    bookmarkMutations[key] = { ...mutation, status: 'pending' }
     try {
       const outcome = await action()
       if (outcome?.status === 'accepted') {
-        delete bookmarkMutations[key]
+        clearCurrentMutation()
         return
       }
-      bookmarkMutations[key] = { chatId, messageId, operation, label, status: outcome?.status ?? 'failed' }
-      const message = bookmarkMutationMessage(bookmarkMutations[key])
-      if (outcome.status === 'queued') alertNormal(message)
-      else alertError(message)
+      if (outcome?.status === 'queued') {
+        alertNormal(bookmarkMutationMessage(setCurrentMutationStatus('queued')))
+        void outcome.settlement.then(
+          (settlement) => {
+            if (settlement.status === 'accepted') {
+              clearCurrentMutation()
+              return
+            }
+            reportFailure()
+          },
+          () => reportFailure(),
+        )
+        return
+      }
+      reportFailure()
     } catch {
-      bookmarkMutations[key] = { chatId, messageId, operation, label, status: 'failed' }
-      alertError(bookmarkMutationMessage(bookmarkMutations[key]))
+      reportFailure()
     }
   }
 
@@ -118,9 +175,67 @@
     return chara?.chats?.[chara.chatPage]
   }
 
+  function readCharacterOwners(): readonly character[] {
+    return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
+  }
+
+  function uniqueCharacterOwner(characterId: string): character | undefined {
+    if (charactersResourceState.status !== 'ready') return undefined
+    if (charactersResourceState.rowStatuses[characterId] === 'error') return undefined
+    return getCharacterResourceOwner(characterId)
+  }
+
+  function currentSelectedCharacterIndex(): number {
+    return charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : -1
+  }
+
+  function activeChatIdIsUnique(character: character): boolean {
+    const chatId = character.chats?.[character.chatPage]?.id
+    if (!chatId) return false
+    return charactersResourceState.status === 'ready' && getChatMetadataOwnerState(chatId)?.chatId === chatId
+  }
+
+  function resolveBookmarkCharacter(): character | undefined {
+    const selectedIndex = currentSelectedCharacterIndex()
+    const owners = readCharacterOwners()
+    const candidate = owners[selectedIndex]
+    const character = candidate?.chaId ? uniqueCharacterOwner(candidate.chaId) : undefined
+    return character && activeChatIdIsUnique(character) && readBookmarkMetadataOwner(character) ? character : undefined
+  }
+
+  function readBookmarkMetadataOwner(character: character): BookmarkMetadataOwner | undefined {
+    const chat = character.chats?.[character.chatPage]
+    const chatId = chat?.id
+    if (!chatId) return undefined
+
+    if (charactersResourceState.status !== 'ready' || !character.chaId) return undefined
+    const snapshot = getChatMetadataOwnerSnapshot(character.chaId, chatId)
+    if (!snapshot) return undefined
+    const bookmarks: unknown = snapshot.metadata.bookmarks
+    const bookmarkNames: unknown = snapshot.metadata.bookmarkNames
+
+    const stableBookmarkIds = bookmarks === undefined ? [] : bookmarks
+    if (
+      !Array.isArray(stableBookmarkIds) ||
+      stableBookmarkIds.some((bookmarkId) => typeof bookmarkId !== 'string' || bookmarkId.length === 0) ||
+      new Set(stableBookmarkIds).size !== stableBookmarkIds.length
+    ) {
+      return undefined
+    }
+    if (
+      bookmarkNames !== undefined &&
+      (!bookmarkNames || typeof bookmarkNames !== 'object' || Array.isArray(bookmarkNames))
+    ) {
+      return undefined
+    }
+    const names = (bookmarkNames ?? {}) as Record<string, unknown>
+    if (Object.values(names).some((name) => typeof name !== 'string')) return undefined
+    return { chatId, bookmarks: [...stableBookmarkIds], bookmarkNames: names as Record<string, string> }
+  }
+
   function captureBookmarkHydrationOwner(): BookmarkHydrationOwner | null {
-    const selectedCharacterIndex = $selectedCharID
-    const characterReference = getDatabase().characters?.[selectedCharacterIndex]
+    const selectedCharacterIndex = currentSelectedCharacterIndex()
+    const characterReference = chara
     const chatPage = characterReference?.chatPage
     const chatReference = chatPage === undefined ? undefined : characterReference?.chats?.[chatPage]
     if (!characterReference || chatPage === undefined || !chatReference) return null
@@ -162,8 +277,12 @@
   }
 
   function hasNonresidentBookmarks(owner: BookmarkHydrationOwner): boolean {
-    const residentMessageIds = new Set(owner.chatReference.message.map((message) => message.chatId))
-    return (owner.chatReference.bookmarks ?? []).some((bookmarkId) => !residentMessageIds.has(bookmarkId))
+    const metadata = readBookmarkMetadataOwner(owner.characterReference)
+    if (!metadata || metadata.chatId !== owner.chatId || metadata.bookmarks.length === 0) return false
+    const messageOwner = owner.chatId ? getChatMessageOwnerState(owner.chatId) : undefined
+    if (!messageOwner) return true
+    const residentMessageIds = new Set(messageOwner.messages.map((message) => message.chatId))
+    return metadata.bookmarks.some((bookmarkId) => !residentMessageIds.has(bookmarkId))
   }
 
   async function prepareBookmarkMessages(force = false, owner = captureBookmarkHydrationOwner()): Promise<void> {
@@ -204,15 +323,17 @@
   })
 
   const messageMap = $derived.by(() => {
-    if (!chara) return new Map()
+    if (!chara || !activeBookmarkMetadata || chatMessageOwner?.hydrationFailed) return undefined
 
-    const chat = chara.chats[chara.chatPage]
-    const allMessages = chat.message
+    const allMessages = chatMessageOwner?.messages ?? []
     const map = new Map()
 
     allMessages.forEach((m, index) => {
+      if (typeof m.chatId !== 'string' || m.chatId.length === 0 || map.has(m.chatId)) return
       map.set(m.chatId, { ...m, originalIndex: index, saying: m.saying ?? '' })
     })
+
+    if (map.size !== allMessages.length) return undefined
 
     return map
   })
@@ -220,9 +341,9 @@
   const bookmarkedMessages = $derived.by(() => {
     if (!chara) return []
 
-    const chat = chara.chats[chara.chatPage]
-    const bookmarkIds = chat.bookmarks ?? []
+    const bookmarkIds = activeBookmarkMetadata?.bookmarks
     const map = messageMap
+    if (!bookmarkIds || !map) return []
 
     const messages = bookmarkIds
       .map((id) => {
@@ -275,17 +396,8 @@
     chatId: string,
     patch: { bookmarks?: string[]; bookmarkNames?: Record<string, string> },
   ): boolean {
-    let applied = false
-    withTrustedResourceWrite(() => {
-      const character = getDatabase().characters[$selectedCharID]
-      const liveChat = character?.chats?.find((candidate) => candidate.id === chatId)
-      if (!liveChat) return
-      if (patch.bookmarks) liveChat.bookmarks = patch.bookmarks
-      if (patch.bookmarkNames) liveChat.bookmarkNames = patch.bookmarkNames
-      applied = true
-    })
-    if (applied) syncServerBackedChatMetadataBaselines()
-    return applied
+    const character = chara?.chaId ? uniqueCharacterOwner(chara.chaId) : undefined
+    return character?.chaId ? applyChatMetadataOwnerPatch(character.chaId, chatId, patch) : false
   }
 
   async function editName(chatId: string) {
@@ -309,7 +421,7 @@
             chat.id!,
             { bookmarkNames: nextBookmarkNames },
             previous,
-            rollbackServerBackedChatRowMetadata,
+            restoreChatRowMetadata,
           )
         })
         return
@@ -352,7 +464,7 @@
             chat.id!,
             { bookmarks: nextBookmarks, bookmarkNames: nextBookmarkNames },
             previous,
-            rollbackServerBackedChatRowMetadata,
+            restoreChatRowMetadata,
           )
         })
         return
@@ -363,13 +475,6 @@
       delete nextBookmarkNames[chatId]
       chat.bookmarks = nextBookmarks
       chat.bookmarkNames = nextBookmarkNames
-      if (chat.id) {
-        dispatchUpdateChat(
-          chat.id,
-          { bookmarks: nextBookmarks, bookmarkNames: nextBookmarkNames },
-          currentChatStateSnapshot(),
-        )
-      }
     }
   }
 
@@ -384,13 +489,9 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  use:modalBackdropDismiss={close}
   data-modal-root
-  class="fixed top-0 left-0 w-full h-full z-30 bg-black/50 flex justify-center items-center"
-  onclick={(event) => {
-    if (event.target === event.currentTarget) {
-      close()
-    }
-  }}>
+  class="fixed top-0 left-0 w-full h-full z-30 bg-black/50 flex justify-center items-center">
   <div
     use:modalFocusTrap
     class="bg-darkbg p-3 rounded-md flex flex-col max-w-4xl w-full max-h-[90%] overflow-y-auto"
@@ -424,7 +525,7 @@
       </div>
     </div>
 
-    {#each Object.entries(bookmarkMutations).filter((entry) => entry[1].chatId === activeBookmarkChat()?.id) as mutationEntry (mutationEntry[0])}
+    {#each Object.entries(bookmarkMutations).filter((entry) => entry[1].chatId === activeBookmarkChat()?.id && entry[1].status === 'failed') as mutationEntry (mutationEntry[0])}
       {@const mutation = mutationEntry[1]}
       <p
         class="mb-2 text-sm text-textcolor2"
@@ -451,12 +552,11 @@
     {:else}
       <div class="flex flex-col gap-2">
         {#each bookmarkedMessages as msg (msg.chatId)}
-          {@const bookmarkName =
-            chara.chats[chara.chatPage].bookmarkNames?.[msg.chatId] || msg.data.substring(0, 30) + '...'}
+          {@const bookmarkName = activeBookmarkMetadata?.bookmarkNames[msg.chatId] || msg.data.substring(0, 30) + '...'}
           <div
             data-risu-bookmark-id={msg.chatId}
-            data-risu-mutation-status={bookmarkMutationStatus(chara.chats[chara.chatPage].id ?? '', msg.chatId)}
-            aria-busy={isBookmarkMutationPending(chara.chats[chara.chatPage].id ?? '', msg.chatId)}
+            data-risu-mutation-status={bookmarkMutationStatus(activeBookmarkMetadata?.chatId ?? '', msg.chatId)}
+            aria-busy={isBookmarkMutationPending(activeBookmarkMetadata?.chatId ?? '', msg.chatId)}
             class="border border-darkborderc rounded-lg">
             <div class="flex items-center p-3 hover:bg-selected transition-colors">
               <button
@@ -479,7 +579,7 @@
                   data-risu-bookmark-action="rename"
                   class="text-textcolor2 hover:text-green-500"
                   aria-label={`${language.edit}: ${bookmarkName}`}
-                  disabled={isBookmarkMutationPending(chara.chats[chara.chatPage].id ?? '', msg.chatId)}
+                  disabled={isBookmarkMutationPending(activeBookmarkMetadata?.chatId ?? '', msg.chatId)}
                   onclick={() => {
                     void editName(msg.chatId)
                   }}>
@@ -489,7 +589,7 @@
                   data-risu-bookmark-action="remove"
                   class="text-textcolor2 hover:text-red-500"
                   aria-label={`${language.remove}: ${bookmarkName}`}
-                  disabled={isBookmarkMutationPending(chara.chats[chara.chatPage].id ?? '', msg.chatId)}
+                  disabled={isBookmarkMutationPending(activeBookmarkMetadata?.chatId ?? '', msg.chatId)}
                   onclick={() => {
                     void removeBookmark(msg.chatId)
                   }}>
@@ -502,6 +602,7 @@
               <div class="p-1 border-t border-darkborderc">
                 <Chat
                   idx={msg.originalIndex}
+                  displayChatId={activeBookmarkMetadata?.chatId}
                   message={msg.data}
                   name={msg.role === 'user' ? getUserDisplayName() : getCharacterDisplayName(chara)}
                   img={msg.role === 'user' ? getCharImage(getUserIcon(), 'css') : getCharImage(chara.image, 'css')}

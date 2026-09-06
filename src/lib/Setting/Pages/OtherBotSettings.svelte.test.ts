@@ -32,7 +32,7 @@ vi.mock('src/ts/process/modules', () => ({
   moduleUpdate: vi.fn(),
 }))
 
-vi.mock('src/ts/server/settingsBridge.svelte', async () => {
+vi.mock('src/ts/server/settingsOwner.svelte', async () => {
   const { fromStore, writable } = await import('svelte/store')
 
   return {
@@ -41,8 +41,16 @@ vi.mock('src/ts/server/settingsBridge.svelte', async () => {
 
       let value = key === 'sdProvider' ? 'wavespeed' : clone(fallback)
       if (key === 'hypaV3') value = otherBotMocks.hypaEnabled
-      if (key === 'hypaV3Presets') value = clone(otherBotMocks.hypaPresets)
       if (key === 'hypaV3Presets') {
+        value = clone(otherBotMocks.hypaPresets).map((preset: Record<string, unknown>, index: number) => ({
+          id: typeof preset.id === 'string' ? preset.id : `hypa-test-${index}`,
+          ...preset,
+        }))
+      }
+      if (key === 'selectedHypaV3PresetId') {
+        value = otherBotMocks.hypaPresets.length > 0 ? (otherBotMocks.hypaPresets[0].id ?? 'hypa-test-0') : null
+      }
+      if (key === 'hypaV3Presets' || key === 'selectedHypaV3PresetId' || key === 'hypaModel') {
         const valueStore = writable(value)
         const reactiveValue = fromStore(valueStore)
         const draft = {
@@ -96,8 +104,15 @@ vi.mock('src/ts/server/settingsBridge.svelte', async () => {
       otherBotMocks.drafts.set(key, draft)
       return draft
     },
+    applyServerBackedSettingsPatch: (patch: Record<string, unknown>) => {
+      for (const [key, value] of Object.entries(patch)) {
+        const draft = otherBotMocks.drafts.get(key)
+        if (!draft) continue
+        if (draft.project) draft.project(value)
+        else draft.value = structuredClone(value)
+      }
+    },
     persistServerBackedSettingsPatch: otherBotMocks.persistServerBackedSettingsPatch,
-    watchServerBackedSettings: vi.fn(() => vi.fn()),
   }
 })
 
@@ -132,7 +147,13 @@ vi.mock('src/ts/tokenizer', () => ({
 }))
 
 vi.mock('src/ts/process/memory/hypav3', () => ({
-  createHypaV3Preset: vi.fn((name = 'Default', settings = {}) => ({ name, settings })),
+  createHypaV3Preset: vi.fn((name = 'Default', settings = {}) => ({
+    id: `hypa-created-${String(name)
+      .toLocaleLowerCase()
+      .replaceAll(/[^a-z0-9]+/g, '-')}`,
+    name,
+    settings,
+  })),
 }))
 
 vi.mock('src/ts/server/promptTemplateHydration', () => ({
@@ -148,7 +169,7 @@ vi.mock('src/ts/gui/highlight', () => ({
 
 import OtherBotSettings from './OtherBotSettings.svelte'
 import { language } from 'src/lang'
-import { getResourceDatabase, replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
+import { replaceResourceDatabase as setDatabaseLite, settingsResourceState } from 'src/ts/server/resourceState.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -248,7 +269,7 @@ afterEach(() => {
 })
 
 describe('OtherBotSettings navigation semantics', () => {
-  it('contains the narrow tab strip and exposes the selected panel', async () => {
+  it('contains the four narrow media and memory tabs', async () => {
     component = mount(OtherBotSettings, { target })
     await tick()
 
@@ -260,6 +281,13 @@ describe('OtherBotSettings navigation semantics', () => {
     const image = buttonNamed(language.imageGeneration)
     expect(memory.getAttribute('aria-pressed')).toBe('true')
     expect(image.getAttribute('aria-pressed')).toBe('false')
+    expect(Array.from(tabs?.querySelectorAll('button') ?? [])).toHaveLength(4)
+    expect(
+      Array.from(tabs?.querySelectorAll('button') ?? []).some(
+        (button) => button.textContent?.trim() === language.bardWiki.title,
+      ),
+    ).toBe(false)
+    expect(target.querySelector('[data-risu-bardwiki-settings]')).toBeNull()
 
     image.click()
     await tick()
@@ -274,13 +302,51 @@ describe('OtherBotSettings navigation semantics', () => {
 
     expect(target.querySelector('[data-risu-media-settings-tabs]')).toBeTruthy()
 
-    setDatabaseLite({ ...getResourceDatabase({ snapshot: true }), useLegacyGUI: true } as any)
+    settingsResourceState.value.useLegacyGUI = true
     await tick()
     expect(target.querySelector('[data-risu-media-settings-tabs]')).toBeNull()
 
-    setDatabaseLite({ ...getResourceDatabase({ snapshot: true }), useLegacyGUI: false } as any)
+    settingsResourceState.value.useLegacyGUI = false
     await tick()
     expect(target.querySelector('[data-risu-media-settings-tabs]')).toBeTruthy()
+  })
+
+  it('fails closed while the display settings owner is unavailable and reloads when it recovers', async () => {
+    component = mount(OtherBotSettings, { target })
+    await tick()
+
+    expect(target.querySelector('[data-risu-media-settings-tabs]')).toBeTruthy()
+
+    settingsResourceState.groupStatuses.display = 'error'
+    await tick()
+    expect(target.querySelector('[data-risu-media-settings-tabs]')).toBeNull()
+
+    settingsResourceState.value.useLegacyGUI = false
+    settingsResourceState.groupStatuses.display = 'ready'
+    await tick()
+    expect(target.querySelector('[data-risu-media-settings-tabs]')).toBeTruthy()
+  })
+})
+
+describe('OtherBotSettings embedding models', () => {
+  it('offers Voyage Context 4 and reveals the Voyage credential field when selected', async () => {
+    component = mount(OtherBotSettings, { target })
+    await tick()
+
+    const embeddingSelect = Array.from(target.querySelectorAll<HTMLSelectElement>('select')).find((select) =>
+      Array.from(select.options).some((option) => option.value === 'voyageContext4'),
+    )
+    expect(embeddingSelect).toBeTruthy()
+    expect(Array.from(embeddingSelect!.options).find((option) => option.value === 'voyageContext4')?.textContent).toBe(
+      language.voyageContext4,
+    )
+    expect(target.textContent).not.toContain('Voyage API Key')
+
+    otherBotMocks.drafts.get('hypaModel')?.project?.('voyageContext4')
+    await tick()
+
+    expect(otherBotMocks.drafts.get('hypaModel')?.value).toBe('voyageContext4')
+    expect(target.textContent).toContain('Voyage API Key')
   })
 })
 
@@ -597,9 +663,13 @@ describe('OtherBotSettings Hypa preset import', () => {
     await vi.waitFor(() => expect(otherBotMocks.persistServerBackedSettingsPatch).toHaveBeenCalledOnce())
 
     const importPatch = otherBotMocks.persistServerBackedSettingsPatch.mock.calls[0][0] as Record<string, any>
-    expect(Object.keys(importPatch).sort()).toEqual(['hypaV3PresetId', 'hypaV3Presets'])
+    expect(Object.keys(importPatch).sort()).toEqual(['hypaV3PresetId', 'hypaV3Presets', 'selectedHypaV3PresetId'])
     expect(importPatch).toMatchObject({
-      hypaV3Presets: [{ name: 'Existing' }, { name: 'Imported', settings: { queryChatCount: 5 } }],
+      hypaV3Presets: [
+        { id: 'hypa-test-0', name: 'Existing' },
+        { id: 'hypa-created-imported', name: 'Imported', settings: { queryChatCount: 5 } },
+      ],
+      selectedHypaV3PresetId: 'hypa-created-imported',
       hypaV3PresetId: 1,
     })
     expect(uploadButton?.disabled).toBe(true)
@@ -616,11 +686,21 @@ describe('OtherBotSettings Hypa preset import', () => {
   it('does not announce success when preset persistence fails', async () => {
     otherBotMocks.hypaEnabled = true
     otherBotMocks.hypaPresets = [{ name: 'Existing', settings: {} }]
+    const originalPresets = structuredClone(otherBotMocks.hypaPresets)
     otherBotMocks.selectSingleFile.mockResolvedValue({
       name: 'import.json',
       data: Buffer.from(JSON.stringify({ type: 'risu', data: { name: 'Imported', settings: {} } })),
     })
-    otherBotMocks.persistServerBackedSettingsPatch.mockResolvedValue('failed')
+    otherBotMocks.persistServerBackedSettingsPatch.mockImplementationOnce(async (patch) => {
+      projectSettingsPatch(patch as Record<string, unknown>)
+      await tick()
+      projectSettingsPatch({
+        hypaV3Presets: originalPresets,
+        selectedHypaV3PresetId: originalPresets[0]?.id ?? 'hypa-test-0',
+        hypaV3PresetId: 0,
+      })
+      return 'failed'
+    })
     component = mount(OtherBotSettings, { target })
     await tick()
 
@@ -629,6 +709,8 @@ describe('OtherBotSettings Hypa preset import', () => {
     await tick()
 
     expect(otherBotMocks.alertNormal).not.toHaveBeenCalled()
+    expect(otherBotMocks.drafts.get('hypaV3Presets')?.value).toEqual(originalPresets)
+    expect(hypaPresetNames()).toEqual(['Existing'])
   })
 
   it('announces when preset persistence is durably queued', async () => {
@@ -648,6 +730,7 @@ describe('OtherBotSettings Hypa preset import', () => {
     target.querySelector<SVGElement>('svg.lucide-hard-drive-upload')?.closest('button')?.click()
     await vi.waitFor(() => expect(otherBotMocks.alertNormal).toHaveBeenCalledWith(language.settingsSaveQueued))
     expect(otherBotMocks.alertNormal).not.toHaveBeenCalledWith(language.successImport)
+    expect(hypaPresetNames()).toEqual(['Existing', 'Imported'])
   })
 
   it('drops a file-picker continuation after the settings page unmounts', async () => {
@@ -725,9 +808,11 @@ describe('OtherBotSettings Hypa memory ratio', () => {
     otherBotMocks.getCharToken.mockResolvedValue({ dynamic: 0, persistant: 100 })
     selectedCharID.set(0)
 
-    const database = (maxContext: number) =>
+    const database = (profileMaxContext: number) =>
       ({
         useLegacyGUI: false,
+        promptPresets: [],
+        promptPresetsId: -1,
         promptTemplate: [],
         characters: [
           {
@@ -738,8 +823,17 @@ describe('OtherBotSettings Hypa memory ratio', () => {
           },
         ],
         loreBookToken: 0,
-        maxResponse: 100,
-        maxContext,
+        maxResponse: 20,
+        maxContext: 8000,
+        modelProfiles: [
+          {
+            id: 'hypa-main',
+            name: 'Hypa Main',
+            modelId: 'gpt-5',
+            runtimeOptions: { maxResponse: 100, maxContext: profileMaxContext },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'hypa-main' } },
       }) as any
 
     setDatabaseLite(database(1000))
@@ -760,11 +854,70 @@ describe('OtherBotSettings Hypa memory ratio', () => {
       language.hypaV3Settings.similarMemoryRatioLabel,
     ])
 
+    settingsResourceState.groupStatuses.runtime = 'error'
+    await vi.waitFor(() => {
+      expect(ratioInput()).toBeNull()
+      expect(target.textContent).toContain(language.hypaV3Settings.maxMemoryTokensRatioError)
+    })
+    expect(otherBotMocks.tokenizePreset).toHaveBeenCalledTimes(1)
+    expect(otherBotMocks.getCharToken).toHaveBeenCalledTimes(1)
+
     setDatabaseLite(database(2000))
 
     await vi.waitFor(() => expect(ratioInput()?.valueAsNumber).toBe(0.75))
     expect(otherBotMocks.tokenizePreset).toHaveBeenCalledTimes(2)
     expect(otherBotMocks.getCharToken).toHaveBeenCalledTimes(2)
+  })
+
+  it('counts the selected prompt owner when the flat template projection is stale', async () => {
+    otherBotMocks.hypaEnabled = true
+    otherBotMocks.hypaPresets = [
+      {
+        name: 'Default',
+        settings: {
+          summarizationModel: 'subModel',
+          memoryTokensRatio: 0.2,
+          extraSummarizationRatio: 0,
+          maxChatsPerSummary: 6,
+          recentMemoryRatio: 0.4,
+          similarMemoryRatio: 0.4,
+        },
+      },
+    ]
+    const canonicalTemplate = [{ id: 'canonical-row', role: 'system', content: 'canonical' }]
+    setDatabaseLite({
+      useLegacyGUI: false,
+      promptPresets: [{ id: 'prompt-a', name: 'Prompt A', promptTemplate: canonicalTemplate }],
+      promptPresetsId: 0,
+      promptTemplate: [{ id: 'stale-row', role: 'system', content: 'stale' }],
+      characters: [
+        {
+          chaId: 'character-1',
+          chats: [],
+          chatPage: 0,
+          loreSettings: { tokenBudget: 0 },
+        },
+      ],
+      loreBookToken: 0,
+      maxResponse: 20,
+      maxContext: 8000,
+      modelProfiles: [
+        {
+          id: 'hypa-main',
+          name: 'Hypa Main',
+          modelId: 'gpt-5',
+          runtimeOptions: { maxResponse: 100, maxContext: 1000 },
+        },
+      ],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'hypa-main' } },
+    } as any)
+    otherBotMocks.tokenizePreset.mockResolvedValue(100)
+    otherBotMocks.getCharToken.mockResolvedValue({ dynamic: 0, persistant: 100 })
+    selectedCharID.set(0)
+
+    component = mount(OtherBotSettings, { target })
+
+    await vi.waitFor(() => expect(otherBotMocks.tokenizePreset).toHaveBeenCalledWith(canonicalTemplate))
   })
 })
 

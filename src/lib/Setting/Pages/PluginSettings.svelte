@@ -2,11 +2,10 @@
   import { onDestroy } from 'svelte'
   import { PlusIcon, TrashIcon, LinkIcon, CodeXmlIcon, PowerIcon, PowerOffIcon, RefreshCwIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
-  import { alertConfirm, alertMd, alertSelect } from 'src/ts/alert'
-  import { TriangleAlert } from '@lucide/svelte'
+  import { alertConfirm, alertSelect } from 'src/ts/alert'
 
   import { hotReloading } from 'src/ts/stores.svelte'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { collectionsResourceState } from 'src/ts/server/resourceState.svelte'
   import {
     checkPluginUpdate,
     createBlankPlugin,
@@ -67,11 +66,28 @@
   let pluginUpdateStates = $state<Record<string, PluginUpdateUiState>>({})
 
   function findPluginByName(pluginName: string): { plugin: RisuPlugin; index: number } | null {
-    const plugins = getDatabase().plugins ?? []
+    if (collectionsResourceState.statuses.plugins !== 'ready') return null
+    const plugins = readPlugins(collectionsResourceState.values.plugins)
     const index = plugins.findIndex((candidate) => candidate.name === pluginName)
     if (index === -1) return null
     return { plugin: plugins[index], index }
   }
+
+  function readPlugins(value: unknown): RisuPlugin[] {
+    if (!Array.isArray(value)) return []
+    const names = new Set<string>()
+    for (const plugin of value) {
+      if (!plugin || typeof plugin !== 'object' || Array.isArray(plugin)) return []
+      const name = (plugin as { name?: unknown }).name
+      if (typeof name !== 'string' || name.trim() !== name || name.length === 0 || names.has(name)) return []
+      names.add(name)
+    }
+    return value as RisuPlugin[]
+  }
+
+  let plugins = $derived(
+    collectionsResourceState.statuses.plugins === 'ready' ? readPlugins(collectionsResourceState.values.plugins) : [],
+  )
 
   function pluginParamsId(pluginName: string): string {
     return `plugin-params-${pluginName.replace(/[^a-zA-Z0-9_-]/g, '-')}`
@@ -373,10 +389,10 @@
 <span class="text-draculared text-xs mb-4">{language.pluginWarn}</span>
 
 <div class="border-solid border-darkborderc p-2 flex flex-col border-1">
-  {#if !getDatabase().plugins || getDatabase().plugins?.length === 0}
+  {#if plugins.length === 0}
     <span class="text-textcolor2">{language.noPlugins}</span>
   {/if}
-  {#each getDatabase().plugins as plugin, i (plugin.name)}
+  {#each plugins as plugin, i (plugin.name)}
     {#if i !== 0}
       <div class="border-darkborderc mt-2 mb-2 w-full border-solid border-b-1 seperator"></div>
     {/if}
@@ -396,19 +412,6 @@
           <span class="text-sm rounded bg-amber-700 ml-2 px-2 py-1 text-white"> Hot </span>
         {/if}
       </button>
-      {#if plugin.version === 2 || plugin.version === '2.1'}
-        <button
-          type="button"
-          aria-label={language.pluginV2Warning}
-          class="text-yellow-400 hover:gray-200 cursor-pointer"
-          onclick={(e) => {
-            e.stopPropagation()
-            alertMd(language.pluginV2Warning)
-          }}>
-          <TriangleAlert />
-        </button>
-      {/if}
-
       {#if plugin.customLink}
         {#each plugin.customLink as link}
           {#if typeof link.link === 'string' && (link.link.startsWith('http://') || link.link.startsWith('https://'))}
@@ -491,22 +494,18 @@
     </div>
     {#if plugin.updateURL}
       {@const updateStatus = pluginUpdateState(plugin)}
-      {#if updateStatus.status !== 'idle'}
+      {#if updateStatus.status !== 'idle' && updateStatus.status !== 'queued'}
         <span class="text-textcolor2 mt-1 block w-full break-words text-xs" role="status">
           {pluginUpdateStatusText(updateStatus)}
         </span>
       {/if}
     {/if}
-    {#if pluginMutationStates[plugin.name]}
+    {#if pluginMutationStates[plugin.name]?.status === 'failed'}
       <span class="text-textcolor2 mt-1 block w-full break-words text-xs" role="status" aria-live="polite">
         {pluginMutationStatusText(plugin.name)}
       </span>
     {/if}
-    {#if plugin.version === 1}
-      <span class="text-draculared text-xs">
-        {language.pluginVersionWarn.replace('{{plugin_version}}', 'API V1').replace('{{required_version}}', 'API V3')}
-      </span>
-    {:else if Object.keys(plugin.arguments).filter((i) => !i.startsWith('hidden_')).length > 0 && isPluginExpanded(plugin.name)}
+    {#if Object.keys(plugin.arguments).filter((i) => !i.startsWith('hidden_')).length > 0 && isPluginExpanded(plugin.name)}
       <div id={pluginParamsId(plugin.name)} class="flex flex-col mt-2 bg-dark-900/50 p-3">
         {#each Object.keys(plugin.arguments) as arg}
           {#if !arg.startsWith('hidden_')}
@@ -608,7 +607,7 @@
     class="hover:text-textcolor cursor-pointer">
     <PlusIcon />
   </button>
-  {#if pluginImportStatus !== 'idle'}
+  {#if pluginImportStatus === 'failed'}
     <span class="text-xs" role="status">{pluginImportStatusText()}</span>
   {/if}
 

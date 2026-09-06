@@ -88,12 +88,29 @@ export async function loadBackupFromDevice(options: BackupOperationOptions = {})
     onProgress: options.onProgress,
   })
   if (result.status === 'ok') {
+    const hasAssetCaveats = result.assetReport.missingCount > 0 || result.assetReport.orphanedCount > 0
+    const assetResult = hasAssetCaveats
+      ? language.backupImportSuccessWithAssetCaveats(result.assetReport.missingCount, result.assetReport.orphanedCount)
+      : language.backupImportSuccess
+    const importResult =
+      result.skippedBlocks.length > 0
+        ? `${assetResult}\n\n${language.backupImportSkippedBlocks(
+            result.skippedBlocks.map((block) => `${block.name} (${block.type})`),
+          )}`
+        : assetResult
     if (result.discardedPendingMutations > 0) {
-      alertError(language.backupQueuedChangesDiscarded)
+      alertError(
+        hasAssetCaveats || result.skippedBlocks.length > 0
+          ? `${importResult}\n\n${language.backupQueuedChangesDiscarded}`
+          : language.backupQueuedChangesDiscarded,
+      )
     } else {
-      alertNormal('Local backup loaded')
+      alertNormal(importResult)
     }
     return 'ok'
+  } else if (result.status === 'unsupported-chat-blocks') {
+    alertError(language.backupUnsupportedStandaloneChatBlocks)
+    return 'error'
   } else if (result.status === 'unsupported-groups') {
     alertError(
       language.backupUnsupportedGroups(

@@ -1,28 +1,23 @@
-import { get } from 'svelte/store'
 import { v4 } from 'uuid'
-import { alertToast } from '../alert'
-import {
-  changeToPreset,
-  getDatabase,
-  type MessagePresetInfo,
-  type Message,
-  type character,
-} from '../storage/database.svelte'
-import { selectedCharID } from '../stores.svelte'
-import { ChatTokenizer } from '../tokenizer'
-import { parseToggleSyntax } from '../util'
+import type { Database, MessagePresetInfo, Message, character } from '../storage/database.svelte'
+import { ChatTokenizer, resolveMainTokenizerProfile, resolveTokenizerDatabaseSnapshot } from '../tokenizer'
 import {
   dispatchCharacterOwnedDurableBatch,
   toMessageSnapshot,
+  type ActiveChatTarget,
   type CharacterOwnedDurableBatchResult,
 } from '../chatCommands'
 import { resolveActiveChatGenerationSettings } from '../activeChatGenerationSettings'
 import { createPromptInfoSnapshot } from '../promptInfo'
 import { canUseServerCommands, replaceTailMessagesCommand, updateCharacterCommand } from '../server/commands'
 import { isServerChatMessagePlaceholder } from '../server/chatMessagePlaceholders'
-import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
-import { captureChatBodyProjectionEpoch } from '../server/resourceState.svelte'
-import { getModuleToggles } from './modules'
+import {
+  captureChatBodyProjectionEpoch,
+  charactersResourceState,
+  getCharacterResourceOwner,
+  settingsResourceState,
+} from '../server/resourceState.svelte'
+import { resolveModelProfileTokenizerSelection } from '../model/modelProfileResolver'
 
 export interface SendChatContextResult {
   selectedChar: number
@@ -77,35 +72,31 @@ function currentSendRollbackSnapshot(input: {
 }
 
 function restoreLastInteraction(snapshot: SendRollbackSnapshot): void {
-  withTrustedResourceWrite(() => {
-    const character = locateSendSnapshotCharacter(snapshot)
-    if (!character) return
-    if (character.lastInteraction === snapshot.attemptedLastInteraction) {
-      character.lastInteraction = snapshot.lastInteraction
-    }
-  })
+  const character = locateSendSnapshotCharacter(snapshot)
+  if (!character) return
+  if (character.lastInteraction === snapshot.attemptedLastInteraction) {
+    character.lastInteraction = snapshot.lastInteraction
+  }
 }
 
 function restoreBackfilledMessageIds(snapshot: SendRollbackSnapshot): void {
   if (!snapshot.messageIds?.length) return
-  withTrustedResourceWrite(() => {
-    const character = locateSendSnapshotCharacter(snapshot)
-    if (!character) return
-    const chatIndex = locateSendSnapshotChatIndex(character, snapshot)
-    if (chatIndex < 0) return
-    const messages = character.chats[chatIndex].message
-    for (const messageId of snapshot.messageIds) {
-      const message = messages.find((candidate) => candidate.chatId === messageId.attempted)
-      if (message) message.chatId = messageId.previous
-    }
-  })
+  const character = locateSendSnapshotCharacter(snapshot)
+  if (!character) return
+  const chatIndex = locateSendSnapshotChatIndex(character, snapshot)
+  if (chatIndex < 0) return
+  const messages = character.chats[chatIndex].message
+  for (const messageId of snapshot.messageIds) {
+    const message = messages.find((candidate) => candidate.chatId === messageId.attempted)
+    if (message) message.chatId = messageId.previous
+  }
 }
 
 function locateSendSnapshotCharacter(snapshot: SendRollbackSnapshot): character | undefined {
-  const characters = getDatabase().characters
-  if (!characters) return undefined
+  if (charactersResourceState.status !== 'ready') return undefined
+  const characters = charactersResourceState.characters
   if (snapshot.characterId) {
-    return characters.find((candidate) => candidate.chaId === snapshot.characterId)
+    return getCharacterResourceOwner(snapshot.characterId)
   }
   return characters[snapshot.characterIndex]
 }
@@ -132,47 +123,26 @@ function messageIdBackfillTail(messages: Message[]): { startIndex: number; after
 }
 
 /**
- * Run the sendChat entry-context setup: retained compatibility-only preset-chain
- * and statistics handling (skipped by the live Fastify runtime), character + chat
- * lookup, lastInteraction stamp, chatId backfill, promptInfo seed (gated on
+ * Run the sendChat entry-context setup: owner-backed character + chat lookup,
+ * lastInteraction stamp, chatId backfill, promptInfo seed (gated on
  * `promptInfoInsideChat`), and tokenizer creation. The optimistic context is
  * returned synchronously together with the exact durable maintenance promise.
  * Reattach callers disable maintenance so they only reconstruct render context.
  *
  * The coordinator handles the closures (`throwError`,
- * `runCurrentChatFunction`, etc.) and the `doingChat` lifecycle around
+ * `runCurrentChatFunction`, etc.) and the chat-keyed generation lifecycle around
  * this helper.
  */
 export function setupSendChatContext(args: {
   chatProcessIndex: number
   chatAdditonalTokens?: number
   writeMaintenance?: boolean
+  target?: ActiveChatTarget | null
+  database?: Database
 }): SendChatContextResult {
-  const { chatProcessIndex, chatAdditonalTokens: argChatAdditonalTokens, writeMaintenance = true } = args
+  const { chatAdditonalTokens: argChatAdditonalTokens, writeMaintenance = true, target } = args
   const serverBacked = canUseServerCommands()
-
-  if (writeMaintenance && !serverBacked && chatProcessIndex === -1 && getDatabase().presetChain) {
-    const names = getDatabase()
-      .presetChain.split(',')
-      .map((v) => v.trim())
-    const randomSelect = Math.floor(Math.random() * names.length)
-    const ele = names[randomSelect]
-
-    const findId = getDatabase().botPresets.findIndex((v) => {
-      return v.name === ele
-    })
-
-    if (findId === -1) {
-      alertToast(`Cannot find preset: ${ele}`)
-    } else {
-      changeToPreset(findId, true)
-    }
-  }
-
-  if (writeMaintenance && !serverBacked) {
-    getDatabase().statics.messages += 1
-  }
-  const selectedChar = get(selectedCharID)
+  const selectedChar = resolveOwnedCharacterIndex(target)
   const lastInteraction = Date.now()
   let persistence: Promise<CharacterOwnedDurableBatchResult> = Promise.resolve({
     status: 'ok',
@@ -184,10 +154,10 @@ export function setupSendChatContext(args: {
     let rollbackSnapshot: SendRollbackSnapshot | null = null
     let characterId: string | undefined
 
-    withTrustedResourceWrite(() => {
-      const nowChatroom = getDatabase().characters[selectedChar]
+    const nowChatroom = resolveOwnedCharacter(target)
+    if (nowChatroom) {
       characterId = nowChatroom.chaId
-      const selectedChat = nowChatroom.chatPage
+      const selectedChat = resolveSendChatIndex(nowChatroom, target)
       const selectedChatRecord = nowChatroom.chats[selectedChat]
       const hasUnloadedMessages = selectedChatRecord.message.some(isServerChatMessagePlaceholder)
       const needsMessageIdBackfill = !hasUnloadedMessages && selectedChatRecord.message.some((v) => v.chatId == null)
@@ -259,7 +229,7 @@ export function setupSendChatContext(args: {
           },
         })
       }
-    })
+    }
 
     if (!characterId) {
       if (rollbackSnapshot) {
@@ -274,32 +244,34 @@ export function setupSendChatContext(args: {
     } else if (steps.length > 0) {
       persistence = dispatchCharacterOwnedDurableBatch(characterId, steps)
     }
-  } else if (writeMaintenance && !serverBacked) {
-    const nowChatroom = getDatabase().characters[selectedChar]
-    nowChatroom.lastInteraction = lastInteraction
-    const selectedChatRecord = nowChatroom.chats[nowChatroom.chatPage]
-    if (selectedChatRecord.message.some((v) => v.chatId == null)) {
-      selectedChatRecord.message = selectedChatRecord.message.map((v) => {
-        v.chatId = v.chatId ?? v4()
-        return v
-      })
-    }
   }
-  const nowChatroom = getDatabase().characters[selectedChar]
-  const selectedChat = nowChatroom.chatPage
+  const nowChatroom = resolveOwnedCharacter(target)
+  if (!nowChatroom) {
+    throw new Error('Missing character owner for send context')
+  }
+  const selectedChat = resolveSendChatIndex(nowChatroom, target)
 
-  const promptInfo = createInitialPromptInfo(serverBacked)
+  const promptInfo = createInitialPromptInfo(target)
+  const database = args.database ?? resolveTokenizerDatabaseSnapshot()
+  const mainProfile = resolveMainTokenizerProfile(database)
+  const mainModelId = mainProfile.modelId
 
   let caculatedChatTokens = 0
-  if (getDatabase().aiModel.startsWith('gpt')) {
+  if (mainModelId.startsWith('gpt')) {
     caculatedChatTokens += 5
   } else {
     caculatedChatTokens += 3
   }
 
   const chatAdditonalTokens = argChatAdditonalTokens ?? caculatedChatTokens
-  const tokenizer = new ChatTokenizer(chatAdditonalTokens, getDatabase().aiModel.startsWith('gpt') ? 'noName' : 'name')
-  const maxContextTokens = getDatabase().maxContext
+  const tokenizer = new ChatTokenizer(
+    chatAdditonalTokens,
+    mainModelId.startsWith('gpt') ? 'noName' : 'name',
+    mainProfile,
+    resolveModelProfileTokenizerSelection(database, mainProfile),
+    database,
+  )
+  const maxContextTokens = mainProfile.runtimeOptions.maxContext ?? database.maxContext
 
   return {
     selectedChar,
@@ -312,13 +284,19 @@ export function setupSendChatContext(args: {
   }
 }
 
-function createInitialPromptInfo(serverBacked: boolean): MessagePresetInfo {
-  if (!getDatabase().promptInfoInsideChat) return {}
-  return serverBacked ? createServerBackedPromptInfo() : createLegacyPromptInfo()
+function createInitialPromptInfo(target: ActiveChatTarget | null | undefined): MessagePresetInfo {
+  if (
+    settingsResourceState.status === 'error' ||
+    settingsResourceState.groupStatuses.advanced !== 'ready' ||
+    !settingsResourceState.value.promptInfoInsideChat
+  ) {
+    return {}
+  }
+  return createServerBackedPromptInfo(target)
 }
 
-function createServerBackedPromptInfo(): MessagePresetInfo {
-  const activeSettings = resolveActiveChatGenerationSettings()
+function createServerBackedPromptInfo(target: ActiveChatTarget | null | undefined): MessagePresetInfo {
+  const activeSettings = resolveActiveChatGenerationSettings({ target })
   return createPromptInfoSnapshot({
     enabled: true,
     promptPreset: activeSettings.promptPreset,
@@ -327,24 +305,23 @@ function createServerBackedPromptInfo(): MessagePresetInfo {
   })
 }
 
-function createLegacyPromptInfo(): MessagePresetInfo {
-  const db = getDatabase()
-  const initialPresetName = db.botPresets[db.botPresetsId]?.name ?? ''
-  const initialPromptToggles = parseToggleSyntax(db.customPromptTemplateToggle + getModuleToggles()).flatMap(
-    (toggle) => {
-      const raw = db.globalChatVariables[`toggle_${toggle.key}`]
-      if (toggle.type === 'select' || toggle.type === 'text') {
-        return [{ key: toggle.value, value: toggle.options[raw] }]
-      }
-      if (raw === '1') {
-        return [{ key: toggle.value, value: 'ON' }]
-      }
-      return []
-    },
-  )
+function resolveOwnedCharacter(target: ActiveChatTarget | null | undefined): character | undefined {
+  if (charactersResourceState.status !== 'ready') return undefined
+  if (target?.characterId !== undefined) return getCharacterResourceOwner(target.characterId)
+  const selectedIndex = target?.selectedCharID ?? charactersResourceState.currentChar
+  const candidate = charactersResourceState.characters[selectedIndex]
+  return candidate
+}
 
-  return {
-    promptName: initialPresetName,
-    promptToggles: initialPromptToggles,
+function resolveOwnedCharacterIndex(target: ActiveChatTarget | null | undefined): number {
+  const character = resolveOwnedCharacter(target)
+  return character ? charactersResourceState.characters.indexOf(character) : -1
+}
+
+function resolveSendChatIndex(character: character, target: ActiveChatTarget | null | undefined): number {
+  if (!target) return character.chatPage
+  if (target.chatId !== undefined) {
+    return character.chats.findIndex((chat) => chat.id === target.chatId)
   }
+  return target.chatPage
 }

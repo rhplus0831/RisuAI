@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { MASKED_PROVIDER_SECRET } from '../providerSecretMask'
+import { resolveModelProfile } from './modelProfileResolver'
+import { canonicalModelProfileFixture } from '../../../test/fixtures/canonicalModelProfile'
 
 const mutationMocks = vi.hoisted(() => ({
   commandCalls: [] as Array<{ name: string; input: Record<string, unknown> }>,
@@ -48,11 +51,15 @@ vi.mock('../server/commands', () => {
   return {
     convertLegacyModelProfilesCommand: command('convert'),
     createModelProfileCommand: command('create'),
+    createProviderCredentialCommand: command('credential-create'),
     deleteModelProfileCommand: command('delete'),
+    deleteProviderCredentialCommand: command('credential-delete'),
     duplicateModelProfileCommand: command('duplicate'),
+    reorderModelProfilesCommand: command('reorder'),
     updateModelProfileCommand: command('update'),
     updateModelRoleProfilesCommand: command('roles'),
     updateModelRuntimeDefaultsCommand: command('runtime'),
+    updateProviderCredentialCommand: command('credential-update'),
     runServerCommand: async (input: Record<string, unknown>) => {
       mutationMocks.runInputs.push(input)
       return (input.command as (baseRevision: number) => Promise<unknown>)(41)
@@ -64,21 +71,26 @@ import {
   beginPendingModelMutation,
   convertLegacyModelProfilesDurably,
   createModelProfileDurably,
+  createProviderCredentialDurably,
   deleteModelProfileDurably,
+  deleteProviderCredentialDurably,
   duplicateModelProfileDurably,
   finishPendingModelMutation,
   getPendingModelMutations,
   isPendingModelMutationProjectionApplied,
   modelProfileProjectionFingerprint,
+  providerCredentialProjectionFingerprint,
   retainPendingModelMutation,
+  reorderModelProfilesDurably,
   subscribePendingModelMutations,
   updateModelProfileDurably,
   updateModelRoleProfilesDurably,
   updateModelRuntimeDefaultsDurably,
+  updateProviderCredentialDurably,
 } from './modelProfileMutations'
 
 beforeEach(() => {
-  for (const lane of ['model-profiles', 'model-runtime-defaults'] as const) {
+  for (const lane of ['model-profiles', 'model-runtime-defaults', 'provider-credentials'] as const) {
     for (const pending of getPendingModelMutations(lane)) finishPendingModelMutation(pending.token)
   }
   mutationMocks.commandCalls.length = 0
@@ -92,16 +104,100 @@ beforeEach(() => {
 })
 
 describe('durable model-profile mutations', () => {
+  it('creates a canonical credential, profile, and role binding that survives a masked reload projection', async () => {
+    const { credential, profile, bindings, staleFlat } = canonicalModelProfileFixture
+
+    await createProviderCredentialDurably(credential)
+    await createModelProfileDurably(profile)
+    await updateModelRoleProfilesDurably(bindings, null)
+
+    expect(mutationMocks.commandCalls.map(({ name }) => name)).toEqual(['credential-create', 'create', 'roles'])
+    expect(mutationMocks.commandCalls[0]?.input.credential).toEqual(credential)
+    expect(mutationMocks.commandCalls[1]?.input.profile).toEqual(profile)
+    expect(mutationMocks.commandCalls[2]?.input.bindings).toEqual(bindings)
+
+    const maskedProjection = {
+      modelProfiles: [profile],
+      providerCredentials: [{ ...credential, apiKey: MASKED_PROVIDER_SECRET }],
+      modelRoleProfiles: bindings,
+    }
+    const resolved = resolveModelProfile({
+      database: {
+        ...staleFlat,
+        ...maskedProjection,
+      } as never,
+      role: 'memory',
+    })
+
+    expect(resolved.source.kind).toBe('durable-profile')
+    expect(resolved.modelId).toBe(profile.modelId)
+    expect(resolved.requestModel).toBe(profile.providerOptions.requestModel)
+    const serializedClientProjection = JSON.stringify(maskedProjection)
+    expect(serializedClientProjection).not.toContain(credential.apiKey)
+    expect(serializedClientProjection).not.toContain(staleFlat.openAIKey)
+  })
+
+  it('freezes and dispatches a durable profile reorder', async () => {
+    const order = [
+      { kind: 'profile' as const, profileId: 'profile-b' },
+      { kind: 'divider' as const, id: 'divider-a' },
+      { kind: 'profile' as const, profileId: 'profile-a' },
+    ]
+
+    await reorderModelProfilesDurably(order)
+    order.reverse()
+
+    expect(mutationMocks.staged).toEqual([
+      {
+        key: 'model-profiles',
+        intent: {
+          version: 1,
+          requests: [
+            {
+              method: 'POST',
+              path: '/model-profiles/reorder',
+              body: {
+                order: [
+                  { kind: 'profile', profileId: 'profile-b' },
+                  { kind: 'divider', id: 'divider-a' },
+                  { kind: 'profile', profileId: 'profile-a' },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    ])
+    expect(mutationMocks.commandCalls).toEqual([
+      {
+        name: 'reorder',
+        input: {
+          baseRevision: 41,
+          order: [
+            { kind: 'profile', profileId: 'profile-b' },
+            { kind: 'divider', id: 'divider-a' },
+            { kind: 'profile', profileId: 'profile-a' },
+          ],
+        },
+      },
+    ])
+  })
+
   it('freezes every replay body and dispatches the matching command', async () => {
-    const profile = { id: 'profile-a', name: 'Profile A', providerOptions: { apiKey: 'secret' } }
+    const profile = { id: 'profile-a', name: 'Profile A', providerOptions: { credentialId: 'credential-a' } }
     const expectedProfile = { ...profile, name: 'Old Profile' }
+    const credential = { id: 'credential-a', name: 'Credential A', type: 'apiKey' as const, apiKey: 'secret' }
+    const expectedCredential = { ...credential, name: 'Old Credential' }
     const reassignments = { chatMain: { mode: 'legacy' as const } }
     const bindings = { chatMain: { mode: 'profile' as const, profileId: 'profile-a' } }
 
     await createModelProfileDurably(profile)
     await updateModelProfileDurably('profile/a', profile, expectedProfile)
-    await duplicateModelProfileDurably('profile/a', 'Profile A Copy', true)
+    await duplicateModelProfileDurably('profile/a', 'Profile A Copy')
     await deleteModelProfileDurably('profile/a', reassignments)
+    await createProviderCredentialDurably(credential)
+    await updateProviderCredentialDurably('credential/a', credential, expectedCredential)
+    await deleteProviderCredentialDurably('credential/a')
     await updateModelRuntimeDefaultsDurably({ maxContext: 8192 })
     await updateModelRoleProfilesDurably(bindings, 'preset-a')
     await convertLegacyModelProfilesDurably()
@@ -135,7 +231,7 @@ describe('durable model-profile mutations', () => {
             {
               method: 'POST',
               path: '/model-profiles/profile%2Fa/duplicate',
-              body: { name: 'Profile A Copy', includeSecrets: true },
+              body: { name: 'Profile A Copy' },
             },
           ],
         },
@@ -151,6 +247,33 @@ describe('durable model-profile mutations', () => {
               body: { reassignments },
             },
           ],
+        },
+      },
+      {
+        key: 'provider-credentials',
+        intent: {
+          version: 1,
+          requests: [{ method: 'POST', path: '/provider-credentials', body: { credential } }],
+        },
+      },
+      {
+        key: 'provider-credentials',
+        intent: {
+          version: 1,
+          requests: [
+            {
+              method: 'PATCH',
+              path: '/provider-credentials/credential%2Fa',
+              body: { credential, expectedCredential },
+            },
+          ],
+        },
+      },
+      {
+        key: 'provider-credentials',
+        intent: {
+          version: 1,
+          requests: [{ method: 'DELETE', path: '/provider-credentials/credential%2Fa', body: {} }],
         },
       },
       {
@@ -199,13 +322,18 @@ describe('durable model-profile mutations', () => {
           baseRevision: 41,
           profileId: 'profile/a',
           name: 'Profile A Copy',
-          includeSecrets: true,
         },
       },
       {
         name: 'delete',
         input: { baseRevision: 41, profileId: 'profile/a', reassignments },
       },
+      { name: 'credential-create', input: { baseRevision: 41, credential } },
+      {
+        name: 'credential-update',
+        input: { baseRevision: 41, credentialId: 'credential/a', credential, expectedCredential },
+      },
+      { name: 'credential-delete', input: { baseRevision: 41, credentialId: 'credential/a' } },
       { name: 'runtime', input: { baseRevision: 41, runtimeDefaults: { maxContext: 8192 } } },
       {
         name: 'roles',
@@ -213,7 +341,7 @@ describe('durable model-profile mutations', () => {
       },
       { name: 'convert', input: { baseRevision: 41 } },
     ])
-    expect(mutationMocks.runInputs).toHaveLength(7)
+    expect(mutationMocks.runInputs).toHaveLength(10)
     expect(mutationMocks.runInputs.every((input) => input.mutationId === 'mutation-id')).toBe(true)
   })
 
@@ -303,20 +431,16 @@ describe('durable model-profile mutations', () => {
     expect(getPendingModelMutations('model-profiles')).toEqual([])
   })
 
-  it('matches every retained model projection without exposing secret differences', () => {
+  it('matches retained model and credential projections without exposing secret differences', () => {
     const attempted = {
       name: 'Copy',
       providerId: 'vertex',
       modelId: 'vertex-model',
-      providerOptions: { apiKey: 'raw', vertex: { privateKey: 'private' } },
+      providerOptions: { credentialId: 'credential-vertex', vertex: { projectId: 'project-a' } },
     }
     const projected = {
       id: 'server-id',
       ...attempted,
-      providerOptions: {
-        apiKey: '__RISU_SECRET_MASKED__',
-        vertex: { privateKey: '__RISU_SECRET_MASKED__' },
-      },
     }
     expect(
       isPendingModelMutationProjectionApplied(
@@ -326,6 +450,26 @@ describe('durable model-profile mutations', () => {
           attemptedFingerprint: modelProfileProjectionFingerprint(attempted, true),
         },
         { modelProfiles: [projected] },
+      ),
+    ).toBe(true)
+    const attemptedCredential = {
+      name: 'Vertex',
+      type: 'vertexServiceAccount' as const,
+      vertex: { clientEmail: 'service@example.com', privateKey: 'private' },
+    }
+    const projectedCredential = {
+      id: 'credential-vertex',
+      ...attemptedCredential,
+      vertex: { ...attemptedCredential.vertex, privateKey: '__RISU_SECRET_MASKED__' },
+    }
+    expect(
+      isPendingModelMutationProjectionApplied(
+        {
+          kind: 'credential-create',
+          baselineIds: ['old-credential'],
+          attemptedFingerprint: providerCredentialProjectionFingerprint(attemptedCredential, true),
+        },
+        { providerCredentials: [projectedCredential] },
       ),
     ).toBe(true)
     expect(
@@ -338,6 +482,63 @@ describe('durable model-profile mutations', () => {
       isPendingModelMutationProjectionApplied(
         { kind: 'role-bindings', bindings: { chatMain: { mode: 'profile', profileId: 'server-id' } } },
         { modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'server-id' } } },
+      ),
+    ).toBe(true)
+    expect(
+      isPendingModelMutationProjectionApplied(
+        {
+          kind: 'profile-reorder',
+          order: [
+            { kind: 'profile', profileId: 'profile-b' },
+            { kind: 'profile', profileId: 'profile-a' },
+          ],
+        },
+        {
+          modelProfiles: [
+            { id: 'profile-b', name: 'B' },
+            { id: 'profile-a', name: 'A' },
+          ],
+        },
+      ),
+    ).toBe(true)
+    expect(
+      isPendingModelMutationProjectionApplied(
+        {
+          kind: 'profile-reorder',
+          order: [
+            { kind: 'profile', profileId: 'profile-b' },
+            { kind: 'profile', profileId: 'profile-a' },
+          ],
+        },
+        {
+          modelProfiles: [
+            { id: 'profile-a', name: 'A' },
+            { id: 'profile-b', name: 'B' },
+          ],
+        },
+      ),
+    ).toBe(false)
+    expect(
+      isPendingModelMutationProjectionApplied(
+        {
+          kind: 'profile-reorder',
+          order: [
+            { kind: 'profile', profileId: 'profile-b' },
+            { kind: 'divider', id: 'divider-a' },
+            { kind: 'profile', profileId: 'profile-a' },
+          ],
+        },
+        {
+          modelProfiles: [
+            { id: 'profile-b', name: 'B' },
+            { id: 'profile-a', name: 'A' },
+          ],
+          modelProfileOrder: [
+            { kind: 'profile', profileId: 'profile-b' },
+            { kind: 'divider', id: 'divider-a' },
+            { kind: 'profile', profileId: 'profile-a' },
+          ],
+        },
       ),
     ).toBe(true)
   })

@@ -3,6 +3,7 @@ import { IDBFactory } from 'fake-indexeddb'
 
 const selectedFileState = vi.hoisted(() => ({
   queue: [] as Array<null | { name: string; data: Uint8Array }>,
+  requestedExtensions: [] as string[][],
 }))
 
 const personaAlertState = vi.hoisted(() => ({
@@ -76,7 +77,8 @@ vi.mock('./util', () => {
 vi.mock('./filePicker', () => ({
   selectFileByDom: vi.fn(),
   selectMultipleFile: vi.fn(async () => []),
-  selectSingleFile: vi.fn(async (_ext: string[], options: { onFileSelected?: (file: File) => void } = {}) => {
+  selectSingleFile: vi.fn(async (ext: string[], options: { onFileSelected?: (file: File) => void } = {}) => {
+    selectedFileState.requestedExtensions.push([...ext])
     const selected = selectedFileState.queue.shift() ?? null
     if (!selected) return null
     options.onFileSelected?.({ name: selected.name } as File)
@@ -87,10 +89,10 @@ vi.mock('./filePicker', () => ({
 vi.mock('./characterState', () => ({ findCharacterbyId: vi.fn(() => ({ name: 'Character' })) }))
 
 import { clearCachedServerCommandRevision } from './server/commands'
-import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
+
 import { language } from 'src/lang'
 import './stores.svelte'
-import { getDatabase, setDatabaseLite } from './storage/database.svelte'
+import { setDatabaseLite } from './storage/database.svelte'
 import {
   importUserPersona,
   reconcileSelectedPersonaProjectionEpoch,
@@ -108,6 +110,7 @@ import {
   resetPendingMutationOutboxForTests,
 } from './server/pendingMutationOutbox'
 import { applyCollectionsResource, applySettingsResource } from './server/resourceState.svelte'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface CapturedFetch {
   url: string
@@ -153,6 +156,7 @@ function seedPersonaState(personas: Array<Record<string, unknown>>, selectedPers
   setDatabaseLite({
     characters: [],
     personas,
+    selectedPersonaId: typeof selected?.id === 'string' ? selected.id : null,
     selectedPersona,
     username: selected?.name ?? '',
     userIcon: selected?.icon ?? '',
@@ -163,6 +167,7 @@ function seedPersonaState(personas: Array<Record<string, unknown>>, selectedPers
 
 function selectPersonaDirect(index: number): void {
   const target = getDatabase().personas[index]
+  getDatabase().selectedPersonaId = target.id
   getDatabase().selectedPersona = index
   getDatabase().username = target.name
   getDatabase().userIcon = target.icon
@@ -268,17 +273,29 @@ let authoritativeRevision = 10_000
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
   selectedFileState.queue.length = 0
+  selectedFileState.requestedExtensions.length = 0
   personaAlertState.current = { type: 'none', msg: '' }
 })
 
 afterEach(() => {
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
-describe('Phase 3 persona icon upload freshness', () => {
+describe('persona icon upload freshness', () => {
+  it('offers WebP files when selecting a persona icon', async () => {
+    const calls = stubCommandFetch(['webp-icon'])
+    selectedFileState.queue.push(personaFile('persona.webp'))
+    seedPersonaState([makePersona({ id: 'persona-webp', icon: 'old-icon' })], 0)
+
+    await expect(selectUserImg()).resolves.toBe('accepted')
+
+    expect(selectedFileState.requestedExtensions).toEqual([['png', 'webp']])
+    expect(calls.filter((call) => call.url === '/api/v1/assets')).toHaveLength(1)
+    expect(getDatabase().userIcon).toBe('old-icon')
+    expect(getDatabase().personas[0].icon).toBe('webp-icon')
+  })
+
   it('drops stale completion if selected persona changes before saveImage resolves', async () => {
     const upload = deferred<string>()
     const calls = stubCommandFetch([upload.promise])
@@ -304,6 +321,34 @@ describe('Phase 3 persona icon upload freshness', () => {
     expect(getDatabase().userIcon).toBe('icon-b')
     expect(getDatabase().personas[0].icon).toBe('icon-a')
     expect(getDatabase().personas[1].icon).toBe('icon-b')
+    expect(commandCalls(calls)).toHaveLength(0)
+    expect(personaAlertState.current).toEqual({ type: 'error', msg: language.fileSelectionStale })
+  })
+
+  it('drops stale completion when the selected persona owner is replaced during upload', async () => {
+    const upload = deferred<string>()
+    const calls = stubCommandFetch([upload.promise])
+    selectedFileState.queue.push(personaFile('stale-owner.png'))
+    seedPersonaState([makePersona({ id: 'persona-a', name: 'Persona A', icon: 'icon-a' })], 0)
+    const operation = selectUserImg()
+    await vi.waitFor(() => {
+      expect(calls.filter((call) => call.url === '/api/v1/assets')).toHaveLength(1)
+    })
+
+    getDatabase().personas = [
+      makePersona({ id: 'persona-replacement', name: 'Replacement', icon: 'replacement-icon' }) as any,
+    ]
+    getDatabase().username = 'Replacement'
+    getDatabase().userIcon = 'replacement-icon'
+    upload.resolve('late-icon')
+    await operation
+    await tick()
+
+    expect(getDatabase().personas[0]).toMatchObject({
+      id: 'persona-replacement',
+      icon: 'replacement-icon',
+    })
+    expect(getDatabase().userIcon).toBe('replacement-icon')
     expect(commandCalls(calls)).toHaveLength(0)
     expect(personaAlertState.current).toEqual({ type: 'error', msg: language.fileSelectionStale })
   })
@@ -345,10 +390,10 @@ describe('Phase 3 persona icon upload freshness', () => {
     })
 
     expect(getDatabase()).toMatchObject({
-      username: 'Edited Name',
-      personaPrompt: 'Edited prompt',
-      userNote: 'Edited note',
-      userIcon: 'fresh-icon',
+      username: 'Old Name',
+      personaPrompt: 'Old prompt',
+      userNote: 'Old note',
+      userIcon: 'old-icon',
     })
     expect(getDatabase().personas[0]).toMatchObject({
       id: 'persona-edit',
@@ -360,7 +405,7 @@ describe('Phase 3 persona icon upload freshness', () => {
       largePortrait: false,
     })
     expect(commandCalls(calls)[0].body).toMatchObject({
-      mirrorLegacyProfile: true,
+      mirrorLegacyProfile: false,
     })
     expect((commandCalls(calls)[0].body as { patch: unknown }).patch).toEqual({
       name: 'Edited Name',
@@ -392,7 +437,7 @@ describe('Phase 3 persona icon upload freshness', () => {
       expect(commandCalls(calls)).toHaveLength(1)
     })
 
-    expect(getDatabase().userIcon).toBe('older-icon')
+    expect(getDatabase().userIcon).toBe('old-icon')
     expect(getDatabase().personas[0].icon).toBe('older-icon')
   })
 
@@ -408,6 +453,7 @@ describe('Phase 3 persona icon upload freshness', () => {
     await vi.waitFor(() => {
       expect(commandCalls(calls)).toHaveLength(1)
     })
+    expect(selectedFileState.requestedExtensions).toEqual([['png']])
     expect(personaAlertState.current).not.toMatchObject({ type: 'normal', msg: language.successImport })
 
     command.resolve(
@@ -447,7 +493,7 @@ describe('Phase 3 persona icon upload freshness', () => {
       await expect(selectUserImg()).resolves.toBe('queued')
 
       expect(personaAlertState.current).toMatchObject({ type: 'normal', msg: language.personaIconSaveQueued })
-      expect(getDatabase().userIcon).toBe('queued-icon')
+      expect(getDatabase().userIcon).toBe('old-icon')
       expect(getDatabase().personas[0].icon).toBe('queued-icon')
       expect((await listPendingMutations()).map((entry) => entry.intent.requests[0].method)).toEqual(['PATCH'])
       expect(commandCalls(calls)).toHaveLength(1)
@@ -460,6 +506,7 @@ describe('Phase 3 persona icon upload freshness', () => {
       applySettingsResource({
         revision: authoritativeRevision,
         settings: {
+          selectedPersonaId: 'persona-icon-retained',
           selectedPersona: 0,
           username: String(serverPersona.name),
           userIcon: 'old-icon',
@@ -469,13 +516,13 @@ describe('Phase 3 persona icon upload freshness', () => {
       })
       reconcileSelectedPersonaProjectionEpoch()
 
-      expect(getDatabase().userIcon).toBe('queued-icon')
+      expect(getDatabase().userIcon).toBe('old-icon')
       expect(getDatabase().personas[0].icon).toBe('queued-icon')
       settleAcceptedPersonaPatchDirtyFields(
         'persona-icon-retained',
         { icon: 'queued-icon' },
         { id: 'persona-icon-retained', icon: 'queued-icon' },
-        true,
+        false,
       )
     } finally {
       await clearPendingMutationOutbox()
@@ -618,7 +665,7 @@ describe('Phase 3 persona icon upload freshness', () => {
         note: 'D note',
       }) as any,
     )
-    getDatabase().selectedPersona = 3
+    selectPersonaDirect(3)
     getDatabase().username = 'Persona D live name'
     getDatabase().userIcon = 'icon-d'
     getDatabase().personaPrompt = 'Persona D live prompt'

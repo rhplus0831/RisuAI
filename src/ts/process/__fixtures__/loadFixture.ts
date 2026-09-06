@@ -2,7 +2,12 @@ import { readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { LLMModel } from '../../model/types'
-import { getResourceDatabase as getDatabase } from '../../server/resourceState.svelte'
+import {
+  charactersResourceState,
+  composeResourceDatabaseSnapshot,
+  replaceResourceDatabase,
+  settingsResourceState,
+} from '../../server/resourceState.svelte'
 import { selectedCharID } from '../../stores.svelte'
 import { setDatabase, type Database, type character } from '../../storage/database.svelte'
 import {
@@ -12,6 +17,7 @@ import {
   type ChatGenerationPersonaReference,
   type ChatGenerationPromptPresetReference,
 } from '../../chatGenerationSettings'
+import { normalizeModelRoleProfiles } from '@risuai/shared-core/model-profile-records'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
@@ -143,17 +149,26 @@ export async function loadFixture(name: string): Promise<LoadedFixture> {
   const promptInfoOverride = fixture.db?.promptInfoInsideChat
   const promptTextInfoOverride = fixture.db?.promptTextInfoInsideChat
   setDatabase(seed)
-  // setDatabase mutates `seed` in place and assigns it to getDatabase() via setDatabaseLite.
+  // setDatabase normalizes the fixture and replaces the explicit resource owners.
   // Characters/chats from the fixture survive because they're carried in `seed`.
+  // Post-generation writes resolve their owner strictly by stable IDs. The
+  // characterization corpus predates that invariant, so give legacy fixture
+  // chats deterministic IDs without consuming the mocked generation UUIDs.
+  for (const [characterIndex, character] of charactersResourceState.characters.entries()) {
+    for (const [chatIndex, chat] of character.chats.entries()) {
+      chat.id ??= `fixture-${name}-chat-${characterIndex}-${chatIndex}`
+    }
+  }
   if (promptInfoOverride !== undefined) {
-    getDatabase().promptInfoInsideChat = promptInfoOverride
+    settingsResourceState.value.promptInfoInsideChat = promptInfoOverride
   }
   if (promptTextInfoOverride !== undefined) {
-    getDatabase().promptTextInfoInsideChat = promptTextInfoOverride
+    settingsResourceState.value.promptTextInfoInsideChat = promptTextInfoOverride
   }
 
   const selectId = fixture.selectedCharID ?? 0
   selectedCharID.set(selectId)
+  charactersResourceState.currentChar = selectId
 
   // Push injected models (Gemini, AWS Bedrock, etc.) and remember each
   // one's index for cleanup. We splice from the end on cleanup to avoid
@@ -196,8 +211,8 @@ export async function loadFixture(name: string): Promise<LoadedFixture> {
  * that exercise successful sends must explicitly mark the active fixture chat
  * as configured instead of relying on the product's legacy global defaults.
  */
-export function markFixtureActiveChatGenerationSettingsReady(): void {
-  const db = getDatabase()
+export function markFixtureActiveChatGenerationSettingsReady(options: { canonicalOpenAiProfile?: boolean } = {}): void {
+  const db = composeResourceDatabaseSnapshot()
   const selectedCharacterIndex = getInteger(selectedCharIDValue(), 0)
   const character = db.characters?.[selectedCharacterIndex] ?? db.characters?.[0]
   const chatIndex = getInteger(character?.chatPage, 0)
@@ -225,6 +240,7 @@ export function markFixtureActiveChatGenerationSettingsReady(): void {
   if (!isNonEmptyString(persona.id)) {
     persona.id = `fixture-persona-${personaIndex}`
   }
+  db.selectedPersonaId = persona.id
   mirrorFixturePersonaIntoDatabase(db, persona)
 
   const modelPresetIndex = Math.min(Math.max(getInteger(db.modelPresetsId, 0), 0), db.modelPresets.length)
@@ -252,6 +268,7 @@ export function markFixtureActiveChatGenerationSettingsReady(): void {
   }
   mirrorFixtureDatabaseIntoPreset(db, modelPreset)
   mirrorFixtureDatabaseIntoPreset(db, promptPreset)
+  installFixtureChatMainModelProfile(db, modelPreset, modelPresetIndex, options.canonicalOpenAiProfile === true)
 
   const requirements = resolveChatGenerationControlRequirements({
     modelPresetId: modelPreset.id,
@@ -280,6 +297,107 @@ export function markFixtureActiveChatGenerationSettingsReady(): void {
     jailbreakToggle: db.jailbreakToggle === true,
     sidebarToggles,
   }
+  replaceResourceDatabase({ ...db, currentChar: selectedCharacterIndex } as Database)
+}
+
+function installFixtureChatMainModelProfile(
+  db: Database,
+  modelPreset: ChatGenerationModelPresetReference,
+  modelPresetIndex: number,
+  canonicalOpenAiProfile: boolean,
+): void {
+  const source = modelPreset as unknown as Record<string, unknown>
+  const modelId = isNonEmptyString(source.aiModel) ? source.aiModel : isNonEmptyString(db.aiModel) ? db.aiModel : ''
+  const profileId = `fixture-model-profile-${modelPresetIndex}`
+  const credentialId = `fixture-provider-credential-${modelPresetIndex}`
+  const customModel = db.customModels?.find((candidate) => candidate.id === modelId)
+  const canonicalProviderId = customModel ? 'custom-api' : 'openai'
+  const canonicalApiKey = customModel?.key ?? db.openAIKey
+  const runtimeOptions = compactFixtureRecord({
+    maxContext: source.maxContext,
+    maxResponse: source.maxResponse,
+    temperature: source.temperature,
+    topP: source.top_p,
+    topK: source.top_k,
+    minP: source.min_p,
+    topA: source.top_a,
+    repetitionPenalty: source.repetition_penalty,
+    frequencyPenalty: source.frequencyPenalty,
+    presencePenalty: source.PresensePenalty,
+    reasoningEffort: source.reasoningEffort,
+    thinkingTokens: source.thinkingTokens,
+    thinkingType: source.thinkingType,
+    deepseekThinkingType: source.deepseekThinkingType,
+    adaptiveThinkingEffort: source.adaptiveThinkingEffort,
+    deepseekReasoningEffort: source.deepseekReasoningEffort,
+    verbosity: source.verbosity,
+    halfStreaming: canonicalOpenAiProfile ? (source.halfStreaming ?? db.halfStreaming) : source.halfStreaming,
+    useStreaming: canonicalOpenAiProfile ? (source.useStreaming ?? db.useStreaming) : source.useStreaming,
+    genTime: source.genTime,
+    extractJson: source.extractJson,
+    jsonSchemaEnabled: source.jsonSchemaEnabled,
+    jsonSchema: source.jsonSchema,
+    strictJsonSchema: source.strictJsonSchema,
+    outputImageModal: source.outputImageModal,
+    dynamicOutput: source.dynamicOutput,
+    modelTools: source.modelTools,
+    enableCustomFlags: customModel ? true : source.enableCustomFlags,
+    customFlags: customModel?.flags ?? source.customFlags,
+    customTokenizer: source.customTokenizer,
+  })
+
+  if (canonicalOpenAiProfile) {
+    db.providerCredentials = [
+      {
+        id: credentialId,
+        name: 'Fixture Provider Credential',
+        type: 'apiKey',
+        apiKey: isNonEmptyString(canonicalApiKey) ? canonicalApiKey : 'fixture-provider-key',
+      },
+    ]
+    db.modelProfiles = [
+      {
+        id: profileId,
+        name: 'Fixture Chat Model',
+        providerId: canonicalProviderId,
+        modelId: customModel ? 'custom-api' : modelId,
+        runtimeOptions,
+        providerOptions: customModel
+          ? {
+              credentialId,
+              baseUrl: customModel.url,
+              requestModel: customModel.internalId,
+              customApi: {
+                flags: customModel.flags,
+                tokenizer: customModel.tokenizer,
+              },
+            }
+          : { credentialId },
+      },
+    ]
+  } else {
+    db.modelProfiles = [{ id: profileId, name: 'Fixture Chat Model', modelId, runtimeOptions }]
+  }
+  db.modelProfileOrder = [{ kind: 'profile', profileId }]
+  if (canonicalOpenAiProfile) {
+    db.modelRoleProfiles = normalizeModelRoleProfiles({
+      ...(db.modelRoleProfiles ?? {}),
+      chatMain: { mode: 'profile', profileId },
+    })
+  } else {
+    db.modelRoleProfiles = {
+      ...(db.modelRoleProfiles ?? {}),
+      chatMain: { mode: 'profile', profileId },
+    } as Database['modelRoleProfiles']
+  }
+  source.modelProfiles = cloneFixtureJson(db.modelProfiles)
+  source.modelProfileOrder = cloneFixtureJson(db.modelProfileOrder)
+  source.modelRoleProfiles = cloneFixtureJson(db.modelRoleProfiles)
+  if (canonicalOpenAiProfile) source.providerCredentials = cloneFixtureJson(db.providerCredentials)
+}
+
+function compactFixtureRecord(record: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined))
 }
 
 function mirrorFixtureDatabaseIntoPreset(

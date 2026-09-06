@@ -25,6 +25,9 @@ import {
   deleteAgentPresetStep,
   duplicateAgentPreset,
   duplicateAgentPresetStep,
+  getAgentPresetById,
+  getAgentPresetDefaultId,
+  getAgentPresets,
   isAgentPresetGeneratedProjectionResolved,
   mergePendingAgentPresetCharactersResource,
   mergePendingAgentPresetLoadoutsResource,
@@ -46,8 +49,11 @@ import {
 import {
   applyCharacterResource,
   applyCollectionsResource,
+  charactersResourceState,
+  collectionsResourceState,
   isSettingsGroupAcknowledgementTainted,
   resetServerResourceState,
+  settingsResourceState,
 } from './server/resourceState.svelte'
 import {
   MAX_DURABLE_MUTATION_PAYLOAD_BYTES,
@@ -56,12 +62,8 @@ import {
   resetPendingMutationOutboxForTests,
 } from './server/pendingMutationOutbox'
 import { replayPendingMutations } from './server/pendingMutationReplay'
-import {
-  getDatabase,
-  setDatabaseLite,
-  setResourceWriteGuardEnabled,
-  withTrustedResourceWrite,
-} from './storage/database.svelte'
+import { setDatabaseLite } from './storage/database.svelte'
+import { getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface Deferred<T> {
   promise: Promise<T>
@@ -129,7 +131,6 @@ function preset(overrides: Partial<AgentPresetRecord> = {}): AgentPresetRecord {
 }
 
 function seedAgentPresetDeleteReferences(): void {
-  setResourceWriteGuardEnabled(false)
   setDatabaseLite(
     {
       agentPresets: [preset(), preset({ id: 'ap_b', name: 'Preset B', steps: [] })],
@@ -168,16 +169,13 @@ function seedAgentPresetDeleteReferences(): void {
     } as never,
     1,
   )
-  setResourceWriteGuardEnabled(true)
 }
 
 beforeEach(() => {
   resetPendingMutationOutboxForTests()
   resetPendingAgentPresetMutationsForTests()
-  setResourceWriteGuardEnabled(false)
   resetServerResourceState()
   setDatabaseLite({ agentPresets: [preset()], characters: [] } as never, 1)
-  setResourceWriteGuardEnabled(true)
   clearCachedServerCommandRevision()
   clearAppliedServerResourceRevision()
   setCachedServerCommandRevision(1)
@@ -187,15 +185,13 @@ beforeEach(() => {
 afterEach(() => {
   resetPendingMutationOutboxForTests()
   resetPendingAgentPresetMutationsForTests()
-  setResourceWriteGuardEnabled(false)
   setServerCommandSuccessReconciler(null)
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
-describe('Agent Preset optimistic field rollback', () => {
-  it('emits exact local effects for response-confirmed optimistic reorder/default writes', async () => {
-    setResourceWriteGuardEnabled(false)
+describe('Agent Preset resource owners', () => {
+  it('fails closed on duplicate ready owner ids without falling back to the compatibility projection', async () => {
     resetServerResourceState()
     setDatabaseLite(
       {
@@ -205,7 +201,108 @@ describe('Agent Preset optimistic field rollback', () => {
       } as never,
       1,
     )
-    setResourceWriteGuardEnabled(true)
+    ;(settingsResourceState.value as Record<string, unknown>).agentPresets = [
+      preset(),
+      preset({ id: 'ap_a', name: 'Duplicate Preset A', steps: [] }),
+    ]
+    const fetchMock = vi.fn(async () => response({ error: 'rejected' }, 400))
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(getAgentPresets()).toEqual([])
+    expect(getAgentPresetById('ap_a')).toBeUndefined()
+    expect(getAgentPresetDefaultId()).toBeUndefined()
+    await expect(updateAgentPreset('ap_a', { name: 'Must not write' })).resolves.toMatchObject({ status: 'failed' })
+    expect((settingsResourceState.value as Record<string, any>).agentPresets[0].name).toBe('Preset A')
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
+  it('fails closed on settings owner errors without falling back to the compatibility projection', async () => {
+    settingsResourceState.groupStatuses.agents = 'error'
+    settingsResourceState.groupErrors.agents = 'owner unavailable'
+    const fetchMock = vi.fn(async () => response({ error: 'rejected' }, 400))
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(getAgentPresets()).toEqual([])
+    expect(getAgentPresetById('ap_a')).toBeUndefined()
+    expect(getAgentPresetDefaultId()).toBeUndefined()
+    await expect(updateAgentPreset('ap_a', { name: 'Must not write' })).resolves.toMatchObject({ status: 'failed' })
+    expect((settingsResourceState.value as Record<string, any>).agentPresets[0].name).toBe('Preset A')
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
+  it('does not clear references when ready character or loadout owners lose stable-id uniqueness', async () => {
+    seedAgentPresetDeleteReferences()
+    charactersResourceState.characters = [
+      ...charactersResourceState.characters,
+      clonePlain(charactersResourceState.characters[0]),
+    ]
+    collectionsResourceState.values.loadouts = [
+      ...(collectionsResourceState.values.loadouts ?? []),
+      clonePlain(collectionsResourceState.values.loadouts?.[0]),
+    ] as never
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response({ error: 'rejected' }, 400)),
+    )
+
+    await expect(deleteAgentPreset('ap_a')).resolves.toMatchObject({ status: 'failed' })
+    expect(charactersResourceState.characters[0].chats[0].generationSettings?.agentPresetId).toBe('ap_a')
+    expect(collectionsResourceState.values.loadouts?.[0]).toMatchObject({
+      agentPresetId: 'ap_a',
+      agentPresetName: 'Preset A',
+    })
+  })
+
+  it('does not clear references when character or loadout owners report errors', async () => {
+    seedAgentPresetDeleteReferences()
+    charactersResourceState.status = 'error'
+    collectionsResourceState.statuses.loadouts = 'error'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response({ error: 'rejected' }, 400)),
+    )
+
+    await expect(deleteAgentPreset('ap_a')).resolves.toMatchObject({ status: 'failed' })
+    expect(charactersResourceState.characters[0].chats[0].generationSettings?.agentPresetId).toBe('ap_a')
+    expect(collectionsResourceState.values.loadouts?.[0]).toMatchObject({
+      agentPresetId: 'ap_a',
+      agentPresetName: 'Preset A',
+    })
+  })
+
+  it('does not mutate compatibility references before owners are ready', async () => {
+    seedAgentPresetDeleteReferences()
+    settingsResourceState.groupStatuses.agents = 'loading'
+    collectionsResourceState.statuses.loadouts = 'loading'
+    charactersResourceState.status = 'loading'
+    const pendingResponse = deferred<Response>()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => pendingResponse.promise),
+    )
+
+    const resultPromise = deleteAgentPreset('ap_a')
+    expect(getDatabase().characters[0].chats[0].generationSettings?.agentPresetId).toBe('ap_a')
+    expect(getDatabase().loadouts[0]).toMatchObject({ agentPresetId: 'ap_a', agentPresetName: 'Preset A' })
+    pendingResponse.resolve(response({ error: 'rejected' }, 400))
+
+    await expect(resultPromise).resolves.toMatchObject({ status: 'failed' })
+    expect(getDatabase().characters[0].chats[0].generationSettings?.agentPresetId).toBe('ap_a')
+    expect(getDatabase().loadouts[0]).toMatchObject({ agentPresetId: 'ap_a', agentPresetName: 'Preset A' })
+  })
+})
+
+describe('Agent Preset optimistic field rollback', () => {
+  it('does not emit projection-epoch effects for response-confirmed reorder/default writes', async () => {
+    resetServerResourceState()
+    setDatabaseLite(
+      {
+        agentPresets: [preset(), preset({ id: 'ap_b', name: 'Preset B', steps: [] })],
+        agentPresetDefaultId: 'ap_a',
+        characters: [],
+      } as never,
+      1,
+    )
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const url = String(input)
       if (url.endsWith('/agent-presets/reorder')) {
@@ -248,22 +345,7 @@ describe('Agent Preset optimistic field rollback', () => {
     await reorderAgentPresets(['ap_b', 'ap_a'])
     await setAgentPresetDefault('ap_b')
 
-    expect(observedEffects).toEqual([
-      {
-        kind: 'agentPresetCollectionMutation',
-        operation: 'reorder',
-        settingsProjectionEpoch: expect.any(Number),
-        presetIds: ['ap_b', 'ap_a'],
-        agentPresetDefaultId: 'ap_a',
-      },
-      {
-        kind: 'agentPresetCollectionMutation',
-        operation: 'default',
-        settingsProjectionEpoch: expect.any(Number),
-        presetIds: ['ap_b', 'ap_a'],
-        agentPresetDefaultId: 'ap_b',
-      },
-    ])
+    expect(observedEffects).toEqual([])
     expect(getDatabase().agentPresets.map((candidate) => candidate.id)).toEqual(['ap_b', 'ap_a'])
     expect(getDatabase().agentPresetDefaultId).toBe('ap_b')
     expect(fetchMock.mock.calls.map(([, init]) => JSON.parse(String((init as RequestInit).body)))).toEqual([
@@ -273,7 +355,6 @@ describe('Agent Preset optimistic field rollback', () => {
   })
 
   it('withholds local effects for missing or contradictory collection receipts', async () => {
-    setResourceWriteGuardEnabled(false)
     resetServerResourceState()
     setDatabaseLite(
       {
@@ -283,7 +364,6 @@ describe('Agent Preset optimistic field rollback', () => {
       } as never,
       1,
     )
-    setResourceWriteGuardEnabled(true)
     let responseIndex = 0
     const bodies = [
       {
@@ -335,22 +415,13 @@ describe('Agent Preset optimistic field rollback', () => {
     expect(getDatabase().loadouts[0].agentPresetId).toBeUndefined()
     expect(getDatabase().loadouts[0].agentPresetName).toBeUndefined()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const chat = getDatabase().characters[0].chats[0]
-      getDatabase().characters[0].chats[0] = {
-        ...chat,
-        name: 'Edited Chat A',
-        generationSettings: {
-          ...chat.generationSettings,
-          configured: true,
-        },
-      }
+      chat.name = 'Edited Chat A'
+      chat.generationSettings!.configured = true
       const loadout = getDatabase().loadouts[0]
-      getDatabase().loadouts[0] = {
-        ...loadout,
-        name: 'Edited Loadout A',
-        globalVariables: { ...loadout.globalVariables, mood: 'edited' },
-      }
+      loadout.name = 'Edited Loadout A'
+      loadout.globalVariables.mood = 'edited'
     })
     pendingResponse.resolve(response({ error: 'rejected' }, 400))
 
@@ -370,10 +441,10 @@ describe('Agent Preset optimistic field rollback', () => {
       agentPresetId: 'ap_a',
       agentPresetName: 'Preset A',
     })
-    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
+    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(false)
   })
 
-  it('re-reads delete references whose projection epochs advance before rollback', async () => {
+  it('re-reads delete references whose owner identity changes before rollback', async () => {
     seedAgentPresetDeleteReferences()
     const authoritativeCharacter = clonePlain(getDatabase().characters[0])
     const authoritativeLoadout = clonePlain(getDatabase().loadouts[0])
@@ -435,7 +506,7 @@ describe('Agent Preset optimistic field rollback', () => {
     )
 
     const resultPromise = deleteAgentPreset('ap_a')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings!.agentPresetId = 'ap_b'
       getDatabase().loadouts[0].agentPresetId = 'ap_b'
       getDatabase().loadouts[0].agentPresetName = 'Preset B'
@@ -451,7 +522,7 @@ describe('Agent Preset optimistic field rollback', () => {
       agentPresetId: 'ap_b',
       agentPresetName: 'Preset B',
     })
-    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
+    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(false)
   })
 
   it('does not recreate or mutate delete-reference targets superseded by structural edits', async () => {
@@ -463,7 +534,7 @@ describe('Agent Preset optimistic field rollback', () => {
     )
 
     const resultPromise = deleteAgentPreset('ap_a')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats = []
       getDatabase().loadouts = []
     })
@@ -475,10 +546,10 @@ describe('Agent Preset optimistic field rollback', () => {
     })
     expect(getDatabase().characters[0].chats).toEqual([])
     expect(getDatabase().loadouts).toEqual([])
-    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
+    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(false)
   })
 
-  it('taints before rolling back failed metadata fields and preserves a later edit', async () => {
+  it('rolls back failed metadata fields while preserving a later edit', async () => {
     const pendingResponse = deferred<Response>()
     vi.stubGlobal(
       'fetch',
@@ -487,7 +558,7 @@ describe('Agent Preset optimistic field rollback', () => {
 
     const resultPromise = updateAgentPreset('ap_a', { name: 'Failed name', enabled: false })
     expect(getDatabase().agentPresets[0]).toMatchObject({ name: 'Failed name', enabled: false })
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().agentPresets[0].name = 'Newer local name'
     })
     pendingResponse.resolve(response({ error: 'revision_conflict', currentRevision: 2 }, 409))
@@ -500,7 +571,7 @@ describe('Agent Preset optimistic field rollback', () => {
       name: 'Newer local name',
       enabled: true,
     })
-    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
+    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(false)
   })
 
   it('rolls back only matching failed step fields while retaining a later step edit', async () => {
@@ -518,7 +589,7 @@ describe('Agent Preset optimistic field rollback', () => {
       outputKey: 'failed_key',
       instruction: 'Failed instruction',
     })
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().agentPresets[0].steps[0].instruction = 'Newer local instruction'
     })
     pendingResponse.resolve(response({ error: 'rejected' }, 400))
@@ -531,7 +602,7 @@ describe('Agent Preset optimistic field rollback', () => {
       outputKey: 'step_a',
       instruction: 'Newer local instruction',
     })
-    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
+    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(false)
   })
 
   it.each([
@@ -540,8 +611,7 @@ describe('Agent Preset optimistic field rollback', () => {
     ['default selection', () => setAgentPresetDefault('ap_b')],
     ['step delete', () => deleteAgentPresetStep('ap_a', 'aps_a')],
     ['step reorder', () => reorderAgentPresetSteps('ap_a', ['aps_b', 'aps_a'])],
-  ])('taints the agents projection before a failed optimistic %s rollback', async (_label, runCommand) => {
-    setResourceWriteGuardEnabled(false)
+  ])('rolls back a failed optimistic %s without tainting the owner', async (_label, runCommand) => {
     resetServerResourceState()
     setDatabaseLite(
       {
@@ -553,7 +623,6 @@ describe('Agent Preset optimistic field rollback', () => {
       } as never,
       1,
     )
-    setResourceWriteGuardEnabled(true)
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => response({ error: 'rejected' }, 400)),
@@ -564,11 +633,10 @@ describe('Agent Preset optimistic field rollback', () => {
       result: { status: 'error', error: 'rejected', reason: 'invalid-request' },
     })
 
-    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
+    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(false)
   })
 
-  it('keeps a failed step reorder tainted when a later accepted field patch prevents whole-array rollback', async () => {
-    setResourceWriteGuardEnabled(false)
+  it('preserves a later accepted field patch without tainting a failed step reorder', async () => {
     resetServerResourceState()
     setDatabaseLite(
       {
@@ -577,7 +645,6 @@ describe('Agent Preset optimistic field rollback', () => {
       } as never,
       1,
     )
-    setResourceWriteGuardEnabled(true)
     const pendingReorder = deferred<Response>()
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
@@ -633,9 +700,9 @@ describe('Agent Preset optimistic field rollback', () => {
     ])
     expect(getDatabase().agentPresets[0].steps.map((candidate) => candidate.id)).toEqual(['aps_b', 'aps_a'])
     expect(getDatabase().agentPresets[0].steps[0].instruction).toBe('Accepted instruction')
-    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
-    expect(authoritativeAgentsRead).toHaveBeenCalledOnce()
-    expect(localRevisionFence).not.toHaveBeenCalled()
+    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(false)
+    expect(authoritativeAgentsRead).not.toHaveBeenCalled()
+    expect(localRevisionFence).toHaveBeenCalledOnce()
   })
 })
 
@@ -679,7 +746,6 @@ describe('Agent Preset ordered mutation durability', () => {
   })
 
   it('rebases terminal preset reorders and default selections independently', async () => {
-    setResourceWriteGuardEnabled(false)
     setDatabaseLite(
       {
         agentPresets: [
@@ -692,7 +758,6 @@ describe('Agent Preset ordered mutation durability', () => {
       } as never,
       1,
     )
-    setResourceWriteGuardEnabled(true)
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => response({ error: 'rejected' }, 400)),
@@ -710,7 +775,6 @@ describe('Agent Preset ordered mutation durability', () => {
   })
 
   it('rebases a failed delete through a failed structural successor', async () => {
-    setResourceWriteGuardEnabled(false)
     setDatabaseLite(
       {
         agentPresets: [
@@ -723,7 +787,6 @@ describe('Agent Preset ordered mutation durability', () => {
       } as never,
       1,
     )
-    setResourceWriteGuardEnabled(true)
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => response({ error: 'rejected' }, 400)),
@@ -1029,7 +1092,7 @@ describe('Agent Preset generated-id projection latches', () => {
     expect(await listPendingMutations()).toHaveLength(1)
     expect(fetchMock).toHaveBeenCalledOnce()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().agentPresets.push(
         preset({ id: 'ap_unrelated', name: 'Same name', description: 'Different description', enabled: false }),
       )
@@ -1037,7 +1100,7 @@ describe('Agent Preset generated-id projection latches', () => {
     expect(isAgentPresetGeneratedProjectionResolved(latch)).toBe(false)
     expect(currentPendingAgentPresetGeneratedProjectionLatch()).toEqual(latch)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().agentPresets.push(
         preset({ id: 'ap_created', name: 'Same name', description: 'Expected description', enabled: false, steps: [] }),
       )
@@ -1071,7 +1134,7 @@ describe('Agent Preset generated-id projection latches', () => {
     )
     setServerCommandSuccessReconciler((event) => {
       if (event.type !== 'agentPreset.created') return
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().agentPresets.push(
           preset({
             id: 'ap_created',
@@ -1111,9 +1174,7 @@ describe('Agent Preset generated-id projection latches', () => {
       step({ id: 'aps_source_a', outputKey: 'source_a' }),
       step({ id: 'aps_source_b', name: 'Step B', outputKey: 'source_b', dependencies: ['aps_source_a'] }),
     ]
-    setResourceWriteGuardEnabled(false)
     setDatabaseLite({ agentPresets: [preset({ steps: sourceSteps })], characters: [] } as never, 1)
-    setResourceWriteGuardEnabled(true)
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => response({ error: 'temporary failure' }, 500)),
@@ -1123,7 +1184,7 @@ describe('Agent Preset generated-id projection latches', () => {
     if (outcome.status !== 'queued' || !outcome.projectionLatch) throw new Error('Expected a queued latch')
     const latch = outcome.projectionLatch
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().agentPresets.push(
         preset({
           id: 'ap_unrelated',
@@ -1142,7 +1203,7 @@ describe('Agent Preset generated-id projection latches', () => {
     })
     expect(isAgentPresetGeneratedProjectionResolved(latch)).toBe(false)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().agentPresets.push(
         preset({
           id: 'ap_duplicate',
@@ -1186,13 +1247,13 @@ describe('Agent Preset generated-id projection latches', () => {
     if (outcome.status !== 'queued' || !outcome.projectionLatch) throw new Error('Expected a queued latch')
     const latch = outcome.projectionLatch
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().agentPresets[0].steps.push(
         step({ id: 'aps_unrelated', name: 'Same step', outputKey: 'same_step', instruction: 'Different instruction' }),
       )
     })
     expect(isAgentPresetGeneratedProjectionResolved(latch)).toBe(false)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().agentPresets[0].steps.push(step({ id: 'aps_created', ...attempted }))
     })
     expect(isAgentPresetGeneratedProjectionResolved(latch)).toBe(true)
@@ -1208,7 +1269,7 @@ describe('Agent Preset generated-id projection latches', () => {
     if (outcome.status !== 'queued' || !outcome.projectionLatch) throw new Error('Expected a queued latch')
     const latch = outcome.projectionLatch
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().agentPresets[0].steps.push(
         step({ id: 'aps_duplicate', name: 'Same step copy', outputKey: 'server_minted_copy' }),
       )

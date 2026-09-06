@@ -1,15 +1,22 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
+import { navigate } from '../router'
 
 const SERVICE_WORKER_URL = '/service-worker.js'
 const SERVICE_WORKER_SCOPE = '/'
 const VAPID_PUBLIC_KEY_ENDPOINT = '/api/v1/push/vapid-public-key'
 const PUSH_SUBSCRIPTIONS_ENDPOINT = '/api/v1/push/subscriptions'
 const LOG_PREFIX = '[push notifications]'
+const CHAT_COMPLETION_NOTIFICATION_TAG = 'risuai-chat-completion'
+const NOTIFICATION_ROUTE_MESSAGE_TYPE = 'risuai:notification-route'
+const NOTIFICATION_ROUTE_ACK_TYPE = 'risuai:notification-route-ack'
+
+let serviceWorkerNavigationListenerTarget: ServiceWorkerContainer | null = null
 
 export type PushNotificationFallbackReason =
   | 'notification-unavailable'
   | 'permission-default'
   | 'service-worker-unavailable'
+  | 'service-worker-failed'
   | 'push-unavailable'
   | 'vapid-unavailable'
   | 'subscription-failed'
@@ -21,7 +28,6 @@ export type EnablePushNotificationsResult =
       status: 'fallback'
       reason: PushNotificationFallbackReason
       endpoint?: string
-      localCleanup?: 'succeeded' | 'failed'
     }
   | { status: 'permission-denied' }
 
@@ -49,8 +55,79 @@ export interface DisablePushNotificationsResult {
 
 type PushTransportResult = { ok: true } | { ok: false; error: unknown }
 
+export function installPushNotificationNavigationListener(): void {
+  if (!canUseServiceWorker() || navigator.serviceWorker === serviceWorkerNavigationListenerTarget) return
+
+  navigator.serviceWorker.addEventListener('message', handleServiceWorkerNavigationMessage)
+  serviceWorkerNavigationListenerTarget = navigator.serviceWorker
+}
+
+export function installPushNotificationForegroundCleanup(): () => void {
+  if (!canUseServiceWorker() || typeof document === 'undefined' || typeof window === 'undefined') {
+    return () => {}
+  }
+
+  const handleForeground = () => {
+    if (document.visibilityState === 'visible') void dismissChatCompletionNotifications()
+  }
+
+  document.addEventListener('visibilitychange', handleForeground)
+  window.addEventListener('focus', handleForeground)
+  window.addEventListener('pageshow', handleForeground)
+  handleForeground()
+
+  return () => {
+    document.removeEventListener('visibilitychange', handleForeground)
+    window.removeEventListener('focus', handleForeground)
+    window.removeEventListener('pageshow', handleForeground)
+  }
+}
+
+export async function dismissChatCompletionNotifications(): Promise<void> {
+  if (!canUseServiceWorker()) return
+
+  try {
+    const registration = await navigator.serviceWorker.getRegistration(SERVICE_WORKER_SCOPE)
+    if (!registration || typeof registration.getNotifications !== 'function') return
+
+    const notifications = await registration.getNotifications({ tag: CHAT_COMPLETION_NOTIFICATION_TAG })
+    for (const notification of notifications) notification.close()
+  } catch (error) {
+    warnPushError('Failed to dismiss local chat completion notifications.', error)
+  }
+}
+
+function handleServiceWorkerNavigationMessage(event: MessageEvent<unknown>): void {
+  const targetPath = readServiceWorkerNavigationPath(event.data)
+  const acknowledgementPort = event.ports?.[0]
+  if (!targetPath || !acknowledgementPort || typeof acknowledgementPort.postMessage !== 'function') return
+
+  try {
+    navigate(targetPath)
+    acknowledgementPort.postMessage({ type: NOTIFICATION_ROUTE_ACK_TYPE })
+  } catch (error) {
+    warnPushError('Failed to apply a notification route in-app.', error)
+  }
+}
+
+function readServiceWorkerNavigationPath(data: unknown): string | null {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null
+
+  const message = data as { type?: unknown; url?: unknown }
+  if (message.type !== NOTIFICATION_ROUTE_MESSAGE_TYPE || typeof message.url !== 'string') return null
+  if (typeof window === 'undefined') return null
+
+  try {
+    const targetUrl = new URL(message.url)
+    if (targetUrl.origin !== window.location.origin) return null
+    return targetUrl.pathname
+  } catch {
+    return null
+  }
+}
+
 export async function enableChatCompletionPushNotifications(): Promise<EnablePushNotificationsResult> {
-  const permission = await requestNotificationPermission()
+  const permission = typeof Notification === 'undefined' ? 'unavailable' : Notification.permission
   if (permission === 'denied') return { status: 'permission-denied' }
   if (permission === 'unavailable') return { status: 'fallback', reason: 'notification-unavailable' }
   if (permission !== 'granted') return { status: 'fallback', reason: 'permission-default' }
@@ -60,7 +137,7 @@ export async function enableChatCompletionPushNotifications(): Promise<EnablePus
   }
 
   const registration = await registerPushServiceWorker()
-  if (!registration) return { status: 'fallback', reason: 'service-worker-unavailable' }
+  if (!registration) return { status: 'fallback', reason: 'service-worker-failed' }
 
   const pushManager = pushManagerForRegistration(registration)
   if (!pushManager) return { status: 'fallback', reason: 'push-unavailable' }
@@ -74,12 +151,12 @@ export async function enableChatCompletionPushNotifications(): Promise<EnablePus
   const endpoint = subscription.endpoint
   const registered = await registerPushSubscription(subscription)
   if (!registered.ok) {
-    const localCleanup = await unsubscribePushSubscription(subscription)
+    // A failed refresh must not destroy a subscription that may already be
+    // registered on the server. Reuse it when connectivity recovers.
     return {
       status: 'fallback',
       reason: 'server-registration-failed',
       endpoint,
-      localCleanup: localCleanup.ok ? 'succeeded' : 'failed',
     }
   }
 
@@ -164,10 +241,13 @@ export async function disableChatCompletionPushNotifications(
   }
 }
 
-async function requestNotificationPermission(): Promise<NotificationPermission | 'unavailable'> {
+/** Call directly from a user action, before awaiting storage or network work. */
+export async function requestChatCompletionNotificationPermission(): Promise<NotificationPermission | 'unavailable'> {
   if (typeof Notification === 'undefined' || typeof Notification.requestPermission !== 'function') {
     return 'unavailable'
   }
+
+  if (Notification.permission !== 'default') return Notification.permission
 
   try {
     return await Notification.requestPermission()

@@ -1,5 +1,6 @@
-import { getDatabase } from 'src/ts/storage/database.svelte'
 import { embeddingOperationCredential, requestRemoteEmbeddingGroups } from 'src/ts/server/embeddingOperations'
+import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
+import type { ContextualRemoteEmbeddingModel } from '@risuai/protocol/embedding-operation'
 import { contextHash, type VectorArray } from './hypamemory'
 
 export interface ContextualEmbeddingProvider {
@@ -10,33 +11,44 @@ export interface ContextualEmbeddingProvider {
 }
 
 export function isContextModel(model: string): boolean {
-  return model === 'voyageContext3'
+  return Object.prototype.hasOwnProperty.call(VOYAGE_CONTEXT_MODELS, model)
 }
 
 export function getContextProvider(model: string): ContextualEmbeddingProvider | null {
-  switch (model) {
-    case 'voyageContext3':
-      return new VoyageContext3Provider()
-    default:
-      return null
-  }
+  if (!isContextModel(model)) return null
+  const applicationModel = model as ContextualRemoteEmbeddingModel
+  return new VoyageContextProvider(applicationModel, VOYAGE_CONTEXT_MODELS[applicationModel])
 }
 
-const VOYAGE_MODEL = 'voyage-context-3'
+const VOYAGE_CONTEXT_MODELS = {
+  voyageContext3: 'voyage-context-3',
+  voyageContext4: 'voyage-context-4',
+} as const satisfies Record<ContextualRemoteEmbeddingModel, string>
 const MAX_CHUNKS_PER_REQUEST = 1000
 const MAX_INPUTS_PER_REQUEST = 256
 
-class VoyageContext3Provider implements ContextualEmbeddingProvider {
-  readonly modelId = VOYAGE_MODEL
+function voyageCredentialOwnerValue(): unknown {
+  const status = settingsResourceState.groupStatuses.memory ?? 'idle'
+  if (settingsResourceState.status === 'error' || status === 'error') return undefined
+  if (status === 'ready') return settingsResourceState.value.voyageApiKey
+  return undefined
+}
+
+class VoyageContextProvider implements ContextualEmbeddingProvider {
+  constructor(
+    private readonly applicationModel: ContextualRemoteEmbeddingModel,
+    readonly modelId: string,
+  ) {}
 
   async embedDocumentGroups(groups: string[][], signal?: AbortSignal): Promise<VectorArray[][]> {
-    const credential = embeddingOperationCredential(getDatabase().voyageApiKey)
+    const credential = embeddingOperationCredential(voyageCredentialOwnerValue())
     const batches = this.batchGroups(groups)
     const allResults: VectorArray[][] = new Array(groups.length)
 
     let groupOffset = 0
     for (const batch of batches) {
       const result = await requestRemoteEmbeddingGroups({
+        model: this.applicationModel,
         inputType: 'document',
         groups: batch,
         credential,
@@ -53,11 +65,12 @@ class VoyageContext3Provider implements ContextualEmbeddingProvider {
   }
 
   async embedQueries(queries: string[], signal?: AbortSignal): Promise<VectorArray[]> {
-    const credential = embeddingOperationCredential(getDatabase().voyageApiKey)
+    const credential = embeddingOperationCredential(voyageCredentialOwnerValue())
     const batches = this.batchGroups(queries.map((query) => [query]))
     const results: VectorArray[] = []
     for (const groups of batches) {
       const batch = await requestRemoteEmbeddingGroups({
+        model: this.applicationModel,
         inputType: 'query',
         groups,
         credential,
@@ -70,7 +83,7 @@ class VoyageContext3Provider implements ContextualEmbeddingProvider {
 
   getCacheKeySuffix(contextTexts?: string[]): string {
     const ctxPart = contextTexts && contextTexts.length > 1 ? `|ctx:${contextHash(contextTexts)}` : ''
-    return `|voyageContext3${ctxPart}`
+    return `|${this.applicationModel}${ctxPart}`
   }
 
   private batchGroups(groups: string[][]): string[][][] {

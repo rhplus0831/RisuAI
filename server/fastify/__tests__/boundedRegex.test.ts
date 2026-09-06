@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { Database } from '../../../src/ts/storage/database.svelte'
 import {
   BOUNDED_REGEX_LIMITS,
   DEFAULT_COMPLEX_REGEX_TIMEOUT_MS,
   type BoundedRegexCompatibilityOptions,
   type BoundedRegexLike,
+  type BoundedRegexSettings,
   type ComplexBoundedRegex,
   compileBoundedRegex,
   compileBoundedRegexWithCompatibility,
@@ -24,6 +24,7 @@ const workerOptions: BoundedRegexCompatibilityOptions = {
   enabled: true,
   stage: 'output',
   timeoutMs: DEFAULT_COMPLEX_REGEX_TIMEOUT_MS,
+  sizeLimit: 128 * 1024,
 }
 
 const disabledOptions: BoundedRegexCompatibilityOptions = {
@@ -77,6 +78,8 @@ async function runPublicOperations(regex: BoundedRegexLike) {
 
 describe('bounded regex limits', () => {
   it('accepts each exact cap and rejects the first code unit beyond it', async () => {
+    expect(BOUNDED_REGEX_LIMITS.replacement).toBe(16 * 1024 * 1024)
+    expect(BOUNDED_REGEX_LIMITS.output).toBe(16 * 1024 * 1024)
     const exactPattern = 'a'.repeat(BOUNDED_REGEX_LIMITS.pattern)
     expect(compileBoundedRegex(exactPattern, '', 'pattern boundary')).toBeInstanceOf(RegExp)
     expect(() => compileBoundedRegex(`${exactPattern}a`, '', 'pattern boundary')).toThrow(
@@ -89,7 +92,7 @@ describe('bounded regex limits', () => {
       `haystack length ${BOUNDED_REGEX_LIMITS.haystack + 1} exceeds cap ${BOUNDED_REGEX_LIMITS.haystack}`,
     )
 
-    const exactReplacement = 'x'.repeat(BOUNDED_REGEX_LIMITS.replacement)
+    const exactReplacement = 'x'.repeat(workerOptions.sizeLimit)
     await expect(
       replaceBoundedRegexWithCompatibility(
         /a/,
@@ -99,7 +102,7 @@ describe('bounded regex limits', () => {
         'replacement boundary',
         workerOptions,
       ),
-    ).resolves.toHaveLength(BOUNDED_REGEX_LIMITS.replacement)
+    ).resolves.toHaveLength(workerOptions.sizeLimit)
     await expect(
       replaceBoundedRegexWithCompatibility(
         /a/,
@@ -112,13 +115,17 @@ describe('bounded regex limits', () => {
     ).rejects.toMatchObject({
       code: 'RISU_BOUNDED_REGEX',
       message: expect.stringContaining(
-        `replacement length ${BOUNDED_REGEX_LIMITS.replacement + 1} exceeds cap ${BOUNDED_REGEX_LIMITS.replacement}`,
+        `replacement length ${workerOptions.sizeLimit + 1} exceeds cap ${workerOptions.sizeLimit}`,
       ),
     })
   })
 })
 
 describe('bounded regex compatibility selection', () => {
+  it('uses a 15-second runtime fallback timeout', () => {
+    expect(DEFAULT_COMPLEX_REGEX_TIMEOUT_MS).toBe(15_000)
+  })
+
   it('uses the worker fallback only for complexity-screen rejections', () => {
     expect(compileComplex()).toEqual({
       kind: 'complex-bounded-regex',
@@ -140,28 +147,48 @@ describe('bounded regex compatibility selection', () => {
     ).toThrow('complexity screen rejected nested unbounded quantifiers')
   })
 
+  it('rejects prefix-overlapping quantified alternatives without rejecting distinct branches', () => {
+    for (const pattern of ['(a|aa)+$', '(a|a?)+']) {
+      expect(() => compileBoundedRegex(pattern, '', 'overlapping alternatives')).toThrow(
+        'complexity screen rejected overlapping quantified alternatives',
+      )
+      expect(compileBoundedRegexWithCompatibility(pattern, '', 'worker alternatives', workerOptions)).toMatchObject({
+        kind: 'complex-bounded-regex',
+        pattern,
+      })
+    }
+
+    for (const pattern of ['(ab|ac)+$', '(cat|dog)+$']) {
+      expect(compileBoundedRegex(pattern, '', 'distinct alternatives')).toBeInstanceOf(RegExp)
+    }
+  })
+
   it('normalizes the stage timeout and enables only positive worker-mode values', () => {
-    const database = {
+    const database: BoundedRegexSettings = {
       complexRegexCompatibilityMode: 'worker',
       complexRegexInputTimeoutMs: 12.9,
       complexRegexOutputTimeoutMs: -3,
       complexRegexDisplayTimeoutMs: 999_999,
-    } as unknown as Database
+      regexOutputSizeLimitMiB: 4,
+    }
 
     expect(complexRegexCompatibilityOptions(database, 'input')).toEqual({
       enabled: true,
       stage: 'input',
       timeoutMs: 12,
+      sizeLimit: 4 * 1024 * 1024,
     })
     expect(complexRegexCompatibilityOptions(database, 'output')).toEqual({
       enabled: false,
       stage: 'output',
       timeoutMs: 0,
+      sizeLimit: 4 * 1024 * 1024,
     })
     expect(complexRegexCompatibilityOptions(database, 'display')).toEqual({
       enabled: true,
       stage: 'display',
       timeoutMs: 600_000,
+      sizeLimit: 4 * 1024 * 1024,
     })
 
     database.complexRegexInputTimeoutMs = Number.NaN
@@ -169,6 +196,7 @@ describe('bounded regex compatibility selection', () => {
       enabled: true,
       stage: 'input',
       timeoutMs: DEFAULT_COMPLEX_REGEX_TIMEOUT_MS,
+      sizeLimit: 4 * 1024 * 1024,
     })
 
     database.complexRegexCompatibilityMode = 'strict'
@@ -189,6 +217,128 @@ describe('bounded regex worker operations', () => {
       matchFirst: 'aab',
       move: ' xx \n<aa>/b/aab\n<aaa>/b/aaab',
       triggerReplace: 'Xb xx Xb',
+    })
+  })
+
+  it('preserves native replacement-token semantics in direct and worker execution', async () => {
+    const source = 'z aab q'
+    const replacement = "[$`][$&][$1][$3][$'][$$][$99]"
+    const directRegex = /((a+)+)(b)/g
+    const expected = source.replace(directRegex, replacement)
+
+    await expect(
+      replaceBoundedRegexWithCompatibility(
+        /((a+)+)(b)/g,
+        source,
+        replacement,
+        'direct replacement semantics',
+        'direct replacement template',
+        workerOptions,
+      ),
+    ).resolves.toBe(expected)
+    await expect(
+      replaceBoundedRegexWithCompatibility(
+        compileComplex(),
+        source,
+        replacement,
+        'worker replacement semantics',
+        'worker replacement template',
+        workerOptions,
+      ),
+    ).resolves.toBe(expected)
+  })
+
+  it.each([
+    {
+      operation: 'replace',
+      run: (regex: BoundedRegexLike) =>
+        replaceBoundedRegexWithCompatibility(
+          regex,
+          'a a a',
+          'x'.repeat(workerOptions.sizeLimit),
+          'amplified replace',
+          'amplified replacement',
+          workerOptions,
+        ),
+    },
+    {
+      operation: 'move',
+      run: (regex: BoundedRegexLike) =>
+        moveBoundedRegexWithCompatibility(
+          regex,
+          'a a a',
+          `@@move_bottom ${'x'.repeat(workerOptions.sizeLimit - '@@move_bottom '.length)}`,
+          false,
+          'amplified move',
+          'amplified move replacement',
+          workerOptions,
+        ),
+    },
+    {
+      operation: 'trigger replacement',
+      run: (regex: BoundedRegexLike) =>
+        triggerReplaceBoundedRegexWithCompatibility(
+          regex,
+          'a a a',
+          '$1',
+          'x'.repeat(workerOptions.sizeLimit),
+          'amplified trigger replacement',
+          'amplified trigger result',
+          'amplified trigger value',
+          workerOptions,
+        ),
+    },
+  ])('rejects $operation amplification in direct and complex-worker paths', async ({ run }) => {
+    await expect(run(/(a)/g)).rejects.toMatchObject({
+      code: 'RISU_BOUNDED_REGEX',
+      message: expect.stringContaining(`output length`),
+    })
+    await expect(run(compileComplex('((a+)+)', 'g'))).rejects.toMatchObject({
+      code: 'RISU_BOUNDED_REGEX',
+      message: expect.stringContaining(`output length`),
+    })
+  })
+
+  it('preflights capture-amplified split output in direct and complex-worker paths', async () => {
+    const source = 'a'.repeat(600)
+    await expect(
+      splitBoundedRegexWithCompatibility(/(?=(a+))/g, source, 'amplified direct split', workerOptions),
+    ).rejects.toMatchObject({
+      code: 'RISU_BOUNDED_REGEX',
+      message: expect.stringContaining('output length'),
+    })
+    await expect(
+      splitBoundedRegexWithCompatibility(
+        compileComplex('(?=((a+)+))', 'g'),
+        source,
+        'amplified worker split',
+        workerOptions,
+      ),
+    ).rejects.toMatchObject({
+      code: 'RISU_BOUNDED_REGEX',
+      message: expect.stringContaining('output length'),
+    })
+  })
+
+  it('rejects replacement-token amplification before direct or worker output construction', async () => {
+    const replacement = '$&'.repeat(workerOptions.sizeLimit / 2)
+    const run = (regex: BoundedRegexLike) =>
+      replaceBoundedRegexWithCompatibility(
+        regex,
+        'a a a a a',
+        replacement,
+        'token-amplified replace',
+        'token-amplified replacement',
+        workerOptions,
+      )
+
+    await expect(run(/(a)/g)).rejects.toMatchObject({
+      code: 'RISU_BOUNDED_REGEX',
+      message: expect.stringContaining('output length'),
+    })
+    await expect(run(compileComplex('((a+)+)', 'g'))).rejects.toMatchObject({
+      code: 'RISU_BOUNDED_REGEX',
+      message: expect.stringContaining('output length'),
     })
   })
 
@@ -230,6 +380,7 @@ describe('bounded regex worker operations', () => {
         enabled: true,
         stage: 'display',
         timeoutMs: 50,
+        sizeLimit: workerOptions.sizeLimit,
       })
 
       vi.advanceTimersByTime(50)

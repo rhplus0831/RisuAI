@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { backup as backupSqliteDatabase, DatabaseSync } from 'node:sqlite'
 
 export type AgentDataSandboxMode = 'clone' | 'keep' | 'fresh'
@@ -33,16 +34,34 @@ export interface PrepareAgentDataSandboxOptions {
 export async function prepareAgentDataSandbox(opts: PrepareAgentDataSandboxOptions): Promise<string> {
   const source = path.resolve(opts.sourceDataDir)
   const sandbox = path.resolve(opts.sandboxDataDir)
-  assertDisjointDirs(source, sandbox)
+  assertDisjointDirs(canonicalPath(source), canonicalPath(sandbox), source, sandbox)
+  const sandboxExists = validateSandboxDestination(sandbox)
 
-  if (opts.mode === 'keep' && fs.existsSync(sandbox)) {
+  if (opts.mode === 'keep' && sandboxExists) {
     return `kept existing sandbox at ${sandbox}`
   }
 
-  fs.rmSync(sandbox, { recursive: true, force: true })
-  fs.mkdirSync(sandbox, { recursive: true })
+  const parent = path.dirname(sandbox)
+  fs.mkdirSync(parent, { recursive: true })
+  const staging = fs.mkdtempSync(path.join(parent, `.${path.basename(sandbox)}.staging-`))
 
-  if (opts.mode === 'fresh' || !fs.existsSync(source)) {
+  try {
+    const summary = await populateSandbox(source, staging, sandbox, opts.mode)
+    replaceSandbox(staging, sandbox, sandboxExists)
+    return summary
+  } catch (err) {
+    fs.rmSync(staging, { recursive: true, force: true })
+    throw err
+  }
+}
+
+async function populateSandbox(
+  source: string,
+  staging: string,
+  sandbox: string,
+  mode: AgentDataSandboxMode,
+): Promise<string> {
+  if (mode === 'fresh' || !fs.existsSync(source)) {
     return `created empty sandbox at ${sandbox}`
   }
 
@@ -50,14 +69,14 @@ export async function prepareAgentDataSandbox(opts: PrepareAgentDataSandboxOptio
 
   const sourceDb = path.join(source, 'risu.db')
   if (fs.existsSync(sourceDb)) {
-    await snapshotSqliteDatabase(sourceDb, path.join(sandbox, 'risu.db'))
+    await snapshotSqliteDatabase(sourceDb, path.join(staging, 'risu.db'))
     cloned.push('risu.db')
   }
 
   for (const dir of HARDLINKED_DIRS) {
     const from = path.join(source, dir)
     if (fs.existsSync(from) && fs.statSync(from).isDirectory()) {
-      const files = linkTree(from, path.join(sandbox, dir))
+      const files = linkTree(from, path.join(staging, dir))
       cloned.push(`${dir}/ (${files} file${files === 1 ? '' : 's'})`)
     }
   }
@@ -68,16 +87,72 @@ export async function prepareAgentDataSandbox(opts: PrepareAgentDataSandboxOptio
   return `cloned ${cloned.join(', ')} from ${source}`
 }
 
-// The sandbox gets wiped with rm -rf; refuse any nesting between the two dirs
-// so a misconfigured path can never destroy the human data directory.
-function assertDisjointDirs(source: string, sandbox: string): void {
+function pathExists(filePath: string): boolean {
+  try {
+    fs.lstatSync(filePath)
+    return true
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw err
+  }
+}
+
+function canonicalPath(filePath: string): string {
+  const suffix: string[] = []
+  let existing = filePath
+  while (!pathExists(existing)) {
+    const parent = path.dirname(existing)
+    if (parent === existing) break
+    suffix.unshift(path.basename(existing))
+    existing = parent
+  }
+  return path.resolve(fs.realpathSync(existing), ...suffix)
+}
+
+function validateSandboxDestination(sandbox: string): boolean {
+  if (!pathExists(sandbox)) return false
+  const stat = fs.lstatSync(sandbox)
+  if (stat.isSymbolicLink()) {
+    throw new Error(`Agent data sandbox (${sandbox}) must not be a symbolic link`)
+  }
+  if (!stat.isDirectory()) {
+    throw new Error(`Agent data sandbox (${sandbox}) must be a directory`)
+  }
+  return true
+}
+
+// The sandbox is replaced recursively; refuse canonical nesting between the two
+// dirs so aliases through symlinked parents cannot target the human data dir.
+function assertDisjointDirs(canonicalSource: string, canonicalSandbox: string, source: string, sandbox: string): void {
   const contains = (parent: string, child: string): boolean => {
     const rel = path.relative(parent, child)
     return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
   }
-  if (contains(source, sandbox) || contains(sandbox, source)) {
+  if (contains(canonicalSource, canonicalSandbox) || contains(canonicalSandbox, canonicalSource)) {
     throw new Error(`Agent data sandbox (${sandbox}) must be disjoint from the source data dir (${source})`)
   }
+}
+
+function replaceSandbox(staging: string, sandbox: string, sandboxExisted: boolean): void {
+  const stillExists = validateSandboxDestination(sandbox)
+  if (stillExists !== sandboxExisted) {
+    throw new Error(`Agent data sandbox (${sandbox}) changed while it was being prepared`)
+  }
+
+  if (!sandboxExisted) {
+    fs.renameSync(staging, sandbox)
+    return
+  }
+
+  const previous = `${sandbox}.previous-${randomUUID()}`
+  fs.renameSync(sandbox, previous)
+  try {
+    fs.renameSync(staging, sandbox)
+  } catch (err) {
+    fs.renameSync(previous, sandbox)
+    throw err
+  }
+  fs.rmSync(previous, { recursive: true })
 }
 
 // The online backup API yields a transactionally consistent, fully

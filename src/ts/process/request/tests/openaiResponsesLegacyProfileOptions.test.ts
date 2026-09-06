@@ -66,10 +66,12 @@ vi.mock('../../modules', async (importActual) => {
 })
 
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../model/modelProfileResolver'
+import type { ModelProfileRecord } from '../../../model/modelProfileRecords'
 import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, OpenAIParameters, type LLMModel } from '../../../model/types'
-import { getDatabase, setDatabase, type Database } from '../../../storage/database.svelte'
+import { setDatabase, type Database } from '../../../storage/database.svelte'
 import { requestOpenAILegacyInstruct, requestOpenAIResponseAPI } from '../openAI/requests'
 import type { RequestDataArgumentExtended } from '../request'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface PreviewPayload {
   url: string
@@ -117,11 +119,41 @@ function modelInfo(overrides: Partial<LLMModel>): LLMModel {
   }
 }
 
+function resolveDurableProfile(
+  database: Database,
+  record: Omit<ModelProfileRecord, 'id' | 'name'>,
+  apiKey?: string,
+  lookupModelInfo?: (database: Database, modelId: string) => LLMModel | null | undefined,
+): ResolvedModelProfile {
+  const profileId = 'request-profile'
+  const credentialId = apiKey ? 'request-profile-credential' : undefined
+  const durableDatabase = {
+    ...database,
+    providerCredentials: apiKey
+      ? [{ id: credentialId, name: 'Request profile credential', type: 'apiKey', apiKey }]
+      : database.providerCredentials,
+    modelProfiles: [
+      {
+        id: profileId,
+        name: 'Request profile',
+        ...record,
+        providerOptions: {
+          ...(record.providerOptions ?? {}),
+          ...(credentialId ? { credentialId } : {}),
+        },
+      },
+    ],
+    modelRoleProfiles: { chatMain: { mode: 'profile', profileId } },
+  } as unknown as Database
+  return resolveModelProfile({ database: durableDatabase, lookupModelInfo })
+}
+
 function makeArg(
   profile: ResolvedModelProfile,
   overrides: Partial<RequestDataArgumentExtended> = {},
 ): RequestDataArgumentExtended {
   return {
+    database: getDatabase(),
     formated: [
       { role: 'system', content: 'profile system' },
       { role: 'user', content: 'hello' },
@@ -165,19 +197,33 @@ afterEach(() => {
 
 describe('requestOpenAIResponseAPI profile provider options', () => {
   it('uses reverse_proxy profile URL, key, request model, additional params, and risu header over flat DB conflicts', async () => {
-    const profile = resolveModelProfile({
-      database: db({
+    const profile = resolveDurableProfile(
+      db({
         aiModel: 'reverse_proxy',
         customAPIFormat: LLMFormat.OpenAIResponseAPI,
-        forceReplaceUrl: 'risu::https://profile.proxy.example/v1',
-        proxyKey: 'sk-profile-proxy',
-        customProxyRequestModel: 'profile-responses-model',
-        additionalParams: [
-          ['profile_param', '"from-profile"'],
-          ['header::X-Profile-Param', 'profile-header'],
-        ],
       } as Partial<Database>),
-    })
+      {
+        providerId: 'custom-api',
+        modelId: 'custom-api',
+        providerOptions: {
+          baseUrl: 'https://profile.proxy.example/v1',
+          requestModel: 'profile-responses-model',
+          extraHeaders: { 'X-Proxy-Risu': 'RisuAI' },
+          additionalParams: [
+            ['profile_param', '"from-profile"'],
+            ['header::X-Profile-Param', 'profile-header'],
+          ],
+        },
+      },
+      'sk-profile-proxy',
+      () =>
+        modelInfo({
+          id: 'custom-api',
+          internalID: 'profile-responses-model',
+          provider: LLMProvider.AsIs,
+          format: LLMFormat.OpenAIResponseAPI,
+        }),
+    )
     setDatabase(
       db({
         aiModel: 'reverse_proxy',
@@ -210,15 +256,18 @@ describe('requestOpenAIResponseAPI profile provider options', () => {
   })
 
   it('uses ollama-cloud profile API key, request model, and Responses base URL over flat conflicts', async () => {
-    const profile = resolveModelProfile({
-      database: db({
-        aiModel: 'ollama-cloud',
-        ollamaApiKey: 'sk-profile-ollama',
-        ollamaRequestFormat: LLMFormat.OpenAIResponseAPI,
-        ollamaCloudModel: 'profile-ollama-responses',
-        ollamaModelSource: 'cloud',
-      } as Partial<Database>),
-    })
+    const profile = resolveDurableProfile(
+      db({ aiModel: 'ollama-cloud' } as Partial<Database>),
+      {
+        providerId: 'ollama',
+        modelId: 'ollama-cloud',
+        providerOptions: {
+          requestModel: 'profile-ollama-responses',
+          ollama: { requestFormat: LLMFormat.OpenAIResponseAPI, modelSource: 'cloud' },
+        },
+      },
+      'sk-profile-ollama',
+    )
     setDatabase(
       db({
         aiModel: 'ollama-cloud',
@@ -249,13 +298,15 @@ describe('requestOpenAIResponseAPI profile provider options', () => {
   })
 
   it('uses profile runtime modelTools for hosted search over conflicting flat DB tools', async () => {
-    const profile = resolveModelProfile({
-      database: db({
-        aiModel: 'gpt-5-response-api',
-        openAIKey: 'sk-profile-openai',
-        modelTools: ['search'],
-      } as Partial<Database>),
-    })
+    const profile = resolveDurableProfile(
+      db({ aiModel: 'gpt-5-response-api' } as Partial<Database>),
+      {
+        providerId: 'openai',
+        modelId: 'gpt-5-response-api',
+        runtimeOptions: { modelTools: ['search'] },
+      },
+      'sk-profile-openai',
+    )
     setDatabase(
       db({
         aiModel: 'gpt-5-response-api',
@@ -286,7 +337,82 @@ describe('requestOpenAIResponseAPI profile provider options', () => {
       { body: Record<string, any>; headers: Record<string, string> },
     ]
     expect(requestOptions.headers.Authorization).toBe('Bearer sk-profile-openai')
-    expect(requestOptions.body.tools).toEqual(['web_search_preview'])
+    expect(requestOptions.body.tools).toEqual([{ type: 'web_search_preview' }])
+  })
+
+  it('preserves Responses JSON schema formatting and configured extraction on the retained client path', async () => {
+    const schema =
+      '{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false}'
+    const database = db({
+      aiModel: 'gpt-5-response-api',
+      openAIKey: 'sk-profile-openai',
+      jsonSchemaEnabled: true,
+      jsonSchema: schema,
+      strictJsonSchema: true,
+      extractJson: 'answer',
+    } as Partial<Database>)
+    const profile = resolveDurableProfile(
+      database,
+      {
+        providerId: 'openai',
+        modelId: 'gpt-5-response-api',
+        runtimeOptions: { jsonSchemaEnabled: true, jsonSchema: schema, extractJson: 'answer' },
+      },
+      'sk-profile-openai',
+    )
+    setDatabase(database)
+
+    const preview = await previewResponse(makeArg(profile, { schema, extractJson: 'answer' }))
+    expect(preview.body.text).toEqual({
+      format: {
+        type: 'json_schema',
+        name: 'format',
+        strict: true,
+        schema: JSON.parse(schema),
+      },
+    })
+
+    globalFetchMock.mockResolvedValueOnce({ ok: true, data: { output_text: '{"answer":"extracted"}' } })
+    await expect(
+      requestOpenAIResponseAPI(makeArg(profile, { previewBody: false, schema, extractJson: 'answer' })),
+    ).resolves.toEqual({ type: 'success', result: 'extracted' })
+  })
+
+  it('parses buffered reasoning content and rejects incomplete or failed payloads', async () => {
+    const profile = resolveDurableProfile(
+      db({ aiModel: 'gpt-5-response-api' } as Partial<Database>),
+      { providerId: 'openai', modelId: 'gpt-5-response-api' },
+      'sk-profile-openai',
+    )
+    setDatabase(db({ aiModel: 'gpt-5-response-api', openAIKey: 'sk-flat-openai' } as Partial<Database>))
+    globalFetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          output: [
+            { id: 'rs_stale', type: 'reasoning', content: [{ type: 'reasoning_text', text: 'reasoned' }] },
+            { type: 'message', content: [{ type: 'output_text', text: 'answer' }] },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' }, output_text: 'partial' },
+      })
+      .mockResolvedValueOnce({ ok: true, data: { status: 'failed', error: { message: 'bad request' } } })
+
+    await expect(requestOpenAIResponseAPI(makeArg(profile, { previewBody: false }))).resolves.toEqual({
+      type: 'success',
+      result: '<Thoughts>\n\nreasoned\n\n</Thoughts>\nanswer',
+    })
+    await expect(requestOpenAIResponseAPI(makeArg(profile, { previewBody: false }))).resolves.toEqual({
+      type: 'fail',
+      result: 'Incomplete response: max_output_tokens\npartial',
+    })
+    await expect(requestOpenAIResponseAPI(makeArg(profile, { previewBody: false }))).resolves.toEqual({
+      type: 'fail',
+      result: '{"message":"bad request"}',
+    })
   })
 })
 
@@ -298,15 +424,18 @@ describe('requestOpenAILegacyInstruct profile provider options', () => {
       provider: LLMProvider.NanoGPT,
       format: LLMFormat.NanoGPTLegacy,
     })
-    const profile = resolveModelProfile({
-      database: db({
-        aiModel: nanoLegacyInfo.id,
-        nanogptKey: 'sk-profile-nano',
-        nanogptRequestModel: 'profile/nano-legacy-model',
-        nanogptProvider: 'profile-provider',
-      } as Partial<Database>),
-      lookupModelInfo: () => nanoLegacyInfo,
-    })
+    const profile = resolveDurableProfile(
+      db({ aiModel: nanoLegacyInfo.id } as Partial<Database>),
+      {
+        modelId: nanoLegacyInfo.id,
+        providerOptions: {
+          requestModel: 'profile/nano-legacy-model',
+          nanogpt: { providerHint: 'profile-provider' },
+        },
+      },
+      'sk-profile-nano',
+      () => nanoLegacyInfo,
+    )
     setDatabase(
       db({
         aiModel: nanoLegacyInfo.id,
@@ -338,6 +467,7 @@ describe('requestOpenAILegacyInstruct profile provider options', () => {
     )
 
     const payload = await previewLegacy({
+      database: getDatabase(),
       formated: [
         { role: 'system', content: 'legacy system' },
         { role: 'user', content: 'hello' },

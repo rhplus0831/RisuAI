@@ -1,6 +1,11 @@
 import { gcm } from '@noble/ciphers/aes.js'
+import {
+  findProtocolDurableCommandOperation,
+  protocolDurableGenerationOperationMatches,
+} from '@risuai/protocol/durable-command-operation'
 
 import { clearRetainedChatProjections } from './chatRetainedProjection'
+import { beginPersistenceActivity, setPendingMutationOutboxActive } from './persistenceActivity.svelte'
 
 export type DurableMutationRequestMethod = 'DELETE' | 'PATCH' | 'POST' | 'PUT'
 
@@ -8,12 +13,14 @@ export interface DurableMutationRequest {
   method: DurableMutationRequestMethod
   /** Command path below `/api/v1/commands`, including the leading slash. */
   path: string
-  /** Request fields excluding the enqueue-time `baseRevision`. */
+  /** Command fields exclude enqueue-time `baseRevision`; atomic submit persists its complete request. */
   body: Record<string, unknown>
 }
 
 export interface DurableMutationIntent {
   version: 1
+  /** Non-command mutation families that share the encrypted transport outbox. */
+  kind?: 'generation-operation-submit' | 'generation-operation-cancel' | 'generation-operation-retry'
   requests: DurableMutationRequest[]
   /**
    * Additional semantic lanes that must settle before this intent. The keys
@@ -125,6 +132,13 @@ interface StoredPendingMutation {
   ciphertext: ArrayBuffer
 }
 
+interface StoredPendingMutationOrderCounter {
+  version: 1
+  writerSessionId: string
+  databaseLineage: string
+  lastCommittedOrder: number
+}
+
 interface EncryptedPendingMutationPayload {
   intent: DurableMutationIntent
 }
@@ -146,121 +160,7 @@ const MAX_PENDING_MUTATION_KEY_LENGTH = 2_048
 const MUTATION_ID_PATTERN = /^[A-Za-z0-9._:-]{1,96}$/
 const SCOPE_VALUE_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
 
-const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
-  method: DurableMutationRequestMethod
-  path: RegExp
-}> = [
-  { method: 'PATCH', path: /^\/settings\/[a-z][a-z-]*$/ },
-  { method: 'PATCH', path: /^\/settings\/[a-z][a-z-]*\/objects\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/characters$/ },
-  { method: 'POST', path: /^\/characters\/create-and-select$/ },
-  { method: 'PATCH', path: /^\/characters\/[^/?#]+\/alternate-greetings$/ },
-  { method: 'PATCH', path: /^\/characters\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/characters\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/characters\/select$/ },
-  { method: 'POST', path: /^\/characters\/reorder$/ },
-  { method: 'POST', path: /^\/characters\/[^/?#]+\/chats$/ },
-  { method: 'POST', path: /^\/characters\/[^/?#]+\/chats\/reorder$/ },
-  { method: 'POST', path: /^\/characters\/[^/?#]+\/chat-folders$/ },
-  { method: 'POST', path: /^\/characters\/[^/?#]+\/chat-folders\/reorder$/ },
-  { method: 'POST', path: /^\/characters\/[^/?#]+\/modules\/reorder$/ },
-  { method: 'PATCH', path: /^\/chats\/[^/?#]+$/ },
-  { method: 'PATCH', path: /^\/chats\/[^/?#]+\/scriptstate$/ },
-  { method: 'DELETE', path: /^\/chats\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/chats\/[^/?#]+\/fork$/ },
-  { method: 'POST', path: /^\/chats\/[^/?#]+\/messages$/ },
-  { method: 'POST', path: /^\/chats\/[^/?#]+\/messages\/truncate$/ },
-  { method: 'POST', path: /^\/chats\/[^/?#]+\/messages\/tail$/ },
-  { method: 'PUT', path: /^\/chats\/[^/?#]+\/messages$/ },
-  { method: 'PUT', path: /^\/chats\/[^/?#]+\/generation-settings$/ },
-  { method: 'PATCH', path: /^\/messages\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/messages\/[^/?#]+$/ },
-  { method: 'PATCH', path: /^\/chat-folders\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/chat-folders\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/prompt-items$/ },
-  { method: 'POST', path: /^\/prompt-items\/reorder$/ },
-  { method: 'PATCH', path: /^\/prompt-items\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/prompt-items\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/prompt-items\/enable$/ },
-  { method: 'PATCH', path: /^\/personas\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/personas\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/personas$/ },
-  { method: 'POST', path: /^\/personas\/select$/ },
-  { method: 'POST', path: /^\/personas\/reorder$/ },
-  { method: 'POST', path: /^\/presets$/ },
-  { method: 'PATCH', path: /^\/presets\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/presets\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/presets\/[^/?#]+\/copy$/ },
-  { method: 'POST', path: /^\/presets\/select$/ },
-  { method: 'POST', path: /^\/presets\/reorder$/ },
-  { method: 'POST', path: /^\/model-presets$/ },
-  { method: 'PATCH', path: /^\/model-presets\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/model-presets\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/model-presets\/select$/ },
-  { method: 'POST', path: /^\/model-presets\/reorder$/ },
-  { method: 'POST', path: /^\/model-profiles$/ },
-  { method: 'PATCH', path: /^\/model-profiles\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/model-profiles\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/model-profiles\/[^/?#]+\/duplicate$/ },
-  { method: 'POST', path: /^\/model-profiles\/convert-legacy$/ },
-  { method: 'PUT', path: /^\/model-role-profiles$/ },
-  { method: 'PUT', path: /^\/model-runtime-defaults$/ },
-  { method: 'POST', path: /^\/agent-presets$/ },
-  { method: 'PATCH', path: /^\/agent-presets\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/agent-presets\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/agent-presets\/[^/?#]+\/duplicate$/ },
-  { method: 'POST', path: /^\/agent-presets\/reorder$/ },
-  { method: 'POST', path: /^\/agent-presets\/default$/ },
-  { method: 'POST', path: /^\/agent-presets\/[^/?#]+\/steps$/ },
-  { method: 'PATCH', path: /^\/agent-presets\/[^/?#]+\/steps\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/agent-presets\/[^/?#]+\/steps\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/agent-presets\/[^/?#]+\/steps\/[^/?#]+\/duplicate$/ },
-  { method: 'POST', path: /^\/agent-presets\/[^/?#]+\/steps\/reorder$/ },
-  { method: 'POST', path: /^\/prompt-presets$/ },
-  { method: 'PATCH', path: /^\/prompt-presets\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/prompt-presets\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/prompt-presets\/select$/ },
-  { method: 'POST', path: /^\/prompt-presets\/reorder$/ },
-  { method: 'POST', path: /^\/legacy-bot-presets\/[^/?#]+\/extract$/ },
-  { method: 'POST', path: /^\/translator-presets$/ },
-  { method: 'PATCH', path: /^\/translator-presets\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/translator-presets\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/translator-presets\/select$/ },
-  { method: 'POST', path: /^\/modules$/ },
-  { method: 'PATCH', path: /^\/modules\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/modules\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/modules\/enable$/ },
-  { method: 'POST', path: /^\/modules\/reorder$/ },
-  { method: 'POST', path: /^\/plugins$/ },
-  { method: 'PATCH', path: /^\/plugins\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/plugins\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/plugins\/[^/?#]+\/enable$/ },
-  { method: 'POST', path: /^\/plugins\/provider$/ },
-  { method: 'POST', path: /^\/plugins\/reorder$/ },
-  { method: 'PUT', path: /^\/plugin-storage\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/plugin-storage\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/plugin-storage\/bulk$/ },
-  { method: 'POST', path: /^\/loadouts$/ },
-  { method: 'DELETE', path: /^\/loadouts\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/loadouts\/[^/?#]+\/favorite$/ },
-  { method: 'POST', path: /^\/loadouts\/[^/?#]+\/touch$/ },
-  { method: 'PATCH', path: /^\/settings\/advanced\/global-scripts$/ },
-  { method: 'PUT', path: /^\/(?:characters|modules)\/[^/?#]+\/(?:scripts|triggers)$/ },
-  { method: 'PATCH', path: /^\/(?:characters|modules)\/[^/?#]+\/(?:scripts|triggers)$/ },
-  { method: 'POST', path: /^\/lorebooks$/ },
-  { method: 'POST', path: /^\/lorebooks\/reorder$/ },
-  { method: 'PATCH', path: /^\/lorebooks\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/lorebooks\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/lorebooks\/[^/?#]+\/select$/ },
-  { method: 'PUT', path: /^\/lorebooks\/[^/?#]+\/entries$/ },
-  { method: 'PUT', path: /^\/lorebooks\/[^/?#]+\/entries\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/lorebooks\/[^/?#]+\/entries\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/lorebooks\/[^/?#]+\/entries\/reorder$/ },
-  { method: 'PUT', path: /^\/(?:characters|chats|modules)\/[^/?#]+\/lorebooks$/ },
-  { method: 'PUT', path: /^\/(?:characters|chats|modules)\/[^/?#]+\/lorebooks\/entries\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/(?:characters|chats|modules)\/[^/?#]+\/lorebooks\/entries\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/(?:characters|chats|modules)\/[^/?#]+\/lorebooks\/entries\/reorder$/ },
-]
+let pendingMutationActivityRefresh = 0
 
 let outboxDatabasePromise: Promise<IDBDatabase | null> | null = null
 let outboxRawEncryptionKeyPromise: Promise<OutboxEncryptionKey | null> | null = null
@@ -269,9 +169,11 @@ let nextSequenceOffset = 0
 let nextProjectionGenerationOrdinal = 0
 let persistenceWarningReported = false
 let pendingMutationScope: PendingMutationScope | null = null
+const pendingMutationStageLockTails = new Map<string, Promise<void>>()
 const liveProjectionGenerations = new Map<string, LivePendingMutationProjectionGeneration>()
 const liveProjectionGenerationStacks = new Map<string, string[]>()
 const pendingMutationDiscardListeners = new Set<PendingMutationDiscardListener>()
+let pendingMutationCommitTransactionHookForTests: ((transaction: IDBTransaction) => void) | null = null
 
 export function pendingMutationSettingsFieldProjectionTarget(field: string): string {
   return `settings-field:${encodeProjectionTargetPart(field)}`
@@ -319,6 +221,14 @@ export function pendingMutationAgentPresetOrderProjectionTarget(): string {
 
 export function pendingMutationAgentPresetDefaultProjectionTarget(): string {
   return 'agent-preset-default'
+}
+
+export function pendingMutationAgentCollectionProjectionTarget(): string {
+  return 'agent-collection'
+}
+
+export function pendingMutationAgentRowProjectionTarget(agentId: string): string {
+  return `agent-row:${encodeProjectionTargetPart(agentId)}`
 }
 
 export function pendingMutationLoadoutRowProjectionTarget(loadoutId: string): string {
@@ -396,7 +306,15 @@ export function acceptPendingMutationLocalProjectionToken(token: PendingMutation
 }
 
 export function pendingMutationProjectionTargets(intent: DurableMutationIntent): string[] {
-  const normalized = normalizeIntent(intent)
+  return normalizedPendingMutationProjectionTargets(normalizeIntent(intent))
+}
+
+/** Read metadata only after the caller has captured/validated its owned intent. */
+function normalizedPendingMutationProjectionTargets(normalized: DurableMutationIntent): string[] {
+  if (normalized.kind) {
+    const operationId = generationOperationIdFromPendingIntent(normalized)
+    return operationId ? [`generation-operation:${operationId}`] : []
+  }
   const targets = new Set<string>()
   for (const request of normalized.requests) {
     for (const target of pendingMutationRequestProjectionTargets(request)) targets.add(target)
@@ -539,7 +457,10 @@ export async function preparePendingMutationOutbox(
   }
   pendingMutationScope = scope
   const [database, encryptionKey] = await Promise.all([openOutboxDatabase(), getOutboxEncryptionKey()])
-  if (!database || !encryptionKey) return { discarded: 0 }
+  if (!database || !encryptionKey) {
+    await refreshPendingMutationActivity()
+    return { discarded: 0 }
+  }
 
   const discardedMutationIds: string[] = []
   try {
@@ -564,8 +485,10 @@ export async function preparePendingMutationOutbox(
     for (const mutationId of discardedMutationIds) publishPendingMutationDiscard(mutationId)
   } catch (error) {
     reportPersistenceWarning('Unable to prepare the pending-mutation outbox', error)
+    await refreshPendingMutationActivity()
     return { discarded: 0 }
   }
+  await refreshPendingMutationActivity()
   return { discarded: discardedMutationIds.length }
 }
 
@@ -603,6 +526,16 @@ export function stagePendingMutation(
 ): PendingMutationHandle {
   const semanticKey = normalizeOutboxKey(key)
   const normalizedIntent = normalizeIntent(intent)
+  return stageNormalizedPendingMutation(semanticKey, normalizedIntent, previous)
+}
+
+/** Internal continuation of the normalization ownership boundary. Replacement
+ * already owns a normalized snapshot and must not recapture its body. */
+function stageNormalizedPendingMutation(
+  semanticKey: string,
+  normalizedIntent: DurableMutationIntent,
+  previous?: PendingMutationHandle | null,
+): PendingMutationHandle {
   const scope = pendingMutationScope
   const replacePrevious =
     !!scope &&
@@ -625,12 +558,12 @@ export function stagePendingMutation(
         mutationId,
         sequence,
         scope,
-        reservePendingMutationOrder(),
         normalizedIntent,
         replacePrevious ? previous : null,
       )
     : Promise.resolve('unavailable' as const)
   if (!scope) reportPersistenceWarning('Pending mutation staged before server database ownership was established')
+  const finishPersistenceActivity = scope ? beginPersistenceActivity() : null
 
   const handle: PendingMutationHandle = {
     key: semanticKey,
@@ -642,9 +575,15 @@ export function stagePendingMutation(
     phase: 'staged',
     ready,
   }
-  recordPendingMutationProjectionTargets(handle, pendingMutationProjectionTargets(normalizedIntent))
-  void ready.then((status) => {
+  recordPendingMutationProjectionTargets(handle, normalizedPendingMutationProjectionTargets(normalizedIntent))
+  void ready.then(async (status) => {
     if (status !== 'persisted') retirePendingMutationProjectionGeneration(handle)
+    if (status === 'persisted') {
+      setPendingMutationOutboxActive(true)
+    } else {
+      await refreshPendingMutationActivity()
+    }
+    finishPersistenceActivity?.()
   })
   return handle
 }
@@ -680,7 +619,10 @@ export async function replaceStagedPendingMutationIntent(
   const replacement = await replacePendingMutationIntentExact(handle, normalizedIntent)
   if (replacement.status === 'replaced') {
     handle.phase = 'superseded'
-    recordPendingMutationProjectionTargets(replacement.handle, pendingMutationProjectionTargets(normalizedIntent))
+    recordPendingMutationProjectionTargets(
+      replacement.handle,
+      normalizedPendingMutationProjectionTargets(normalizedIntent),
+    )
     return replacement
   }
   if (replacement.status === 'unavailable') return { status: 'unavailable' }
@@ -688,7 +630,7 @@ export async function replaceStagedPendingMutationIntent(
   const scope = pendingMutationScope
   if (!scope || !pendingMutationScopeMatchesHandle(scope, handle)) return { status: 'superseded' }
   handle.phase = 'superseded'
-  const successor = stagePendingMutation(handle.key, normalizedIntent)
+  const successor = stageNormalizedPendingMutation(normalizeOutboxKey(handle.key), normalizedIntent)
   const persistence = await successor.ready
   return persistence === 'persisted' ? { status: 'successor', handle: successor } : { status: persistence }
 }
@@ -749,6 +691,7 @@ export async function discardPendingMutation(handle: PendingMutationHandle): Pro
     if (matches) store.delete(handle.mutationId)
     await transactionDone(transaction)
     if (matches) retirePendingMutationProjectionGeneration(handle)
+    if (matches) void refreshPendingMutationActivity()
     return matches ? 'deleted' : 'superseded'
   } catch (error) {
     reportPersistenceWarning('Unable to discard a pending server mutation', error)
@@ -791,6 +734,7 @@ export async function completePendingMutation(
     }
     await transactionDone(transaction)
     if (matches) compactAcceptedPendingMutationProjectionGeneration(handle)
+    if (matches) void refreshPendingMutationActivity()
     return matches ? 'deleted' : 'superseded'
   } catch (error) {
     reportPersistenceWarning('Unable to complete a pending server mutation', error)
@@ -867,6 +811,38 @@ export async function countPendingMutationRecords(): Promise<number | null> {
 }
 
 /**
+ * Count startup-blocking rows after replay. A cancellation control is allowed
+ * to remain encrypted while its acknowledged operation settles; replay has
+ * already refreshed its visible controller state, and keeping it must not
+ * prevent authoritative resource hydration. Unreadable rows still fail closed.
+ */
+export async function countBlockingPendingMutationRecords(): Promise<number | null> {
+  const scope = pendingMutationScope
+  if (!scope) return 0
+  if (typeof globalThis.indexedDB === 'undefined') return 0
+  const database = await openOutboxDatabase()
+  if (!database) return null
+
+  try {
+    const transaction = database.transaction(OUTBOX_MUTATION_STORE, 'readonly')
+    const stored = await requestResult<StoredPendingMutation[]>(transaction.objectStore(OUTBOX_MUTATION_STORE).getAll())
+    await transactionDone(transaction)
+    let blocking = 0
+    for (const record of stored.filter(
+      (candidate) =>
+        candidate.ownerWriterSessionId === scope.writerSessionId && candidate.databaseLineage === scope.databaseLineage,
+    )) {
+      const intent = await decryptIntent(record)
+      if (intent.kind !== 'generation-operation-cancel') blocking += 1
+    }
+    return blocking
+  } catch (error) {
+    reportPersistenceWarning('Unable to classify pending server mutations for startup', error)
+    return null
+  }
+}
+
+/**
  * Read the transitive closure of older generations that this mutation owns or
  * depends on. A dependency introduced by an older predecessor only reaches
  * rows older than that predecessor, preserving the durable global-order
@@ -897,7 +873,6 @@ export async function listPendingMutationPredecessors(
     .filter(
       (record) =>
         record.ownerWriterSessionId === current.ownerWriterSessionId &&
-        record.writerEpoch === current.writerEpoch &&
         record.databaseLineage === current.databaseLineage &&
         record.order < current.order,
     )
@@ -1013,6 +988,8 @@ export async function clearPendingMutationOutbox(): Promise<void> {
   transaction.objectStore(OUTBOX_MUTATION_STORE).clear()
   transaction.objectStore(OUTBOX_RECEIPT_ACK_STORE).clear()
   await transactionDone(transaction)
+  pendingMutationActivityRefresh += 1
+  setPendingMutationOutboxActive(false)
 }
 
 export function resetPendingMutationOutboxForTests(): void {
@@ -1023,16 +1000,52 @@ export function resetPendingMutationOutboxForTests(): void {
   nextProjectionGenerationOrdinal = 0
   persistenceWarningReported = false
   pendingMutationScope = null
+  pendingMutationStageLockTails.clear()
+  pendingMutationCommitTransactionHookForTests = null
+  pendingMutationActivityRefresh += 1
+  setPendingMutationOutboxActive(false)
   clearLivePendingMutationProjectionGenerations()
   clearRetainedChatProjections()
 }
 
-async function persistPendingMutation(
+/** Abort/fault injection for atomicity tests; invoked synchronously after final writes are queued. */
+export function setPendingMutationCommitTransactionHookForTests(
+  hook: ((transaction: IDBTransaction) => void) | null,
+): void {
+  pendingMutationCommitTransactionHookForTests = hook
+}
+
+async function refreshPendingMutationActivity(): Promise<void> {
+  const refresh = ++pendingMutationActivityRefresh
+  const count = await countPendingMutationRecords()
+  if (refresh === pendingMutationActivityRefresh && count !== null) {
+    setPendingMutationOutboxActive(count > 0)
+  }
+}
+
+function persistPendingMutation(
   semanticKey: string,
   mutationId: string,
   sequence: number,
   scope: PendingMutationScope,
-  reservedOrder: Promise<number | null>,
+  intent: DurableMutationIntent,
+  replacement: PendingMutationHandle | null,
+): Promise<PendingMutationPersistenceStatus> {
+  // This call synchronously queues the origin-wide lock request. In
+  // particular, do not load IndexedDB or encryption state before requesting it.
+  return withPendingMutationStageLock(scope, () =>
+    persistPendingMutationLocked(semanticKey, mutationId, sequence, scope, intent, replacement),
+  ).catch((error) => {
+    reportPersistenceWarning('Unable to persist a pending server mutation', error)
+    return 'unavailable'
+  })
+}
+
+async function persistPendingMutationLocked(
+  semanticKey: string,
+  mutationId: string,
+  sequence: number,
+  scope: PendingMutationScope,
   intent: DurableMutationIntent,
   replacement: PendingMutationHandle | null,
 ): Promise<PendingMutationPersistenceStatus> {
@@ -1040,70 +1053,277 @@ async function persistPendingMutation(
   const replacementPersistence = replacement ? await replacement.ready : null
   const persistedReplacement = replacementPersistence === 'persisted' ? replacement : null
   if (!pendingMutationScopeEquals(scope)) return 'superseded'
-  const [database, encryptionKey, order] = await Promise.all([
-    openOutboxDatabase(),
-    getOutboxEncryptionKey(),
-    reservedOrder,
-  ])
-  if (!database || !encryptionKey || order === null) return 'unavailable'
 
   try {
     const payload = serializePendingMutationIntent(intent)
     if (payload.byteLength > MAX_DURABLE_MUTATION_PAYLOAD_BYTES) {
       throw new RangeError('Pending mutation payload is too large')
     }
-    const iv = globalThis.crypto.getRandomValues(new Uint8Array(new ArrayBuffer(12)))
-    const ciphertext = await encryptIntentPayload(
-      encryptionKey,
-      iv,
-      mutationAdditionalData(semanticKey, mutationId, sequence, order, scope),
-      payload,
-    )
-    const transaction = database.transaction(OUTBOX_MUTATION_STORE, 'readwrite')
-    const store = transaction.objectStore(OUTBOX_MUTATION_STORE)
-    const [current, replaced] = await Promise.all([
-      requestResult<StoredPendingMutation | undefined>(store.get(mutationId)),
-      persistedReplacement
-        ? requestResult<StoredPendingMutation | undefined>(store.get(persistedReplacement.mutationId))
-        : Promise.resolve(undefined),
-    ])
-    if (current) {
-      await transactionDone(transaction)
-      return 'superseded'
+    const [database, encryptionKey] = await Promise.all([openOutboxDatabase(), getOutboxEncryptionKey()])
+    if (!database || !encryptionKey) return 'unavailable'
+
+    while (true) {
+      if (!pendingMutationScopeEquals(scope)) return 'superseded'
+      const lastCommittedOrder = await readPendingMutationOrderBase(database, scope)
+      const candidateOrder = nextPendingMutationOrder(lastCommittedOrder)
+      // Each attempt gets a new nonce. A CAS loss changes the authenticated
+      // order, so retaining an earlier IV would be an AES-GCM nonce reuse.
+      const iv = globalThis.crypto.getRandomValues(new Uint8Array(new ArrayBuffer(12)))
+      const ciphertext = await encryptIntentPayload(
+        encryptionKey,
+        iv,
+        mutationAdditionalData(semanticKey, mutationId, sequence, candidateOrder, scope),
+        payload,
+      )
+      if (!pendingMutationScopeEquals(scope)) return 'superseded'
+
+      const committed = await commitPendingMutationOrderAndRow({
+        database,
+        encryptionKey,
+        semanticKey,
+        mutationId,
+        sequence,
+        scope,
+        candidateOrder,
+        iv,
+        ciphertext,
+        replacement: persistedReplacement,
+      })
+      if (committed.status === 'order-raced') continue
+      if (committed.status !== 'persisted') return 'superseded'
+      if (committed.replacementDeleted && persistedReplacement) {
+        retirePendingMutationProjectionGeneration(persistedReplacement)
+      }
+      return 'persisted'
     }
-    if (!pendingMutationScopeEquals(scope)) {
-      await transactionDone(transaction)
-      return 'superseded'
-    }
-    store.put({
-      mutationId,
-      semanticKey,
-      sequence,
-      order,
-      dispatchStarted: false,
-      ownerWriterSessionId: scope.writerSessionId,
-      writerEpoch: scope.writerEpoch,
-      databaseLineage: scope.databaseLineage,
-      updatedAt: Date.now(),
-      keyKind: encryptionKey.keyKind,
-      iv: iv.buffer,
-      ciphertext,
-    } satisfies StoredPendingMutation)
-    const replacementDeleted =
-      persistedReplacement &&
-      storedMutationMatchesHandle(replaced, persistedReplacement) &&
-      replaced?.dispatchStarted !== true
-    if (replacementDeleted && persistedReplacement) {
-      store.delete(persistedReplacement.mutationId)
-    }
-    await transactionDone(transaction)
-    if (replacementDeleted && persistedReplacement) {
-      retirePendingMutationProjectionGeneration(persistedReplacement)
-    }
-    return 'persisted'
   } catch (error) {
     reportPersistenceWarning('Unable to persist a pending server mutation', error)
     return 'unavailable'
+  }
+}
+
+interface CommitPendingMutationInput {
+  database: IDBDatabase
+  encryptionKey: OutboxEncryptionKey
+  semanticKey: string
+  mutationId: string
+  sequence: number
+  scope: PendingMutationScope
+  candidateOrder: number
+  iv: Uint8Array<ArrayBuffer>
+  ciphertext: ArrayBuffer
+  replacement: PendingMutationHandle | null
+}
+
+type CommitPendingMutationResult =
+  | { status: 'persisted'; replacementDeleted: boolean }
+  | { status: 'order-raced' | 'superseded' }
+
+async function readPendingMutationOrderBase(database: IDBDatabase, scope: PendingMutationScope): Promise<number> {
+  const transaction = database.transaction([OUTBOX_ORDER_STORE, OUTBOX_MUTATION_STORE], 'readonly')
+  const [storedCounter, mutations] = await Promise.all([
+    requestResult<unknown>(transaction.objectStore(OUTBOX_ORDER_STORE).get(pendingMutationOrderCounterKey(scope))),
+    requestResult<StoredPendingMutation[]>(transaction.objectStore(OUTBOX_MUTATION_STORE).getAll()),
+  ])
+  await transactionDone(transaction)
+  if (storedCounter !== undefined) return normalizePendingMutationOrderCounter(storedCounter, scope).lastCommittedOrder
+  return maximumPendingMutationOrder(mutations, scope)
+}
+
+/**
+ * Atomically compare the speculative order base, advance it, and publish the
+ * complete encrypted row. Every request and write is queued from IndexedDB
+ * callbacks; no WebCrypto or unrelated await can span this transaction.
+ */
+function commitPendingMutationOrderAndRow(input: CommitPendingMutationInput): Promise<CommitPendingMutationResult> {
+  return new Promise((resolve, reject) => {
+    let transaction: IDBTransaction
+    try {
+      transaction = input.database.transaction([OUTBOX_ORDER_STORE, OUTBOX_MUTATION_STORE], 'readwrite')
+    } catch (error) {
+      reject(error)
+      return
+    }
+
+    const orderStore = transaction.objectStore(OUTBOX_ORDER_STORE)
+    const mutationStore = transaction.objectStore(OUTBOX_MUTATION_STORE)
+    const counterRequest = orderStore.get(pendingMutationOrderCounterKey(input.scope))
+    const mutationsRequest = mutationStore.getAll()
+    const currentRequest = mutationStore.get(input.mutationId)
+    const replacementRequest = input.replacement ? mutationStore.get(input.replacement.mutationId) : null
+    let requestsRemaining = replacementRequest ? 4 : 3
+    let outcome: CommitPendingMutationResult | null = null
+    let callbackError: unknown = null
+    let settled = false
+
+    const rejectOnce = (error: unknown) => {
+      if (settled) return
+      settled = true
+      reject(error)
+    }
+    transaction.oncomplete = () => {
+      if (settled) return
+      if (!outcome) {
+        rejectOnce(new Error('Pending-mutation commit completed without a result'))
+        return
+      }
+      settled = true
+      resolve(outcome)
+    }
+    transaction.onerror = () => {
+      callbackError ??= transaction.error ?? new Error('IndexedDB transaction failed')
+    }
+    transaction.onabort = () => {
+      rejectOnce(callbackError ?? transaction.error ?? new Error('IndexedDB transaction aborted'))
+    }
+
+    const requestFailed = (request: IDBRequest) => {
+      callbackError ??= request.error ?? new Error('IndexedDB request failed')
+    }
+    const requestSucceeded = () => {
+      requestsRemaining -= 1
+      if (requestsRemaining !== 0) return
+      try {
+        const storedCounter = counterRequest.result
+        const currentBase =
+          storedCounter === undefined
+            ? maximumPendingMutationOrder(mutationsRequest.result as StoredPendingMutation[], input.scope)
+            : normalizePendingMutationOrderCounter(storedCounter, input.scope).lastCommittedOrder
+        if (nextPendingMutationOrder(currentBase) !== input.candidateOrder) {
+          outcome = { status: 'order-raced' }
+          return
+        }
+        if (currentRequest.result !== undefined || !pendingMutationScopeEquals(input.scope)) {
+          outcome = { status: 'superseded' }
+          return
+        }
+
+        const replaced = replacementRequest?.result as StoredPendingMutation | undefined
+        const replacementDeleted = !!(
+          input.replacement &&
+          storedMutationMatchesHandle(replaced, input.replacement) &&
+          replaced?.dispatchStarted !== true
+        )
+        orderStore.put(
+          {
+            version: 1,
+            writerSessionId: input.scope.writerSessionId,
+            databaseLineage: input.scope.databaseLineage,
+            lastCommittedOrder: input.candidateOrder,
+          } satisfies StoredPendingMutationOrderCounter,
+          pendingMutationOrderCounterKey(input.scope),
+        )
+        mutationStore.put({
+          mutationId: input.mutationId,
+          semanticKey: input.semanticKey,
+          sequence: input.sequence,
+          order: input.candidateOrder,
+          dispatchStarted: false,
+          ownerWriterSessionId: input.scope.writerSessionId,
+          writerEpoch: input.scope.writerEpoch,
+          databaseLineage: input.scope.databaseLineage,
+          updatedAt: Date.now(),
+          keyKind: input.encryptionKey.keyKind,
+          iv: input.iv.buffer,
+          ciphertext: input.ciphertext,
+        } satisfies StoredPendingMutation)
+        if (replacementDeleted && input.replacement) mutationStore.delete(input.replacement.mutationId)
+        outcome = { status: 'persisted', replacementDeleted }
+        pendingMutationCommitTransactionHookForTests?.(transaction)
+      } catch (error) {
+        callbackError = error
+        try {
+          transaction.abort()
+        } catch {
+          rejectOnce(error)
+        }
+      }
+    }
+
+    for (const request of [counterRequest, mutationsRequest, currentRequest, replacementRequest]) {
+      if (!request) continue
+      request.onsuccess = requestSucceeded
+      request.onerror = () => requestFailed(request)
+    }
+  })
+}
+
+function maximumPendingMutationOrder(mutations: readonly StoredPendingMutation[], scope: PendingMutationScope): number {
+  let maximum = 0
+  for (const mutation of mutations) {
+    if (
+      mutation.ownerWriterSessionId === scope.writerSessionId &&
+      mutation.databaseLineage === scope.databaseLineage &&
+      Number.isSafeInteger(mutation.order) &&
+      mutation.order >= 0
+    ) {
+      maximum = Math.max(maximum, mutation.order)
+    }
+  }
+  return maximum
+}
+
+function nextPendingMutationOrder(lastCommittedOrder: number): number {
+  if (!Number.isSafeInteger(lastCommittedOrder) || lastCommittedOrder < 0) {
+    throw new TypeError('Pending-mutation order counter is invalid')
+  }
+  if (lastCommittedOrder >= Number.MAX_SAFE_INTEGER) {
+    throw new RangeError('Pending-mutation order counter is exhausted')
+  }
+  return lastCommittedOrder + 1
+}
+
+function pendingMutationOrderCounterKey(scope: PendingMutationScope): string {
+  return JSON.stringify(['pending-mutation-order-counter', 1, scope.writerSessionId, scope.databaseLineage])
+}
+
+function normalizePendingMutationOrderCounter(
+  value: unknown,
+  scope: PendingMutationScope,
+): StoredPendingMutationOrderCounter {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('Pending-mutation order counter is invalid')
+  }
+  const counter = value as Partial<StoredPendingMutationOrderCounter>
+  if (
+    counter.version !== 1 ||
+    typeof counter.writerSessionId !== 'string' ||
+    !SCOPE_VALUE_PATTERN.test(counter.writerSessionId) ||
+    counter.writerSessionId !== scope.writerSessionId ||
+    typeof counter.databaseLineage !== 'string' ||
+    !SCOPE_VALUE_PATTERN.test(counter.databaseLineage) ||
+    counter.databaseLineage !== scope.databaseLineage ||
+    !Number.isSafeInteger(counter.lastCommittedOrder) ||
+    counter.lastCommittedOrder! < 0
+  ) {
+    throw new TypeError('Pending-mutation order counter is invalid')
+  }
+  return counter as StoredPendingMutationOrderCounter
+}
+
+async function withPendingMutationStageLock<T>(scope: PendingMutationScope, task: () => Promise<T>): Promise<T> {
+  const name = `risu:pending-mutation-stage:${JSON.stringify([scope.writerSessionId, scope.databaseLineage])}`
+  const lockManager = globalThis.navigator?.locks
+  if (lockManager) return lockManager.request(name, { mode: 'exclusive' }, task)
+  // This FIFO protects initiation order only within this module/page. Separate
+  // tabs without Web Locks are linearized by the IndexedDB CAS commit instead.
+  return withLocalPendingMutationStageLock(name, task)
+}
+
+async function withLocalPendingMutationStageLock<T>(name: string, task: () => Promise<T>): Promise<T> {
+  const previous = pendingMutationStageLockTails.get(name) ?? Promise.resolve()
+  let release!: () => void
+  const tail = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const queuedTail = previous.then(() => tail)
+  pendingMutationStageLockTails.set(name, queuedTail)
+  await previous
+  try {
+    return await task()
+  } finally {
+    release()
+    if (pendingMutationStageLockTails.get(name) === queuedTail) pendingMutationStageLockTails.delete(name)
   }
 }
 
@@ -1212,64 +1432,115 @@ function normalizeIntent(value: unknown): DurableMutationIntent {
     throw new TypeError('Pending mutation intent must be an object')
   }
   const record = value as Partial<DurableMutationIntent>
-  if (record.version !== 1 || !Array.isArray(record.requests)) {
+  const { version, requests: inputRequests, kind, dependencyKeys: inputDependencyKeys } = record
+  if (version !== 1 || !Array.isArray(inputRequests)) {
     throw new TypeError('Unsupported pending mutation intent')
   }
-  if (record.requests.length === 0 || record.requests.length > MAX_DURABLE_MUTATION_REQUESTS) {
+  if (
+    kind !== undefined &&
+    kind !== 'generation-operation-submit' &&
+    kind !== 'generation-operation-cancel' &&
+    kind !== 'generation-operation-retry'
+  ) {
+    throw new TypeError('Unsupported pending mutation intent kind')
+  }
+  const requestCount = inputRequests.length
+  if (!Number.isInteger(requestCount) || requestCount <= 0 || requestCount > MAX_DURABLE_MUTATION_REQUESTS) {
     throw new RangeError('Pending mutation request count is invalid')
   }
+  if (kind && requestCount !== 1) {
+    throw new RangeError('Generation operation pending intents require exactly one request')
+  }
+  // Capture the bounded request list before any body JSON conversion can run.
+  const requestInputs = Array.from({ length: requestCount }, (_, index) => inputRequests[index])
   let dependencyKeys: string[] = []
-  if (record.dependencyKeys !== undefined) {
-    if (!Array.isArray(record.dependencyKeys)) {
+  if (inputDependencyKeys !== undefined) {
+    if (!Array.isArray(inputDependencyKeys)) {
       throw new TypeError('Pending mutation dependency keys must be an array')
     }
-    dependencyKeys = normalizeDependencyKeys(record.dependencyKeys)
+    dependencyKeys = normalizeDependencyKeys(inputDependencyKeys)
   }
   return {
     version: 1,
-    requests: record.requests.map(normalizeRequest),
+    ...(kind ? { kind } : {}),
+    requests: requestInputs.map((request) => normalizeRequest(request, kind)),
     ...(dependencyKeys.length === 0 ? {} : { dependencyKeys }),
   }
+}
+
+export function isGenerationOperationPendingIntent(intent: DurableMutationIntent): intent is DurableMutationIntent & {
+  kind: 'generation-operation-submit' | 'generation-operation-cancel' | 'generation-operation-retry'
+} {
+  return (
+    intent.kind === 'generation-operation-submit' ||
+    intent.kind === 'generation-operation-cancel' ||
+    intent.kind === 'generation-operation-retry'
+  )
+}
+
+function generationOperationIdFromPendingIntent(intent: DurableMutationIntent): string | undefined {
+  const request = intent.requests[0]
+  if (intent.kind === 'generation-operation-submit') {
+    return typeof request?.body.operationId === 'string' ? request.body.operationId : undefined
+  }
+  if (intent.kind === 'generation-operation-cancel' || intent.kind === 'generation-operation-retry') {
+    const suffix = intent.kind === 'generation-operation-cancel' ? 'cancellation' : 'retries'
+    const match = new RegExp(`^/generation-operations/([^/?#]+)/${suffix}$`).exec(request?.path ?? '')
+    if (!match) return undefined
+    try {
+      return decodeURIComponent(match[1]!)
+    } catch {
+      return match[1]
+    }
+  }
+  return undefined
 }
 
 function serializePendingMutationIntent(intent: DurableMutationIntent): Uint8Array<ArrayBuffer> {
   return new TextEncoder().encode(JSON.stringify({ intent } satisfies EncryptedPendingMutationPayload))
 }
 
-function normalizeRequest(value: unknown): DurableMutationRequest {
+function normalizeRequest(value: unknown, kind?: DurableMutationIntent['kind']): DurableMutationRequest {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new TypeError('Pending mutation request must be an object')
   }
   const request = value as Partial<DurableMutationRequest>
-  if (!['DELETE', 'PATCH', 'POST', 'PUT'].includes(request.method ?? '')) {
+  const { method: inputMethod, path, body: inputBody } = request
+  if (!['DELETE', 'PATCH', 'POST', 'PUT'].includes(inputMethod ?? '')) {
     throw new TypeError('Pending mutation request method is invalid')
   }
   if (
-    typeof request.path !== 'string' ||
-    !request.path.startsWith('/') ||
-    request.path.startsWith('//') ||
-    request.path.includes('..') ||
-    request.path.length > 2_048
+    typeof path !== 'string' ||
+    !path.startsWith('/') ||
+    path.startsWith('//') ||
+    path.includes('..') ||
+    path.length > 2_048
   ) {
     throw new TypeError('Pending mutation command path is invalid')
   }
-  const method = request.method as DurableMutationRequestMethod
-  if (
-    !ALLOWED_DURABLE_COMMANDS.some((candidate) => candidate.method === method && candidate.path.test(request.path!))
-  ) {
+  const method = inputMethod as DurableMutationRequestMethod
+  const generationOperationPathAllowed =
+    kind !== undefined && protocolDurableGenerationOperationMatches(kind, method, path)
+  const commandPathAllowed = kind === undefined && findProtocolDurableCommandOperation(method, path) !== undefined
+  if (!generationOperationPathAllowed && !commandPathAllowed) {
     throw new TypeError('Pending mutation command path is not allowlisted')
   }
-  if (!request.body || typeof request.body !== 'object' || Array.isArray(request.body)) {
+  if (!inputBody || typeof inputBody !== 'object' || Array.isArray(inputBody)) {
     throw new TypeError('Pending mutation request body must be an object')
   }
-  if (Object.prototype.hasOwnProperty.call(request.body, 'baseRevision')) {
+  if (kind === undefined && Object.prototype.hasOwnProperty.call(inputBody, 'baseRevision')) {
     throw new TypeError('Pending mutation intent must not persist a base revision')
   }
-  return {
-    method,
-    path: request.path,
-    body: isImmutableJsonSnapshot(request.body) ? request.body : cloneJsonValue(request.body),
+  const body = isImmutableJsonSnapshot(inputBody) ? inputBody : cloneJsonValue(inputBody)
+  // JSON conversion can change shape or introduce fields (for example toJSON).
+  // Validate the owned snapshot before any persistence or target registration.
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new TypeError('Pending mutation request body must be an object')
   }
+  if (kind === undefined && Object.prototype.hasOwnProperty.call(body, 'baseRevision')) {
+    throw new TypeError('Pending mutation intent must not persist a base revision')
+  }
+  return { method, path, body }
 }
 
 function isImmutableJsonSnapshot(value: unknown, ancestors = new Set<object>()): boolean {
@@ -1375,11 +1646,48 @@ function pendingMutationRequestProjectionTargets(request: DurableMutationRequest
   if (request.method === 'POST' && request.path === '/agent-presets') {
     return [pendingMutationAgentPresetCollectionProjectionTarget()]
   }
+  if (request.method === 'POST' && (request.path === '/agents' || request.path === '/agents/reorder')) {
+    return [pendingMutationAgentCollectionProjectionTarget()]
+  }
+  const agentDuplicate = request.method === 'POST' ? /^\/agents\/([^/]+)\/duplicate$/.exec(request.path) : null
+  if (agentDuplicate) return [pendingMutationAgentCollectionProjectionTarget()]
+  const agentRow =
+    request.method === 'PATCH' || request.method === 'DELETE' ? /^\/agents\/([^/]+)$/.exec(request.path) : null
+  if (agentRow) {
+    const targets = [pendingMutationAgentRowProjectionTarget(decodeProjectionTargetPart(agentRow[1]!))]
+    if (request.method === 'DELETE') targets.push(pendingMutationAgentCollectionProjectionTarget())
+    return targets
+  }
   if (request.method === 'POST' && request.path === '/agent-presets/reorder') {
     return [pendingMutationAgentPresetOrderProjectionTarget()]
   }
   if (request.method === 'POST' && request.path === '/agent-presets/default') {
     return [pendingMutationAgentPresetDefaultProjectionTarget()]
+  }
+
+  const agentPresetUseReorder =
+    request.method === 'POST' ? /^\/agent-presets\/([^/]+)\/uses\/reorder$/.exec(request.path) : null
+  if (agentPresetUseReorder) {
+    return [pendingMutationAgentPresetStepsProjectionTarget(decodeProjectionTargetPart(agentPresetUseReorder[1]!))]
+  }
+
+  const agentPresetUseCollection =
+    request.method === 'POST' ? /^\/agent-presets\/([^/]+)\/uses$/.exec(request.path) : null
+  if (agentPresetUseCollection) {
+    return [pendingMutationAgentPresetStepsProjectionTarget(decodeProjectionTargetPart(agentPresetUseCollection[1]!))]
+  }
+
+  const agentPresetUseRow =
+    request.method === 'PATCH' || request.method === 'DELETE'
+      ? /^\/agent-presets\/([^/]+)\/uses\/([^/]+)$/.exec(request.path)
+      : null
+  if (agentPresetUseRow) {
+    const presetId = decodeProjectionTargetPart(agentPresetUseRow[1]!)
+    const targets = [
+      pendingMutationAgentPresetStepProjectionTarget(presetId, decodeProjectionTargetPart(agentPresetUseRow[2]!)),
+    ]
+    if (request.method === 'DELETE') targets.push(pendingMutationAgentPresetStepsProjectionTarget(presetId))
+    return targets
   }
 
   const agentPresetStepDuplicate =
@@ -1652,12 +1960,14 @@ function normalizeOutboxKey(key: string): string {
 }
 
 function normalizeDependencyKeys(value: readonly unknown[], enforceCount = true): string[] {
-  if (enforceCount && value.length > MAX_DURABLE_MUTATION_DEPENDENCY_KEYS) {
+  const count = value.length
+  if (!Number.isInteger(count) || count < 0 || (enforceCount && count > MAX_DURABLE_MUTATION_DEPENDENCY_KEYS)) {
     throw new RangeError('Pending mutation dependency key count is invalid')
   }
   return Array.from(
     new Set(
-      value.map((dependencyKey) => {
+      Array.from({ length: count }, (_, index) => {
+        const dependencyKey = value[index]
         if (typeof dependencyKey !== 'string') {
           throw new TypeError('Pending mutation dependency key is invalid')
         }
@@ -1836,26 +2146,6 @@ async function decryptSubtleIntent(
 
 function uint8ArrayToArrayBuffer(value: Uint8Array): ArrayBuffer {
   return value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer
-}
-
-async function reservePendingMutationOrder(): Promise<number | null> {
-  const database = await openOutboxDatabase()
-  if (!database) return null
-  try {
-    const transaction = database.transaction(OUTBOX_ORDER_STORE, 'readwrite')
-    const store = transaction.objectStore(OUTBOX_ORDER_STORE)
-    const request = store.add({ reservedAt: Date.now() })
-    let order: number | null = null
-    request.onsuccess = () => {
-      order = typeof request.result === 'number' ? request.result : null
-      store.delete(request.result)
-    }
-    await transactionDone(transaction)
-    return order
-  } catch (error) {
-    reportPersistenceWarning('Unable to reserve pending-mutation order', error)
-    return null
-  }
 }
 
 async function openOutboxDatabase(): Promise<IDBDatabase | null> {

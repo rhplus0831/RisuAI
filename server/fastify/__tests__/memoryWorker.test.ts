@@ -6,6 +6,7 @@ import { openDatabase } from '../src/db.js'
 import { buildApp } from '../src/app.js'
 import {
   cancelMemoryJob,
+  claimNextMemoryJob,
   createMemoryJob,
   enqueueMemoryJob,
   getMemoryJob,
@@ -63,6 +64,74 @@ describe('memory worker lifecycle and dispatch', () => {
       await worker.stop()
       expect(worker.isRunning).toBe(false)
       expect(worker.isProcessing).toBe(false)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('wakes an idle worker immediately when new work is enqueued', async () => {
+    vi.useFakeTimers()
+    const db = openDatabase(makeDataDir())
+    try {
+      const handled: string[] = []
+      const worker = new MemoryWorker({
+        db,
+        pollIntervalMs: 10_000,
+        handlers: {
+          chunk: (job) => {
+            handled.push(job.id)
+          },
+        },
+      })
+      worker.start()
+      await vi.advanceTimersByTimeAsync(0)
+
+      enqueueMemoryJob(db, { id: 'job-woken', chatId: 'chat-1', kind: 'chunk', payload: {} })
+      worker.wake()
+      await vi.advanceTimersByTimeAsync(0)
+      await flushMicrotasks()
+
+      expect(handled).toEqual(['job-woken'])
+      await worker.stop()
+    } finally {
+      db.close()
+    }
+  })
+
+  it('remembers a wake request made while another job is in flight', async () => {
+    vi.useFakeTimers()
+    const db = openDatabase(makeDataDir())
+    try {
+      const firstStarted = deferred()
+      const releaseFirst = deferred()
+      const handled: string[] = []
+      enqueueMemoryJob(db, { id: 'job-first', chatId: 'chat-1', kind: 'chunk', payload: {} })
+      const worker = new MemoryWorker({
+        db,
+        pollIntervalMs: 10_000,
+        handlers: {
+          chunk: async (job) => {
+            handled.push(job.id)
+            if (job.id === 'job-first') {
+              firstStarted.resolve()
+              await releaseFirst.promise
+            }
+          },
+        },
+      })
+      worker.start()
+      await vi.advanceTimersByTimeAsync(0)
+      await firstStarted.promise
+
+      enqueueMemoryJob(db, { id: 'job-second', chatId: 'chat-1', kind: 'chunk', payload: {} })
+      worker.wake()
+      releaseFirst.resolve()
+      await flushMicrotasks()
+      await vi.advanceTimersByTimeAsync(0)
+      await flushMicrotasks()
+
+      expect(handled).toEqual(['job-first', 'job-second'])
+      await worker.stop()
     } finally {
       db.close()
     }
@@ -138,20 +207,12 @@ describe('memory worker lifecycle and dispatch', () => {
           chatId: 'chat-1',
           job: {
             id: 'job-events',
+            instanceId: expect.any(String),
             kind: 'summarize',
             status: 'running',
             attemptCount: 1,
             maxAttempts: 3,
-          },
-          sideEffect: {
-            kind: 'hypav3_progress',
-            payload: {
-              open: true,
-              miniMsg: '',
-              msg: '[Hypa V3] Summarizing...',
-              subMsg: '',
-              status: 'running',
-            },
+            updatedAt: expect.any(String),
           },
         },
         {
@@ -159,22 +220,13 @@ describe('memory worker lifecycle and dispatch', () => {
           chatId: 'chat-1',
           job: {
             id: 'job-events',
+            instanceId: expect.any(String),
             kind: 'summarize',
             status: 'completed',
             attemptCount: 1,
             maxAttempts: 3,
             error: null,
             updatedAt: expect.any(String),
-          },
-          sideEffect: {
-            kind: 'hypav3_progress',
-            payload: {
-              open: false,
-              miniMsg: '',
-              msg: '',
-              subMsg: '',
-              status: 'completed',
-            },
           },
         },
       ])
@@ -218,7 +270,7 @@ describe('memory worker lifecycle and dispatch', () => {
     }
   })
 
-  it("L17: round-robins claims across chats so one chat's backlog cannot starve another", async () => {
+  it("round-robins claims across chats so one chat's backlog cannot starve another", async () => {
     const db = openDatabase(makeDataDir())
     try {
       enqueueMemoryJob(db, { id: 'job-a-1', chatId: 'chat-a', kind: 'chunk', payload: {} })
@@ -249,7 +301,7 @@ describe('memory worker lifecycle and dispatch', () => {
     }
   })
 
-  it("L17: one chat's batch is bounded to a single tick and the other chat is served next", async () => {
+  it("one chat's batch is bounded to a single tick and the other chat is served next", async () => {
     const db = openDatabase(makeDataDir())
     try {
       enqueueMemoryJob(db, { id: 'job-a-1', chatId: 'chat-a', kind: 'chunk', payload: {} })
@@ -285,7 +337,7 @@ describe('memory worker lifecycle and dispatch', () => {
     }
   })
 
-  it('L18: drains a multi-batch backlog through immediate productive ticks', async () => {
+  it('drains a multi-batch backlog through immediate productive ticks', async () => {
     vi.useFakeTimers()
     const db = openDatabase(makeDataDir())
     try {
@@ -354,7 +406,7 @@ describe('memory worker lifecycle and dispatch', () => {
     }
   })
 
-  it('L18: keeps idle polling on the configured delay', async () => {
+  it('keeps idle polling on the configured delay', async () => {
     vi.useFakeTimers()
     const db = openDatabase(makeDataDir())
     try {
@@ -392,7 +444,7 @@ describe('memory worker lifecycle and dispatch', () => {
     }
   })
 
-  it('L18: stop prevents pending fast-path ticks after productive work settles', async () => {
+  it('stop prevents pending fast-path ticks after productive work settles', async () => {
     vi.useFakeTimers()
     const db = openDatabase(makeDataDir())
     try {
@@ -526,18 +578,12 @@ describe('memory worker lifecycle and dispatch', () => {
         chatId: 'chat-1',
         job: {
           id: 'job-fail-events',
+          instanceId: expect.any(String),
           kind: 'chunk',
           status: 'failed',
           attemptCount: 1,
           maxAttempts: 1,
-        },
-        sideEffect: {
-          kind: 'hypav3_progress',
-          payload: {
-            open: false,
-            msg: '',
-            status: 'failed',
-          },
+          updatedAt: expect.any(String),
         },
       })
     } finally {
@@ -635,18 +681,12 @@ describe('memory worker lifecycle and dispatch', () => {
         chatId: 'chat-1',
         job: {
           id: 'job-retry-events',
+          instanceId: expect.any(String),
           kind: 'embed',
           status: 'pending',
           attemptCount: 1,
           maxAttempts: 2,
-        },
-        sideEffect: {
-          kind: 'hypav3_progress',
-          payload: {
-            open: true,
-            msg: '[Hypa V3] Waiting to embed...',
-            status: 'pending',
-          },
+          updatedAt: expect.any(String),
         },
       })
     } finally {
@@ -745,7 +785,7 @@ describe('memory worker lifecycle and dispatch', () => {
     }
   })
 
-  it('L17: sweeps old terminal memory jobs when worker maintenance starts', async () => {
+  it('sweeps old terminal memory jobs when worker maintenance starts', async () => {
     const db = openDatabase(makeDataDir())
     try {
       for (const [id, status] of [
@@ -847,16 +887,10 @@ describe('memory worker lifecycle and dispatch', () => {
         chatId: 'chat-1',
         job: {
           id: 'job-recovered',
+          instanceId: expect.any(String),
           kind: 'summarize',
           status: 'pending',
-        },
-        sideEffect: {
-          kind: 'hypav3_progress',
-          payload: {
-            open: true,
-            msg: '[Hypa V3] Waiting to summarize...',
-            status: 'pending',
-          },
+          updatedAt: expect.any(String),
         },
       })
       expect(events[1]).toMatchObject({
@@ -955,6 +989,64 @@ describe('memory worker lifecycle and dispatch', () => {
       expect(getMemoryJob(checkDb, 'job-app')).toMatchObject({ status: 'completed' })
     } finally {
       checkDb.close()
+    }
+  })
+
+  it('recovers an abandoned running job after a database reopen and executes it once', async () => {
+    vi.useFakeTimers()
+    process.env.LOG_LEVEL = 'silent'
+    const dataDir = makeDataDir()
+    const firstDb = openDatabase(dataDir)
+    enqueueMemoryJob(firstDb, {
+      id: 'job-reopened',
+      chatId: 'chat-1',
+      kind: 'chunk',
+      payload: {},
+      nextRunAt: '2026-08-30T00:00:00.000Z',
+    })
+    expect(claimNextMemoryJob(firstDb, { now: '2026-08-30T00:00:00.000Z' })).toMatchObject({
+      id: 'job-reopened',
+      status: 'running',
+      attemptCount: 1,
+    })
+    firstDb.close()
+
+    let executions = 0
+    const { app } = await buildApp({
+      config: {
+        host: '127.0.0.1',
+        port: 0,
+        dataDir,
+        bodyLimit: 1024 * 1024,
+        importMaxBytes: Infinity,
+        trustProxy: false,
+        hubUrl: 'https://sv.risuai.xyz',
+      },
+      memoryWorker: {
+        pollIntervalMs: 10_000,
+        retry: { now: '2026-08-30T00:00:00.000Z', backoffBaseMs: 0 },
+        handlers: {
+          chunk: () => {
+            executions += 1
+          },
+        },
+      },
+    })
+
+    await vi.advanceTimersByTimeAsync(0)
+    await flushMicrotasks()
+    expect(executions).toBe(1)
+    await app.close()
+
+    const reopenedDb = openDatabase(dataDir)
+    try {
+      expect(getMemoryJob(reopenedDb, 'job-reopened')).toMatchObject({
+        status: 'completed',
+        attemptCount: 2,
+        error: null,
+      })
+    } finally {
+      reopenedDb.close()
     }
   })
 })

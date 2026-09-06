@@ -2,12 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const outboxApi = vi.hoisted(() => ({ list: vi.fn() }))
 const durableApi = vi.hoisted(() => ({ replay: vi.fn() }))
+const generationOperationApi = vi.hoisted(() => ({ replay: vi.fn() }))
 
 vi.mock('./pendingMutationOutbox', () => ({
+  isGenerationOperationPendingIntent: (intent: { kind?: string }) => intent.kind?.startsWith('generation-operation-'),
   listPendingMutations: outboxApi.list,
 }))
 vi.mock('./durableMutationDispatch', () => ({
   dispatchDurableMutationReplay: durableApi.replay,
+}))
+vi.mock('./generationOperations', () => ({
+  dispatchGenerationOperationPendingReplay: generationOperationApi.replay,
 }))
 
 import { replayPendingMutations } from './pendingMutationReplay'
@@ -15,6 +20,7 @@ import { replayPendingMutations } from './pendingMutationReplay'
 beforeEach(() => {
   vi.clearAllMocks()
   durableApi.replay.mockResolvedValue({ disposition: 'succeeded', result: { status: 'ok' } })
+  generationOperationApi.replay.mockResolvedValue({ disposition: 'succeeded', result: { status: 'accepted' } })
 })
 
 describe('pending mutation replay', () => {
@@ -22,17 +28,108 @@ describe('pending mutation replay', () => {
     const entries = [entry('settings:runtime', 'mutation-a'), entry('chat:chat-a', 'mutation-b')]
     outboxApi.list.mockResolvedValue(entries)
     const order: string[] = []
+    let releaseFirst!: () => void
+    const firstDispatch = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
     durableApi.replay.mockImplementation(async (handle) => {
       order.push(handle.mutationId)
+      if (handle.mutationId === 'mutation-a') await firstDispatch
       return handle.mutationId === 'mutation-a'
         ? { disposition: 'succeeded', result: { status: 'ok' } }
         : { disposition: 'retained', result: { status: 'error', error: 'offline' } }
     })
 
-    const summary = await replayPendingMutations()
+    const replay = replayPendingMutations()
+    await vi.waitFor(() => expect(order).toEqual(['mutation-a']))
+    releaseFirst()
+    const summary = await replay
 
     expect(order).toEqual(['mutation-a', 'mutation-b'])
     expect(summary).toEqual({ attempted: 2, discarded: 0, retained: 1, succeeded: 1 })
+  })
+
+  it('preserves committed outbox order when cross-tab wall-clock sequences disagree', async () => {
+    const committedFirst = entry('settings:runtime', 'committed-first')
+    committedFirst.handle.sequence = 9_000
+    const committedSecond = entry('chat:chat-a', 'committed-second')
+    committedSecond.handle.sequence = 1
+    outboxApi.list.mockResolvedValue([committedFirst, committedSecond])
+
+    await replayPendingMutations()
+
+    expect(durableApi.replay.mock.calls.map(([handle]) => handle.mutationId)).toEqual([
+      'committed-first',
+      'committed-second',
+    ])
+  })
+
+  it('routes atomic submit intents back to the generation-operation endpoint', async () => {
+    const operationEntry: any = entry('generation-operation-submit:operation-a', 'mutation-operation-a')
+    operationEntry.intent.kind = 'generation-operation-submit'
+    operationEntry.intent.requests = [
+      { method: 'POST', path: '/generation-operations', body: { operationId: 'operation-a' } },
+    ]
+    outboxApi.list.mockResolvedValue([operationEntry])
+
+    await expect(replayPendingMutations()).resolves.toEqual({
+      attempted: 1,
+      discarded: 0,
+      retained: 0,
+      succeeded: 1,
+    })
+    expect(generationOperationApi.replay).toHaveBeenCalledWith(operationEntry.handle, operationEntry.intent)
+    expect(durableApi.replay).not.toHaveBeenCalled()
+  })
+
+  it('replays a persisted Stop before its older submit for cancel-before-POST recovery', async () => {
+    const submit: any = entry('generation-operation-submit:operation-a', 'submit-a')
+    submit.handle.sequence = 1
+    submit.intent.kind = 'generation-operation-submit'
+    submit.intent.requests = [{ method: 'POST', path: '/generation-operations', body: { operationId: 'operation-a' } }]
+    const cancel: any = entry('generation-operation-cancel:operation-a', 'cancel-a')
+    cancel.handle.sequence = 2
+    cancel.intent.kind = 'generation-operation-cancel'
+    cancel.intent.requests = [
+      {
+        method: 'PUT',
+        path: '/generation-operations/operation-a/cancellation',
+        body: { reason: 'user_stop' },
+      },
+    ]
+    outboxApi.list.mockResolvedValue([submit, cancel])
+
+    await replayPendingMutations()
+
+    expect(generationOperationApi.replay.mock.calls.map(([handle]) => handle.mutationId)).toEqual([
+      'cancel-a',
+      'submit-a',
+    ])
+  })
+
+  it('reports an unacknowledged Stop as a nonblocking retained control', async () => {
+    const cancel: any = entry('generation-operation-cancel:operation-a', 'cancel-a')
+    cancel.intent.kind = 'generation-operation-cancel'
+    cancel.intent.requests = [
+      {
+        method: 'PUT',
+        path: '/generation-operations/operation-a/cancellation',
+        body: { reason: 'user_stop' },
+      },
+    ]
+    outboxApi.list.mockResolvedValue([cancel])
+    generationOperationApi.replay.mockResolvedValue({
+      disposition: 'retained',
+      result: { status: 'failed', error: 'offline' },
+    })
+
+    await expect(replayPendingMutations()).resolves.toEqual({
+      attempted: 1,
+      controlRetained: 1,
+      discarded: 0,
+      retained: 0,
+      succeeded: 0,
+    })
   })
 
   it('counts terminal mutation-id failures as discarded instead of retrying forever', async () => {
@@ -71,7 +168,7 @@ describe('pending mutation replay', () => {
     expect(durableApi.replay.mock.calls.map(([handle]) => handle.mutationId)).toEqual(['mutation-a', 'mutation-c'])
   })
 
-  it('keeps a prompt row blocked across reload until its owner repair succeeds', async () => {
+  it('keeps a prompt successor blocked until a later replay drains its owner repair', async () => {
     const entries = [
       entry('prompt-template-owner:preset-a', 'id-repair', '/prompt-presets/preset-a'),
       entry('prompt-template-owner:preset-a', 'row-successor', '/prompt-items/row-a'),

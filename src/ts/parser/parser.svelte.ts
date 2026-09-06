@@ -2,39 +2,43 @@ import DOMPurify from 'dompurify'
 import markdownit from 'markdown-it'
 import { sha256Hex } from '../sha256Fallback'
 import {
-  getCurrentCharacter,
-  getDatabase,
+  type Chat,
+  type Database,
   type character,
   type customscript,
+  type loreBook,
   type triggerscript,
 } from '../storage/database.svelte'
 import versionInfo from '../../../version.json'
-import { CurrentTriggerIdStore, selIdState } from '../stores.svelte'
+import { CurrentTriggerIdStore } from '../stores.svelte'
 import { aiWatermarkingLawApplies, getFileSrc } from '../globalApi.svelte'
 import './chatVar.svelte' // side effect: registers the browser chatVar backend
 import { getChatVar, setChatVar, getGlobalChatVar } from './chatVarBackend'
 import { processScriptFull } from '../process/scripts'
+import { requestServerDisplaySource, type DisplaySourcePriority } from '../server/displaySources'
+import type { DisplaySourceLayer } from '@risuai/protocol/display-source'
 import { get } from 'svelte/store'
 import css, { type CssAtRuleAST } from '@adobe/css-tools'
-import { selectedCharID } from '../stores.svelte'
 import { calcString } from '../process/infunctions'
 import { safeStructuredClone } from '../polyfill'
 import { pickHashRand, replaceAsync } from '../util'
-import { findCharacterbyId } from '../characterState'
 import { getPersonaPrompt, getUserIcon, getUserName } from '../utilState'
 import { getInlayAssetBlob, type InlayAsset } from '../process/files/inlays'
-import { getModuleAssets, getModuleLorebooks, getModules } from '../process/modules'
-import { charactersResourceState } from '../server/resourceState.svelte'
+import type { RisuModule } from '../process/modules'
+import { captureModuleRenderRevision } from '../moduleRenderRevision'
+import { resolveActiveModuleStates } from '../moduleActivation'
 import hljs from 'highlight.js/lib/core'
 import 'highlight.js/styles/atom-one-dark.min.css'
 import { language } from 'src/lang'
 import katex from 'katex'
 import { getModelInfo } from '../model/modellist'
+import { resolveModelProfile } from '../model/modelProfileResolver'
 import cssSelectorParser from 'postcss-selector-parser'
 import {
   registerRisuChatParserCBS,
   risuChatParser as risuChatParserImpl,
   type RisuChatParserArg,
+  type matcherArg,
 } from './risuChatParser'
 import {
   dateTimeFormat,
@@ -46,11 +50,26 @@ import {
   type CbsConditions,
 } from './risuChatParserHelpers'
 import { insertSentenceParagraphBreaks } from './sentenceBreaks'
+import {
+  SERVER_COLLECTION_NAMES,
+  charactersResourceState,
+  collectionsResourceState,
+  getCharacterResourceOwner,
+  getChatMetadataOwnerSnapshot,
+  getChatScriptstateOwnerSnapshot,
+  settingsResourceState,
+  type ServerResourceStatus,
+} from '../server/resourceState.svelte'
+import { getChatMessageOwnerState } from '../server/chatMessageHydration.svelte'
+import { SERVER_SETTINGS_GROUP_BY_KEY } from '../server/settingsGroups'
+import { SERVER_STANDALONE_SETTING_NAMES } from '@risuai/protocol/standalone-settings'
+import { displaySettingForPaint } from '../gui/displaySettings'
+import { AssetCollectionIndexCache, type AssetNameIndex } from './assetCollectionIndex'
 
 export { dateTimeFormat, makeArray, parseArray, parseDict, risuEscape, risuUnescape }
 export type { CbsConditions }
 
-export function risuChatParser(da: string, arg?: RisuChatParserArg): string {
+export function risuChatParser(da: string, arg?: RisuChatParserArg | matcherArg): string {
   return risuChatParserImpl(da, arg)
 }
 
@@ -76,8 +95,230 @@ const mdHighlight = markdownit({
 md.disable(['code'])
 mdHighlight.disable(['code'])
 
+function nonBlankStableId(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function uniqueCharacterOwner(characters: readonly character[], characterId: string): character | undefined {
+  let owner: character | undefined
+  for (const candidate of characters) {
+    if (candidate?.chaId !== characterId) continue
+    if (owner) return undefined
+    owner = candidate
+  }
+  return owner
+}
+
+function selectedCharacterOwner(characters: readonly character[], selectedIndex: number): character | undefined {
+  const candidate = characters[selectedIndex]
+  return nonBlankStableId(candidate?.chaId) && uniqueCharacterOwner(characters, candidate.chaId) === candidate
+    ? candidate
+    : undefined
+}
+
+function uniqueChatOwner(
+  characters: readonly character[],
+  selectedCharacter: character,
+  chatId: string,
+): Chat | undefined {
+  let owner: { character: character; chat: Chat } | undefined
+  for (const characterOwner of characters) {
+    for (const chatOwner of characterOwner.chats ?? []) {
+      if (chatOwner?.id !== chatId) continue
+      if (owner) return undefined
+      owner = { character: characterOwner, chat: chatOwner }
+    }
+  }
+  return owner?.character === selectedCharacter ? owner.chat : undefined
+}
+
+function selectedChatOwner(characters: readonly character[], characterOwner: character): Chat | undefined {
+  const candidate = characterOwner.chats?.[characterOwner.chatPage]
+  const owner = nonBlankStableId(candidate?.id) ? uniqueChatOwner(characters, characterOwner, candidate.id) : undefined
+  return owner && transcriptHasUniqueStableIds(owner.message ?? []) ? owner : undefined
+}
+
+function transcriptHasUniqueStableIds(messages: readonly { chatId?: unknown }[]): boolean {
+  const messageIds = new Set<string>()
+  for (const message of messages) {
+    if (!nonBlankStableId(message?.chatId) || messageIds.has(message.chatId)) return false
+    messageIds.add(message.chatId)
+  }
+  return true
+}
+
+function readySelectedCharacterOwner(): character | undefined {
+  if (charactersResourceState.status !== 'ready') return undefined
+  const candidate = selectedCharacterOwner(charactersResourceState.characters, charactersResourceState.currentChar)
+  if (!candidate?.chaId) return undefined
+  return getCharacterResourceOwner(candidate.chaId) === candidate ? candidate : undefined
+}
+
+function readyChatOwner(characterOwner: character, chatId: string): Chat | undefined {
+  const chatOwner = uniqueChatOwner(charactersResourceState.characters, characterOwner, chatId)
+  if (!chatOwner?.id || !characterOwner.chaId) return undefined
+  const metadataOwner = getChatMetadataOwnerSnapshot(characterOwner.chaId, chatOwner.id)
+  const scriptstateOwner = getChatScriptstateOwnerSnapshot(characterOwner.chaId, chatOwner.id)
+  const transcriptOwner = getChatMessageOwnerState(chatOwner.id)
+  if (
+    !metadataOwner ||
+    !scriptstateOwner ||
+    !transcriptOwner ||
+    !transcriptHasUniqueStableIds(transcriptOwner.messages)
+  )
+    return undefined
+
+  return {
+    ...chatOwner,
+    ...metadataOwner.metadata,
+    message: transcriptOwner.messages,
+    scriptstate: scriptstateOwner.scriptstate,
+  } as Chat
+}
+
+function readySelectedChatOwner(characterOwner: character): Chat | undefined {
+  const candidate = characterOwner.chats?.[characterOwner.chatPage]
+  if (!nonBlankStableId(candidate?.id)) return undefined
+  return readyChatOwner(characterOwner, candidate.id)
+}
+
+function parserSelectedContext(): { character: character; chat?: Chat } | undefined {
+  if (charactersResourceState.status !== 'ready') return undefined
+  const characterOwner = readySelectedCharacterOwner()
+  if (!characterOwner) return undefined
+  return { character: characterOwner, chat: readySelectedChatOwner(characterOwner) }
+}
+
+function parserSelectedCharacterIndex(): number {
+  return charactersResourceState.status === 'ready' && readySelectedCharacterOwner()
+    ? charactersResourceState.currentChar
+    : -1
+}
+
+function parserCharacterOwnerById(characterId: string): character | undefined {
+  const normalizedCharacterId = characterId.trim()
+  if (!normalizedCharacterId) return undefined
+  return charactersResourceState.status === 'ready' ? getCharacterResourceOwner(normalizedCharacterId) : undefined
+}
+
+function parserChatOwnerById(characterId: string, chatId: string): Chat | undefined {
+  const normalizedCharacterId = characterId.trim()
+  const normalizedChatId = chatId.trim()
+  if (!normalizedCharacterId || !normalizedChatId) return undefined
+  if (charactersResourceState.status === 'ready') {
+    const characterOwner = getCharacterResourceOwner(normalizedCharacterId)
+    return characterOwner ? readyChatOwner(characterOwner, normalizedChatId) : undefined
+  }
+  return undefined
+}
+
+function projectSelectedCharacter(
+  characters: readonly character[],
+  selectedIndex: number,
+  context: { character: character; chat?: Chat } | undefined,
+): character[] {
+  if (!context || characters[selectedIndex] !== context.character) return []
+  if (!context.chat) {
+    return characters.map((characterOwner, index) =>
+      index === selectedIndex ? { ...characterOwner, chats: [] } : characterOwner,
+    )
+  }
+  const selectedChatIndex = context.character.chats?.findIndex((chatOwner) => chatOwner.id === context.chat?.id) ?? -1
+  if (selectedChatIndex < 0) {
+    return characters.map((characterOwner, index) =>
+      index === selectedIndex ? { ...characterOwner, chats: [] } : characterOwner,
+    )
+  }
+  const chats = context.character.chats?.map((chatOwner, index) =>
+    index === selectedChatIndex ? context.chat! : chatOwner,
+  )
+  return characters.map((characterOwner, index) =>
+    index === selectedIndex ? { ...characterOwner, chats: chats ?? [] } : characterOwner,
+  )
+}
+
+const standaloneSettingNames = new Set<string>(SERVER_STANDALONE_SETTING_NAMES)
+
+function parserSettingOwnerStatus(key: keyof Database): ServerResourceStatus {
+  if (settingsResourceState.status === 'error') return 'error'
+  const group = SERVER_SETTINGS_GROUP_BY_KEY[String(key)]
+  if (group) {
+    return settingsResourceState.groupStatuses[group] ?? 'idle'
+  }
+  if (standaloneSettingNames.has(String(key))) {
+    return (
+      settingsResourceState.standaloneStatuses[key as keyof typeof settingsResourceState.standaloneStatuses] ?? 'idle'
+    )
+  }
+  return settingsResourceState.status
+}
+
+function parserSettingsProjection(): Partial<Database> {
+  if (settingsResourceState.status === 'error') return {}
+  const ownerValues = settingsResourceState.value as Partial<Database>
+  const settings: Partial<Database> = {}
+  for (const key of Object.keys(ownerValues) as (keyof Database)[]) {
+    if (parserSettingOwnerStatus(key) === 'ready') settings[key] = ownerValues[key] as never
+  }
+  return settings
+}
+
+function parserRuntimeDatabase(): Database {
+  const database = parserSettingsProjection()
+
+  for (const collectionName of SERVER_COLLECTION_NAMES) {
+    const status = collectionsResourceState.statuses[collectionName]
+    if (status === 'ready') {
+      database[collectionName] = collectionsResourceState.values[collectionName] as never
+    } else {
+      delete database[collectionName]
+    }
+  }
+
+  if (charactersResourceState.status === 'ready') {
+    database.characters = projectSelectedCharacter(
+      charactersResourceState.characters,
+      charactersResourceState.currentChar,
+      parserSelectedContext(),
+    )
+  } else {
+    database.characters = []
+  }
+
+  database.modules ??= []
+  database.promptPresets ??= []
+  database.personas ??= []
+  database.agentPresets ??= []
+  database.enabledModules ??= []
+  return database as Database
+}
+
+function parserSetting<K extends keyof Database>(key: K): Database[K] | undefined {
+  const status = parserSettingOwnerStatus(key)
+  if (status === 'ready') {
+    return (settingsResourceState.value as Partial<Database>)[key] as Database[K] | undefined
+  }
+  return undefined
+}
+
+function parserModules(context = parserSelectedContext()): RisuModule[] {
+  return resolveActiveModuleStates(parserRuntimeDatabase(), context?.character, context?.chat).map(
+    (state) => state.module as RisuModule,
+  )
+}
+
+function parserModuleLorebooks(): loreBook[] {
+  return parserModules().flatMap((moduleOwner) => moduleOwner.lorebook ?? [])
+}
+
+function parserModuleOwners(context: { character: character | undefined; chat: Chat | undefined }) {
+  return parserModules(
+    context.character ? { character: context.character, ...(context.chat ? { chat: context.chat } : {}) } : undefined,
+  )
+}
+
 registerRisuChatParserCBS({
-  getDatabase: getDatabase,
+  getDatabase: parserRuntimeDatabase,
   getUserName: getUserName,
   getPersonaPrompt: getPersonaPrompt,
   risuChatParser: risuChatParser,
@@ -90,19 +331,29 @@ registerRisuChatParserCBS({
   getGlobalChatVar: getGlobalChatVar,
   calcString: calcString,
   dateTimeFormat: dateTimeFormat,
-  getModules: getModules,
-  getModuleLorebooks: getModuleLorebooks,
+  getModules: parserModules,
+  getModuleLorebooks: parserModuleLorebooks,
   pickHashRand: pickHashRand,
-  getSelectedCharID: () => {
-    return get(selectedCharID)
-  },
+  getSelectedCharID: parserSelectedCharacterIndex,
   getModelInfo: getModelInfo,
+  getModelContext: (role) => {
+    const profile = resolveModelProfile({ database: parserRuntimeDatabase(), role })
+    return {
+      modelId: profile.modelId,
+      requestModel: profile.requestModel,
+      modelInfo: profile.modelInfo,
+      maxContext: profile.runtimeOptions.maxContext,
+    }
+  },
   callInternalFunction: function (args: string[]): string {
     return ''
   },
   isMobile: false,
   appVer: versionInfo.version,
   getCurrentTriggerId: () => get(CurrentTriggerIdStore) ?? 'null',
+  getScreenWidth: () => window.innerWidth.toString(),
+  getScreenHeight: () => window.innerHeight.toString(),
+  getBrowserLanguage: () => navigator.language,
 })
 
 DOMPurify.addHook('uponSanitizeElement', (node: HTMLElement, data) => {
@@ -114,7 +365,7 @@ DOMPurify.addHook('uponSanitizeElement', (node: HTMLElement, data) => {
   }
   if (data.tagName === 'img') {
     // Hide external images when hideAllImages is enabled
-    if (getDatabase().hideAllImages) {
+    if (parserSetting('hideAllImages')) {
       const src = node.getAttribute('src') || ''
       // Replace with placeholder if it's an external/loaded image
       if (src && !src.startsWith('data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP')) {
@@ -139,7 +390,7 @@ DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
   switch (data.attrName) {
     case 'style': {
       // Remove background-image URLs when hideAllImages is enabled
-      if (getDatabase().hideAllImages && data.attrValue) {
+      if (parserSetting('hideAllImages') && data.attrValue) {
         // Remove background-image property from inline styles
         data.attrValue = data.attrValue.replace(/background(-image)?:\s*url\([^)]*\);?/gi, '')
         // Also remove background property if it contains url()
@@ -184,10 +435,13 @@ DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
 })
 
 function renderMarkdown(md: markdownit, data: string) {
-  const db = getDatabase()
+  const customQuotes = parserSetting('customQuotes')
+  const customQuotesData = parserSetting('customQuotesData')
+  const unformatQuotes = parserSetting('unformatQuotes')
+  const blockquoteStyling = parserSetting('blockquoteStyling')
   let quotes = ['“', '”', '‘', '’']
-  if (db.customQuotes) {
-    quotes = db.customQuotesData ?? quotes
+  if (customQuotes) {
+    quotes = customQuotesData ?? quotes
   }
   data = data.replace(/\$\$(.*?)\$\$/gs, (match: string, content: string) => {
     try {
@@ -209,10 +463,10 @@ function renderMarkdown(md: markdownit, data: string) {
   })
   let text = risuUnescape(md.render(data.replace(/“|”/g, '"').replace(/‘|’/g, "'")))
 
-  if (db.unformatQuotes) {
+  if (unformatQuotes) {
     text = text.replace(/\uE9b0/gu, quotes[0]).replace(/\uE9b1/gu, quotes[1])
     text = text.replace(/\uE9b2/gu, quotes[2]).replace(/\uE9b3/gu, quotes[3])
-  } else if (db.blockquoteStyling) {
+  } else if (blockquoteStyling) {
     text = text
       .replace(/\uE9b0(.+?)\uE9b1/gmu, (full, content) => {
         content = content
@@ -444,77 +698,177 @@ async function renderHighlightableMarkdown(data: string) {
 }
 
 export const assetRegex = /{{(raw|path|img|image|video|audio|bgm|bg|emotion|asset|video-img|source)::(.+?)}}/gms
-
-function getAssetSrc(assetArr: string[][], assetPaths: AssetPaths) {
-  for (const asset of assetArr) {
-    const key = asset[0].toLocaleLowerCase()
-    assetPaths[key] ??= {
-      srcPaths: [],
-      ext: asset[2],
-    }
-    if (assetPaths[key].ext === asset[2]) {
-      assetPaths[key].srcPaths.push(asset[1])
-    }
-  }
-}
-
-function getEmoSrc(emoArr: string[][], emoPaths: AssetPaths) {
-  for (const emo of emoArr) {
-    emoPaths[emo[0].toLocaleLowerCase()] = {
-      srcPaths: [emo[1]],
-    }
-  }
-}
-
-const fileSrcCache = new Map<string, string>()
+const assetMarkerPresenceRegex = /{{(?:raw|path|img|image|video|audio|bgm|bg|emotion|asset|video-img|source)::/m
 
 async function getFileSrcCached(path: string) {
-  let cached = fileSrcCache.get(path)
-  if (cached) {
+  return getFileSrc(path)
+}
+
+interface AssetPathMatch {
+  srcPaths: string[]
+  ext?: string
+}
+
+interface AssetResolutionContext {
+  characterAssets: readonly (readonly string[])[]
+  characterAssetSource: readonly (readonly string[])[]
+  characterSignature: string
+  emotionAssets: readonly (readonly string[])[]
+  moduleOwners: readonly RisuModule[]
+  assetIndex: Promise<AssetNameIndex[]> | null
+  resolvedAssets: Map<string, AssetPathMatch | null>
+  resolvedEmotions: Map<string, string | null>
+}
+
+interface AssetResolutionCacheEntry extends AssetResolutionContext {
+  activeModuleKey: string
+  characterSignature: string
+  moduleRenderRevision: number
+}
+
+const ASSET_RESOLUTION_CACHE_LIMIT = 32
+const assetResolutionCache = new Map<string, AssetResolutionCacheEntry>()
+let cachedModuleRenderRevision = captureModuleRenderRevision()
+const additionalAssetCacheStats = {
+  contextsBuilt: 0,
+  assetIndexesBuilt: 0,
+  characterAssetTuplesVisited: 0,
+  moduleAssetTuplesVisited: 0,
+  resolvedAssetNames: 0,
+}
+const assetCollectionIndexes = new AssetCollectionIndexCache((kind) => {
+  if (kind === 'module') additionalAssetCacheStats.moduleAssetTuplesVisited += 1
+  else additionalAssetCacheStats.characterAssetTuplesVisited += 1
+}, captureModuleRenderRevision)
+
+function moduleOwnersForCharacter(char: simpleCharacterArgument | character): RisuModule[] {
+  const ownerCharacter = parserCharacterOwnerById(char.chaId)
+  const contextCharacter = char.type === 'simple' ? ownerCharacter : char
+  const rows = charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
+  const contextChat = contextCharacter
+    ? contextCharacter === ownerCharacter
+      ? charactersResourceState.status === 'ready'
+        ? readySelectedChatOwner(contextCharacter)
+        : selectedChatOwner(rows, contextCharacter)
+      : selectedChatOwner([contextCharacter], contextCharacter)
+    : undefined
+  return parserModuleOwners({ character: contextCharacter, chat: contextChat })
+}
+
+function characterAssetResolutionSignature(char: simpleCharacterArgument | character): string {
+  return JSON.stringify([char.additionalAssets ?? [], char.emotionImages ?? []])
+}
+
+function activeModuleAssetKey(moduleOwners: readonly RisuModule[]): string {
+  return JSON.stringify(moduleOwners.map((moduleOwner) => moduleOwner.id))
+}
+
+function getAssetResolutionContext(char: simpleCharacterArgument | character): AssetResolutionContext {
+  const moduleRenderRevision = captureModuleRenderRevision()
+  if (cachedModuleRenderRevision !== moduleRenderRevision) {
+    assetResolutionCache.clear()
+    cachedModuleRenderRevision = moduleRenderRevision
+  }
+
+  const moduleOwners = moduleOwnersForCharacter(char)
+  const activeModuleKey = activeModuleAssetKey(moduleOwners)
+  const characterSignature = characterAssetResolutionSignature(char)
+  const ownerKey = `${char.type === 'simple' ? 'simple' : 'character'}:${char.chaId}`
+  const cached = assetResolutionCache.get(ownerKey)
+  if (
+    cached?.moduleRenderRevision === moduleRenderRevision &&
+    cached.activeModuleKey === activeModuleKey &&
+    cached.characterSignature === characterSignature
+  ) {
+    assetResolutionCache.delete(ownerKey)
+    assetResolutionCache.set(ownerKey, cached)
     return cached
   }
-  const src = await getFileSrc(path)
-  fileSrcCache.set(path, src)
-  return src
+
+  // Character tuples use structural invalidation. Capture their values before
+  // yielding so an in-place edit cannot produce an index mixing two versions.
+  const [characterAssets, emotionAssets] = JSON.parse(characterSignature)
+  const entry: AssetResolutionCacheEntry = {
+    activeModuleKey,
+    characterAssets,
+    characterAssetSource: char.additionalAssets ?? characterAssets,
+    characterSignature,
+    emotionAssets,
+    moduleOwners,
+    moduleRenderRevision,
+    assetIndex: null,
+    resolvedAssets: new Map(),
+    resolvedEmotions: new Map(),
+  }
+  additionalAssetCacheStats.contextsBuilt += 1
+  assetResolutionCache.delete(ownerKey)
+  assetResolutionCache.set(ownerKey, entry)
+  while (assetResolutionCache.size > ASSET_RESOLUTION_CACHE_LIMIT) {
+    const oldestKey = assetResolutionCache.keys().next().value
+    if (oldestKey === undefined) break
+    assetResolutionCache.delete(oldestKey)
+  }
+  return entry
 }
 
-type AssetPaths = {
-  [key: string]: {
-    srcPaths: string[]
-    ext?: string
+async function resolveAssetPaths(context: AssetResolutionContext, name: string): Promise<AssetPathMatch | null> {
+  if (context.resolvedAssets.has(name)) return context.resolvedAssets.get(name) ?? null
+
+  if (!context.assetIndex) {
+    const revision = captureModuleRenderRevision()
+    context.assetIndex = Promise.all([
+      assetCollectionIndexes.get(
+        context.characterAssetSource,
+        context.characterSignature,
+        'character',
+        context.characterAssets,
+      ),
+      ...context.moduleOwners.map((owner) => assetCollectionIndexes.get(owner.assets ?? [], revision, 'module')),
+    ])
+    additionalAssetCacheStats.assetIndexesBuilt += 1
+  }
+  const indexes = await context.assetIndex
+  if (context.resolvedAssets.has(name)) return context.resolvedAssets.get(name) ?? null
+  let match: AssetPathMatch | null = null
+  for (const index of indexes) {
+    const extensions = index.get(name)
+    if (!extensions) continue
+    // First extension wins across character then module collection order.
+    match ??= { ext: extensions.keys().next().value, srcPaths: [] }
+    for (const path of extensions.get(match.ext) ?? []) match.srcPaths.push(path)
+  }
+  additionalAssetCacheStats.resolvedAssetNames += 1
+  context.resolvedAssets.set(name, match)
+  return match
+}
+
+function resolveEmotionPath(context: AssetResolutionContext, name: string): string | null {
+  if (context.resolvedEmotions.has(name)) return context.resolvedEmotions.get(name) ?? null
+  let path: string | null = null
+  for (const emotion of context.emotionAssets) {
+    if (emotion[0].toLocaleLowerCase() === name) path = emotion[1]
+  }
+  context.resolvedEmotions.set(name, path)
+  return path
+}
+
+export function clearAdditionalAssetCachesForTests(): void {
+  assetResolutionCache.clear()
+  assetCollectionIndexes.clear()
+  cachedModuleRenderRevision = captureModuleRenderRevision()
+  additionalAssetCacheStats.contextsBuilt = 0
+  additionalAssetCacheStats.assetIndexesBuilt = 0
+  additionalAssetCacheStats.characterAssetTuplesVisited = 0
+  additionalAssetCacheStats.moduleAssetTuplesVisited = 0
+  additionalAssetCacheStats.resolvedAssetNames = 0
+}
+
+export function getAdditionalAssetCacheStatsForTests() {
+  return {
+    ...additionalAssetCacheStats,
+    entries: assetResolutionCache.size,
   }
 }
-
-let assetsCache: AssetPaths | null = null
-let emoAssetsCache: AssetPaths | null = null
-
-export function resetAssetsCache(charAssets: string[][], emoAssets: string[][], moduleAssets: string[][]) {
-  const assetPaths: AssetPaths = {}
-  const charEmoPaths: AssetPaths = {}
-
-  getAssetSrc(charAssets, assetPaths)
-  getAssetSrc(moduleAssets, assetPaths)
-  getEmoSrc(emoAssets, charEmoPaths)
-
-  assetsCache = assetPaths
-  emoAssetsCache = charEmoPaths
-}
-
-$effect.root(() => {
-  $effect(() => {
-    const charId = selIdState?.selId ?? -1
-    const char = charactersResourceState.characters?.[charId]
-    if (!char || char.type !== 'character') {
-      return
-    }
-
-    const charAssets = char.additionalAssets ?? []
-    const emoAssets = char.emotionImages ?? []
-    const moduleAssets = getModuleAssets()
-
-    resetAssetsCache(charAssets, emoAssets, moduleAssets)
-  })
-})
 
 const imageCBS = ['img', 'image', 'emotion', 'asset', 'bg', 'raw', 'path']
 const videoExtensions = ['mp4', 'webm', 'avi', 'm4p', 'm4v']
@@ -524,16 +878,12 @@ async function parseAdditionalAssets(
   char: simpleCharacterArgument | character,
   mode: 'normal' | 'back',
   arg: { ch: number },
+  context: AssetResolutionContext,
 ) {
-  const assetWidth = getDatabase().assetWidth
+  const assetWidth = displaySettingForPaint('assetWidth')
+  const hideAllImages = parserSetting('hideAllImages') === true
+  const legacyMediaFindings = parserSetting('legacyMediaFindings') === true
   const assetWidthString = (assetWidth && assetWidth !== -1) || assetWidth === 0 ? `max-width:${assetWidth}rem;` : ''
-
-  if (char.type === 'character' && (!assetsCache || !emoAssetsCache)) {
-    resetAssetsCache(char.additionalAssets ?? [], char.emotionImages, getModuleAssets())
-  }
-
-  const assetPaths = assetsCache ?? {}
-  const emoPaths = emoAssetsCache ?? {}
 
   let needsSourceAccess = false
   let cx: number | null = null
@@ -543,12 +893,12 @@ async function parseAdditionalAssets(
 
     // Skip image-related assets when hideAllImages is enabled
     // raw and path are also included as they're used in CSS background-image
-    if (getDatabase().hideAllImages && imageCBS.includes(type)) {
+    if (hideAllImages && imageCBS.includes(type)) {
       return '' // Hide the image asset
     }
 
     if (type === 'emotion') {
-      const srcPath = emoPaths?.[name]?.srcPaths?.[0]
+      const srcPath = resolveEmotionPath(context, name)
       const path = srcPath ? await getFileSrcCached(srcPath) : null
       if (!path) {
         return ''
@@ -568,16 +918,14 @@ async function parseAdditionalAssets(
       }
     }
 
-    let match = assetPaths?.[name]
+    let match = await resolveAssetPaths(context, name)
 
     if (!match) {
-      if (getDatabase().legacyMediaFindings) {
+      if (legacyMediaFindings) {
         return ''
       }
 
-      if (assetPaths) {
-        match = getClosestMatch(char, name, assetPaths)
-      }
+      match = getClosestMatch(char, name)
 
       if (!match) {
         return ''
@@ -628,10 +976,8 @@ async function parseAdditionalAssets(
   })
 
   if (needsSourceAccess) {
-    const chara = getCurrentCharacter()
-    if (chara.image) {
-    }
-    data = data.replace(/\uE9b4CHAR\uE9b4/g, chara.image ? await getFileSrc(chara.image) : '')
+    const chara = parserSelectedContext()?.character
+    data = data.replace(/\uE9b4CHAR\uE9b4/g, chara?.image ? await getFileSrc(chara.image) : '')
 
     data = data.replace(/\uE9b4USER\uE9b4/g, getUserIcon() ? await getFileSrc(getUserIcon()) : '')
   }
@@ -639,10 +985,9 @@ async function parseAdditionalAssets(
   return data
 }
 
-function getClosestMatch(char: simpleCharacterArgument | character, name: string, assetPaths: AssetPaths) {
+function getClosestMatch(char: simpleCharacterArgument | character, name: string) {
   if (!char.additionalAssets) return null
 
-  let closest = ''
   let closestDist = 999999
   let targetPath = ''
   let targetExt = ''
@@ -652,23 +997,21 @@ function getClosestMatch(char: simpleCharacterArgument | character, name: string
     const key = asset[0].toLocaleLowerCase()
     const dist = getDistance(trimmedName, trimmer(key))
     if (dist < closestDist) {
-      closest = key
       closestDist = dist
       targetPath = asset[1]
       targetExt = asset[2]
     }
   }
 
-  if (closestDist > getDatabase().assetMaxDifference) {
+  const assetMaxDifference = parserSetting('assetMaxDifference')
+  if (typeof assetMaxDifference !== 'number' || closestDist > assetMaxDifference) {
     return null
   }
 
-  assetPaths[closest] = {
+  return {
     srcPaths: [targetPath],
     ext: targetExt,
   }
-
-  return assetPaths[closest]
 }
 
 //Levenshtein distance, new with 1d array
@@ -800,7 +1143,7 @@ async function parseInlayAssets(data: string) {
       switch (cached?.type) {
         case 'image':
           // Hide inlay images when hideAllImages is enabled
-          if (getDatabase().hideAllImages) {
+          if (parserSetting('hideAllImages')) {
             data = data.replace(inlay, '')
             break
           }
@@ -915,26 +1258,74 @@ export async function ParseMarkdown(
   mode: 'normal' | 'back' | 'pretranslate' | 'notrim' = 'normal',
   chatID = -1,
   cbsConditions: CbsConditions = {},
+  displayTarget: {
+    chatId?: string
+    layer?: DisplaySourceLayer
+    messageId?: string
+    name?: string
+    streaming?: boolean
+    priority?: DisplaySourcePriority
+  } = {},
 ) {
   let firstParsed = ''
   const additionalAssetMode = mode === 'back' ? 'back' : 'normal'
-  let char = typeof charArg === 'string' ? findCharacterbyId(charArg) : charArg
+  let char = typeof charArg === 'string' ? parserCharacterOwnerById(charArg) : charArg
+  let assetResolutionContext: AssetResolutionContext | null = null
+
+  const parseAssetsIfPresent = async (source: string): Promise<string> => {
+    if (!char || !assetMarkerPresenceRegex.test(source)) return source
+    assetResolutionContext ??= getAssetResolutionContext(char)
+    return parseAdditionalAssets(
+      source,
+      char,
+      additionalAssetMode,
+      {
+        ch: chatID,
+      },
+      assetResolutionContext,
+    )
+  }
 
   if (char) {
-    data = await parseAdditionalAssets(data, char, additionalAssetMode, {
-      ch: chatID,
-    })
+    data = await parseAssetsIfPresent(data)
     firstParsed = data
   }
 
   if (char) {
-    data = (await processScriptFull(char, data, 'editdisplay', chatID, cbsConditions)).data
+    const currentChat = displayTarget.chatId
+      ? parserChatOwnerById(char.chaId, displayTarget.chatId)
+      : parserSelectedContext()?.chat
+    const messageId = displayTarget.messageId ?? (chatID >= 0 ? currentChat?.message?.[chatID]?.chatId : undefined)
+    const currentTriggerId = get(CurrentTriggerIdStore)
+    const hasBrowserOnlyTriggerContext = currentTriggerId !== null && currentTriggerId !== 'null'
+    const serverDisplaySource =
+      currentChat?.id && !hasBrowserOnlyTriggerContext
+        ? await requestServerDisplaySource({
+            chatId: currentChat.id,
+            character: char,
+            ...(messageId ? { messageId } : {}),
+            index: chatID,
+            role: cbsConditions.chatRole ?? null,
+            firstMessage: cbsConditions.firstmsg ?? false,
+            layer: displayTarget.layer ?? (chatID < 0 ? 'greeting' : mode === 'back' ? 'preview' : 'original'),
+            source: data,
+            streaming: displayTarget.streaming,
+            priority: displayTarget.priority,
+            ...(displayTarget.name
+              ? { name: displayTarget.name }
+              : 'name' in char && typeof char.name === 'string'
+                ? { name: char.name }
+                : {}),
+          })
+        : ({ status: 'fallback', reason: 'chat_unavailable' } as const)
+    data =
+      serverDisplaySource.status === 'ok'
+        ? serverDisplaySource.displaySource
+        : (await processScriptFull(char, data, 'editdisplay', chatID, cbsConditions)).data
   }
 
   if (firstParsed !== data && char) {
-    data = await parseAdditionalAssets(data, char, additionalAssetMode, {
-      ch: chatID,
-    })
+    data = await parseAssetsIfPresent(data)
   }
 
   data = await parseInlayAssets(data ?? '')
@@ -942,9 +1333,8 @@ export async function ParseMarkdown(
   data = parseThoughtsAndTools(data)
 
   if (mode === 'normal' || mode === 'notrim') {
-    const database = getDatabase()
-    if (database.paragraphBreakBySentences ?? false) {
-      data = insertSentenceParagraphBreaks(data, database.paragraphBreakSentenceCount ?? 3)
+    if (parserSetting('paragraphBreakBySentences') ?? false) {
+      data = insertSentenceParagraphBreaks(data, parserSetting('paragraphBreakSentenceCount') ?? 3)
     }
   }
 
@@ -959,9 +1349,49 @@ export async function ParseMarkdown(
   return trimMarkdown(data)
 }
 
+/** Read on cache hits too, so image policy changes still invalidate rendered bodies. */
+export function chatHtmlRenderPolicyKey(): string {
+  return `${Boolean(parserSetting('hideAllImages'))}|${aiWatermarkingLawApplies()}`
+}
+
 export function trimMarkdown(data: string) {
-  return decodeStyle(
-    DOMPurify.sanitize(data, {
+  if (data === '') return ''
+  let sanitized = DOMPurify.sanitize(data, {
+    ADD_TAGS: [
+      'iframe',
+      'style',
+      'risu-style',
+      'x-em',
+      'annotation',
+      'semantics',
+      'mrow',
+      'mi',
+      'mo',
+      'mn',
+      'msup',
+      'msub',
+      'mfrac',
+      'msqrt',
+    ],
+    ADD_ATTR: [
+      'allow',
+      'allowfullscreen',
+      'frameborder',
+      'scrolling',
+      'risu-ctrl',
+      'risu-btn',
+      'risu-trigger',
+      'risu-mark',
+      'risu-id',
+      'x-hl-lang',
+      'x-hl-text',
+    ],
+  })
+
+  const decoded = decodeStyle(sanitized)
+
+  if (decoded !== sanitized) {
+    sanitized = DOMPurify.sanitize(decoded, {
       ADD_TAGS: [
         'iframe',
         'style',
@@ -991,8 +1421,13 @@ export function trimMarkdown(data: string) {
         'x-hl-lang',
         'x-hl-text',
       ],
-    }),
-  )
+      FORCE_BODY: true,
+    })
+  } else {
+    sanitized = decoded
+  }
+
+  return sanitized
 }
 
 const metaCodes = [
@@ -1159,7 +1594,7 @@ function decodeStyle(text: string) {
         compress: true,
       })}</style>`
     } catch (error) {
-      if (getDatabase().returnCSSError) {
+      if (parserSetting('returnCSSError')) {
         return `CSS ERROR: ${error}`
       }
       return ''

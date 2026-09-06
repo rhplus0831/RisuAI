@@ -1,6 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { character } from '../storage/database.svelte'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { isServerCharacterShell, type character } from '../storage/database.svelte'
+import * as languageRuntime from '../../lang'
 import type { AgentPresetStepRecord } from '../agentPresetRecords'
+import type { TranslatorPresetStep } from '../translator/presets'
 import {
   clearPendingChatGenerationSettingsSave,
   registerPendingChatGenerationSettingsSave,
@@ -37,6 +39,7 @@ import {
   applyModuleCollectionMutationLocalEffect,
   applyModuleEnabledLocalEffect,
   applyPromptItemMutationLocalEffect,
+  applySplitPresetPatchLocalEffect,
   applyGlobalLorebookMutationLocalEffect,
   applyLoadoutMutationLocalEffect,
   applyLorebookMutationLocalEffect,
@@ -51,7 +54,12 @@ import {
   captureSettingsProjectionEpoch,
   collectionsResourceState,
   composeResourceDatabaseSnapshot,
-  getResourceDatabase,
+  getPersonaOwnerStateSnapshot,
+  getChatFolderMetadataOwnerSnapshot,
+  getChatMetadataOwnerState,
+  getChatMetadataOwnerSnapshot,
+  applyChatFolderMetadataOwnerPatch,
+  applyChatMetadataOwnerPatch,
   hasCharacterRowProjectionEpochChanged,
   hasCharacterLorebookProjectionEpochChanged,
   hasNewerCharacterLorebookBodyResourceRevision,
@@ -67,19 +75,34 @@ import {
   markSettingsGroupAcknowledgementTainted,
   markSettingsAcknowledgementTainted,
   replaceResourceDatabase,
+  getHypaV3PresetOwnerStateSnapshot,
+  updateHypaV3PresetOwnerState,
+  restoreChatFolderMetadataOwnerSnapshot,
+  restoreChatMetadataOwnerSnapshot,
   resetServerResourceRevisionFencesForDatabaseReplacement,
   resetServerResourceState,
-  setResourceDatabaseWriteGuardEnabled,
   settingsResourceState,
-  withResourceDatabaseWrite,
+  updatePersonaOwnerState,
 } from './resourceState.svelte'
 import { SERVER_SETTINGS_KEYS_BY_GROUP } from './settingsGroups'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 function metadataCharacter(chaId: string, name: string): character {
   return {
     chaId,
     name,
     chats: [],
+  } as unknown as character
+}
+
+function characterSummaryShell(chaId: string, name: string, chatId = 'chat-a'): character {
+  return {
+    __serverCharacterShell: true,
+    chaId,
+    name,
+    chats: [{ id: chatId, name: '', message: [] }],
+    chatPage: 0,
+    chatFolders: [],
   } as unknown as character
 }
 
@@ -140,21 +163,155 @@ function canonicalAgentPresetStep(id: string, overrides: Partial<AgentPresetStep
   }
 }
 
-beforeEach(() => {
-  setResourceDatabaseWriteGuardEnabled(false)
-  resetServerResourceState()
-  setResourceDatabaseWriteGuardEnabled(true)
-})
+function canonicalTranslatorPresetStep(
+  id: string,
+  overrides: Partial<TranslatorPresetStep> = {},
+): TranslatorPresetStep {
+  return {
+    id,
+    name: id,
+    enabled: true,
+    prompt: `${id} prompt`,
+    maxResponse: 100,
+    model: { mode: 'inheritTranslate' },
+    ...overrides,
+  }
+}
 
-afterEach(() => {
-  setResourceDatabaseWriteGuardEnabled(false)
+beforeEach(() => {
+  resetServerResourceState()
 })
 
 describe('resource-scoped database state', () => {
+  it('projects stable chat metadata from the character resource owner', () => {
+    const owner = metadataCharacter('char-a', 'Owner')
+    owner.chats = [
+      {
+        id: 'chat-a',
+        lastMemory: 'owner-memory',
+        autoTranslate: true,
+        message: [{ role: 'user', data: 'owner transcript' }],
+      },
+    ] as never
+    applyCharactersResource({
+      version: 1,
+      revision: 1,
+      characters: [owner],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+
+    expect(getChatMetadataOwnerState('chat-a')).toEqual({
+      chatId: 'chat-a',
+      lastMemory: 'owner-memory',
+      autoTranslate: true,
+    })
+    expect(getChatMetadataOwnerState('chat-a')).not.toHaveProperty('message')
+  })
+
+  it('mutates and restores only uniquely-owned chat and folder metadata', () => {
+    const owner = metadataCharacter('char-a', 'Owner')
+    owner.chats = [{ id: 'chat-a', name: 'Before', message: [{ role: 'user' }] }] as never
+    owner.chatFolders = [{ id: 'folder-a', name: 'Folder', color: '#fff', folded: false }] as never
+    applyCharactersResource({
+      version: 1,
+      revision: 4,
+      characters: [owner],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+
+    const chatBefore = getChatMetadataOwnerSnapshot('char-a', 'chat-a')
+    const folderBefore = getChatFolderMetadataOwnerSnapshot('char-a', 'folder-a')
+    expect(chatBefore?.metadata).toEqual({ name: 'Before' })
+    expect(folderBefore?.metadata).toEqual({ name: 'Folder', color: '#fff', folded: false })
+    expect(chatBefore?.metadata).not.toHaveProperty('message')
+    expect(chatBefore?.revision).toBe(4)
+
+    expect(applyChatMetadataOwnerPatch('char-a', 'chat-a', { name: 'After' })).toBe(true)
+    expect(applyChatFolderMetadataOwnerPatch('char-a', 'folder-a', { folded: true })).toBe(true)
+    expect(applyChatMetadataOwnerPatch('char-a', 'chat-a', { note: 'Concurrent note' })).toBe(true)
+    expect(applyChatFolderMetadataOwnerPatch('char-a', 'folder-a', { color: '#000' })).toBe(true)
+    expect(getChatMetadataOwnerSnapshot('char-a', 'chat-a')?.metadata).toEqual({
+      name: 'After',
+      note: 'Concurrent note',
+    })
+    expect(getChatFolderMetadataOwnerSnapshot('char-a', 'folder-a')?.metadata).toEqual({
+      name: 'Folder',
+      color: '#000',
+      folded: true,
+    })
+    expect(
+      restoreChatMetadataOwnerSnapshot({
+        characterId: 'char-a',
+        chatId: 'chat-a',
+        metadata: chatBefore!.metadata,
+        attempted: { name: 'After' },
+      }),
+    ).toBe(true)
+    expect(
+      restoreChatFolderMetadataOwnerSnapshot({
+        characterId: 'char-a',
+        folderId: 'folder-a',
+        metadata: folderBefore!.metadata,
+        attempted: { folded: true },
+      }),
+    ).toBe(true)
+    expect(getChatMetadataOwnerSnapshot('char-a', 'chat-a')?.metadata).toEqual({
+      name: 'Before',
+      note: 'Concurrent note',
+    })
+    expect(getChatFolderMetadataOwnerSnapshot('char-a', 'folder-a')?.metadata).toEqual({
+      name: 'Folder',
+      color: '#000',
+      folded: false,
+    })
+  })
+
+  it('fails closed for missing or duplicate stable chat and folder owners', () => {
+    const owner = metadataCharacter('char-a', 'Owner')
+    owner.chats = [
+      { id: 'duplicate-chat', name: 'A' },
+      { id: 'duplicate-chat', name: 'B' },
+    ] as never
+    owner.chatFolders = [
+      { id: 'duplicate-folder', name: 'A', folded: false },
+      { id: 'duplicate-folder', name: 'B', folded: true },
+    ] as never
+    applyCharactersResource({
+      version: 1,
+      revision: 1,
+      characters: [owner],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+
+    expect(getChatMetadataOwnerSnapshot('char-a', 'missing-chat')).toBeUndefined()
+    expect(getChatMetadataOwnerSnapshot('char-a', 'duplicate-chat')).toBeUndefined()
+    expect(applyChatMetadataOwnerPatch('char-a', 'duplicate-chat', { name: 'Unsafe' })).toBe(false)
+    expect(getChatFolderMetadataOwnerSnapshot('char-a', 'duplicate-folder')).toBeUndefined()
+    expect(applyChatFolderMetadataOwnerPatch('char-a', 'duplicate-folder', { name: 'Unsafe' })).toBe(false)
+    expect(getResourceDatabase().characters[0].chats[0].name).toBe('A')
+    expect(getResourceDatabase().characters[0].chatFolders[0].name).toBe('A')
+
+    const duplicateCharacter = metadataCharacter('char-a', 'Duplicate')
+    duplicateCharacter.chats = [{ id: 'chat-a', name: 'Duplicate' }] as never
+    applyCharactersResource({
+      version: 1,
+      revision: 2,
+      characters: [owner, duplicateCharacter],
+      characterOrder: ['char-a', 'char-a'],
+      currentChar: 0,
+    })
+    expect(getChatMetadataOwnerSnapshot('char-a', 'duplicate-chat')).toBeUndefined()
+    expect(applyChatMetadataOwnerPatch('char-a', 'duplicate-chat', { name: 'Unsafe' })).toBe(false)
+  })
+
   it('accepts a lower full snapshot after database replacement fences are reset', () => {
     applySettingsResource({ revision: 12, settings: { language: 'en' } })
     applyCollectionsResource({ revision: 12, collections: completeCollections() })
     applyCharactersResource({
+      version: 1,
       revision: 12,
       characters: [metadataCharacter('char-a', 'Before')],
       characterOrder: ['char-a'],
@@ -168,6 +325,7 @@ describe('resource-scoped database state', () => {
     expect(applyCollectionsResource({ revision: 3, collections: completeCollections() })).toBe(true)
     expect(
       applyCharactersResource({
+        version: 1,
         revision: 3,
         characters: [metadataCharacter('char-b', 'Restored')],
         characterOrder: ['char-b'],
@@ -187,6 +345,7 @@ describe('resource-scoped database state', () => {
     })
     applyCollectionsResource({ revision: 5, collections: completeCollections() })
     applyCharactersResource({
+      version: 1,
       revision: 4,
       characters: [metadataCharacter('char-a', 'Ada')],
       characterOrder: ['char-a'],
@@ -204,6 +363,7 @@ describe('resource-scoped database state', () => {
     expect(areServerDatabaseResourcesReady()).toBe(true)
 
     applyCharactersResource({
+      version: 1,
       revision: 6,
       characters: [metadataCharacter('char-a', 'Ada')],
       characterOrder: ['char-a'],
@@ -212,46 +372,30 @@ describe('resource-scoped database state', () => {
     expect(composeResourceDatabaseSnapshot()).toMatchObject({ currentChar: 0, characterOrder: ['char-a'] })
   })
 
-  it('exposes a reactive read-through compatibility view and detached snapshots', () => {
+  it('materializes detached snapshots from explicit resource owners', () => {
     applySettingsResource({ revision: 1, settings: { language: 'en' } })
     applyCollectionsResource({ revision: 1, collections: completeCollections() })
     applyCharactersResource({
+      version: 1,
       revision: 1,
       characters: [metadataCharacter('char-a', 'Ada')],
       characterOrder: ['char-a'],
       currentChar: 0,
     })
 
-    const compatibility = getResourceDatabase()
-    expect(compatibility.language).toBe('en')
-    expect(Object.keys(compatibility)).toContain('characters')
-    expect(() => {
-      compatibility.language = 'ko'
-    }).toThrow('outside withResourceDatabaseWrite')
-
-    let capturedCharacters: character[] | undefined
-    withResourceDatabaseWrite((database) => {
-      database.language = 'ko'
-      capturedCharacters = database.characters
-      database.characters.push(metadataCharacter('char-b', 'Bea'))
-      Object.defineProperty(database, 'globalNote', { configurable: true, value: 'note' })
-    })
-    expect(compatibility.language).toBe('ko')
-    expect(compatibility.characters.map((character) => character.chaId)).toEqual(['char-a', 'char-b'])
-    expect(compatibility.globalNote).toBe('note')
-    expect(() => capturedCharacters?.push(metadataCharacter('char-c', 'Cee'))).toThrow(
-      'outside withResourceDatabaseWrite',
-    )
-
-    const snapshot = getResourceDatabase({ snapshot: true })
+    const snapshot = composeResourceDatabaseSnapshot()
+    expect(snapshot.language).toBe('en')
+    expect(Object.keys(snapshot)).toContain('characters')
     snapshot.language = 'fr'
-    expect(getResourceDatabase().language).toBe('ko')
+    snapshot.characters.push(metadataCharacter('char-b', 'Bea'))
+    expect(composeResourceDatabaseSnapshot()).toMatchObject({ language: 'en', characters: [{ chaId: 'char-a' }] })
 
     applySettingsResource({ revision: 2, settings: { language: 'ja' } })
-    expect(compatibility.language).toBe('ja')
+    expect(snapshot.language).toBe('fr')
+    expect(composeResourceDatabaseSnapshot().language).toBe('ja')
   })
 
-  it('seeds every resource slice from a compatibility database', () => {
+  it('seeds every resource slice from an explicit database replacement', () => {
     replaceResourceDatabase(
       {
         language: 'en',
@@ -311,7 +455,7 @@ describe('resource-scoped database state', () => {
     })
     const baseline = captureLegacyPresetResourceBaseline(['preset-a'])
     const epoch = captureCollectionProjectionEpoch('botPresets')
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().botPresets[0].temperature = 99
     })
 
@@ -592,6 +736,7 @@ describe('resource-scoped database state', () => {
             note: 'Attempted note',
           },
         ],
+        selectedPersonaId: 'persona-a',
         selectedPersona: 0,
         username: 'Newer local name',
         userIcon: 'newer-local-icon',
@@ -650,12 +795,133 @@ describe('resource-scoped database state', () => {
     expect(isSettingsAcknowledgementTainted()).toBe(true)
   })
 
+  it('mutates stable persona selection and its numeric compatibility projection atomically', () => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        personas: [
+          { id: 'persona-a', name: 'A', icon: '', personaPrompt: '', note: '' },
+          { id: 'persona-b', name: 'B', icon: '', personaPrompt: '', note: '' },
+        ],
+        selectedPersonaId: 'persona-b',
+        selectedPersona: 1,
+        username: 'Legacy',
+        userIcon: '',
+        personaPrompt: '',
+        userNote: '',
+      } as never,
+      3,
+    )
+
+    const snapshot = getPersonaOwnerStateSnapshot()
+    expect(snapshot).toMatchObject({ selectedPersonaId: 'persona-b', selectedPersona: 1 })
+    expect(
+      updatePersonaOwnerState((draft) => {
+        draft.personas = [draft.personas[1], draft.personas[0]]
+      }),
+    ).toBe(true)
+    expect(getPersonaOwnerStateSnapshot()).toMatchObject({
+      selectedPersonaId: 'persona-b',
+      selectedPersona: 0,
+    })
+    expect(getResourceDatabase()).toMatchObject({ selectedPersonaId: 'persona-b', selectedPersona: 0 })
+    ;(settingsResourceState.value as Record<string, unknown>).selectedPersona = 1
+    const before = composeResourceDatabaseSnapshot()
+    expect(getPersonaOwnerStateSnapshot()).toBeNull()
+    expect(
+      updatePersonaOwnerState((draft) => {
+        draft.personas.reverse()
+      }),
+    ).toBe(false)
+    expect(composeResourceDatabaseSnapshot()).toEqual(before)
+  })
+
+  it('mutates stable Hypa V3 selection and derives its numeric compatibility projection atomically', () => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        hypaV3Presets: [
+          { id: 'hypa-a', name: 'A', settings: {} },
+          { id: 'hypa-b', name: 'B', settings: {} },
+        ],
+        selectedHypaV3PresetId: 'hypa-b',
+        hypaV3PresetId: 1,
+      } as never,
+      3,
+    )
+
+    expect(getHypaV3PresetOwnerStateSnapshot()).toMatchObject({
+      selectedHypaV3PresetId: 'hypa-b',
+      hypaV3PresetId: 1,
+    })
+    expect(
+      updateHypaV3PresetOwnerState((draft) => {
+        draft.hypaV3Presets = [draft.hypaV3Presets[1], draft.hypaV3Presets[0]]
+      }),
+    ).toBe(true)
+    expect(getHypaV3PresetOwnerStateSnapshot()).toMatchObject({
+      selectedHypaV3PresetId: 'hypa-b',
+      hypaV3PresetId: 0,
+    })
+    expect(getResourceDatabase()).toMatchObject({ selectedHypaV3PresetId: 'hypa-b', hypaV3PresetId: 0 })
+  })
+
+  it.each([
+    { label: 'missing stable selection', selectedHypaV3PresetId: undefined, hypaV3PresetId: 1 },
+    { label: 'unknown stable selection', selectedHypaV3PresetId: 'missing', hypaV3PresetId: 1 },
+    { label: 'conflicting numeric projection', selectedHypaV3PresetId: 'hypa-b', hypaV3PresetId: 0 },
+  ])('fails the Hypa V3 owner closed for $label', ({ selectedHypaV3PresetId, hypaV3PresetId }) => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        hypaV3Presets: [
+          { id: 'hypa-a', name: 'A', settings: {} },
+          { id: 'hypa-b', name: 'B', settings: {} },
+        ],
+        ...(selectedHypaV3PresetId === undefined ? {} : { selectedHypaV3PresetId }),
+        hypaV3PresetId,
+      } as never,
+      3,
+    )
+
+    const before = composeResourceDatabaseSnapshot()
+    expect(getHypaV3PresetOwnerStateSnapshot()).toBeNull()
+    expect(
+      updateHypaV3PresetOwnerState((draft) => {
+        draft.hypaV3Presets.reverse()
+      }),
+    ).toBe(false)
+    expect(composeResourceDatabaseSnapshot()).toEqual(before)
+  })
+
+  it('fails the Hypa V3 owner closed for duplicate preset ids', () => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        hypaV3Presets: [
+          { id: 'hypa-a', name: 'A', settings: {} },
+          { id: 'hypa-a', name: 'Duplicate', settings: {} },
+        ],
+        selectedHypaV3PresetId: 'hypa-a',
+        hypaV3PresetId: 0,
+      } as never,
+      3,
+    )
+
+    expect(getHypaV3PresetOwnerStateSnapshot()).toBeNull()
+  })
+
   it('fences an accepted persona PATCH after a later optimistic delete removed the row', () => {
     replaceResourceDatabase(
       {
         ...completeCollections(),
         characters: [],
         personas: [{ id: 'persona-b', name: 'B', icon: '', personaPrompt: 'B', note: '' }],
+        selectedPersonaId: 'persona-b',
         selectedPersona: 0,
         username: 'B',
         userIcon: '',
@@ -749,6 +1015,7 @@ describe('resource-scoped database state', () => {
           { id: 'persona-b', name: 'Newer B', icon: '', personaPrompt: 'B', note: '' },
           { id: 'persona-a', name: 'Newer A', icon: '', personaPrompt: 'A', note: '' },
         ],
+        selectedPersonaId: 'persona-b',
         selectedPersona: 0,
         username: 'Newer B',
         userIcon: '',
@@ -767,11 +1034,11 @@ describe('resource-scoped database state', () => {
         revision: 4,
         operation: 'create',
         collectionWritten: true,
-        settingsWritten: false,
+        settingsWritten: true,
       }),
     ).toBe(true)
     expect(collectionsResourceState.revisions.personas).toBe(4)
-    expect(settingsResourceState.fullRevision).toBe(3)
+    expect(settingsResourceState.fullRevision).toBe(4)
 
     expect(
       applyPersonaMutationLocalEffect({
@@ -816,6 +1083,7 @@ describe('resource-scoped database state', () => {
         ...completeCollections(),
         characters: [],
         personas: [{ id: 'persona-a', name: 'A', icon: '', personaPrompt: '', note: '' }],
+        selectedPersonaId: 'persona-a',
         selectedPersona: 0,
         username: 'A',
         userIcon: '',
@@ -867,7 +1135,7 @@ describe('resource-scoped database state', () => {
           { id: 'translator-a', name: 'A', prompt: 'newer local prompt', maxResponse: 321 },
           { id: 'translator-b', name: 'B', prompt: 'b prompt', maxResponse: 200 },
         ],
-        translatorPresetId: 0,
+        translatorPresetId: 'translator-a',
         translatorPrompt: 'newer local prompt',
         translatorMaxResponse: 321,
       } as never,
@@ -894,7 +1162,7 @@ describe('resource-scoped database state', () => {
     ).toBe(true)
 
     expect(getResourceDatabase()).toMatchObject({
-      translatorPresetId: 0,
+      translatorPresetId: 'translator-a',
       translatorPrompt: 'newer local prompt',
       translatorMaxResponse: 321,
     })
@@ -912,6 +1180,106 @@ describe('resource-scoped database state', () => {
     expect(isSettingsGroupAcknowledgementTainted('language')).toBe(true)
   })
 
+  it('acknowledges a canonical translator pipeline steps PATCH and advances both revision fences', () => {
+    const steps = [
+      canonicalTranslatorPresetStep('translate', {
+        name: 'Translate',
+        prompt: 'Translate the input',
+        maxResponse: 256,
+        outputKey: 'translation',
+      }),
+      canonicalTranslatorPresetStep('polish', {
+        name: 'Polish',
+        prompt: 'Polish {{translation}}',
+        maxResponse: 128,
+        model: { mode: 'modelProfile', profileId: 'profile-polish' },
+      }),
+    ]
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        translatorPresets: [
+          {
+            id: 'translator-a',
+            name: 'Pipeline',
+            prompt: steps[0].prompt,
+            maxResponse: steps[0].maxResponse,
+            steps,
+          },
+        ],
+        translatorPresetId: 'translator-a',
+        translatorPrompt: steps[0].prompt,
+        translatorMaxResponse: steps[0].maxResponse,
+      } as never,
+      3,
+    )
+
+    expect(
+      applyTranslatorPresetPatchLocalEffect({
+        revision: 4,
+        presetId: 'translator-a',
+        attemptedPatch: { steps },
+        attemptedPreset: {
+          id: 'translator-a',
+          name: 'Pipeline',
+          prompt: steps[0].prompt,
+          maxResponse: steps[0].maxResponse,
+          steps,
+        },
+        selectedPresetId: 'translator-a',
+      }),
+    ).toBe(true)
+
+    expect(collectionsResourceState.revisions.translatorPresets).toBe(4)
+    expect(settingsResourceState.groupRevisions.language).toBe(4)
+  })
+
+  it.each([
+    ['a wrong field type', [canonicalTranslatorPresetStep('translate', { enabled: 'true' as never })]],
+    ['duplicate step ids', [canonicalTranslatorPresetStep('duplicate'), canonicalTranslatorPresetStep('duplicate')]],
+    ['an invalid output key', [canonicalTranslatorPresetStep('translate', { outputKey: 'invalid-output-key' })]],
+  ])('rejects translator preset PATCH local effects with %s', (_label, malformedSteps) => {
+    const residentSteps = [canonicalTranslatorPresetStep('resident')]
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        translatorPresets: [
+          {
+            id: 'translator-a',
+            name: 'Pipeline',
+            prompt: residentSteps[0].prompt,
+            maxResponse: residentSteps[0].maxResponse,
+            steps: residentSteps,
+          },
+        ],
+        translatorPresetId: 'translator-a',
+        translatorPrompt: residentSteps[0].prompt,
+        translatorMaxResponse: residentSteps[0].maxResponse,
+      } as never,
+      3,
+    )
+
+    expect(
+      applyTranslatorPresetPatchLocalEffect({
+        revision: 4,
+        presetId: 'translator-a',
+        attemptedPatch: { steps: malformedSteps },
+        attemptedPreset: {
+          id: 'translator-a',
+          name: 'Pipeline',
+          prompt: malformedSteps[0].prompt,
+          maxResponse: malformedSteps[0].maxResponse,
+          steps: malformedSteps,
+        },
+        selectedPresetId: 'translator-a',
+      }),
+    ).toBe(false)
+    expect(collectionsResourceState.revisions.translatorPresets).toBe(3)
+    expect(settingsResourceState.groupRevisions.language).toBeUndefined()
+  })
+
   it('rejects malformed, unready, or selection-ambiguous translator preset PATCH local effects', () => {
     replaceResourceDatabase(
       {
@@ -921,7 +1289,7 @@ describe('resource-scoped database state', () => {
           { id: 'translator-a', name: 'A', prompt: 'a prompt', maxResponse: 100 },
           { id: 'translator-b', name: 'B', prompt: 'b prompt', maxResponse: 200 },
         ],
-        translatorPresetId: 0,
+        translatorPresetId: 'translator-a',
         translatorPrompt: 'a prompt',
         translatorMaxResponse: 100,
       } as never,
@@ -965,6 +1333,21 @@ describe('resource-scoped database state', () => {
       { id: 'translator-a', name: 'Duplicate', prompt: 'duplicate', maxResponse: 100 },
     ] as never
     expect(applyTranslatorPresetPatchLocalEffect(baseEffect)).toBe(false)
+
+    collectionsResourceState.values.translatorPresets = [
+      {
+        id: 'translator-a',
+        name: 'A',
+        prompt: 'a prompt',
+        maxResponse: 100,
+        steps: [
+          canonicalTranslatorPresetStep('duplicate', { prompt: 'a prompt' }),
+          canonicalTranslatorPresetStep('duplicate'),
+        ],
+      },
+      { id: 'translator-b', name: 'B', prompt: 'b prompt', maxResponse: 200 },
+    ] as never
+    expect(applyTranslatorPresetPatchLocalEffect(baseEffect)).toBe(false)
     expect(collectionsResourceState.revisions.translatorPresets).toBe(3)
     expect(settingsResourceState.groupRevisions.language).toBeUndefined()
   })
@@ -979,6 +1362,7 @@ describe('resource-scoped database state', () => {
             id: 'ap_a',
             name: '  Attempted Name  ',
             description: null,
+            moduleIntergration: null,
             enabled: true,
             version: 1,
             steps: [
@@ -1005,7 +1389,7 @@ describe('resource-scoped database state', () => {
     )
     const epoch = captureSettingsGroupProjectionEpoch('agents')
     markSettingsGroupAcknowledgementTainted('agents')
-    withResourceDatabaseWrite((database) => {
+    withTestDatabaseWrite((database) => {
       database.agentPresets[0].name = 'newer local name'
     })
 
@@ -1022,6 +1406,10 @@ describe('resource-scoped database state', () => {
             attempted: { present: true, value: null },
             canonical: { present: false },
           },
+          moduleIntergration: {
+            attempted: { present: true, value: null },
+            canonical: { present: false },
+          },
         },
         updatedAt: 400,
       }),
@@ -1032,6 +1420,9 @@ describe('resource-scoped database state', () => {
     })
     expect((settingsResourceState.value as { agentPresets: unknown[] }).agentPresets[0]).not.toHaveProperty(
       'description',
+    )
+    expect((settingsResourceState.value as { agentPresets: unknown[] }).agentPresets[0]).not.toHaveProperty(
+      'moduleIntergration',
     )
     expect(settingsResourceState.groupRevisions.agents).toBe(4)
     expect(hasSettingsGroupProjectionEpochChanged('agents', epoch)).toBe(false)
@@ -1231,7 +1622,7 @@ describe('resource-scoped database state', () => {
 
   it('acknowledges optimistic plugin storage without replacing the live map', () => {
     applyCollectionsResource({ revision: 3, collections: completeCollections() })
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().pluginCustomStorage = {
         counter: 2,
         largePluginValue: { nested: ['already', 'local'] },
@@ -1245,6 +1636,34 @@ describe('resource-scoped database state', () => {
     })
     expect(collectionsResourceState.revisions.pluginCustomStorage).toBe(4)
     expect(collectionsResourceState.revision).toBe(4)
+  })
+
+  it('applies settings and revision fences synchronously while the locale load is pending', async () => {
+    applySettingsResource({ revision: 1, settings: { language: 'en' } })
+    let finish!: (applied: boolean) => void
+    const pending = new Promise<boolean>((resolve) => {
+      finish = resolve
+    })
+    const loading = vi.spyOn(languageRuntime, 'changeLanguage').mockReturnValueOnce(pending)
+    try {
+      const applied = applySettingsGroupResource(
+        {
+          revision: 10,
+          group: 'language',
+          settings: { language: 'ko' },
+        },
+        ['language'],
+      )
+      expect(applied).toBe(true)
+      expect(getResourceDatabase().language).toBe('ko')
+      expect(settingsResourceState.groupRevisions.language).toBe(10)
+      expect(applySettingsResource({ revision: 9, settings: { language: 'en' } })).toBe(false)
+      expect(loading).toHaveBeenCalledExactlyOnceWith('ko')
+      finish(true)
+      await pending
+    } finally {
+      loading.mockRestore()
+    }
   })
 
   it('merges settings groups with omitted-key deletion and independent revisions', () => {
@@ -1398,7 +1817,7 @@ describe('resource-scoped database state', () => {
       revision: 3,
       settings: { theme: 'LIGHT', zoomsize: 88 },
     })
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().zoomsize = 120
     })
 
@@ -1458,7 +1877,7 @@ describe('resource-scoped database state', () => {
     applySettingsResource({ revision: 1, settings: { hypaV3: false } })
     applyCollectionsResource({ revision: 1, collections: completeCollections() })
     const presets = [{ name: 'Compact', settings: { summarizationPrompt: 'Summarize' } }]
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().hypaV3Presets = presets as never
     })
 
@@ -1483,8 +1902,24 @@ describe('resource-scoped database state', () => {
       collections: {
         ...completeCollections(),
         plugins: [
-          { name: 'plugin-b', script: 'newer-b', arguments: {}, realArg: {}, customLink: [], argMeta: {} },
-          { name: 'plugin-a', script: 'newer-a', arguments: {}, realArg: {}, customLink: [], argMeta: {} },
+          {
+            name: 'plugin-b',
+            script: 'newer-b',
+            arguments: {},
+            realArg: {},
+            customLink: [],
+            argMeta: {},
+            version: '3.0',
+          },
+          {
+            name: 'plugin-a',
+            script: 'newer-a',
+            arguments: {},
+            realArg: {},
+            customLink: [],
+            argMeta: {},
+            version: '3.0',
+          },
         ],
       },
     })
@@ -1505,8 +1940,24 @@ describe('resource-scoped database state', () => {
     ).toBe(true)
 
     expect(getResourceDatabase().plugins).toEqual([
-      { name: 'plugin-b', script: 'newer-b', arguments: {}, realArg: {}, customLink: [], argMeta: {} },
-      { name: 'plugin-a', script: 'newer-a', arguments: {}, realArg: {}, customLink: [], argMeta: {} },
+      {
+        name: 'plugin-b',
+        script: 'newer-b',
+        arguments: {},
+        realArg: {},
+        customLink: [],
+        argMeta: {},
+        version: '3.0',
+      },
+      {
+        name: 'plugin-a',
+        script: 'newer-a',
+        arguments: {},
+        realArg: {},
+        customLink: [],
+        argMeta: {},
+        version: '3.0',
+      },
     ])
     expect(collectionsResourceState.revisions.plugins).toBe(5)
     expect(collectionsResourceState.revision).toBe(5)
@@ -1597,7 +2048,7 @@ describe('resource-scoped database state', () => {
     expect(hasCollectionProjectionEpochChanged('promptTemplate', rootEpoch)).toBe(false)
     expect(hasCollectionProjectionEpochChanged('promptPresets', presetEpoch)).toBe(false)
 
-    withResourceDatabaseWrite((database) => {
+    withTestDatabaseWrite((database) => {
       delete (database as unknown as Record<string, unknown>).promptTemplate
     })
     expect(
@@ -1612,6 +2063,34 @@ describe('resource-scoped database state', () => {
     expect(getResourceDatabase()).not.toHaveProperty('promptTemplate')
     expect(collectionsResourceState.revisions.promptTemplate).toBe(6)
     expect(hasCollectionProjectionEpochChanged('promptTemplate', rootEpoch)).toBe(false)
+  })
+
+  it('applies a prompt-preset owner receipt without requiring or rewriting the aggregate prompt template', () => {
+    applyCollectionsResource({
+      revision: 3,
+      collections: {
+        promptPresets: [{ id: 'preset-a', promptTemplate: [{ id: 'new', type: 'plain' }] }] as never,
+      },
+    })
+
+    expect(
+      applySplitPresetPatchLocalEffect({
+        revision: 4,
+        presetKind: 'prompt',
+        presetId: 'preset-a',
+        attemptedPatch: { promptTemplate: [{ id: 'new', type: 'plain' }] },
+        preset: { promptTemplate: [{ id: 'canonical', type: 'plain' }] },
+        attemptedSettings: {},
+        settings: {},
+        selectedProjectionApplied: false,
+        ownerProjectionApplied: true,
+      }),
+    ).toBe(true)
+
+    expect(getResourceDatabase().promptPresets[0].promptTemplate).toEqual([{ id: 'canonical', type: 'plain' }])
+    expect(getResourceDatabase()).not.toHaveProperty('promptTemplate')
+    expect(collectionsResourceState.revisions.promptPresets).toBe(4)
+    expect(collectionsResourceState.statuses.promptTemplate).toBeUndefined()
   })
 
   it('allows later prompt row fields while keeping operation outcomes and projections canonical', () => {
@@ -1702,6 +2181,7 @@ describe('resource-scoped database state', () => {
     ada.globalLore = [characterEntry] as never
     ada.chats = [{ id: 'chat-a', message: [], localLore: [chatEntry] }] as never
     applyCharactersResource({
+      version: 1,
       revision: 3,
       characters: [ada],
       characterOrder: ['char-a'],
@@ -1810,7 +2290,7 @@ describe('resource-scoped database state', () => {
         ] as never,
       },
     })
-    withResourceDatabaseWrite((database) => {
+    withTestDatabaseWrite((database) => {
       database.loreBookPage = 1
     })
     const pageEpoch = captureLorebookPageProjectionEpoch()
@@ -1877,6 +2357,7 @@ describe('resource-scoped database state', () => {
     ada.globalLore = [{ id: 'malformed' }] as never
     ada.chats = [{ id: 'chat-a', message: [], localLore: [canonicalLorebookEntry('chat-entry')] }] as never
     applyCharactersResource({
+      version: 1,
       revision: 3,
       characters: [ada],
       characterOrder: ['char-a'],
@@ -1914,7 +2395,7 @@ describe('resource-scoped database state', () => {
 
   it('fences enabled modules as one settings slice and preserves it across an older full read', () => {
     applySettingsResource({ revision: 3, settings: { enabledModules: ['mod-a'], language: 'en' } })
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().enabledModules = ['mod-b']
     })
 
@@ -1970,7 +2451,7 @@ describe('resource-scoped database state', () => {
     })
     const collectionEpoch = captureCollectionProjectionEpoch('loadouts')
     const settingsEpoch = captureSettingsGroupProjectionEpoch('sidebar')
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       const loadout = getResourceDatabase().loadouts[0]
       loadout.favorite = true
       loadout.lastUsed = 300
@@ -2015,11 +2496,11 @@ describe('resource-scoped database state', () => {
     })
 
     expect(applyLoadoutMutationLocalEffect({ revision: 4, operation: 'create', loadoutId: 'loadout-b' })).toBe(false)
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().loadouts = [canonicalLoadout(), canonicalLoadout()] as never
     })
     expect(applyLoadoutMutationLocalEffect({ revision: 4, operation: 'delete', loadoutId: 'loadout-a' })).toBe(false)
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().loadouts = [canonicalLoadout()] as never
       delete (getResourceDatabase() as unknown as Record<string, unknown>).lastLoadedLoadoutName
     })
@@ -2050,6 +2531,7 @@ describe('resource-scoped database state', () => {
   it('merges character details by stable id and drops stale rows', () => {
     const beforeCollection = captureCharacterRowProjectionEpoch('char-a')
     applyCharactersResource({
+      version: 1,
       revision: 3,
       characters: [metadataCharacter('char-a', 'Old')],
       characterOrder: ['char-a'],
@@ -2066,14 +2548,102 @@ describe('resource-scoped database state', () => {
     expect(getResourceDatabase().characters[0]?.name).toBe('New')
   })
 
+  it('fails closed when a targeted character owner is missing or ambiguous', () => {
+    applyCharactersResource({
+      version: 1,
+      revision: 3,
+      characters: [metadataCharacter('char-a', 'Existing')],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+
+    expect(applyCharacterResource({ revision: 4, character: metadataCharacter('char-missing', 'Missing') })).toBe(false)
+
+    withTestDatabaseWrite(() => {
+      getResourceDatabase().characters.push(metadataCharacter('char-a', 'Duplicate'))
+    })
+    expect(applyCharacterResource({ revision: 5, character: metadataCharacter('char-a', 'Ambiguous') })).toBe(false)
+    expect(getResourceDatabase().characters.map((candidate) => candidate.name)).toEqual(['Existing', 'Duplicate'])
+  })
+
+  it('never carries resident detail bodies into a newer summary shell', () => {
+    const detail = metadataCharacter('char-a', 'Hydrated')
+    detail.desc = 'Resident detail'
+    detail.globalLore = [{ key: 'resident', content: 'secret' }] as never
+    detail.chats = [{ id: 'chat-a', name: 'Resident chat', message: [{ role: 'user', data: 'secret' }] }] as never
+    applyCharactersResource({
+      version: 1,
+      revision: 3,
+      characters: [detail],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+
+    expect(
+      applyCharactersResource({
+        version: 1,
+        revision: 4,
+        characters: [characterSummaryShell('char-a', 'Summary')],
+        characterOrder: ['char-a'],
+        currentChar: 0,
+      }),
+    ).toBe(true)
+
+    const applied = getResourceDatabase().characters[0]
+    expect(isServerCharacterShell(applied)).toBe(true)
+    expect(applied.name).toBe('Summary')
+    expect(applied.chats[0].message).toEqual([])
+    expect(Object.hasOwn(applied, 'desc')).toBe(false)
+    expect(Object.hasOwn(applied, 'globalLore')).toBe(false)
+  })
+
+  it('preserves resident detail only for an equal-revision summary refresh', () => {
+    const detail = metadataCharacter('char-a', 'Hydrated')
+    detail.desc = 'Resident detail'
+    applyCharactersResource({
+      version: 1,
+      revision: 3,
+      characters: [detail],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+
+    expect(
+      applyCharactersResource({
+        version: 1,
+        revision: 3,
+        characters: [characterSummaryShell('char-a', 'Summary')],
+        characterOrder: ['char-a'],
+        currentChar: 0,
+      }),
+    ).toBe(true)
+    expect(isServerCharacterShell(getResourceDatabase().characters[0])).toBe(false)
+    expect(getResourceDatabase().characters[0].desc).toBe('Resident detail')
+
+    expect(
+      applyCharactersResource(
+        {
+          version: 1,
+          revision: 3,
+          characters: [characterSummaryShell('char-a', 'Forced shell')],
+          characterOrder: ['char-a'],
+          currentChar: 0,
+        },
+        { preserveResidentChatBodies: false },
+      ),
+    ).toBe(true)
+    expect(isServerCharacterShell(getResourceDatabase().characters[0])).toBe(true)
+  })
+
   it('acknowledges an optimistic character patch without replacing a newer live value', () => {
     applyCharactersResource({
+      version: 1,
       revision: 3,
       characters: [metadataCharacter('char-a', 'Old'), metadataCharacter('char-b', 'Bea')],
       characterOrder: ['char-a', 'char-b'],
       currentChar: 0,
     })
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].name = 'Newer queued edit'
     })
 
@@ -2092,12 +2662,13 @@ describe('resource-scoped database state', () => {
 
   it('fences optimistic character collection mutations without replacing newer list, order, or selection edits', () => {
     applyCharactersResource({
+      version: 1,
       revision: 3,
       characters: [metadataCharacter('char-a', 'Ada'), metadataCharacter('char-b', 'Bea')],
       characterOrder: ['char-a', 'char-b'],
       currentChar: 1,
     })
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters.push(metadataCharacter('char-c', 'Cora'))
       getResourceDatabase().characters.push(metadataCharacter('char-d', 'Dara'))
       getResourceDatabase().characters.splice(1, 1)
@@ -2146,12 +2717,13 @@ describe('resource-scoped database state', () => {
 
   it('acknowledges a non-selecting first character create while retaining an empty selection', () => {
     applyCharactersResource({
+      version: 1,
       revision: 1,
       characters: [],
       characterOrder: [],
       currentChar: -1,
     })
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters.push(metadataCharacter('char-first', 'First'))
       getResourceDatabase().characterOrder = ['char-first']
     })
@@ -2171,12 +2743,13 @@ describe('resource-scoped database state', () => {
 
   it('rejects character collection acknowledgements when the optimistic projection is unsafe', () => {
     applyCharactersResource({
+      version: 1,
       revision: 3,
       characters: [metadataCharacter('char-a', 'Ada')],
       characterOrder: ['char-a'],
       currentChar: 0,
     })
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters.push(metadataCharacter('char-b', 'Bea'))
     })
     const effect = {
@@ -2187,12 +2760,12 @@ describe('resource-scoped database state', () => {
     }
 
     expect(applyCharacterCollectionMutationLocalEffect(effect)).toBe(false)
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characterOrder = ['char-a', 'char-b']
       ;(getResourceDatabase() as unknown as { currentChar: number }).currentChar = 9
     })
     expect(applyCharacterCollectionMutationLocalEffect(effect)).toBe(false)
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       ;(getResourceDatabase() as unknown as { currentChar: number }).currentChar = 0
     })
     expect(
@@ -2212,12 +2785,13 @@ describe('resource-scoped database state', () => {
 
   it('acknowledges a character patch after a newer optimistic delete removed the row', () => {
     applyCharactersResource({
+      version: 1,
       revision: 3,
       characters: [metadataCharacter('char-a', 'Old')],
       characterOrder: ['char-a'],
       currentChar: 0,
     })
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters.splice(0, 1)
     })
 
@@ -2234,6 +2808,7 @@ describe('resource-scoped database state', () => {
 
   it('keeps narrow pointers newer than settings and resolves selection by character id', () => {
     applyCharactersResource({
+      version: 1,
       revision: 5,
       characters: [metadataCharacter('char-a', 'Ada'), metadataCharacter('char-b', 'Bea')],
       characterOrder: ['char-a', 'char-b'],
@@ -2277,6 +2852,7 @@ describe('resource-scoped database state', () => {
       3,
     )
     applyCharactersResource({
+      version: 1,
       revision: 4,
       characters: [metadataCharacter('char-a', 'Ada'), metadataCharacter('char-b', 'Bea')],
       characterOrder: ['char-a', 'char-b'],
@@ -2309,6 +2885,7 @@ describe('resource-scoped database state', () => {
     const ada = metadataCharacter('char-a', 'Ada')
     ada.chats = [{ id: 'chat-a', message: [], scriptstate: { $score: 'newer' } }] as never
     applyCharactersResource({
+      version: 1,
       revision: 5,
       characters: [ada, metadataCharacter('char-b', 'Bea')],
       characterOrder: ['char-b', 'char-a'],
@@ -2328,6 +2905,7 @@ describe('resource-scoped database state', () => {
     const ada = metadataCharacter('char-a', 'Ada')
     ada.lastInteraction = 200
     applyCharactersResource({
+      version: 1,
       revision: 5,
       characters: [ada, metadataCharacter('char-b', 'Bea')],
       characterOrder: ['char-a', 'char-b'],
@@ -2356,6 +2934,7 @@ describe('resource-scoped database state', () => {
     ] as never
     ada.chatPage = 1
     applyCharactersResource({
+      version: 1,
       revision: 5,
       characters: [ada],
       characterOrder: ['char-a'],
@@ -2388,6 +2967,7 @@ describe('resource-scoped database state', () => {
       } as unknown as (typeof resident.chats)[number],
     ]
     applyCharactersResource({
+      version: 1,
       revision: 1,
       characters: [resident],
       characterOrder: ['char-a'],
@@ -2400,6 +2980,7 @@ describe('resource-scoped database state', () => {
     ]
     expect(
       applyCharactersResource({
+        version: 1,
         revision: 2,
         characters: [refreshed],
         characterOrder: ['char-a'],
@@ -2423,6 +3004,7 @@ describe('resource-scoped database state', () => {
     const resident = metadataCharacter('char-a', 'Resident')
     resident.globalLore = [{ key: 'resident', content: 'kept' }] as never
     applyCharactersResource({
+      version: 1,
       revision: 1,
       characters: [resident],
       characterOrder: ['char-a'],
@@ -2439,6 +3021,7 @@ describe('resource-scoped database state', () => {
     listed.globalLore = [{ key: 'stale-listed', content: 'must not replace' }] as never
     expect(
       applyCharactersResource({
+        version: 1,
         revision: 3,
         characters: [listed],
         characterOrder: ['char-a'],
@@ -2465,6 +3048,7 @@ describe('resource-scoped database state', () => {
       { id: 'chat-a', message: [], generationSettings: pendingSettings } as unknown as (typeof resident.chats)[number],
     ]
     applyCharactersResource({
+      version: 1,
       revision: 1,
       characters: [resident],
       characterOrder: ['char-a'],
@@ -2491,6 +3075,7 @@ describe('resource-scoped database state', () => {
       ]
       expect(
         applyCharactersResource({
+          version: 1,
           revision: 3,
           characters: [listed],
           characterOrder: ['char-a'],

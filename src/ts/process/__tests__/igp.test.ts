@@ -21,10 +21,10 @@ vi.mock('../../storage/fastifyStorage', () => ({
 
 import { applyServerResourceDatabase, setDatabase, type Database, type character } from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
+import { replaceResourceDatabase } from '../../server/resourceState.svelte'
 import { evaluateIgp } from '../postGeneration/igp'
 import { clearCachedServerCommandRevision } from '../../server/commands'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {
@@ -66,19 +66,33 @@ function stubCommandFetch(): CapturedFetch[] {
           event: { type: 'messages.replaced', revision: 11, resource: 'chat' },
         })
       }
+      if (url === '/api/v1/commands/messages/message-1') {
+        return jsonResponse({
+          revision: 11,
+          event: {
+            type: 'message.updated',
+            revision: 11,
+            resource: 'message',
+            id: 'message-1',
+            parentId: 'chat-1',
+          },
+          chatId: 'chat-1',
+          messageId: 'message-1',
+        })
+      }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
     }) as unknown as typeof fetch,
   )
   return calls
 }
 
-async function waitForMessageCommand(calls: CapturedFetch[]): Promise<CapturedFetch> {
+async function waitForTargetedMessageCommand(calls: CapturedFetch[]): Promise<CapturedFetch> {
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    const match = calls.find((call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT')
+    const match = calls.find((call) => call.url === '/api/v1/commands/messages/message-1' && call.method === 'PATCH')
     if (match) return match
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
-  throw new Error(`message command not dispatched; saw ${JSON.stringify(calls)}`)
+  throw new Error(`targeted message command not dispatched; saw ${JSON.stringify(calls)}`)
 }
 
 function makeChar(): character {
@@ -91,7 +105,7 @@ function makeChar(): character {
     chats: [
       {
         id: 'chat-1',
-        message: [{ role: 'char', data: 'hello', time: 0 }],
+        message: [{ role: 'char', data: 'hello', time: 0, chatId: 'message-1' }],
         note: '',
         name: 'main',
         localLore: [],
@@ -114,21 +128,23 @@ function seed(char: character) {
 
 const baseOpts = {
   abortSignal: new AbortController().signal,
-  selectedChar: 0,
-  selectedChat: 0,
+  target: {
+    characterId: 'cha-1',
+    chatId: 'chat-1',
+    messageId: 'message-1',
+    expectedData: 'hello',
+  },
 }
 
 describe('evaluateIgp', () => {
   beforeEach(() => {
     clearCachedServerCommandRevision()
-    setResourceWriteGuardEnabled(false)
     vi.unstubAllGlobals()
     requestChatDataSpy.mockReset()
     requestChatDataSpy.mockResolvedValue({ type: 'success', result: 'IGP-RESULT' })
   })
 
   afterEach(() => {
-    setResourceWriteGuardEnabled(false)
     vi.unstubAllGlobals()
   })
 
@@ -166,17 +182,17 @@ describe('evaluateIgp', () => {
     expect(arg.formated[0].role).toBe('system')
   })
 
-  it('L34: appends the explicit response result instead of raw object coercion', async () => {
+  it('appends the explicit response result instead of raw object coercion', async () => {
     const calls = stubCommandFetch()
     seed(makeChar())
     requestChatDataSpy.mockResolvedValueOnce({ type: 'success', result: 'IGP-RESULT' })
     await evaluateIgp({ ...baseOpts, promptTemplate: CHATML_PROMPT })
     expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('helloIGP-RESULT')
-    const command = await waitForMessageCommand(calls)
-    expect(command.body.messages.at(-1).data).toBe('helloIGP-RESULT')
+    const command = await waitForTargetedMessageCommand(calls)
+    expect(command.body.patch.data).toBe('helloIGP-RESULT')
   })
 
-  it('L34/I11: stringifies non-string IGP result payloads without [object Object]', async () => {
+  it('stringifies non-string IGP result payloads without [object Object]', async () => {
     stubCommandFetch()
     seed(makeChar())
     requestChatDataSpy.mockResolvedValueOnce({ type: 'success', result: { label: 'joy' } })
@@ -186,37 +202,36 @@ describe('evaluateIgp', () => {
     expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('hello{"label":"joy"}')
   })
 
-  it('appends to the last message regardless of position', async () => {
+  it('appends only to the exact stable message regardless of position', async () => {
     stubCommandFetch()
     const char = makeChar()
     char.chats[0].message = [
-      { role: 'user', data: 'first', time: 0 },
-      { role: 'char', data: 'second', time: 0 },
-      { role: 'char', data: 'third', time: 0 },
+      { role: 'user', data: 'first', time: 0, chatId: 'message-user' },
+      { role: 'char', data: 'second', time: 0, chatId: 'message-2' },
+      { role: 'char', data: 'third', time: 0, chatId: 'message-3' },
     ]
     seed(char)
-    await evaluateIgp({ ...baseOpts, promptTemplate: CHATML_PROMPT })
+    await evaluateIgp({
+      ...baseOpts,
+      promptTemplate: CHATML_PROMPT,
+      target: { ...baseOpts.target, messageId: 'message-3', expectedData: 'third' },
+    })
     const messages = testDatabaseState.db.characters[0].chats[0].message
     expect(messages[0].data).toBe('first')
     expect(messages[1].data).toBe('second')
     expect(messages[2].data).toBe('thirdIGP-RESULT')
   })
 
-  it('L34: appends and persists under the enabled resource guard', async () => {
+  it('appends and persists through the message owner', async () => {
     const calls = stubCommandFetch()
     seed(makeChar())
-    setResourceWriteGuardEnabled(true)
-    expect(() => {
-      testDatabaseState.db.characters[0].chats[0].message[0].data += 'raw'
-    }).toThrow(/resource database compatibility view is read-only/)
-
     await evaluateIgp({ ...baseOpts, promptTemplate: CHATML_PROMPT })
 
     expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('helloIGP-RESULT')
-    const command = await waitForMessageCommand(calls)
-    expect(command.body.messages.at(-1).data).toBe('helloIGP-RESULT')
+    const command = await waitForTargetedMessageCommand(calls)
+    expect(command.body.patch.data).toBe('helloIGP-RESULT')
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters[0].chats[0].message[0].data = 'stale'
     })
     applyServerResourceDatabase({
@@ -226,12 +241,97 @@ describe('evaluateIgp', () => {
           chats: [
             {
               ...makeChar().chats[0],
-              message: command.body.messages,
+              message: [
+                {
+                  ...makeChar().chats[0].message[0],
+                  data: command.body.patch.data,
+                },
+              ],
             },
           ],
         },
       ],
     } as Database)
     expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('helloIGP-RESULT')
+  })
+
+  it('appends to the stable post-terminal row with durable terminal-state preconditions', async () => {
+    const calls = stubCommandFetch()
+    const char = makeChar()
+    char.chats[0].message = [
+      {
+        role: 'char',
+        data: 'derived final text',
+        time: 0,
+        chatId: 'message-1',
+        generationInfo: { generationId: 'generation-1' },
+      },
+    ]
+    seed(char)
+
+    await evaluateIgp({
+      ...baseOpts,
+      promptTemplate: CHATML_PROMPT,
+      target: {
+        characterId: 'cha-1',
+        chatId: 'chat-1',
+        messageId: 'message-1',
+        expectedData: 'derived final text',
+        expectedGenerationId: 'generation-1',
+      },
+    })
+
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('derived final textIGP-RESULT')
+    const command = await waitForTargetedMessageCommand(calls)
+    expect(command.body).toMatchObject({
+      patch: { data: 'derived final textIGP-RESULT' },
+      expectedData: 'derived final text',
+      expectedChatId: 'chat-1',
+      expectedGenerationId: 'generation-1',
+    })
+  })
+
+  it('does not overwrite a newer edit made while terminal-targeted IGP is evaluating', async () => {
+    const calls = stubCommandFetch()
+    const char = makeChar()
+    char.chats[0].message = [
+      {
+        role: 'char',
+        data: 'derived final text',
+        time: 0,
+        chatId: 'message-1',
+        generationInfo: { generationId: 'generation-1' },
+      },
+    ]
+    seed(char)
+    let resolveProvider!: (value: { type: 'success'; result: string }) => void
+    requestChatDataSpy.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveProvider = resolve
+        }),
+    )
+
+    const pending = evaluateIgp({
+      ...baseOpts,
+      promptTemplate: CHATML_PROMPT,
+      target: {
+        characterId: 'cha-1',
+        chatId: 'chat-1',
+        messageId: 'message-1',
+        expectedData: 'derived final text',
+        expectedGenerationId: 'generation-1',
+      },
+    })
+    withTestDatabaseWrite(() => {
+      testDatabaseState.db.characters[0].chats[0].message[0].data = 'newer user edit'
+    })
+    resolveProvider({ type: 'success', result: 'IGP-RESULT' })
+    await pending
+
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('newer user edit')
+    expect(calls).not.toContainEqual(
+      expect.objectContaining({ url: '/api/v1/commands/messages/message-1', method: 'PATCH' }),
+    )
   })
 })

@@ -1,5 +1,6 @@
 import { v4 } from 'uuid'
 import type { Chat } from './storage/database.svelte'
+import { ensureClientLorebookEntryIds } from './server/lorebookOwner.svelte'
 
 interface RekeyClonedChatOptions {
   createId?: () => string
@@ -20,6 +21,9 @@ export function rekeyClonedChat(
   { createId = v4, pruneDanglingReferences = true }: RekeyClonedChatOptions = {},
 ): Map<string, string> {
   chat.id = createId()
+  delete chat.hypaContextTruncationAcknowledged
+  delete chat.pinned
+  ensureClientLorebookEntryIds(chat.localLore ?? (chat.localLore = []))
   const messageIdMap = new Map<string, string>()
 
   for (const message of chat.message ?? []) {

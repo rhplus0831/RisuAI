@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { createSidebarCharacterDragController, SIDEBAR_CHARACTER_DRAG_TYPE } from './sidebarDrag'
+import { RISU_PRESET_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from 'src/ts/dragTypes'
+import { createSidebarCharacterDragController } from './sidebarDrag'
 
-const internalDragTypes = [SIDEBAR_CHARACTER_DRAG_TYPE]
+const internalDragTypes = [RISU_SIDEBAR_DRAG_TYPE]
 const initialOrder = [
   'char-a',
   {
@@ -29,6 +30,13 @@ describe('sidebar character drag ownership', () => {
     drag.clear()
 
     expect(drag.consume(internalDragTypes, initialOrder)).toBeNull()
+  })
+
+  it('does not consume another internal surface as a sidebar drag', () => {
+    const drag = createSidebarCharacterDragController()
+    expect(drag.begin({ index: 0 }, initialOrder)).toBe(true)
+
+    expect(drag.consume([RISU_PRESET_DRAG_TYPE], initialOrder)).toBeNull()
   })
 
   it('invalidates a raw drag index when character order changes mid-drag', () => {

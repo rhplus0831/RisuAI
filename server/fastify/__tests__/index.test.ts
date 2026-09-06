@@ -118,11 +118,11 @@ afterEach(() => {
 })
 
 describe('Fastify API entrypoint lifecycle', () => {
-  it.each(['SIGTERM', 'SIGINT'] as const)('M9: %s reaches Fastify app.close and onClose', async (signal) => {
+  it.each(['SIGTERM', 'SIGINT'] as const)('%s reaches Fastify app.close and onClose', async (signal) => {
     await expectSignalClosesApp(signal)
   })
 
-  it('M9: duplicate shutdown signals reuse one app.close call', async () => {
+  it('duplicate shutdown signals reuse one app.close call', async () => {
     const app = Fastify({ logger: false })
     const signalProcess = new FakeSignalProcess()
     const timerHarness = createTimerHarness()
@@ -163,7 +163,7 @@ describe('Fastify API entrypoint lifecycle', () => {
     expect(timerHarness.clearTimeout).toHaveBeenCalledWith(timerHarness.timers[0])
   })
 
-  it('M9: hung shutdown backstop is unrefd and exits with signal-style code', () => {
+  it('hung shutdown backstop is unrefd and exits with signal-style code', () => {
     const timerHarness = createTimerHarness()
     const exit = vi.fn()
     const app = {

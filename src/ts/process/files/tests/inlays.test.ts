@@ -10,9 +10,18 @@ import {
   reencodeImage,
   removeInlayAsset,
   setInlayAsset,
+  supportsInlayImage,
   writeInlayImage,
 } from '../inlays'
 import { getImageType } from 'src/ts/media'
+import { getModelInfo, LLMFlags } from 'src/ts/model/modellist'
+import { uploadServerAssetBytes } from 'src/ts/server/assets'
+
+const settingsOwnerState = vi.hoisted(() => ({
+  value: {} as Record<string, unknown>,
+  status: 'idle' as 'idle' | 'loading' | 'ready' | 'error',
+  groupStatuses: {} as Record<string, 'idle' | 'loading' | 'ready' | 'error'>,
+}))
 
 //#region module mocks
 
@@ -170,11 +179,16 @@ vi.mock(import('src/ts/media'), () => ({
 
 vi.mock(import('src/ts/model/modellist'), () => ({
   getModelInfo: vi.fn(),
+  LLMFlags: { hasImageInput: 0 } as never,
 }))
 
-vi.mock(import('src/ts/storage/database.svelte'), () => ({
-  getDatabase: vi.fn(),
-}))
+vi.mock(
+  import('src/ts/server/resourceState.svelte'),
+  () =>
+    ({
+      settingsResourceState: settingsOwnerState,
+    }) as unknown as typeof import('src/ts/server/resourceState.svelte'),
+)
 
 vi.mock(
   import('src/ts/util'),
@@ -240,6 +254,31 @@ beforeEach(() => {
   serverAssetStore.clear()
   catalogStore.clear()
   catalogRevision = 0
+  settingsOwnerState.value = {}
+  settingsOwnerState.status = 'idle'
+  settingsOwnerState.groupStatuses = {}
+})
+
+describe('supportsInlayImage', () => {
+  test('uses request-scoped model flags when provided', () => {
+    expect(supportsInlayImage({ flags: [LLMFlags.hasImageInput] })).toBe(true)
+    expect(supportsInlayImage({ flags: [] })).toBe(false)
+    expect(getModelInfo).not.toHaveBeenCalled()
+  })
+
+  test('requires request-scoped model flags', () => {
+    vi.mocked(getModelInfo).mockReturnValue({ flags: [LLMFlags.hasImageInput] } as never)
+
+    expect(supportsInlayImage()).toBe(false)
+    expect(getModelInfo).not.toHaveBeenCalled()
+  })
+
+  test('fails closed instead of using the legacy fallback after an owner error', () => {
+    settingsOwnerState.status = 'ready'
+    settingsOwnerState.groupStatuses.providers = 'error'
+    expect(supportsInlayImage()).toBe(false)
+    expect(getModelInfo).not.toHaveBeenCalled()
+  })
 })
 
 describe('setInlayAsset', () => {
@@ -410,6 +449,46 @@ describe('getInlayAssetBlob', () => {
     const result = await getInlayAssetBlob('legacy-id')
     expect(result!.data).toBeInstanceOf(Blob)
   })
+
+  test('returns a legacy Blob without an unhandled rejection when background migration fails', async () => {
+    const id = 'b'.repeat(64)
+    const b64 = 'data:image/png;base64,aGVsbG8='
+    store.set(id, {
+      data: b64,
+      ext: 'png',
+      height: 32,
+      width: 32,
+      name: 'legacy.png',
+      type: 'image',
+    } satisfies InlayAsset)
+    vi.mocked(uploadServerAssetBytes).mockRejectedValueOnce(new Error('migration unavailable'))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const unhandledRejection = vi.fn()
+    process.on('unhandledRejection', unhandledRejection)
+
+    try {
+      const result = await getInlayAssetBlob(id)
+
+      expect(result).toMatchObject({
+        ext: 'png',
+        height: 32,
+        name: 'legacy.png',
+        type: 'image',
+        width: 32,
+      })
+      expect(result!.data).toBeInstanceOf(Blob)
+      expect(await (result!.data as Blob).text()).toBe('hello')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(unhandledRejection).not.toHaveBeenCalled()
+      expect(warn).toHaveBeenCalledWith(
+        'Unable to migrate the browser-local inlay asset',
+        expect.objectContaining({ message: 'migration unavailable' }),
+      )
+    } finally {
+      process.off('unhandledRejection', unhandledRejection)
+      warn.mockRestore()
+    }
+  })
 })
 
 describe('listInlayAssets', () => {
@@ -571,7 +650,7 @@ describe('postInlayAsset', () => {
     )
   })
 
-  test('L51: revokes the temporary image object URL after upload', async () => {
+  test('revokes the temporary image object URL after upload', async () => {
     vi.stubGlobal('Image', FakeLoadedImage)
     const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:inlay-upload')
     const revokeUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
@@ -594,7 +673,7 @@ describe('postInlayAsset', () => {
 })
 
 describe('writeInlayImage', () => {
-  test('L49: already-complete inlay images decode and upload without waiting for onload', async () => {
+  test('already-complete inlay images decode and upload without waiting for onload', async () => {
     const decode = vi.fn(async () => {})
     const imgObj = makeImage(120, 80, { complete: true, decode })
     let assignedOnload = false
@@ -620,7 +699,7 @@ describe('writeInlayImage', () => {
     })
   })
 
-  test('L49: broken inlay images reject instead of hanging', async () => {
+  test('broken inlay images reject instead of hanging', async () => {
     const imgObj = makeImage(0, 0, {
       complete: false,
       decode: null,
@@ -636,7 +715,7 @@ describe('writeInlayImage', () => {
     expect(serverAssetStore.size).toBe(0)
   })
 
-  test('L49: decode rejection without dimensions rejects instead of uploading', async () => {
+  test('decode rejection without dimensions rejects instead of uploading', async () => {
     const decode = vi.fn(async () => {
       throw new Error('decode failed')
     })
@@ -746,7 +825,7 @@ describe('writeInlayImage', () => {
     )
   })
 
-  test('v4-L36: rejects oversized source images before canvas work', async () => {
+  test('rejects oversized source images before canvas work', async () => {
     const edge = Math.ceil(Math.sqrt(MAX_INLAY_SOURCE_PIXELS)) + 1
     const imgObj = makeImage(edge, edge)
 
@@ -757,7 +836,7 @@ describe('writeInlayImage', () => {
 })
 
 describe('reencodeImage', () => {
-  test('L51/v4-L36: revokes the object URL when decode fails', async () => {
+  test('revokes the object URL when decode fails', async () => {
     vi.mocked(getImageType).mockReturnValue('JPEG')
     vi.stubGlobal('Image', FakeBrokenImage)
     const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:reencode')

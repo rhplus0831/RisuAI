@@ -1,5 +1,6 @@
 import { IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { measureJsonWork } from '../__tests__/browserWorkProbe'
 
 import {
   acceptPendingMutationLocalProjectionToken,
@@ -8,19 +9,23 @@ import {
   beginPendingMutationDispatch,
   clearPendingMutationOutbox,
   completePendingMutation,
+  countBlockingPendingMutationRecords,
   countPendingMutationRecords,
   deletePendingMutationReceiptAcknowledgement,
   discardPendingMutation,
   listPendingMutationPredecessors,
   listPendingMutationReceiptAcknowledgements,
   listPendingMutations,
+  MAX_DURABLE_MUTATION_PAYLOAD_BYTES,
   isPendingMutationProjectionFenceCurrent,
+  pendingMutationAgentCollectionProjectionTarget,
   pendingMutationAgentPresetCollectionProjectionTarget,
   pendingMutationAgentPresetDefaultProjectionTarget,
   pendingMutationAgentPresetOrderProjectionTarget,
   pendingMutationAgentPresetRowProjectionTarget,
   pendingMutationAgentPresetStepProjectionTarget,
   pendingMutationAgentPresetStepsProjectionTarget,
+  pendingMutationAgentRowProjectionTarget,
   pendingMutationCharacterLorebooksProjectionTarget,
   pendingMutationCharacterScriptsProjectionTarget,
   pendingMutationCharacterTriggersProjectionTarget,
@@ -38,9 +43,15 @@ import {
   replaceStagedPendingMutationIntent,
   resetPendingMutationOutboxForTests,
   retirePendingMutationLocalProjectionToken,
+  setPendingMutationCommitTransactionHookForTests,
   stagePendingMutation,
   type DurableMutationIntent,
 } from './pendingMutationOutbox'
+import {
+  PERSISTENCE_ACTIVITY_LINGER_MS,
+  persistenceSavingState,
+  resetPersistenceActivityForTests,
+} from './persistenceActivity.svelte'
 
 function settingsIntent(value: string): DurableMutationIntent {
   return {
@@ -58,6 +69,7 @@ function settingsIntent(value: string): DurableMutationIntent {
 beforeEach(async () => {
   vi.stubGlobal('indexedDB', new IDBFactory())
   resetPendingMutationOutboxForTests()
+  resetPersistenceActivityForTests()
   await preparePendingMutationOutbox({
     writerSessionId: 'writer-a',
     writerEpoch: 1,
@@ -67,13 +79,308 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  vi.useRealTimers()
   await clearPendingMutationOutbox()
   resetPendingMutationOutboxForTests()
+  resetPersistenceActivityForTests()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 
 describe('pending mutation outbox', () => {
+  it.each(['replaced', 'successor'] as const)(
+    'owns one normalized snapshot when a prepared intent is %s',
+    async (expectedStatus) => {
+      const placeholder = stagePendingMutation('settings:runtime', settingsIntent('placeholder'))
+      await placeholder.ready
+      if (expectedStatus === 'successor') {
+        await expect(discardPendingMutation((await listPendingMutations())[0]!.handle)).resolves.toBe('deleted')
+      }
+      const input = settingsIntent('exact captured value')
+      const measured = await measureJsonWork(
+        async () => {
+          const replacement = replaceStagedPendingMutationIntent(placeholder, input)
+          input.requests[0]!.body.patch = { openAIKey: 'caller changed after capture' }
+          return replacement
+        },
+        (stack) => (stack.includes('normalizeRequest') ? 'normalization' : undefined),
+      )
+      expect(measured.result.status).toBe(expectedStatus)
+      expect(measured.counters.normalization?.count).toBe(1)
+      expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([
+        settingsIntent('exact captured value'),
+      ])
+      if (measured.result.status === 'successor')
+        expect(measured.result.handle.mutationId).not.toBe(placeholder.mutationId)
+    },
+  )
+
+  it.each([
+    { name: 'non-object body', body: [] },
+    { name: 'injected base revision', body: { baseRevision: 9 } },
+  ])('validates the owned JSON snapshot before staging a $name', ({ body }) => {
+    const intent: DurableMutationIntent = {
+      version: 1,
+      requests: [{ method: 'PATCH', path: '/settings/runtime', body: { toJSON: () => body } }],
+    }
+    expect(() => stagePendingMutation('invalid-canonical-body', intent)).toThrow(TypeError)
+    expect(() => pendingMutationProjectionTargets(intent)).toThrow(TypeError)
+  })
+
+  it('captures request headers and membership before a body JSON conversion changes its caller', async () => {
+    const intent = settingsIntent('external')
+    const request = intent.requests[0]!
+    request.body = {
+      toJSON: () => {
+        request.path = '/unsafe-side-effect'
+        intent.requests.length = 0
+        return { patch: { openAIKey: 'owned' } }
+      },
+    }
+    await expect(stagePendingMutation('owned-headers', intent).ready).resolves.toBe('persisted')
+    expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([settingsIntent('owned')])
+    expect(() => stagePendingMutation('sparse', { version: 1, requests: new Array(1) })).toThrow(
+      'request must be an object',
+    )
+  })
+
+  it('continues validating public projection helpers and request bounds', () => {
+    const intent = settingsIntent('external')
+    expect(pendingMutationProjectionTargets(intent)).toEqual([
+      pendingMutationSettingsFieldProjectionTarget('openAIKey'),
+    ])
+    intent.requests[0]!.path = '/unsafe-side-effect'
+    expect(() => pendingMutationProjectionTargets(intent)).toThrow('not allowlisted')
+    for (const requestCount of [0, 101]) {
+      expect(() =>
+        stagePendingMutation('request-limit', {
+          version: 1,
+          requests: Array.from({ length: requestCount }, () => settingsIntent('value').requests[0]!),
+        }),
+      ).toThrow('request count is invalid')
+    }
+    expect(() =>
+      stagePendingMutation('generation-limit', {
+        version: 1,
+        kind: 'generation-operation-submit',
+        requests: [
+          { method: 'POST', path: '/generation-operations', body: {} },
+          { method: 'POST', path: '/generation-operations', body: {} },
+        ],
+      }),
+    ).toThrow('exactly one request')
+  })
+
+  it('normalizes frozen non-JSON numbers and rejects frozen cycles or bigint instead of trusting them', async () => {
+    const input: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/settings/runtime',
+          body: Object.freeze({ patch: Object.freeze({ temperature: NaN, topP: -0, username: undefined }) }),
+        },
+      ],
+    }
+    await expect(stagePendingMutation('canonical-values', input).ready).resolves.toBe('persisted')
+    expect((await listPendingMutations())[0]!.intent.requests[0]!.body).toEqual({
+      patch: { temperature: null, topP: 0 },
+    })
+    const cycle: Record<string, unknown> = {}
+    cycle.self = cycle
+    for (const patch of [Object.freeze(cycle), Object.freeze({ value: 1n })]) {
+      expect(() =>
+        stagePendingMutation('unsupported', {
+          version: 1,
+          requests: [{ method: 'PATCH', path: '/settings/runtime', body: Object.freeze({ patch }) }],
+        }),
+      ).toThrow(TypeError)
+    }
+    expect(await listPendingMutations()).toHaveLength(1)
+  })
+
+  it('keeps oversized staging and replacement unavailable without destroying the durable predecessor', async () => {
+    const placeholder = stagePendingMutation('settings:runtime', settingsIntent('keep predecessor'))
+    await placeholder.ready
+    const oversized = settingsIntent('x'.repeat(MAX_DURABLE_MUTATION_PAYLOAD_BYTES))
+    await expect(stagePendingMutation('oversized', oversized).ready).resolves.toBe('unavailable')
+    await expect(replaceStagedPendingMutationIntent(placeholder, oversized)).resolves.toEqual({ status: 'unavailable' })
+    expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([settingsIntent('keep predecessor')])
+    expect(placeholder.phase).toBe('staged')
+  })
+
+  it('encrypts and restores complete generation-operation submit intents', async () => {
+    const intent: DurableMutationIntent = {
+      version: 1,
+      kind: 'generation-operation-submit',
+      requests: [
+        {
+          method: 'POST',
+          path: '/generation-operations',
+          body: {
+            operationId: '11111111-1111-4111-8111-111111111111',
+            acceptedMessageId: '22222222-2222-4222-8222-222222222222',
+            baseRevision: 7,
+            draftGeneration: { transcriptIdentity: 'chat-a', sequence: 4 },
+          },
+        },
+      ],
+    }
+    const handle = stagePendingMutation('generation-operation-submit:operation-a', intent)
+
+    await expect(handle.ready).resolves.toBe('persisted')
+    expect((await listPendingMutations())[0]?.intent).toEqual(intent)
+    expect(pendingMutationProjectionTargets(intent)).toEqual([
+      'generation-operation:11111111-1111-4111-8111-111111111111',
+    ])
+  })
+
+  it('encrypts Stop controls without treating an acknowledged pending cancellation as startup-blocking', async () => {
+    const intent: DurableMutationIntent = {
+      version: 1,
+      kind: 'generation-operation-cancel',
+      requests: [
+        {
+          method: 'PUT',
+          path: '/generation-operations/11111111-1111-4111-8111-111111111111/cancellation',
+          body: {
+            reason: 'user_stop',
+            knownStateVersion: 3,
+            knownAttemptNo: 1,
+            knownJobId: 'job-a',
+          },
+        },
+      ],
+    }
+    const handle = stagePendingMutation('generation-operation-cancel:operation-a', intent)
+
+    await expect(handle.ready).resolves.toBe('persisted')
+    expect((await listPendingMutations())[0]?.intent).toEqual(intent)
+    expect(pendingMutationProjectionTargets(intent)).toEqual([
+      'generation-operation:11111111-1111-4111-8111-111111111111',
+    ])
+    await expect(countPendingMutationRecords()).resolves.toBe(1)
+    await expect(countBlockingPendingMutationRecords()).resolves.toBe(0)
+  })
+
+  it('lazily advances an explicit committed-order counter and retains it when rows are cleared', async () => {
+    expect(await readRawOrderCounters()).toEqual([])
+
+    const first = stagePendingMutation('settings:first', settingsIntent('first'))
+    await expect(first.ready).resolves.toBe('persisted')
+    expect(await readRawMutation(first.mutationId)).toMatchObject({ order: 1 })
+    expect(await readRawOrderCounters()).toEqual([
+      expect.objectContaining({
+        version: 1,
+        writerSessionId: 'writer-a',
+        databaseLineage: 'database-a',
+        lastCommittedOrder: 1,
+      }),
+    ])
+
+    await clearPendingMutationOutbox()
+    expect(await readRawOrderCounters()).toEqual([expect.objectContaining({ lastCommittedOrder: 1 })])
+
+    const second = stagePendingMutation('settings:second', settingsIntent('second'))
+    await expect(second.ready).resolves.toBe('persisted')
+    expect(await readRawMutation(second.mutationId)).toMatchObject({ order: 2 })
+    expect(await readRawOrderCounters()).toEqual([expect.objectContaining({ lastCommittedOrder: 2 })])
+  })
+
+  it('rolls back both the counter and row when the final transaction aborts', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    setPendingMutationCommitTransactionHookForTests((transaction) => transaction.abort())
+
+    const aborted = stagePendingMutation('settings:aborted', settingsIntent('aborted'))
+    await expect(aborted.ready).resolves.toBe('unavailable')
+    expect(await readRawMutation(aborted.mutationId)).toBeUndefined()
+    expect(await readRawOrderCounters()).toEqual([])
+
+    setPendingMutationCommitTransactionHookForTests(null)
+    const recovered = stagePendingMutation('settings:recovered', settingsIntent('recovered'))
+    await expect(recovered.ready).resolves.toBe('persisted')
+    expect(await readRawMutation(recovered.mutationId)).toMatchObject({ order: 1 })
+    expect(await readRawOrderCounters()).toEqual([expect.objectContaining({ lastCommittedOrder: 1 })])
+  })
+
+  it('initializes above legacy rows across epochs without rewriting their ciphertext', async () => {
+    const first = stagePendingMutation('settings:first', settingsIntent('legacy-first'))
+    const second = stagePendingMutation('settings:second', settingsIntent('legacy-second'))
+    await Promise.all([first.ready, second.ready])
+    const firstCiphertext = (await readRawMutation(first.mutationId))?.ciphertext
+    const secondCiphertext = (await readRawMutation(second.mutationId))?.ciphertext
+    await deleteRawOrderCounters()
+    await removeRawKeyKind(first.mutationId)
+
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-a',
+      writerEpoch: 2,
+      databaseLineage: 'database-a',
+      requestedWriterWasActive: false,
+    })
+    const current = stagePendingMutation('settings:current', settingsIntent('current'))
+    await expect(current.ready).resolves.toBe('persisted')
+
+    expect(await readRawMutation(first.mutationId)).toMatchObject({ order: 1, ciphertext: firstCiphertext })
+    expect(await readRawMutation(second.mutationId)).toMatchObject({ order: 2, ciphertext: secondCiphertext })
+    expect(await readRawMutation(current.mutationId)).toMatchObject({ order: 3, writerEpoch: 2 })
+    expect(await readRawOrderCounters()).toEqual([
+      expect.objectContaining({
+        writerSessionId: 'writer-a',
+        databaseLineage: 'database-a',
+        lastCommittedOrder: 3,
+      }),
+    ])
+    expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([
+      settingsIntent('legacy-first'),
+      settingsIntent('legacy-second'),
+      settingsIntent('current'),
+    ])
+  })
+
+  it('treats an explicit counter corruption as unavailable without deleting retained rows', async () => {
+    const retained = stagePendingMutation('settings:retained', settingsIntent('retained'))
+    await retained.ready
+    await mutateRawOrderCounter((counter) => ({ ...counter, lastCommittedOrder: -1 }))
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const rejected = stagePendingMutation('settings:rejected', settingsIntent('rejected'))
+
+    await expect(rejected.ready).resolves.toBe('unavailable')
+    expect(await readRawMutation(retained.mutationId)).toBeDefined()
+    expect(await readRawMutation(rejected.mutationId)).toBeUndefined()
+    await expect(countPendingMutationRecords()).resolves.toBe(1)
+  })
+
+  it('treats committed-order exhaustion as unavailable without deleting retained rows', async () => {
+    const retained = stagePendingMutation('settings:retained', settingsIntent('retained'))
+    await retained.ready
+    await mutateRawOrderCounter((counter) => ({
+      ...counter,
+      lastCommittedOrder: Number.MAX_SAFE_INTEGER,
+    }))
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const rejected = stagePendingMutation('settings:rejected', settingsIntent('rejected'))
+
+    await expect(rejected.ready).resolves.toBe('unavailable')
+    expect(await readRawMutation(retained.mutationId)).toBeDefined()
+    expect(await readRawMutation(rejected.mutationId)).toBeUndefined()
+    await expect(countPendingMutationRecords()).resolves.toBe(1)
+  })
+
+  it('keeps persistence activity visible while an unacknowledged intent remains in the outbox', async () => {
+    const handle = stagePendingMutation('settings:runtime', settingsIntent('held-intent'))
+    await expect(handle.ready).resolves.toBe('persisted')
+    expect(await countPendingMutationRecords()).toBe(1)
+
+    vi.useFakeTimers()
+    await vi.advanceTimersByTimeAsync(PERSISTENCE_ACTIVITY_LINGER_MS * 2)
+
+    expect(persistenceSavingState.state).toBe(true)
+  })
+
   it('roundtrips and counts raw-key intents without WebCrypto subtle', async () => {
     stubCryptoWithoutSubtle()
     resetPendingMutationOutboxForTests()
@@ -515,6 +822,12 @@ describe('pending mutation outbox', () => {
 
     const other = stagePendingMutation('settings:other', settingsIntent('other-owner'))
     await other.ready
+    expect((await readRawOrderCounters()).map((counter) => counter.writerSessionId).sort()).toEqual([
+      'writer-a',
+      'writer-b',
+    ])
+    expect(await readRawMutation(pending.mutationId)).toMatchObject({ order: 1 })
+    expect(await readRawMutation(other.mutationId)).toMatchObject({ order: 1 })
     resetPendingMutationOutboxForTests()
     await expect(readSinglePendingMutationOwner()).resolves.toBeNull()
 
@@ -527,6 +840,7 @@ describe('pending mutation outbox', () => {
     expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).toEqual([pending.mutationId])
     expect(await countPendingMutationRecords()).toBe(1)
     expect(await readRawMutation(other.mutationId)).toBeDefined()
+    expect(await readRawOrderCounters()).toHaveLength(2)
 
     resetPendingMutationOutboxForTests()
     await preparePendingMutationOutbox({
@@ -672,11 +986,28 @@ describe('pending mutation outbox', () => {
     )
     expect(targetsFor('POST', '/agent-presets/reorder')).toEqual([pendingMutationAgentPresetOrderProjectionTarget()])
     expect(targetsFor('POST', '/agent-presets/default')).toEqual([pendingMutationAgentPresetDefaultProjectionTarget()])
+    expect(targetsFor('POST', '/agent-presets/preset%20a/uses')).toEqual([steps])
+    expect(targetsFor('POST', '/agent-presets/preset%20a/uses/reorder')).toEqual([steps])
+    expect(targetsFor('PATCH', '/agent-presets/preset%20a/uses/step%20a')).toEqual([stepRow])
+    expect(targetsFor('DELETE', '/agent-presets/preset%20a/uses/step%20a')).toEqual([stepRow, steps].sort())
     expect(targetsFor('POST', '/agent-presets/preset%20a/steps')).toEqual([steps])
     expect(targetsFor('POST', '/agent-presets/preset%20a/steps/step%20a/duplicate')).toEqual([steps])
     expect(targetsFor('POST', '/agent-presets/preset%20a/steps/reorder')).toEqual([steps])
     expect(targetsFor('PATCH', '/agent-presets/preset%20a/steps/step%20a')).toEqual([stepRow])
     expect(targetsFor('DELETE', '/agent-presets/preset%20a/steps/step%20a')).toEqual([stepRow, steps].sort())
+  })
+
+  it('maps standalone Agent rows and ordering to concrete projections', () => {
+    const targetsFor = (method: 'DELETE' | 'PATCH' | 'POST', path: string) =>
+      pendingMutationProjectionTargets({ version: 1, requests: [{ method, path, body: {} }] })
+    const collection = pendingMutationAgentCollectionProjectionTarget()
+    const row = pendingMutationAgentRowProjectionTarget('agent a')
+
+    expect(targetsFor('POST', '/agents')).toEqual([collection])
+    expect(targetsFor('POST', '/agents/reorder')).toEqual([collection])
+    expect(targetsFor('POST', '/agents/agent%20a/duplicate')).toEqual([collection])
+    expect(targetsFor('PATCH', '/agents/agent%20a')).toEqual([row])
+    expect(targetsFor('DELETE', '/agents/agent%20a')).toEqual([row, collection].sort())
   })
 
   it('fences concrete fields independently even when writers share a semantic key', async () => {
@@ -874,14 +1205,24 @@ describe('pending mutation outbox', () => {
     ['DELETE', '/model-profiles/profile-a'],
     ['POST', '/model-profiles/profile-a/duplicate'],
     ['POST', '/model-profiles/convert-legacy'],
+    ['POST', '/model-profiles/reorder'],
     ['PUT', '/model-role-profiles'],
     ['PUT', '/model-runtime-defaults'],
+    ['POST', '/agents'],
+    ['PATCH', '/agents/agent-a'],
+    ['DELETE', '/agents/agent-a'],
+    ['POST', '/agents/agent-a/duplicate'],
+    ['POST', '/agents/reorder'],
     ['POST', '/agent-presets'],
     ['PATCH', '/agent-presets/preset-a'],
     ['DELETE', '/agent-presets/preset-a'],
     ['POST', '/agent-presets/preset-a/duplicate'],
     ['POST', '/agent-presets/reorder'],
     ['POST', '/agent-presets/default'],
+    ['POST', '/agent-presets/preset-a/uses'],
+    ['PATCH', '/agent-presets/preset-a/uses/use-a'],
+    ['DELETE', '/agent-presets/preset-a/uses/use-a'],
+    ['POST', '/agent-presets/preset-a/uses/reorder'],
     ['POST', '/agent-presets/preset-a/steps'],
     ['PATCH', '/agent-presets/preset-a/steps/step-a'],
     ['DELETE', '/agent-presets/preset-a/steps/step-a'],
@@ -918,6 +1259,7 @@ describe('pending mutation outbox', () => {
     ['DELETE', '/characters/character-a'],
     ['POST', '/characters/select'],
     ['POST', '/characters/character-a/chats'],
+    ['PUT', '/characters/character-a/chats'],
     ['POST', '/characters/character-a/chats/reorder'],
     ['POST', '/characters/character-a/chat-folders'],
     ['POST', '/characters/character-a/chat-folders/reorder'],
@@ -937,6 +1279,10 @@ describe('pending mutation outbox', () => {
     ['DELETE', '/modules/module-a'],
     ['POST', '/modules/enable'],
     ['POST', '/modules/reorder'],
+    ['POST', '/module-folders'],
+    ['PATCH', '/module-folders/folder-a'],
+    ['DELETE', '/module-folders/folder-a'],
+    ['POST', '/module-folders/reorder'],
     ['POST', '/plugins'],
     ['PATCH', '/plugins/plugin-a'],
     ['DELETE', '/plugins/plugin-a'],
@@ -970,6 +1316,11 @@ describe('pending mutation outbox', () => {
     ['PUT', '/chats/chat-a/lorebooks/entries/entry-a'],
     ['DELETE', '/modules/module-a/lorebooks/entries/entry-a'],
     ['POST', '/chats/chat-a/lorebooks/entries/reorder'],
+    ['PATCH', '/bardwiki/chats/chat-a/settings'],
+    ['POST', '/bardwiki/chats/chat-a/documents'],
+    ['PATCH', '/bardwiki/chats/chat-a/documents/document-a'],
+    ['DELETE', '/bardwiki/chats/chat-a/documents/document-a'],
+    ['POST', '/bardwiki/chats/chat-a/confirmations'],
   ] as const)('allowlists the durable bridge route %s %s', async (method, path) => {
     const handle = stagePendingMutation(`allowlist:${method}:${path}`, {
       version: 1,
@@ -977,6 +1328,25 @@ describe('pending mutation outbox', () => {
     })
 
     await expect(handle.ready).resolves.toBe('persisted')
+    await expect(discardPendingMutation(handle)).resolves.toBe('deleted')
+  })
+
+  it.each(['full', 'missing'] as const)('persists and restores a confirmed %s BardWiki rebuild', async (policy) => {
+    const intent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'POST',
+          path: '/bardwiki/chats/chat-a/rebuilds',
+          body: { preview: false, confirm: true, policy, expectedSourceCount: 4 },
+        },
+      ],
+    }
+
+    const handle = stagePendingMutation('bardwiki-rebuild:chat-a', intent)
+
+    await expect(handle.ready).resolves.toBe('persisted')
+    expect((await listPendingMutations())[0]?.intent).toEqual(intent)
     await expect(discardPendingMutation(handle)).resolves.toBe('deleted')
   })
 
@@ -1010,6 +1380,15 @@ describe('pending mutation outbox', () => {
     ['POST', '/model-profiles/convert-legacy/extra'],
     ['PUT', '/model-role-profiles/extra'],
     ['PUT', '/model-runtime-defaults/extra'],
+    ['PUT', '/agents'],
+    ['POST', '/agents/agent-a'],
+    ['PATCH', '/agents/reorder'],
+    ['POST', '/agents/reorder/extra'],
+    ['PATCH', '/agents/agent-a/duplicate'],
+    ['PUT', '/agent-presets/preset-a/uses'],
+    ['PATCH', '/agent-presets/preset-a/uses'],
+    ['POST', '/agent-presets/preset-a/uses/use-a'],
+    ['DELETE', '/agent-presets/preset-a/uses/reorder'],
     ['PUT', '/agent-presets'],
     ['POST', '/agent-presets/preset-a'],
     ['PATCH', '/agent-presets/preset-a/duplicate'],
@@ -1023,6 +1402,9 @@ describe('pending mutation outbox', () => {
     ['POST', '/modules/module-a'],
     ['PATCH', '/modules'],
     ['POST', '/modules/enable/extra'],
+    ['POST', '/module-folders/folder-a'],
+    ['PATCH', '/module-folders'],
+    ['POST', '/module-folders/reorder/extra'],
     ['PATCH', '/loadouts/loadout-a'],
     ['DELETE', '/loadouts'],
     ['POST', '/loadouts/loadout-a'],
@@ -1096,6 +1478,85 @@ async function readRawMutation(mutationId: string): Promise<Record<string, unkno
   } finally {
     database.close()
   }
+}
+
+async function readRawOrderCounters(): Promise<Array<Record<string, unknown>>> {
+  const database = await openRawOutboxDatabase()
+  try {
+    const transaction = database.transaction('orders', 'readonly')
+    const counters = await rawRequestResult<Array<Record<string, unknown>>>(transaction.objectStore('orders').getAll())
+    await rawTransactionDone(transaction)
+    return counters
+  } finally {
+    database.close()
+  }
+}
+
+async function deleteRawOrderCounters(): Promise<void> {
+  const database = await openRawOutboxDatabase()
+  try {
+    const transaction = database.transaction('orders', 'readwrite')
+    transaction.objectStore('orders').clear()
+    await rawTransactionDone(transaction)
+  } finally {
+    database.close()
+  }
+}
+
+async function mutateRawOrderCounter(
+  mutate: (counter: Record<string, unknown>) => Record<string, unknown>,
+): Promise<void> {
+  const database = await openRawOutboxDatabase()
+  try {
+    const transaction = database.transaction('orders', 'readwrite')
+    const store = transaction.objectStore('orders')
+    const [keys, counters] = await Promise.all([
+      rawRequestResult<IDBValidKey[]>(store.getAllKeys()),
+      rawRequestResult<Array<Record<string, unknown>>>(store.getAll()),
+    ])
+    if (keys.length !== 1 || counters.length !== 1) throw new Error('Expected one pending-mutation order counter')
+    store.put(mutate(counters[0]!), keys[0])
+    await rawTransactionDone(transaction)
+  } finally {
+    database.close()
+  }
+}
+
+async function removeRawKeyKind(mutationId: string): Promise<void> {
+  const database = await openRawOutboxDatabase()
+  try {
+    const transaction = database.transaction('mutations', 'readwrite')
+    const store = transaction.objectStore('mutations')
+    const record = await rawRequestResult<Record<string, unknown>>(store.get(mutationId))
+    delete record.keyKind
+    store.put(record)
+    await rawTransactionDone(transaction)
+  } finally {
+    database.close()
+  }
+}
+
+function openRawOutboxDatabase(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('risu-pending-mutations-v1', 3)
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+function rawRequestResult<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+function rawTransactionDone(transaction: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => reject(transaction.error)
+    transaction.onabort = () => reject(transaction.error)
+  })
 }
 
 async function removeRawDispatchStarted(mutationId: string): Promise<void> {

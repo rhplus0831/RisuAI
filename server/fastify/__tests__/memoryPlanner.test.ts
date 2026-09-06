@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import {
   DEFAULT_HYPA_V3_SETTINGS,
   normalizeHypaV3Settings,
@@ -7,6 +6,7 @@ import {
   validateHypaV3Settings,
   type HypaV3Settings,
 } from '../src/memoryPlanner.js'
+import type { PromptMessage } from '../src/prompt/promptMessage.js'
 import {
   createHypaV3PrefixTokenMemo,
   type HypaV3PrefixTokenMemo,
@@ -14,12 +14,12 @@ import {
 } from '../src/prompt/prefixTokenMemo.js'
 import { tokenizeChat, type TokenEncoding, type TokenizeChatOptions } from '../src/prompt/tokens.js'
 
-function chat(memo: string, content = memo, role: OpenAIChat['role'] = 'assistant'): OpenAIChat {
+function chat(memo: string, content = memo, role: PromptMessage['role'] = 'assistant'): PromptMessage {
   return { role, content, memo }
 }
 
 function fixedTokenizer(tokensByMemo: Record<string, number>, memoryTokens = 7) {
-  return (item: OpenAIChat): number => {
+  return (item: PromptMessage): number => {
     if (item.memo && item.memo in tokensByMemo) return tokensByMemo[item.memo]
     if (item.content.startsWith('<Past Events Summary>')) return memoryTokens
     return 5
@@ -27,7 +27,7 @@ function fixedTokenizer(tokensByMemo: Record<string, number>, memoryTokens = 7) 
 }
 
 function planWithSummarizedPrefixMemo(input: {
-  chats: readonly OpenAIChat[]
+  chats: readonly PromptMessage[]
   memo: HypaV3PrefixTokenMemo
   rawTokenizeChat: HypaV3RawTokenizeChat
   encoding?: TokenEncoding
@@ -214,7 +214,7 @@ describe('standard Hypa V3 planner contract', () => {
   })
 
   it('surfaces skipped-message reasons in the window contract', () => {
-    const chats: OpenAIChat[] = [
+    const chats: PromptMessage[] = [
       { role: 'user', content: 'example', memo: 'e0', name: 'example_user' },
       chat('NewChat', '[Start a new chat]', 'system'),
       chat('empty', '   '),
@@ -259,7 +259,7 @@ describe('standard Hypa V3 planner contract', () => {
   })
 
   it('advances and records token deltas for skipped-only windows', () => {
-    const chats: OpenAIChat[] = [
+    const chats: PromptMessage[] = [
       { role: 'user', content: 'example', memo: 'e0', name: 'example_user' },
       chat('NewChat', '[Start a new chat]', 'system'),
       chat('tail', 'tail'),
@@ -321,15 +321,15 @@ describe('standard Hypa V3 planner contract', () => {
     expect(plan.plannedWindows).toHaveLength(1)
   })
 
-  it('L15: memoizes already-summarized prefix token counts across repeated planner passes', () => {
+  it('memoizes already-summarized prefix token counts across repeated planner passes', () => {
     const memo = createHypaV3PrefixTokenMemo()
-    const chats: OpenAIChat[] = [
+    const chats: PromptMessage[] = [
       { role: 'user', content: 'alpha prefix '.repeat(12), memo: 'memo-a', name: 'Alex' },
       { role: 'assistant', content: 'bravo prefix '.repeat(12), memo: 'memo-b' },
       { role: 'user', content: 'tail', memo: 'memo-c' },
     ]
     const options: TokenizeChatOptions = { chatAdditionalTokens: 3, useName: 'name' }
-    const rawTokenizeChat = vi.fn((item: OpenAIChat, rawEncoding: TokenEncoding, rawOptions: TokenizeChatOptions) =>
+    const rawTokenizeChat = vi.fn((item: PromptMessage, rawEncoding: TokenEncoding, rawOptions: TokenizeChatOptions) =>
       tokenizeChat(item, rawEncoding, rawOptions),
     )
 
@@ -358,14 +358,14 @@ describe('standard Hypa V3 planner contract', () => {
     expect(second.plannedWindows).toEqual(first.plannedWindows)
   })
 
-  it('L15: re-encodes edited summarized-prefix content and updates token deltas', () => {
+  it('re-encodes edited summarized-prefix content and updates token deltas', () => {
     const memo = createHypaV3PrefixTokenMemo()
-    const chats: OpenAIChat[] = [
+    const chats: PromptMessage[] = [
       { role: 'user', content: 'alpha prefix '.repeat(12), memo: 'memo-a' },
       { role: 'assistant', content: 'bravo prefix '.repeat(12), memo: 'memo-b' },
       { role: 'user', content: 'tail', memo: 'memo-c' },
     ]
-    const rawTokenizeChat = vi.fn((item: OpenAIChat, rawEncoding: TokenEncoding, rawOptions: TokenizeChatOptions) =>
+    const rawTokenizeChat = vi.fn((item: PromptMessage, rawEncoding: TokenEncoding, rawOptions: TokenizeChatOptions) =>
       tokenizeChat(item, rawEncoding, rawOptions),
     )
     planWithSummarizedPrefixMemo({ chats, memo, rawTokenizeChat })
@@ -385,9 +385,9 @@ describe('standard Hypa V3 planner contract', () => {
     })
   })
 
-  it('L15: re-encodes when summarized-prefix tokenizer options change', () => {
+  it('re-encodes when summarized-prefix tokenizer options change', () => {
     const memo = createHypaV3PrefixTokenMemo()
-    const chats: OpenAIChat[] = [
+    const chats: PromptMessage[] = [
       {
         role: 'user',
         content: 'alpha prefix '.repeat(12),
@@ -403,7 +403,7 @@ describe('standard Hypa V3 planner contract', () => {
       },
       { role: 'user', content: 'tail', memo: 'memo-c' },
     ]
-    const rawTokenizeChat = vi.fn((item: OpenAIChat, rawEncoding: TokenEncoding, rawOptions: TokenizeChatOptions) =>
+    const rawTokenizeChat = vi.fn((item: PromptMessage, rawEncoding: TokenEncoding, rawOptions: TokenizeChatOptions) =>
       tokenizeChat(item, rawEncoding, rawOptions),
     )
     const firstOptions: TokenizeChatOptions = { chatAdditionalTokens: 3, countThoughts: false }
@@ -428,6 +428,36 @@ describe('standard Hypa V3 planner contract', () => {
     expect(changed.tokenDeltas.find((delta) => delta.kind === 'summarized_history')).not.toEqual(
       first.tokenDeltas.find((delta) => delta.kind === 'summarized_history'),
     )
+  })
+
+  it('re-encodes when summarized-prefix multimodal dimensions change', () => {
+    const memo = createHypaV3PrefixTokenMemo()
+    const chats: PromptMessage[] = [
+      {
+        role: 'user',
+        content: 'alpha prefix '.repeat(12),
+        memo: 'memo-a',
+        multimodals: [{ type: 'image', base64: 'a', width: 512, height: 512 }],
+      },
+      { role: 'assistant', content: 'bravo prefix '.repeat(12), memo: 'memo-b' },
+      { role: 'user', content: 'tail', memo: 'memo-c' },
+    ]
+    const options: TokenizeChatOptions = {
+      supportsInlayImage: true,
+      visionQuality: 'high',
+    }
+    const rawTokenizeChat = vi.fn((item: PromptMessage, rawEncoding: TokenEncoding, rawOptions: TokenizeChatOptions) =>
+      tokenizeChat(item, rawEncoding, rawOptions),
+    )
+    planWithSummarizedPrefixMemo({ chats, memo, rawTokenizeChat, options })
+    rawTokenizeChat.mockClear()
+
+    const resized = structuredClone(chats)
+    resized[0].multimodals![0].width = 1024
+    planWithSummarizedPrefixMemo({ chats: resized, memo, rawTokenizeChat, options })
+
+    expect(rawTokenizeChat).toHaveBeenCalledTimes(1)
+    expect(rawTokenizeChat.mock.calls[0]?.[0].memo).toBe('memo-a')
   })
 
   it('returns a planner error when the standard path cannot summarize further', () => {

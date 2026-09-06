@@ -1,30 +1,13 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const displaySettingsMocks = vi.hoisted(() => ({
-  setLegacyGUI: (_value: boolean) => {},
-}))
+const displaySettingsMocks = vi.hoisted(() => ({ setLegacyGUI: (_value: boolean) => {} }))
 
 vi.mock('src/ts/setting/displaySettingsData.svelte', () => ({
-  displayNonRendererServerSettingKeys: [],
   displayOtherSettingsItems: [],
   displaySizeSettingsItems: [],
   displayThemeSettingsItems: [],
 }))
-
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
-  watchServerBackedSettings: () => () => {},
-}))
-
-vi.mock('src/ts/storage/database.svelte', async () => {
-  const { fromStore, writable } = await import('svelte/store')
-  const database = writable({ useLegacyGUI: false })
-  displaySettingsMocks.setLegacyGUI = (useLegacyGUI) => database.set({ useLegacyGUI })
-
-  return {
-    getDatabase: () => fromStore(database).current,
-  }
-})
 
 vi.mock('../SettingRenderer.svelte', async () => {
   const { default: SettingRendererPropsProbe } =
@@ -34,6 +17,7 @@ vi.mock('../SettingRenderer.svelte', async () => {
 
 import { language } from 'src/lang'
 import DisplaySettings from './DisplaySettings.svelte'
+import { replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -49,6 +33,7 @@ function buttonNamed(name: string): HTMLButtonElement {
 }
 
 beforeEach(() => {
+  displaySettingsMocks.setLegacyGUI = (useLegacyGUI) => replaceResourceDatabase({ useLegacyGUI } as any)
   displaySettingsMocks.setLegacyGUI(false)
   target = document.createElement('div')
   document.body.appendChild(target)

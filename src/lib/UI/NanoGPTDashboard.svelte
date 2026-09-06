@@ -2,9 +2,9 @@
   import { onDestroy } from 'svelte'
   import { getNanoGPTBalance, getNanoGPTSubscription } from 'src/ts/model/nanogpt'
   import type { NanoGPTBalance, NanoGPTSubscriptionUsage } from 'src/ts/model/nanogpt'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { language } from 'src/lang'
-  import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
+  import { applyServerBackedSetting } from 'src/ts/server/settingsOwner.svelte'
   import {
     beginNanoGPTDashboardFetch,
     clearNanoGPTDashboardFetch,
@@ -43,7 +43,11 @@
         currentApiKey,
         subscriptionState: subscription?.state ?? null,
       })
-      if (subscriptionState !== null && subscriptionState !== (getDatabase().nanogptSubscriptionState ?? '')) {
+      if (
+        settingsResourceState.status === 'ready' &&
+        subscriptionState !== null &&
+        subscriptionState !== (settingsResourceState.value.nanogptSubscriptionState ?? '')
+      ) {
         applyServerBackedSetting('nanogptSubscriptionState', subscriptionState)
       }
       return { balance, subscription }

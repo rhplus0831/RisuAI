@@ -1,5 +1,53 @@
 export const languageVietnamese = {
+  generationRecovery: {
+    failed:
+      'Ứng dụng không thể hoàn tất việc khôi phục lần tạo trước. Tin nhắn mới đang bị tạm dừng nhưng bản nháp của bạn vẫn được giữ lại.',
+    retry: 'Thử khôi phục lại',
+    retrying: 'Đang thử khôi phục lại…',
+    discard: 'Bỏ qua khôi phục',
+    discarding: 'Đang bỏ qua khôi phục…',
+  },
+  acceptedSendRecovery: {
+    generationFailed:
+      'Tin nhắn đã được lưu nhưng chưa thể bắt đầu trả lời. Hãy thử lại câu trả lời mà không gửi lại tin nhắn.',
+    generationInProgress:
+      'Tin nhắn đã được lưu nhưng thiết bị hoặc phiên khác đang tạo nội dung trong cuộc trò chuyện này. Hãy thử lại sau khi hoàn tất.',
+    abandoned:
+      'Tin nhắn đã được lưu nhưng quá trình trả lời bị gián đoạn do máy chủ khởi động lại. Bạn có thể thử lại.',
+    providerMayHaveRun: 'Yêu cầu trước đó tới nhà cung cấp có thể đã chạy và phát sinh phí.',
+    providerMayHaveRunConfirm:
+      'Yêu cầu trước đó có thể đã phát sinh phí. Thử lại có thể tạo thêm một khoản phí. Vẫn thử lại?',
+    retry: 'Thử lại câu trả lời',
+    retrying: 'Đang thử lại…',
+  },
+  generationStop: {
+    stopping: 'Đang dừng…',
+    failed: 'Không thể xác nhận lệnh dừng. Quá trình tạo có thể vẫn đang chạy.',
+    retry: 'Thử dừng lại',
+    savingStoppedPartial: 'Đã dừng. Đang lưu câu trả lời một phần…',
+  },
+  generationPersistenceQueued: 'Phản hồi này đang chờ được lưu và vẫn là dữ liệu tạm thời.',
+  generationPersistenceStalled:
+    'Việc lưu phản hồi tạm thời này liên tục thất bại. Phản hồi vẫn nằm trong hàng đợi và sẽ tự động thử lại.',
+  generationPersistenceTerminal:
+    'Không thể lưu phản hồi tạm thời này một cách an toàn và hệ thống sẽ không tự động thử lại. Bản ghi nhật ký vẫn được giữ lại.',
+  generationPersistenceStalledLegacy:
+    'Không thể thử lại an toàn phản hồi tạm thời đã khôi phục này vì bản ghi khôi phục cũ không có ảnh chụp hội thoại.',
   unknownInteractionTime: 'Không rõ',
+  generationReattachFailure: {
+    message: 'Phản hồi này có thể vẫn đang được tạo, nhưng thiết bị này không thể kết nối lại.',
+    lastError: (error: string) => `Lỗi kết nối gần nhất: ${error}`,
+    retry: 'Thử lại',
+    refresh: 'Làm mới',
+    stop: 'Dừng',
+    sidebarWarning: (name: string) => `Mất kết nối: ${name}`,
+  },
+  characterCreationQueued:
+    'Nhân vật mới đã được lưu trên thiết bị này và đưa vào hàng đợi. Máy chủ chưa chấp nhận và sẽ tự động thử lại.',
+  characterCreationFailed: 'Không thể tạo nhân vật. Nhân vật tạm thời đã bị xóa.',
+  characterImportQueued:
+    'Nhân vật đã nhập được lưu trên thiết bị này và đưa vào hàng đợi. Máy chủ chưa chấp nhận và sẽ tự động thử lại.',
+  characterImportFailed: 'Không thể lưu nhân vật đã nhập. Nhân vật tạm thời đã bị xóa.',
   secretInput: {
     savedPlaceholder: 'Thông tin xác thực đã lưu',
     savedStatus: 'Đã lưu thông tin xác thực.',
@@ -41,6 +89,8 @@ export const languageVietnamese = {
   },
   showHelp: 'Hiển thị trợ giúp',
   help: {
+    hypaV3ProgressOpenChatOnly:
+      'Chỉ hiển thị đầy đủ tiến trình tác vụ bộ nhớ cho cuộc trò chuyện đang mở. Tác vụ ở cuộc trò chuyện khác vẫn hiện dưới dạng số đếm nhỏ gọn.',
     model: 'Tùy chọn mô hình là mô hình chính được sử dụng trong trò chuyện.',
     submodel:
       'Mô hình phụ trợ là mô hình được sử dụng để phân tích hình ảnh cảm xúc và đề xuất tự động, v.v. Nên sử dụng gpt3.5.',
@@ -204,6 +254,8 @@ export const languageVietnamese = {
       'Nếu được bật, nó sẽ dịch văn bản trước các tập lệnh Regex và định dạng HTML. Điều này có thể làm giảm token nhưng có thể phá vỡ định dạng.',
     translatorSendTextAsIs:
       'Nếu được bật, bản dịch bằng Ax. Model sẽ gửi văn bản tin nhắn đến mô hình đúng nguyên văn — trong một yêu cầu duy nhất, không bảo vệ dòng, chia nhỏ hoặc dùng phần giữ chỗ kiểu — và sử dụng nguyên vẹn phản hồi của mô hình làm kết quả dịch.',
+    translatorExcludeThoughts:
+      'Khi bật Gửi nguyên văn, các khối `<Thoughts>` và `<think>` sẽ bị xóa khỏi văn bản nguồn và lịch sử dịch trước khi gửi đến mô hình.',
     translatorHistoryMaxTokens:
       'Ngân sách token gần đúng tối đa dùng chung cho các khe lịch sử nguồn và bản dịch. Những tin nhắn cũ nhất sẽ được loại bỏ nguyên khối khi vượt giới hạn.',
     autoTranslateCachedOnly:
@@ -763,9 +815,20 @@ export const languageVietnamese = {
   savebackup: 'Lưu Sao lưu vào google',
   loadbackup: 'Tải bản sao lưu từ google',
   files: 'Các tập tin',
+  backupUnsupportedStandaloneChatBlocks:
+    'Bản sao lưu này lưu cuộc trò chuyện trong các khối CHAT độc lập mà phiên bản RisuAI này không thể nhập. Không có dữ liệu nào được nhập và dữ liệu hiện có của bạn không bị thay đổi.',
   backupConfirm: 'Bạn có thực sự muốn lưu bản sao lưu?',
   backupLoadConfirm: 'Bạn có thực sự muốn tải bản sao lưu? Tất cả dữ liệu sẽ bị mất!',
   backupLoadConfirm2: 'Bạn có thực sự muốn tải bản sao lưu không? Tất cả dữ liệu sẽ bị mất!',
+  backupImportSuccess: 'Đã tải bản sao lưu cục bộ.',
+  backupImportSuccessWithAssetCaveats: (missingCount: number, orphanedCount: number) => {
+    const caveats: string[] = []
+    if (missingCount > 0) caveats.push(`thiếu ${missingCount} tài sản được tham chiếu`)
+    if (orphanedCount > 0) {
+      caveats.push(`${orphanedCount} tài sản đã lưu không được dữ liệu khôi phục tham chiếu`)
+    }
+    return `Đã tải bản sao lưu cục bộ, nhưng ${caveats.join(' và ')}.`
+  },
   pasteAuthCode: 'Vui lòng sao chép mã xác thực từ cửa sổ bật lên và dán vào đây:',
   others: 'Người khác',
   presets: 'cài đặt trước',
@@ -822,6 +885,8 @@ export const languageVietnamese = {
   showFirstMessagePages: 'Hiển thị trang tin nhắn đầu tiên',
   roundIcons: 'Biểu tượng tròn',
   streaming: 'Truyền phát',
+  oobaLegacyBufferedOnlyNotice:
+    'Ooba Legacy chỉ sử dụng chế độ tương thích HTTP có bộ đệm. Truyền phát và truyền phát một phần không khả dụng.',
   chatBot: 'Bot trò chuyện',
   otherBots: 'Bot khác',
   user: 'Người dùng',
@@ -841,6 +906,7 @@ export const languageVietnamese = {
   globalRegexScript: 'Regex toàn cầu',
   accessibility: 'Khả năng tiếp cận',
   reducedMotion: 'Giảm chuyển động',
+  hypaV3ProgressOpenChatOnly: 'Chỉ hiện đầy đủ tiến trình bộ nhớ cho cuộc trò chuyện đang mở',
   sendWithEnter: 'Gửi bằng phím Enter(Shift + Enter chuyển sang gửi tin nhắn khi không kiểm tra.)',
   fixedChatTextarea: 'Cố định ở dưới khung chat',
   clickToEdit: 'Bấm vào văn bản để chỉnh sửa',
@@ -959,6 +1025,7 @@ export const languageVietnamese = {
   ifRandom: 'Nếu ngẫu nhiên',
   ifValue: 'Nếu giá trị',
   hideRealm: 'Ẩn RisuRealm',
+  openRisuRealm: 'Mở Risu Realm',
   sendExternalServerWarning:
     'Tiếp tục sẽ gửi yêu cầu đến máy chủ bên ngoài và địa chỉ IP của bạn có thể được truyền đi. Bạn có muốn tiếp tục không?',
   hideAllImages: 'Ẩn tất cả hình ảnh',
@@ -1138,6 +1205,16 @@ export const languageVietnamese = {
   resultStoredVar: 'Biến lưu trữ kết quả',
   triggerEffRunLLM: 'Chạy mô hình chính',
   triggerEffectSendAI: 'Gửi lại AI',
+  triggerConfigurationUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
+    `Cấu hình này chứa các định nghĩa máy chủ không hỗ trợ. Chúng được giữ nguyên nhưng bị chặn trong khi tạo.${effectTypes.length > 0 ? ` Hiệu ứng: ${effectTypes.join(', ')}.` : ''}${cbsCallbacks.length > 0 ? ` Hàm gọi lại CBS: ${cbsCallbacks.join(', ')}.` : ''}`,
+  triggerImportUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
+    `Các định nghĩa đã nhập được giữ nguyên, nhưng hành vi không được hỗ trợ sẽ bị chặn trong khi tạo.${effectTypes.length > 0 ? ` Hiệu ứng: ${effectTypes.join(', ')}.` : ''}${cbsCallbacks.length > 0 ? ` Hàm gọi lại CBS: ${cbsCallbacks.join(', ')}.` : ''}`,
+  triggerEffectRuntimeUnsupported: (effectType: string) =>
+    `Hiệu ứng kích hoạt “${effectType}” không được máy chủ này hỗ trợ và đã bị bỏ qua.`,
+  cbsCallbackRuntimeUnsupported: (callbackName: string) =>
+    `Hàm gọi lại CBS “${callbackName}” không được máy chủ này hỗ trợ và đã trả về giá trị rỗng.`,
+  cbsClientContextUnavailable: (callbackName: string) =>
+    `Không thể phân giải hàm gọi lại CBS “${callbackName}” vì ngữ cảnh trình duyệt không khả dụng.`,
   triggerEffCheckSim: 'Kiểm tra độ tương đồng',
   triggerEffShowAlert: 'Hiển thị cảnh báo',
   normal: 'Bình thường',
@@ -1238,8 +1315,10 @@ export const languageVietnamese = {
   translatorPrompt: 'Lời nhắc dịch',
   translateBeforeHTMLFormatting: 'Dịch trước khi định dạng HTML',
   translatorSendTextAsIs: 'Gửi nguyên văn',
+  translatorExcludeThoughts: 'Loại trừ chuỗi suy nghĩ',
   translatorHistoryMaxTokens: 'Token tối đa cho lịch sử dịch',
   retranslate: 'Dịch lại',
+  retranslateConfirm: 'Dịch lại tin nhắn này? Bản dịch hiện tại sẽ bị thay thế.',
   editTranslation: 'Chỉnh sửa bản dịch',
   editTranslationSave: 'Lưu bản dịch',
   exportTranslationCache: 'Xuất bộ nhớ đệm dịch',
@@ -1277,8 +1356,6 @@ export const languageVietnamese = {
   expandSidebar: 'Mở rộng thanh bên',
   home: 'Trang chủ',
   showSavingIcon: 'Hiển thị biểu tượng đang lưu',
-  pluginVersionWarn:
-    'Đây là phiên bản {{plugin_version}} của plugin, không tương thích với phiên bản Risuai này. Vui lòng cập nhật plugin lên phiên bản {{required_version}}.',
   imageTranslation: 'Dịch hình ảnh',
   banCharacterset: 'Tự động tạo lại khi gặp bộ ký tự',
   realmDirectOpen: 'Mở trực tiếp nhân vật trong RisuRealm',
@@ -1318,6 +1395,19 @@ export const languageVietnamese = {
     preserveOrphanedMemoryLabel: 'Giữ Bộ nhớ Mồ côi',
     applyRegexScriptWhenRerollingLabel: 'Áp dụng Script Regex khi Tạo lại',
     doNotSummarizeUserMessageLabel: 'Không Tóm tắt Tin nhắn Người dùng',
+  },
+  hypaV3Progress: {
+    activeJobs: (count: number) => `${count} tác vụ bộ nhớ đang hoạt động`,
+    activeInOtherChats: (count: number) => `${count} tác vụ bộ nhớ đang hoạt động trong cuộc trò chuyện khác`,
+    otherChatsCompact: (count: number) => `+${count} tác vụ ở trò chuyện khác`,
+    openDetailsAction: (count: number) => `Hiện chi tiết ${count} tác vụ bộ nhớ đang hoạt động`,
+    closeDetailsAction: 'Ẩn chi tiết tác vụ bộ nhớ',
+    unnamedChat: 'Cuộc trò chuyện chưa đặt tên',
+    unknownChat: (id: string) => `Cuộc trò chuyện ${id}`,
+    kind: { chunk: 'Chuẩn bị bộ nhớ', embed: 'Tìm kiếm bộ nhớ', summarize: 'Tóm tắt bộ nhớ' },
+    pending: 'Đang chờ',
+    running: 'Đang chạy',
+    attempt: (attemptCount: number, maxAttempts: number) => `Lần thử ${attemptCount}/${maxAttempts}`,
   },
   hypaV3Modal: {
     titleLabel: 'HypaV3',
@@ -1433,6 +1523,7 @@ export const languageVietnamese = {
     'Kéo dài thời gian lưu trữ bộ nhớ đệm Claude bằng cách yêu cầu mỗi 4 phút. Điều này có thể giảm tỷ lệ bỏ lỡ bộ nhớ đệm, nhưng có thể tăng chi phí nếu không sử dụng đúng cách.',
   automaticCachePoint: 'Điểm lưu trữ tự động',
   experimentalChatCompression: 'Xử lý dữ liệu trò chuyện thử nghiệm',
+  loadingChat: 'Đang tải cuộc trò chuyện…',
   loadingChatData: 'Đang tải dữ liệu trò chuyện',
   chatDataLoadFailed: 'Không thể tải dữ liệu trò chuyện.',
   promptTemplateLoadFailed: 'Không thể tải mẫu nhắc.',
@@ -1587,8 +1678,6 @@ export const languageVietnamese = {
     'Plugin {} đang yêu cầu truy cập thông qua trình hỗ trợ mạng Internet công cộng của RisuAI. Yêu cầu này có thể gửi dữ liệu trò chuyện hoặc tài khoản cho bên thứ ba. Trình hỗ trợ sẽ chặn các đích riêng tư, cục bộ, siêu dữ liệu và dịch vụ RisuAI. Bạn có muốn cho phép không?',
   pluginUpdateSourceConsent:
     'RisuAI sẽ chỉ kiểm tra và tải bản cập nhật cho plugin {{plugin}} từ nguồn HTTPS đã khai báo:\n{{url}}\nQuyền này chỉ dành cho việc kiểm tra và tải bản cập nhật; quyền này không cấp cho plugin quyền sử dụng trình hỗ trợ mạng khi chạy. Bạn có muốn tiếp tục không?',
-  legacyRuntimeConsent:
-    'Plugin cũ {} đang yêu cầu quyền chạy dưới dạng mã được tin cậy trong trang RisuAI chính. Plugin có thể đọc hoặc sửa đổi dữ liệu trò chuyện và tài khoản, đồng thời truy cập các dịch vụ mạng công cộng, riêng tư hoặc cục bộ. Chỉ cho phép các plugin mà bạn hoàn toàn tin tưởng. Bạn có muốn tiếp tục không?',
   v3RuntimeConsent:
     'Plugin {} đang yêu cầu quyền chạy mã giao diện trình duyệt được tin cậy. Plugin có thể liên hệ các đích mạng công cộng, riêng tư, cục bộ, siêu dữ liệu hoặc RisuAI và gửi dữ liệu trò chuyện hoặc tài khoản ra ngoài RisuAI, kể cả qua API trình duyệt bỏ qua sự đồng ý của trình hỗ trợ mạng. Chỉ chạy plugin mà bạn hoàn toàn tin tưởng. Bạn có muốn tiếp tục không?',
   fetchLogConsent:
@@ -1651,6 +1740,9 @@ export const languageVietnamese = {
   inputHookAdd: 'Thêm hook',
   inputHookName: 'Tên hook',
   inputHookPrompt: 'Prompt của hook',
+  inputHookModel: 'Mô hình',
+  inputHookTranslation: 'Bản dịch',
+  inputHookInheritOtherAxModel: 'Kế thừa mô hình phụ trợ khác',
   inputHookDelete: 'Xóa hook',
   inputHookDraftLabel: 'Bản nháp',
   inputHookDraftPlaceholder: 'Kết quả hook sẽ xuất hiện ở đây. Bạn có thể sửa trước khi gửi.',

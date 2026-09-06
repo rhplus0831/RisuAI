@@ -9,6 +9,7 @@
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
   import Help from 'src/lib/Others/Help.svelte'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import {
     type triggerEffectV2,
@@ -19,9 +20,14 @@
     type triggerV2IfAdvanced,
   } from 'src/ts/process/triggers'
   import { onDestroy, onMount, untrack } from 'svelte'
-  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsOwner.svelte'
   import { alertError } from 'src/ts/alert'
   import { parseTriggerV2Import } from './triggerV2Import'
+  import {
+    diagnoseServerTriggerCompatibility,
+    isServerUnsupportedTriggerEffectType,
+  } from 'src/ts/process/triggerServerSupport'
+  import { hasDragType, RISU_EFFECT_DRAG_TYPE, RISU_TRIGGER_DRAG_TYPE } from 'src/ts/dragTypes'
 
   interface Props {
     value?: triggerscript[]
@@ -164,6 +170,7 @@
 
   let lastClickTime = 0
   let { value = $bindable([]), lowLevelAble = false, ownerKey = '' }: Props = $props()
+  let serverCompatibilityDiagnostics = $derived(diagnoseServerTriggerCompatibility(value))
   let selectedIndex = $state(0)
   let selectedEffectIndex = $state(-1)
   let selectedTriggerIndices = $state<number[]>([])
@@ -635,6 +642,15 @@
 
         for (const trigger of importedTriggers) {
           value.push(trigger)
+        }
+        const diagnostics = diagnoseServerTriggerCompatibility(importedTriggers)
+        if (diagnostics.unsupportedEffectTypes.length > 0 || diagnostics.unsupportedCbsCallbacks.length > 0) {
+          alertError(
+            language.triggerImportUnsupportedDiagnostic(
+              diagnostics.unsupportedEffectTypes,
+              diagnostics.unsupportedCbsCallbacks,
+            ),
+          )
         }
       } catch {
         if (isCurrentImportTarget()) alertError(language.errors.noData)
@@ -2001,6 +2017,7 @@
 
     isDragging = true
     e.dataTransfer?.setData('text', 'trigger')
+    e.dataTransfer?.setData(RISU_TRIGGER_DRAG_TYPE, 'true')
     if (triggerDrag.source.id !== null) {
       e.dataTransfer?.setData('triggerId', triggerDrag.source.id)
     }
@@ -2029,6 +2046,7 @@
   }
 
   const handleTriggerDrop = (target: TriggerDropTarget | null, e: DragEvent) => {
+    if (!hasDragType(e.dataTransfer?.types, RISU_TRIGGER_DRAG_TYPE)) return
     e.preventDefault()
     e.stopPropagation()
     const data = e.dataTransfer?.getData('text')
@@ -2294,6 +2312,7 @@
     }
     isEffectDragging = true
     e.dataTransfer?.setData('text', 'effect')
+    e.dataTransfer?.setData(RISU_EFFECT_DRAG_TYPE, 'true')
     return true
   }
 
@@ -2336,6 +2355,7 @@
   }
 
   const handleEffectDrop = (target: EffectDropTarget | null, e: DragEvent) => {
+    if (!hasDragType(e.dataTransfer?.types, RISU_EFFECT_DRAG_TYPE)) return
     e.preventDefault()
     e.stopPropagation()
     const data = e.dataTransfer?.getData('text')
@@ -2664,6 +2684,12 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
+      use:modalBackdropDismiss={() => {
+        contextMenu = false
+        if (menuMode === 0) {
+          clearTriggerSelection()
+        }
+      }}
       use:modalFocusTrap
       data-modal-root
       data-risu-trigger-v2-dialog
@@ -2673,14 +2699,6 @@
       tabindex="-1"
       class="text-textcolor absolute top-0 bottom-0 bg-black/50 max-w-full w-full h-full z-40 flex justify-center items-center"
       onkeydown={handleKeydown}
-      onclick={(e) => {
-        if (e.target === e.currentTarget) {
-          contextMenu = false
-          if (menuMode === 0) {
-            clearTriggerSelection()
-          }
-        }
-      }}
       oncontextmenu={(e) => {
         if (e.target === e.currentTarget) {
           e.preventDefault()
@@ -2823,12 +2841,28 @@
         }}>
         {#if menuMode === 0}
           <div class="pr-2 md:w-96 flex flex-col md:h-full mt-2 md:mt-0">
+            {#if serverCompatibilityDiagnostics.unsupportedEffectTypes.length > 0 || serverCompatibilityDiagnostics.unsupportedCbsCallbacks.length > 0}
+              <div
+                class="mb-2 border border-yellow-600 p-2 text-xs text-textcolor2"
+                role="status"
+                data-risu-server-compatibility-diagnostic>
+                {language.triggerConfigurationUnsupportedDiagnostic(
+                  serverCompatibilityDiagnostics.unsupportedEffectTypes,
+                  serverCompatibilityDiagnostics.unsupportedCbsCallbacks,
+                )}
+              </div>
+            {/if}
             <div
               class="flex-1 flex flex-col overflow-y-auto"
               bind:this={triggerScrollRef}
               onscroll={scrollManager.handleTriggerScroll}
               ondragover={(e) => {
-                if (!isMobileScreen && isDragging && triggerScrollRef) {
+                if (
+                  !isMobileScreen &&
+                  isDragging &&
+                  hasDragType(e.dataTransfer.types, RISU_TRIGGER_DRAG_TYPE) &&
+                  triggerScrollRef
+                ) {
                   const rect = e.currentTarget.getBoundingClientRect()
                   const autoScrollDirection = scrollManager.checkAutoScrollZone(e.clientY, rect)
 
@@ -2864,7 +2898,7 @@
                     class:shadow-lg={isDragging && dragOverIndex === i}
                     role="listitem"
                     ondragover={(e) => {
-                      if (!isMobileScreen) {
+                      if (!isMobileScreen && hasDragType(e.dataTransfer.types, RISU_TRIGGER_DRAG_TYPE)) {
                         e.preventDefault()
                       }
                     }}
@@ -2918,7 +2952,7 @@
                         scrollManager.stopAutoScroll()
                       }}
                       ondragover={(e) => {
-                        if (!isMobileScreen) {
+                        if (!isMobileScreen && hasDragType(e.dataTransfer.types, RISU_TRIGGER_DRAG_TYPE)) {
                           e.preventDefault()
                           const rect = e.currentTarget.getBoundingClientRect()
                           const mouseY = e.clientY
@@ -3003,7 +3037,7 @@
                 class:shadow-lg={isDragging && dragOverIndex === value.length}
                 role="listitem"
                 ondragover={(e) => {
-                  if (!isMobileScreen) {
+                  if (!isMobileScreen && hasDragType(e.dataTransfer.types, RISU_TRIGGER_DRAG_TYPE)) {
                     e.preventDefault()
                     dragOverIndex = value.length
                   }
@@ -3121,7 +3155,12 @@
               bind:this={menu0Container}
               onscroll={scrollManager.handleMenu0Scroll}
               ondragover={(e) => {
-                if (!isMobileScreen && isEffectDragging && menu0Container) {
+                if (
+                  !isMobileScreen &&
+                  isEffectDragging &&
+                  hasDragType(e.dataTransfer.types, RISU_EFFECT_DRAG_TYPE) &&
+                  menu0Container
+                ) {
                   const rect = e.currentTarget.getBoundingClientRect()
                   const autoScrollDirection = scrollManager.checkAutoScrollZone(e.clientY, rect)
 
@@ -3191,7 +3230,11 @@
                   class:shadow-lg={isEffectDragging && effectDragOverIndex === i}
                   role="listitem"
                   ondragover={(e) => {
-                    if (!isMobileScreen && isEffectDragging) {
+                    if (
+                      !isMobileScreen &&
+                      isEffectDragging &&
+                      hasDragType(e.dataTransfer.types, RISU_EFFECT_DRAG_TYPE)
+                    ) {
                       e.preventDefault()
                     }
                   }}
@@ -3208,7 +3251,11 @@
                   class:hover:bg-selected={selectedEffectIndex !== i}
                   class:bg-selected={selectedEffectIndex === i}
                   ondragover={(e) => {
-                    if (!isMobileScreen && isEffectDragging) {
+                    if (
+                      !isMobileScreen &&
+                      isEffectDragging &&
+                      hasDragType(e.dataTransfer.types, RISU_EFFECT_DRAG_TYPE)
+                    ) {
                       e.preventDefault()
                       const rect = e.currentTarget.getBoundingClientRect()
                       const mouseY = e.clientY
@@ -3385,7 +3432,7 @@
                       : 0)}
                 role="listitem"
                 ondragover={(e) => {
-                  if (!isMobileScreen && isEffectDragging) {
+                  if (!isMobileScreen && isEffectDragging && hasDragType(e.dataTransfer.types, RISU_EFFECT_DRAG_TYPE)) {
                     e.preventDefault()
                   }
                 }}
@@ -3482,6 +3529,7 @@
                   <button
                     class="w-full p-3 text-left hover:bg-selected transition-colors text-textcolor2 hover:text-textcolor"
                     class:opacity-60={effectCategories.Deprecated.includes(type)}
+                    data-risu-server-unsupported-effect={isServerUnsupportedTriggerEffectType(type) ? type : undefined}
                     onclick={(e) => {
                       e.stopPropagation()
                       makeDefaultEditType(type)
@@ -3497,6 +3545,9 @@
                         <span class="text-xs opacity-60 ml-1">(Deprecated)</span>
                       {/if}
                     </div>
+                    {#if isServerUnsupportedTriggerEffectType(type)}
+                      <div class="mt-1 text-xs text-textcolor2">{language.triggerEffectUnsupportedOnServer}</div>
+                    {/if}
                   </button>
                 {/each}
               </div>
@@ -3529,6 +3580,11 @@
                 {language.triggerDesc[editTrigger.type]}
               </h2>
             </div>
+            {#if isServerUnsupportedTriggerEffectType(editTrigger.type)}
+              <p class="mb-4 text-sm text-textcolor2" data-risu-server-unsupported-effect={editTrigger.type}>
+                {language.triggerEffectUnsupportedOnServer}
+              </p>
+            {/if}
             {#if editTrigger.type === 'v2SetVar'}
               <span class="block text-textcolor">{language.triggerInputLabels.varName}</span>
               <TextInput bind:value={editTrigger.var} />

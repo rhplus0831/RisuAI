@@ -15,6 +15,7 @@
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import { exportAsDataset } from 'src/ts/storage/exportAsDataset'
   import type { ServerBackupProgress } from 'src/ts/server/backups'
+  import StorageUsage from './StorageUsage.svelte'
 
   type BackupProgressKind = 'serverSave' | 'serverRestore' | 'localSave' | 'localZipSave' | 'localRestore'
   type OperationStatus = 'ok' | 'error' | 'unavailable' | 'cancelled'
@@ -78,6 +79,8 @@
 
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.backupRestore}</h2>
 
+<StorageUsage />
+
 <Button
   onclick={async () => {
     if (await alertConfirm(language.backupConfirm)) {
@@ -115,7 +118,7 @@
 
 <Button
   onclick={async () => {
-    if (await alertConfirm(language.backupConfirm)) {
+    if (await alertConfirm(language.portableSaveSecretsWarning)) {
       await runBackupOperation('localZipSave', 'Saving ZIP-style local backup', (onProgress) =>
         saveZipBackupToDevice({ onProgress }),
       )

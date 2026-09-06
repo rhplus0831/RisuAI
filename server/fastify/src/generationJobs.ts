@@ -1,4 +1,23 @@
-import { JobRegistry, type StreamJob } from './streamJobs.js'
+import { randomUUID } from 'node:crypto'
+import path from 'node:path'
+import { JobRegistry, type JobRegistryOptions, type StreamJob } from './streamJobs.js'
+
+export interface ActiveGenerationJobProjection {
+  chatId: string
+  jobId: string
+  mode?: 'send' | 'continue' | 'regenerate'
+  continueDisposition?: 'append' | 'extend'
+  regenerateMessageId?: string
+  databaseLineage?: string
+  operationId?: string
+  writerSessionId?: string
+  writerEpoch?: number
+  operationStateVersion?: number
+  projectionEpoch?: number
+  attemptNo?: number
+  acceptedMessageId?: string
+  targetMessageId?: string
+}
 
 /**
  * Durable-generation job registry.
@@ -14,13 +33,22 @@ import { JobRegistry, type StreamJob } from './streamJobs.js'
  *    client — even after a full reload — discovers and reattaches to a running
  *    generation.
  *
- * In-memory only (no `db.json`) and separate from the proxy registry; generation
- * jobs and proxy stream jobs never share state.
+ * Job authority remains process-local (no `db.json`) and separate from the
+ * proxy registry. Oversized terminal payload bytes may live in an ephemeral
+ * file side channel for the same retention window; those files are replay
+ * transport state, not durable generation authority.
  */
 export class GenerationJobRegistry {
-  readonly registry = new JobRegistry()
+  readonly registry: JobRegistry
   private readonly runningByChat = new Map<string, string>()
   private readonly runners = new Set<Promise<void>>()
+
+  constructor(dataDir?: string, options: Omit<JobRegistryOptions, 'replaySnapshotDir'> = {}) {
+    this.registry = new JobRegistry({
+      ...options,
+      ...(dataDir ? { replaySnapshotDir: path.join(dataDir, 'runtime', `generation-replay-${randomUUID()}`) } : {}),
+    })
+  }
 
   /**
    * Track a detached runner so shutdown can wait for it.
@@ -88,18 +116,8 @@ export class GenerationJobRegistry {
    * target) lets a reloaded browser reattach with the right generating mode. Done /
    * GC'd jobs are filtered out.
    */
-  activeJobs(): Array<{
-    chatId: string
-    jobId: string
-    mode?: 'send' | 'continue' | 'regenerate'
-    regenerateMessageId?: string
-  }> {
-    const out: Array<{
-      chatId: string
-      jobId: string
-      mode?: 'send' | 'continue' | 'regenerate'
-      regenerateMessageId?: string
-    }> = []
+  activeJobs(): ActiveGenerationJobProjection[] {
+    const out: ActiveGenerationJobProjection[] = []
     for (const [chatId, jobId] of this.runningByChat.entries()) {
       const job = this.registry.get(jobId)
       if (job && !job.done) {
@@ -107,7 +125,17 @@ export class GenerationJobRegistry {
           chatId,
           jobId,
           ...(job.mode ? { mode: job.mode } : {}),
+          ...(job.continueDisposition ? { continueDisposition: job.continueDisposition } : {}),
           ...(job.regenerateMessageId ? { regenerateMessageId: job.regenerateMessageId } : {}),
+          ...(job.databaseLineage ? { databaseLineage: job.databaseLineage } : {}),
+          ...(job.operationId ? { operationId: job.operationId } : {}),
+          ...(job.writerSessionId ? { writerSessionId: job.writerSessionId } : {}),
+          ...(job.writerEpoch !== undefined ? { writerEpoch: job.writerEpoch } : {}),
+          ...(job.operationStateVersion !== undefined ? { operationStateVersion: job.operationStateVersion } : {}),
+          ...(job.projectionEpoch !== undefined ? { projectionEpoch: job.projectionEpoch } : {}),
+          ...(job.attemptNo !== undefined ? { attemptNo: job.attemptNo } : {}),
+          ...(job.acceptedMessageId ? { acceptedMessageId: job.acceptedMessageId } : {}),
+          ...(job.targetMessageId ? { targetMessageId: job.targetMessageId } : {}),
         })
       }
     }

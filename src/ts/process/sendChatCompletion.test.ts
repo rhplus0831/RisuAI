@@ -6,7 +6,6 @@ function effects(calls: string[] = []): SuccessfulSendChatEffects {
     clearRerollBuffer: vi.fn(() => calls.push('clear')),
     recordGeneratedReroll: vi.fn(() => calls.push('record')),
     markRerollChar: vi.fn(() => calls.push('mark')),
-    playSendSound: vi.fn(() => calls.push('sound')),
   }
 }
 
@@ -23,7 +22,6 @@ describe('applySuccessfulSendChatEffects', () => {
     expect(sendEffects.clearRerollBuffer).not.toHaveBeenCalled()
     expect(sendEffects.recordGeneratedReroll).not.toHaveBeenCalled()
     expect(sendEffects.markRerollChar).not.toHaveBeenCalled()
-    expect(sendEffects.playSendSound).not.toHaveBeenCalled()
   })
 
   it('runs success side effects after a successful send', () => {
@@ -37,7 +35,7 @@ describe('applySuccessfulSendChatEffects', () => {
 
     expect(applied).toBe(true)
     expect(sendEffects.recordGeneratedReroll).toHaveBeenCalledWith(2)
-    expect(calls).toEqual(['clear', 'record', 'mark', 'sound'])
+    expect(calls).toEqual(['clear', 'record', 'mark'])
   })
 
   it('keeps reroll buffer when the caller is not confirming the boundary', () => {
@@ -51,6 +49,6 @@ describe('applySuccessfulSendChatEffects', () => {
 
     expect(applied).toBe(true)
     expect(sendEffects.clearRerollBuffer).not.toHaveBeenCalled()
-    expect(calls).toEqual(['record', 'mark', 'sound'])
+    expect(calls).toEqual(['record', 'mark'])
   })
 })

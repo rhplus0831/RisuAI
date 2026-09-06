@@ -22,7 +22,15 @@ export type DestructiveRefreshEpoch = number
 let nextOperationSequence = 0
 let nextDestructiveRefreshId = 0
 
-const snapshotJson = (value: unknown): string | undefined => JSON.stringify(value)
+const snapshotJson = (value: unknown): string | undefined =>
+  JSON.stringify(value, (_key, nested) => {
+    if (nested === null || typeof nested !== 'object' || Array.isArray(nested)) return nested
+    return Object.fromEntries(
+      Object.keys(nested)
+        .sort()
+        .map((key) => [key, (nested as Record<string, unknown>)[key]]),
+    )
+  })
 
 const isJsonSnapshotEqual = (left: unknown, right: unknown): boolean => snapshotJson(left) === snapshotJson(right)
 

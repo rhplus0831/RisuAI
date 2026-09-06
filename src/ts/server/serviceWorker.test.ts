@@ -9,6 +9,28 @@ type ServiceWorkerListener = (event: {
   waitUntil: (promise: Promise<unknown>) => void
 }) => void
 
+class TestMessagePort {
+  onmessage: ((event: { data: unknown }) => void) | null = null
+  onmessageerror: (() => void) | null = null
+  peer: TestMessagePort | null = null
+
+  close = vi.fn()
+
+  postMessage(data: unknown): void {
+    this.peer?.onmessage?.({ data })
+  }
+}
+
+class TestMessageChannel {
+  port1 = new TestMessagePort()
+  port2 = new TestMessagePort()
+
+  constructor() {
+    this.port1.peer = this.port2
+    this.port2.peer = this.port1
+  }
+}
+
 function loadServiceWorker() {
   const listeners: Record<string, ServiceWorkerListener> = {}
   const clients = {
@@ -27,6 +49,9 @@ function loadServiceWorker() {
     skipWaiting: vi.fn(),
   }
   const context = vm.createContext({
+    clearTimeout,
+    MessageChannel: TestMessageChannel,
+    setTimeout,
     URL,
     console,
     self,
@@ -111,35 +136,81 @@ describe('notification service worker', () => {
     })
   })
 
-  it('navigates an existing same-origin window to the notification route before focusing it', async () => {
+  it('focuses an existing same-origin window and routes through an acknowledged message', async () => {
     const { clients, listeners } = loadServiceWorker()
-    const navigatedClient = {
-      focus: vi.fn(async () => undefined),
-      url: 'https://app.example.test/character/char-a/chat-a',
-    }
     const existingClient = {
-      focus: vi.fn(async () => undefined),
-      navigate: vi.fn(async () => navigatedClient),
+      focus: vi.fn(),
+      navigate: vi.fn(),
+      postMessage: vi.fn((message: unknown, ports: TestMessagePort[]) => {
+        ports[0].postMessage({ type: 'risuai:notification-route-ack' })
+      }),
       url: 'https://app.example.test/',
     }
+    existingClient.focus.mockResolvedValue(existingClient)
     clients.matchAll.mockResolvedValueOnce([existingClient])
 
     await clickNotification(listeners.notificationclick, '/character/char-a/chat-a')
 
-    expect(existingClient.navigate).toHaveBeenCalledWith('https://app.example.test/character/char-a/chat-a')
-    expect(existingClient.focus).not.toHaveBeenCalled()
-    expect(navigatedClient.focus).toHaveBeenCalledOnce()
+    expect(existingClient.focus).toHaveBeenCalledOnce()
+    expect(existingClient.postMessage).toHaveBeenCalledWith(
+      {
+        type: 'risuai:notification-route',
+        url: 'https://app.example.test/character/char-a/chat-a',
+      },
+      [expect.any(TestMessagePort)],
+    )
+    expect(existingClient.navigate).not.toHaveBeenCalled()
     expect(clients.openWindow).not.toHaveBeenCalled()
   })
 
-  it('opens the notification route when no same-origin app window is available', async () => {
+  it('falls back to hard navigation when the existing client does not acknowledge', async () => {
+    vi.useFakeTimers()
+    try {
+      const { clients, listeners } = loadServiceWorker()
+      const existingClient = {
+        focus: vi.fn(),
+        navigate: vi.fn(async () => undefined),
+        postMessage: vi.fn(),
+        url: 'https://app.example.test/',
+      }
+      existingClient.focus.mockResolvedValue(existingClient)
+      clients.matchAll.mockResolvedValueOnce([existingClient])
+
+      const pendingClick = clickNotification(listeners.notificationclick, '/character/char-a/chat-a')
+      await vi.runAllTimersAsync()
+      await pendingClick
+
+      expect(existingClient.focus).toHaveBeenCalledOnce()
+      expect(existingClient.postMessage).toHaveBeenCalledOnce()
+      expect(existingClient.navigate).toHaveBeenCalledWith('https://app.example.test/character/char-a/chat-a')
+      expect(clients.openWindow).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('only focuses when the existing client is already at the target URL', async () => {
     const { clients, listeners } = loadServiceWorker()
-    clients.matchAll.mockResolvedValueOnce([
-      {
-        focus: vi.fn(async () => undefined),
-        url: 'https://other.example.test/',
-      },
-    ])
+    const existingClient = {
+      focus: vi.fn(),
+      navigate: vi.fn(),
+      postMessage: vi.fn(),
+      url: 'https://app.example.test/character/char-a/chat-a',
+    }
+    existingClient.focus.mockResolvedValue(existingClient)
+    clients.matchAll.mockResolvedValueOnce([existingClient])
+
+    await clickNotification(listeners.notificationclick, '/character/char-a/chat-a')
+
+    expect(existingClient.focus).toHaveBeenCalledOnce()
+    expect(existingClient.postMessage).not.toHaveBeenCalled()
+    expect(existingClient.navigate).not.toHaveBeenCalled()
+    expect(clients.openWindow).not.toHaveBeenCalled()
+  })
+
+  it('opens the notification route when there are no window clients', async () => {
+    const { clients, listeners } = loadServiceWorker()
+    clients.matchAll.mockResolvedValueOnce([])
     clients.openWindow.mockResolvedValueOnce(undefined)
 
     await clickNotification(listeners.notificationclick, '/character/char-b/chat-b')

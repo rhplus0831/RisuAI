@@ -3,7 +3,7 @@
   import Accordion from 'src/lib/UI/Accordion.svelte'
   import { language } from 'src/lang'
   import ModelList from 'src/lib/UI/ModelList.svelte'
-  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsOwner.svelte'
 
   type AuxModelSettings = {
     memory: string

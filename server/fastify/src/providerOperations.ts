@@ -2,7 +2,7 @@ import type {
   ProviderOperation,
   ProviderOperationCredential,
   ProviderOperationRequest,
-} from '../../../src/ts/server/providerOperationsProtocol.js'
+} from '@risuai/protocol/provider-operation'
 import { readBoundedBodyJson } from './generation/body.js'
 import { MASKED_PROVIDER_SECRET } from './providerSecrets.js'
 import { createTimeoutController } from './proxy.js'
@@ -19,6 +19,8 @@ type JsonRecord = Record<string, unknown>
 type ProviderKind =
   | 'nanogpt'
   | 'openrouter'
+  | 'llmgateway'
+  | 'neuralwatt'
   | 'ollama'
   | 'wavespeed'
   | 'google'
@@ -134,6 +136,24 @@ const OPERATION_SPECS: Record<ProviderOperation, ProviderOperationSpec> = {
     buildRequest: (apiKey) => ({
       url: 'https://openrouter.ai/api/v1/providers',
       init: fixedJsonRequest('GET', apiKey ? bearerHeader(apiKey) : undefined),
+    }),
+  },
+  'llmgateway.models': {
+    provider: 'llmgateway',
+    credentialRequired: false,
+    storedCredential: () => undefined,
+    buildRequest: () => ({
+      url: 'https://api.llmgateway.io/v1/models',
+      init: fixedJsonRequest('GET'),
+    }),
+  },
+  'neuralwatt.models': {
+    provider: 'neuralwatt',
+    credentialRequired: false,
+    storedCredential: () => undefined,
+    buildRequest: () => ({
+      url: 'https://api.neuralwatt.com/v1/models',
+      init: fixedJsonRequest('GET'),
     }),
   },
   'ollama.cloud-models': {
@@ -445,7 +465,19 @@ function resolveCredential(
     (candidate): candidate is JsonRecord => isRecord(candidate) && candidate.id === credential.profileId,
   )
   if (!profile || !profileMatchesProvider(profile, spec.provider)) throw credentialUnavailable()
-  return readNestedString(profile, 'providerOptions', 'apiKey') ?? spec.storedCredential(settings)
+  const providerOptions = isRecord(profile.providerOptions) ? profile.providerOptions : {}
+  const credentialId = readString(providerOptions.credentialId)
+  if (!credentialId) return spec.storedCredential(settings)
+
+  const credentials = settings.providerCredentials
+  if (!Array.isArray(credentials)) throw credentialUnavailable()
+  const providerCredential = credentials.find(
+    (candidate): candidate is JsonRecord => isRecord(candidate) && candidate.id === credentialId,
+  )
+  if (!providerCredential || providerCredential.type !== 'apiKey') throw credentialUnavailable()
+  const apiKey = readString(providerCredential.apiKey)
+  if (!apiKey) throw credentialUnavailable()
+  return apiKey
 }
 
 function profileMatchesProvider(profile: JsonRecord, provider: ProviderKind): boolean {

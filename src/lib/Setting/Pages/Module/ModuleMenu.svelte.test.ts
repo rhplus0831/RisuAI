@@ -1,6 +1,9 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const globalApiSpies = vi.hoisted(() => ({
+  getFileSrc: vi.fn(),
+}))
 
 vi.mock('src/ts/server/commands', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/server/commands')>()
@@ -10,33 +13,34 @@ vi.mock('src/ts/server/commands', async (importActual) => {
   }
 })
 
+vi.mock('src/ts/globalApi.svelte', async (importActual) => ({
+  ...(await importActual<typeof import('src/ts/globalApi.svelte')>()),
+  getFileSrc: globalApiSpies.getFileSrc,
+}))
+
 import {
   applyImportedModuleLorebookRows,
   applyImportedModuleRegexRows,
+  latestModuleForImport,
   parseImportedLorebookRows,
 } from './ModuleMenu.svelte'
+import ModuleMenu from './ModuleMenu.svelte'
+import { language } from 'src/lang'
 import type { RisuModule } from 'src/ts/process/modules'
 import type { customscript, loreBook, triggerscript } from 'src/ts/storage/database.svelte'
-import { resetServerBackedLorebookBridgeForTests } from 'src/ts/server/lorebookBridge.svelte'
+import { resetLorebookOwnerForTests } from 'src/ts/server/lorebookOwner.svelte'
 import {
-  getResourceDatabase as getDatabase,
+  collectionsResourceState,
   replaceResourceDatabase as setDatabaseLite,
+  settingsResourceState,
 } from 'src/ts/server/resourceState.svelte'
+import { getResourceDatabase as getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 let liveModule: RisuModule
 let draftModule: RisuModule
 
 function cloneJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
-}
-
-function sourceBetween(file: string, start: string, end: string): string {
-  const source = readFileSync(resolve(process.cwd(), file), 'utf8')
-  const startIndex = source.indexOf(start)
-  const endIndex = source.indexOf(end, startIndex + start.length)
-  expect(startIndex).toBeGreaterThanOrEqual(0)
-  expect(endIndex).toBeGreaterThan(startIndex)
-  return source.slice(startIndex, endIndex)
 }
 
 function loreEntry(id: string, content: string): loreBook {
@@ -104,16 +108,17 @@ function seedModule(): void {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  globalApiSpies.getFileSrc.mockResolvedValue('blob:module-asset')
   seedModule()
 })
 
 afterEach(() => {
-  resetServerBackedLorebookBridgeForTests()
+  resetLorebookOwnerForTests()
   setDatabaseLite({} as any)
 })
 
 describe('ModuleMenu stale import guards', () => {
-  it('I-10: delayed lorebook import preserves concurrent module lorebook edits', () => {
+  it('delayed lorebook import preserves concurrent module lorebook edits', () => {
     const moduleId = draftModule.id
     const importedRows = parseImportedLorebookRows([
       jsonFile({
@@ -138,10 +143,28 @@ describe('ModuleMenu stale import guards', () => {
     expect(draftModule.lorebook).toEqual(liveModule.lorebook)
   })
 
+  it('remints a duplicate id when a .risu lorebook is re-imported into the same module', () => {
+    const moduleId = draftModule.id
+    const importedRows = parseImportedLorebookRows([
+      jsonFile({
+        type: 'risu',
+        ver: 1,
+        data: [loreEntry('lore-initial', 'round-trip import')],
+      }),
+    ])
+
+    expect(applyImportedModuleLorebookRows(moduleId, draftModule, importedRows)).toBe(true)
+
+    const ids = liveModule.lorebook?.map((entry) => entry.id) ?? []
+    expect(ids[0]).toBe('lore-initial')
+    expect(ids[1]).not.toBe('lore-initial')
+    expect(new Set(ids).size).toBe(2)
+  })
+
   it.each([
     ['cancel', null],
     ['empty result', []],
-  ])('I-10: lorebook %s preserves concurrent module lorebook edits', (_label, importedRows) => {
+  ])('lorebook %s preserves concurrent module lorebook edits', (_label, importedRows) => {
     const moduleId = draftModule.id
 
     liveModule.lorebook = [loreEntry('lore-initial', 'concurrent retained')]
@@ -152,7 +175,7 @@ describe('ModuleMenu stale import guards', () => {
     expect(draftModule.lorebook).toEqual(liveModule.lorebook)
   })
 
-  it('I-10: delayed regex import preserves concurrent module regex edits and latest triggers', () => {
+  it('delayed regex import preserves concurrent module regex edits and latest triggers', () => {
     const moduleId = draftModule.id
     const importedRows = [regexEntry('regex-imported', 'imported regex')]
 
@@ -170,45 +193,60 @@ describe('ModuleMenu stale import guards', () => {
     expect(draftModule.regex).toEqual(liveModule.regex)
     expect(draftModule.trigger).toEqual(liveModule.trigger)
   })
+
+  it('fails closed when the canonical module collection is errored or ambiguous', () => {
+    collectionsResourceState.statuses.modules = 'error'
+    expect(latestModuleForImport(liveModule.id, draftModule)).toBeNull()
+
+    collectionsResourceState.statuses.modules = 'ready'
+    getDatabase().modules = [liveModule, cloneJsonValue(liveModule)]
+    expect(latestModuleForImport(liveModule.id, draftModule)).toBeNull()
+  })
 })
 
-describe('media upload picker token timing', () => {
-  it.each([
-    {
-      file: 'src/lib/Setting/Pages/Module/ModuleMenu.svelte',
-      start: 'async function uploadModuleAssets()',
-      end: 'function addLorebook()',
-      picker: 'selectMultipleFile(MODULE_ASSET_EXTENSIONS, {',
-      callback: 'onFilesSelected: () => {',
-      begin: 'operation = beginModuleAssetUpload(target)',
-      guard: 'if (!files || files.length === 0 || !operation) return',
-    },
-    {
-      file: 'src/lib/Setting/Pages/OtherBotSettings.svelte',
-      start: 'async function uploadSettingsMediaAsset(',
-      end: 'async function uploadNaiCharacterReferenceImage()',
-      picker: "selectSingleFile(['jpg', 'jpeg', 'png', 'webp'], {",
-      callback: 'onFileSelected: () => {',
-      begin: 'operation = beginSettingsMediaAssetUpload(target)',
-      guard: 'if (!img || !operation) return',
-    },
-    {
-      file: 'src/lib/Setting/Pages/BotSettings.svelte',
-      start: 'async function uploadSelectedPromptPresetIcon()',
-      end: 'function snapshotJson(',
-      picker: "selectSingleFile(['png', 'jpg', 'jpeg', 'webp'], {",
-      callback: 'onFileSelected: () => {',
-      begin: 'operation = beginPromptPresetIconUpload(target)',
-      guard: 'if (!selected || !operation) return',
-    },
-  ])(
-    'issues the latest-operation token from the picker callback in $file',
-    ({ file, start, end, picker, callback, begin, guard }) => {
-      const body = sourceBetween(file, start, end)
-      expect(body).toContain(picker)
-      expect(body).toContain(callback)
-      expect(body).toContain(begin)
-      expect(body.indexOf(begin)).toBeLessThan(body.indexOf(guard))
-    },
-  )
+describe('ModuleMenu asset previews', () => {
+  it('normalizes persisted uppercase video extensions before choosing the preview element', async () => {
+    getDatabase().useAdditionalAssetsPreview = true
+    draftModule.assets = [['Clip', 'asset-video', 'MP4']]
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(ModuleMenu, { target, props: { currentModule: draftModule, draftOnly: true } })
+
+    try {
+      await vi.waitFor(() => {
+        expect(globalApiSpies.getFileSrc).toHaveBeenCalledWith('asset-video')
+      })
+      const assetTab = Array.from(target.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes(language.additionalAssets),
+      )
+      if (!assetTab) throw new Error('Additional assets tab was not rendered')
+      assetTab.click()
+      await tick()
+
+      const source = target.querySelector<HTMLSourceElement>('video source')
+      expect(source?.getAttribute('src')).toBe('blob:module-asset')
+      expect(source?.getAttribute('type')).toBe('video/mp4')
+      expect(target.querySelector('img')).toBeNull()
+    } finally {
+      unmount(component)
+      target.remove()
+    }
+  })
+
+  it('does not resolve asset previews while the display settings owner is errored', async () => {
+    getDatabase().useAdditionalAssetsPreview = true
+    settingsResourceState.groupStatuses.display = 'error'
+    draftModule.assets = [['Clip', 'asset-video', 'MP4']]
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(ModuleMenu, { target, props: { currentModule: draftModule, draftOnly: true } })
+
+    try {
+      await tick()
+      expect(globalApiSpies.getFileSrc).not.toHaveBeenCalled()
+    } finally {
+      unmount(component)
+      target.remove()
+    }
+  })
 })

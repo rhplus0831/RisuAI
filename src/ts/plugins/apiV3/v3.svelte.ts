@@ -3,20 +3,35 @@ import {
   customProviderStore,
   getV2PluginAPIs,
   handlePluginInstallViaPlugin,
+  isPluginRuntimeReady,
   pluginV2,
   type PluginV2ProviderArgument,
   type PluginV2ProviderOptions,
   type RisuPlugin,
 } from '../plugins.svelte'
 import { SandboxHost } from './factory'
-import { getDatabase } from 'src/ts/storage/database.svelte'
-import { currentPluginStateSnapshot, dispatchUpdatePlugin } from 'src/ts/pluginCommands'
+import type { Database } from 'src/ts/storage/database.svelte'
+import {
+  applyPluginSettingsOwnerPatch,
+  currentPluginCharacterOwnerSnapshot,
+  currentPluginCharacterSnapshot,
+  currentPluginChatOwnerSnapshot,
+  currentPluginCollectionSnapshot,
+  currentPluginDatabaseSnapshot,
+  currentPluginSettingsOwnerSnapshot,
+  currentPluginStateSnapshot,
+  dispatchUpdatePlugin,
+  replacePluginCharacterOwnerAt,
+  replacePluginChatOwner,
+  replacePluginCollectionOwner,
+  rollbackPluginSettingsOwner,
+} from 'src/ts/pluginCommands'
 import { canUseServerCommands, type ServerCommandResult } from 'src/ts/server/commands'
-import { dispatchDurableServerBackedSettingsPatch } from 'src/ts/server/settingsBridge.svelte'
-import { captureSettingsPatchProjectionEpochs } from 'src/ts/server/resourceState.svelte'
+import { dispatchDurableServerBackedSettingsPatch } from 'src/ts/server/settingsOwner.svelte'
 import { currentCharacterRowSnapshot, prepareCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands'
 import {
   appendCurrentChatUserMessageForSend,
+  captureActiveChatTarget,
   prepareCompatibleChatUpdateScoped,
   type CharacterOwnedDurableBatchResult,
 } from 'src/ts/chatCommands'
@@ -32,9 +47,12 @@ import {
   additionalHamburgerMenu,
   additionalSettingsMenu,
   bodyIntercepterStore,
+  chatPanelStore,
   selectedCharID,
+  type ChatPanelDef,
   type MenuDef,
 } from 'src/ts/stores.svelte'
+import DOMPurify from 'dompurify'
 import { v4 } from 'uuid'
 import { sleep } from 'src/ts/util'
 import { alertConfirm, alertError, alertNormal } from 'src/ts/alert'
@@ -43,12 +61,17 @@ import { checkCharOrder, getFetchLogs } from 'src/ts/globalApi.svelte'
 import { builtInColorSchemes, updateColorScheme, updateTextThemeAndCSS, type ColorScheme } from 'src/ts/gui/colorscheme'
 import { get } from 'svelte/store'
 import { registerMCPModule, unregisterMCPModule } from 'src/ts/process/mcp/pluginmcp'
+import { getInlayAsset } from 'src/ts/process/files/inlays'
 import { getLLMCache, searchLLMCache } from 'src/ts/translator/translator'
 import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, type LLMModel } from 'src/ts/model/types'
-import { sendChat as processSendChat, doingChat } from 'src/ts/process/index.svelte'
-import { getModelInfo } from 'src/ts/model/modellist'
+import { sendChat as processSendChat } from 'src/ts/process/index.svelte'
+import { coordinateAcceptedChatSend } from 'src/ts/process/acceptedSendCoordinator.svelte'
+import { canUseGenerationOperationProtocol } from 'src/ts/server/generationOperations'
+import { isChatGenerationKnown } from 'src/ts/process/reattach'
+import { resolveModelProfileWithLegacyCompatibility } from 'src/ts/model/modelProfileResolver'
 import type { ModelModeExtended } from 'src/ts/process/request/shared'
 import { requestChatDataMain } from 'src/ts/process/request/request'
+import { getModuleLorebooks } from 'src/ts/process/modules'
 import {
   registerTTSPreprocessor,
   unregisterTTSPreprocessor,
@@ -60,10 +83,12 @@ import {
   type AfterTTSResult,
   type TTSHookFn,
 } from 'src/ts/process/ttsHooks'
-import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
-import { hydrateChatMessages, isChatMessageTranscriptHydrated } from 'src/ts/server/chatMessageHydration.svelte'
+import {
+  ensureCharacterLorebookHydrated,
+  hydrateChatMessages,
+  isChatMessageTranscriptHydrated,
+} from 'src/ts/server/chatMessageHydration.svelte'
 import { assertNoUnsupportedCharacterChanges, assertNoUnsupportedChatChanges } from '../unsupportedServerWriteGuard'
-import { applyAttemptedFieldRollback } from 'src/ts/server/staleStateGuards'
 import { clearInMemoryPluginPermissions, getPluginPermission } from '../pluginPermissions'
 import {
   assertPluginNetworkDeadElementTree,
@@ -73,6 +98,12 @@ import {
   normalizePluginNetworkDeadStyleAttribute,
   sanitizePluginNetworkDeadHtml,
 } from '../pluginIconSafety'
+import {
+  addChatOutputListener,
+  chatOutputListeners,
+  removeChatOutputListener,
+  type ChatOutputListener,
+} from '../chatOutputListeners'
 
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
@@ -112,21 +143,14 @@ async function dispatchPluginApiSettingsPatch(
   const result = await dispatchDurableServerBackedSettingsPatch({
     patch: attempted,
     acknowledgeOptimistic: true,
-    optimisticProjectionEpochs: captureSettingsPatchProjectionEpochs(attempted),
     rollback: () => {
-      withTrustedResourceWrite(() => {
-        const rolledBack = applyAttemptedFieldRollback({
-          target: getDatabase() as unknown as Record<string, unknown>,
-          previous: rollbackPrevious,
-          attempted,
-        })
-        if (rolledBack.some((key) => key === 'colorScheme' || key === 'colorSchemeName')) {
-          updateColorScheme()
-        }
-        if (rolledBack.some((key) => key === 'textTheme' || key === 'customTextTheme')) {
-          updateTextThemeAndCSS()
-        }
-      })
+      const rolledBack = rollbackPluginSettingsOwner(rollbackPrevious, attempted)
+      if (rolledBack.some((key) => key === 'colorScheme' || key === 'colorSchemeName' || key === 'customColorScheme')) {
+        updateColorScheme()
+      }
+      if (rolledBack.some((key) => key === 'textTheme' || key === 'customTextTheme')) {
+        updateTextThemeAndCSS()
+      }
     },
   })
   if (result.status === 'ok' || result.status === 'unavailable') return
@@ -377,6 +401,7 @@ class SafeElement {
       type: string
       listener: EventListenerOrEventListenerObject
       options: EventListenerOptions
+      cancelPending?: () => void
       cleanup: () => void
     }
   >()
@@ -464,17 +489,27 @@ class SafeElement {
       })
       return id
     } else if (allowedDelayedEventListeners.includes(type)) {
+      const pendingCallbacks = new Set<ReturnType<typeof setTimeout>>()
+      const cancelPending = () => {
+        for (const timeout of pendingCallbacks) {
+          clearTimeout(timeout)
+        }
+        pendingCallbacks.clear()
+      }
       const modifiedListener = (event: any) => {
         let delay = 0
         try {
           delay = (crypto.getRandomValues(new Uint32Array(1))[0] / 100) % 100 //0-99 ms
         } catch (error) {}
-        setTimeout(() => {
+        const timeout = setTimeout(() => {
+          pendingCallbacks.delete(timeout)
           listener(trimEvent(event))
         }, delay)
+        pendingCallbacks.add(timeout)
       }
       document.addEventListener(type, modifiedListener, realOptions)
       const cleanup = this.#lifecycle?.track(() => {
+        cancelPending()
         document.removeEventListener(type, modifiedListener, realOptions)
         this.#eventIdMap.delete(id)
       })
@@ -482,6 +517,7 @@ class SafeElement {
         type,
         listener: modifiedListener,
         options: realOptions,
+        cancelPending,
         cleanup: cleanup ?? (() => {}),
       })
       return id
@@ -494,6 +530,7 @@ class SafeElement {
     const record = this.#eventIdMap.get(id)
     if (record) {
       const realOptions = typeof options === 'boolean' ? { capture: options } : options || {}
+      record.cancelPending?.()
       document.removeEventListener(type, record.listener, realOptions)
       this.#eventIdMap.delete(id)
       record.cleanup()
@@ -697,6 +734,11 @@ type V3OwnedMenuDef = MenuDef & {
   __v3OwnerToken: string
 }
 
+type V3OwnedChatPanelDef = ChatPanelDef & {
+  __v3OwnerGeneration: number
+  __v3OwnerToken: string
+}
+
 const ownMenuDef = (menuDef: MenuDef, instance: V3PluginInstance): V3OwnedMenuDef => {
   return {
     ...menuDef,
@@ -714,6 +756,23 @@ const makeMenuUnloadCallback = (menuDef: V3OwnedMenuDef, menuStore: MenuDef[]) =
     if (index !== -1) {
       menuStore.splice(index, 1)
     }
+  }
+}
+
+const removeOwnedChatPanel = (id: string, instance: V3PluginInstance) => {
+  const index = chatPanelStore.findIndex((item) => {
+    const owned = item as V3OwnedChatPanelDef
+    return item.id === id && item.pluginName === instance.name && owned.__v3OwnerGeneration === instance.generation
+  })
+  if (index !== -1) chatPanelStore.splice(index, 1)
+}
+
+const makeChatPanelUnloadCallback = (panel: V3OwnedChatPanelDef) => {
+  return () => {
+    const index = chatPanelStore.findIndex(
+      (item) => (item as V3OwnedChatPanelDef).__v3OwnerToken === panel.__v3OwnerToken,
+    )
+    if (index !== -1) chatPanelStore.splice(index, 1)
   }
 }
 
@@ -814,7 +873,7 @@ const v3SyncedProviderRegistrations = new Map<string, V3ProviderRegistration>()
 const registeredV3ProviderUnloadCallbacks = new Set<string>()
 
 function syncCustomProviderStoreFromMap() {
-  customProviderStore.set(Array.from(pluginV2.providers.keys()))
+  customProviderStore.set(isPluginRuntimeReady() ? Array.from(pluginV2.providers.keys()) : [])
 }
 
 function getActiveV3ProviderRegistrations() {
@@ -932,24 +991,20 @@ const makeRisuaiAPIV3 = (
 ) => {
   const oldApis = getV2PluginAPIs(plugin, () => assertV3InstanceCurrent(instance))
   const setCurrentCharacter = async (char: any): Promise<void> => {
-    const charId = get(selectedCharID)
+    const charIndex = get(selectedCharID)
+    const previousCharacter = currentPluginCharacterSnapshot(charIndex)
+    if (!previousCharacter?.chaId) return
     if (!canUseServerCommands()) {
-      withTrustedResourceWrite(() => {
-        getDatabase().characters[charId] = char
-      })
+      replacePluginCharacterOwnerAt(charIndex, previousCharacter.chaId, char)
       return
     }
 
-    const previousCharacter = getDatabase().characters?.[charId]
     assertNoUnsupportedCharacterChanges(previousCharacter, char, 'setCharacter')
-    const previous = currentCharacterRowSnapshot(charId)
-    const previousCharacterSnapshot = previousCharacter ? $state.snapshot(previousCharacter) : undefined
-    const preparation = prepareCompatibleCharacterUpdateScoped(previousCharacterSnapshot, char, previous)
+    const previous = currentCharacterRowSnapshot(charIndex)
+    const preparation = prepareCompatibleCharacterUpdateScoped(previousCharacter, char, previous)
     const optimisticCharacter = preparation.optimisticCharacter
     if (!optimisticCharacter || preparation.factories.length === 0) return
-    withTrustedResourceWrite(() => {
-      getDatabase().characters[charId] = optimisticCharacter
-    })
+    if (!replacePluginCharacterOwnerAt(charIndex, previousCharacter.chaId, optimisticCharacter)) return
     const outcome = await preparation.dispatchAsync()
     assertV3InstanceCurrent(instance)
     requirePluginV3Mutation(outcome)
@@ -1008,7 +1063,7 @@ const makeRisuaiAPIV3 = (
       func: (
         arg: PluginV2ProviderArgument,
         abortSignal?: AbortSignal,
-      ) => Promise<{ success: boolean; content: string }>,
+      ) => Promise<{ success: boolean; content: string | ReadableStream<string> }>,
       options?: PluginV3ProviderOptions,
     ) => {
       console.warn(
@@ -1081,10 +1136,29 @@ const makeRisuaiAPIV3 = (
       oldApis.addRisuReplacer(name, func as any)
     },
     removeRisuReplacer: oldApis.removeRisuReplacer,
+    addRisuChatListener: async (mode: 'output', func: ChatOutputListener) => {
+      addChatOutputListener(mode, func)
+      addPluginUnloadCallback(plugin.name, () => removeChatOutputListener(mode, func), instance.generation)
+    },
+    removeRisuChatListener: (mode: 'output', func: ChatOutputListener) => {
+      removeChatOutputListener(mode, func)
+    },
     setDatabaseLite: oldApis.setDatabaseLite,
     setDatabase: oldApis.setDatabase,
     loadPlugins: oldApis.loadPlugins,
     readImage: oldApis.readImage,
+    readInlay: async (id: string) => {
+      const inlay = await getInlayAsset(id)
+      if (!inlay || typeof inlay.data !== 'string') return null
+      return {
+        data: inlay.data,
+        ext: inlay.ext,
+        name: inlay.name,
+        type: inlay.type,
+        ...(inlay.height !== undefined ? { height: inlay.height } : {}),
+        ...(inlay.width !== undefined ? { width: inlay.width } : {}),
+      }
+    },
     saveAsset: oldApis.saveAsset,
     //Same functionality, but new implementation
     getDatabase: async (includeOnly: string[] | 'all' = 'all') => {
@@ -1095,13 +1169,13 @@ const makeRisuaiAPIV3 = (
       if (!conf) {
         return null
       }
-      const db = getDatabase()
-      let liteDB = {}
+      const db = currentPluginDatabaseSnapshot()
+      const liteDB: Record<string, unknown> = {}
       for (const key of allowedDbKeys) {
         if (includeOnly !== 'all' && !includeOnly.includes(key)) {
           continue
         }
-        ;(liteDB as any)[key] = $state.snapshot((db as any)[key])
+        liteDB[key] = cloneJsonValue(db[key])
       }
       return liteDB
     },
@@ -1110,21 +1184,21 @@ const makeRisuaiAPIV3 = (
 
     // --- Color Scheme APIs ---
     changeColorScheme: (name: string) => {
-      const colorScheme = name === 'custom' ? undefined : builtInColorSchemes[name as keyof typeof builtInColorSchemes]
+      const settings = currentPluginSettingsOwnerSnapshot(['customColorScheme', 'colorScheme', 'colorSchemeName'])
+      const colorScheme =
+        name === 'custom' ? settings.customColorScheme : builtInColorSchemes[name as keyof typeof builtInColorSchemes]
       if (name !== 'custom' && !colorScheme) {
         throw new Error(`Invalid color scheme: ${name}`)
       }
       const previous = {
-        colorScheme: cloneJsonValue(getDatabase().colorScheme),
-        colorSchemeName: getDatabase().colorSchemeName,
+        colorScheme: cloneJsonValue(settings.colorScheme),
+        colorSchemeName: settings.colorSchemeName,
       }
       const patch = {
         colorSchemeName: name,
-        ...(colorScheme ? { colorScheme: cloneJsonValue(colorScheme) } : {}),
+        colorScheme: cloneJsonValue(colorScheme),
       }
-      withTrustedResourceWrite(() => {
-        Object.assign(getDatabase(), patch)
-      })
+      applyPluginSettingsOwnerPatch(patch)
       updateColorScheme()
       return dispatchPluginApiSettingsPatch(patch, previous)
     },
@@ -1150,27 +1224,22 @@ const makeRisuaiAPIV3 = (
         throw new Error('Invalid color scheme type: must be "light" or "dark"')
       }
       const previous = {
-        colorScheme: cloneJsonValue(getDatabase().colorScheme),
-        colorSchemeName: getDatabase().colorSchemeName,
+        ...currentPluginSettingsOwnerSnapshot(['colorScheme', 'colorSchemeName', 'customColorScheme']),
       }
-      withTrustedResourceWrite(() => {
-        getDatabase().colorSchemeName = 'custom'
-        getDatabase().colorScheme = scheme
-      })
+      const patch = {
+        colorSchemeName: 'custom',
+        customColorScheme: cloneJsonValue(scheme),
+        colorScheme: cloneJsonValue(scheme),
+      }
+      applyPluginSettingsOwnerPatch(patch)
       updateColorScheme()
-      return dispatchPluginApiSettingsPatch(
-        {
-          colorScheme: cloneJsonValue(getDatabase().colorScheme),
-          colorSchemeName: getDatabase().colorSchemeName,
-        },
-        previous,
-      )
+      return dispatchPluginApiSettingsPatch(patch, previous)
     },
     getColorScheme: () => {
-      const db = getDatabase()
+      const settings = currentPluginSettingsOwnerSnapshot(['colorSchemeName', 'colorScheme'])
       return {
-        name: db.colorSchemeName,
-        scheme: $state.snapshot(db.colorScheme),
+        name: settings.colorSchemeName,
+        scheme: cloneJsonValue(settings.colorScheme),
       }
     },
 
@@ -1180,13 +1249,12 @@ const makeRisuaiAPIV3 = (
         throw new Error(`Invalid text theme: ${name}`)
       }
       const previous = {
-        textTheme: getDatabase().textTheme,
+        ...currentPluginSettingsOwnerSnapshot(['textTheme']),
       }
-      withTrustedResourceWrite(() => {
-        getDatabase().textTheme = name
-      })
+      const patch = { textTheme: name }
+      applyPluginSettingsOwnerPatch(patch)
       updateTextThemeAndCSS()
-      return dispatchPluginApiSettingsPatch({ textTheme: getDatabase().textTheme }, previous)
+      return dispatchPluginApiSettingsPatch(patch, previous)
     },
     setCustomTextTheme: (theme: {
       FontColorStandard: string
@@ -1210,27 +1278,21 @@ const makeRisuaiAPIV3 = (
         }
       }
       const previous = {
-        textTheme: getDatabase().textTheme,
-        customTextTheme: cloneJsonValue(getDatabase().customTextTheme),
+        ...currentPluginSettingsOwnerSnapshot(['textTheme', 'customTextTheme']),
       }
-      withTrustedResourceWrite(() => {
-        getDatabase().textTheme = 'custom'
-        getDatabase().customTextTheme = theme
-      })
+      const patch = {
+        textTheme: 'custom',
+        customTextTheme: cloneJsonValue(theme),
+      }
+      applyPluginSettingsOwnerPatch(patch)
       updateTextThemeAndCSS()
-      return dispatchPluginApiSettingsPatch(
-        {
-          textTheme: getDatabase().textTheme,
-          customTextTheme: cloneJsonValue(getDatabase().customTextTheme),
-        },
-        previous,
-      )
+      return dispatchPluginApiSettingsPatch(patch, previous)
     },
     getTextTheme: () => {
-      const db = getDatabase()
+      const settings = currentPluginSettingsOwnerSnapshot(['textTheme', 'customTextTheme'])
       return {
-        name: db.textTheme,
-        customTheme: $state.snapshot(db.customTextTheme),
+        name: settings.textTheme,
+        customTheme: cloneJsonValue(settings.customTextTheme),
       }
     },
 
@@ -1245,167 +1307,151 @@ const makeRisuaiAPIV3 = (
 
     //New APIs for v3
     getArgument: async (key: string) => {
-      const db = getDatabase()
-      for (const p of db.plugins) {
-        if (p.name === plugin.name) {
-          return p.realArg[key]
-        }
-      }
+      const matches = currentPluginCollectionSnapshot().filter((candidate) => candidate.name === plugin.name)
+      if (matches.length !== 1) return undefined
+      return matches[0].realArg?.[key]
     },
     setArgument: async (key: string, value: string | number) => {
       const previous = currentPluginStateSnapshot()
-      let matched = false
-      withTrustedResourceWrite(() => {
-        const db = getDatabase()
-        for (const p of db.plugins) {
-          if (p.name === plugin.name) {
-            p.realArg[key] = value
-            matched = true
-          }
-        }
-      })
-      if (matched) {
-        const p = getDatabase().plugins.find((candidate) => candidate.name === plugin.name)
-        if (p) {
-          const outcome = await dispatchUpdatePlugin(p.name, { realArg: p.realArg }, previous)
-          assertV3InstanceCurrent(instance)
-          requirePluginV3Mutation(outcome)
-        }
+      const plugins = currentPluginCollectionSnapshot()
+      const matches = plugins
+        .map((candidate, index) => ({ candidate, index }))
+        .filter(({ candidate }) => candidate.name === plugin.name)
+      if (matches.length !== 1) return
+      const [{ candidate, index }] = matches
+      const nextPlugin = {
+        ...candidate,
+        realArg: { ...(candidate.realArg ?? {}), [key]: value },
       }
+      plugins[index] = nextPlugin
+      replacePluginCollectionOwner(plugins)
+      const outcome = await dispatchUpdatePlugin(candidate.name, { realArg: nextPlugin.realArg }, previous)
+      assertV3InstanceCurrent(instance)
+      requirePluginV3Mutation(outcome)
     },
     getCharacterFromIndex: (index: number) => {
-      const db = getDatabase()
-      const charIds = Object.keys(db.characters)
-      const charId = charIds[index]
-      if (charId) {
-        return $state.snapshot(db.characters[charId])
-      }
-      return null
+      return currentPluginCharacterSnapshot(index) ?? null
     },
     setCharacterToIndex: async (index: number, char: any) => {
-      const db = getDatabase()
-      const charIds = Object.keys(db.characters)
-      const charId = charIds[index]
-      if (charId) {
-        if (!canUseServerCommands()) {
-          withTrustedResourceWrite(() => {
-            getDatabase().characters[charId] = char
-          })
-          return
-        }
-
-        const previousCharacter = getDatabase().characters[charId]
-        assertNoUnsupportedCharacterChanges(previousCharacter, char, 'setCharacterToIndex')
-        const previous = currentCharacterRowSnapshot(index)
-        const previousCharacterSnapshot = $state.snapshot(previousCharacter)
-        // Route through the durable character-owner dispatcher so transient
-        // failures retain the plugin's optimistic replacement for replay.
-        const preparation = prepareCompatibleCharacterUpdateScoped(previousCharacterSnapshot, char, previous)
-        const optimisticCharacter = preparation.optimisticCharacter
-        if (!optimisticCharacter || preparation.factories.length === 0) return
-        withTrustedResourceWrite(() => {
-          getDatabase().characters[charId] = optimisticCharacter
-        })
-        requirePluginV3Mutation(await preparation.dispatchAsync())
+      const previousCharacter = currentPluginCharacterSnapshot(index)
+      if (!previousCharacter?.chaId) return
+      if (!canUseServerCommands()) {
+        replacePluginCharacterOwnerAt(index, previousCharacter.chaId, char)
+        return
       }
+
+      assertNoUnsupportedCharacterChanges(previousCharacter, char, 'setCharacterToIndex')
+      const previous = currentCharacterRowSnapshot(index)
+      // Route through the durable character-owner dispatcher so transient
+      // failures retain the plugin's optimistic replacement for replay.
+      const preparation = prepareCompatibleCharacterUpdateScoped(previousCharacter, char, previous)
+      const optimisticCharacter = preparation.optimisticCharacter
+      if (!optimisticCharacter || preparation.factories.length === 0) return
+      if (!replacePluginCharacterOwnerAt(index, previousCharacter.chaId, optimisticCharacter)) return
+      requirePluginV3Mutation(await preparation.dispatchAsync())
     },
     getChatFromIndex: async (characterIndex: number, chatIndex: number) => {
-      const db = getDatabase()
-      const charIds = Object.keys(db.characters)
-      const charId = charIds[characterIndex]
-      if (charId) {
-        const chats = db.characters[charId].chats
-        if (chats && chats[chatIndex]) {
-          const chatId = chats[chatIndex].id
-          if (canUseServerCommands()) {
-            if (!chatId) throw new Error('getChatFromIndex cannot hydrate a chat without an id')
-            await hydrateChatMessages(chatId, { strict: true })
-            assertV3InstanceCurrent(instance)
-            const hydratedChat = getDatabase().characters[charId]?.chats?.[chatIndex]
-            if (!hydratedChat || hydratedChat.id !== chatId) {
-              throw new Error('getChatFromIndex target changed during chat hydration')
-            }
-            return $state.snapshot(hydratedChat)
-          }
-          return $state.snapshot(chats[chatIndex])
+      const character = currentPluginCharacterSnapshot(characterIndex)
+      const residentChat = character?.chats?.[chatIndex]
+      if (!character?.chaId || !residentChat?.id) {
+        if (canUseServerCommands() && residentChat) {
+          throw new Error('getChatFromIndex cannot hydrate a chat without an id')
         }
+        return null
       }
-      return null
+      const chatId = residentChat.id
+      if (canUseServerCommands()) {
+        await hydrateChatMessages(chatId, { strict: true })
+        assertV3InstanceCurrent(instance)
+        const hydratedChat = currentPluginChatOwnerSnapshot(character.chaId, chatId)
+        if (!hydratedChat) throw new Error('getChatFromIndex target changed during chat hydration')
+        return cloneJsonValue(hydratedChat.chat)
+      }
+      return residentChat
     },
     setChatToIndex: async (characterIndex: number, chatIndex: number, chat: any) => {
-      const db = getDatabase()
-      const charIds = Object.keys(db.characters)
-      const charId = charIds[characterIndex]
-      if (charId) {
-        const chats = db.characters[charId].chats
-        if (chats && chats[chatIndex]) {
-          const targetChatId = chats[chatIndex].id
-          const residentMessages = cloneJsonValue(chats[chatIndex].message ?? [])
-          const residentHadHypaV3Data = Object.prototype.hasOwnProperty.call(chats[chatIndex], 'hypaV3Data')
-          const residentHypaV3Data = cloneJsonValue(chats[chatIndex].hypaV3Data)
-          const startedFromUnhydratedBootstrapShell =
-            canUseServerCommands() &&
-            !!targetChatId &&
-            residentMessages.length === 0 &&
-            !isChatMessageTranscriptHydrated(targetChatId)
-          if (canUseServerCommands()) {
-            if (!targetChatId) throw new Error('setChatToIndex cannot hydrate a chat without an id')
-            await hydrateChatMessages(targetChatId, { strict: true })
-            assertV3InstanceCurrent(instance)
-          }
-          const previousChat = getDatabase().characters[charId]?.chats?.[chatIndex]
-          if (!previousChat || (targetChatId && previousChat.id !== targetChatId)) {
-            throw new Error('setChatToIndex target changed during chat hydration')
-          }
-          let attemptedChat = chat
-          if (startedFromUnhydratedBootstrapShell && (previousChat.message?.length ?? 0) > 0) {
-            if (JSON.stringify(chat?.message ?? []) !== JSON.stringify(residentMessages)) {
-              throw new Error(
-                'setChatToIndex cannot replace messages from an unhydrated chat snapshot; call getChatFromIndex before retrying',
-              )
-            }
-            attemptedChat = {
-              ...chat,
-              message: cloneJsonValue(previousChat.message),
-            }
-            const incomingHadHypaV3Data = Object.prototype.hasOwnProperty.call(chat ?? {}, 'hypaV3Data')
-            const incomingHypaV3DataWasUnchanged =
-              incomingHadHypaV3Data === residentHadHypaV3Data &&
-              JSON.stringify(chat?.hypaV3Data) === JSON.stringify(residentHypaV3Data)
-            if (incomingHypaV3DataWasUnchanged) {
-              if (Object.prototype.hasOwnProperty.call(previousChat, 'hypaV3Data')) {
-                attemptedChat.hypaV3Data = cloneJsonValue(previousChat.hypaV3Data)
-              } else {
-                delete attemptedChat.hypaV3Data
-              }
-            }
-          }
-          if (canUseServerCommands()) {
-            assertNoUnsupportedChatChanges(previousChat, attemptedChat, 'setChatToIndex')
-          }
-          const previousChatSnapshot = $state.snapshot(previousChat)
-          const previous = {
-            selectedCharID: get(selectedCharID),
-            characterId: getDatabase().characters[charId]?.chaId,
-            chatId: previousChatSnapshot.id,
-            chat: previousChatSnapshot,
-          }
-          withTrustedResourceWrite(() => {
-            getDatabase().characters[charId].chats[chatIndex] = attemptedChat
-          })
-          requirePluginV3BatchMutation(
-            await prepareCompatibleChatUpdateScoped(previousChatSnapshot, attemptedChat, previous).dispatchAsync(),
+      const character = currentPluginCharacterSnapshot(characterIndex)
+      const residentChat = character?.chats?.[chatIndex]
+      const characterId = character?.chaId
+      const targetChatId = residentChat?.id
+      if (!characterId || !targetChatId) {
+        if (canUseServerCommands() && residentChat) {
+          throw new Error('setChatToIndex cannot hydrate a chat without an id')
+        }
+        return
+      }
+      const residentMessages = cloneJsonValue(residentChat.message ?? [])
+      const residentHadHypaV3Data = Object.prototype.hasOwnProperty.call(residentChat, 'hypaV3Data')
+      const residentHypaV3Data = cloneJsonValue(residentChat.hypaV3Data)
+      const startedFromUnhydratedBootstrapShell =
+        canUseServerCommands() && residentMessages.length === 0 && !isChatMessageTranscriptHydrated(targetChatId)
+      if (canUseServerCommands()) {
+        await hydrateChatMessages(targetChatId, { strict: true })
+        assertV3InstanceCurrent(instance)
+      }
+      const previousOwner = currentPluginChatOwnerSnapshot(characterId, targetChatId)
+      if (!previousOwner) throw new Error('setChatToIndex target changed during chat hydration')
+      const previousChat = previousOwner.chat
+      let attemptedChat = chat
+      if (startedFromUnhydratedBootstrapShell && (previousChat.message?.length ?? 0) > 0) {
+        if (JSON.stringify(chat?.message ?? []) !== JSON.stringify(residentMessages)) {
+          throw new Error(
+            'setChatToIndex cannot replace messages from an unhydrated chat snapshot; call getChatFromIndex before retrying',
           )
         }
+        attemptedChat = {
+          ...attemptedChat,
+          message: cloneJsonValue(previousChat.message),
+        }
+        const incomingHadHypaV3Data = Object.prototype.hasOwnProperty.call(chat ?? {}, 'hypaV3Data')
+        const incomingHypaV3DataWasUnchanged =
+          incomingHadHypaV3Data === residentHadHypaV3Data &&
+          JSON.stringify(chat?.hypaV3Data) === JSON.stringify(residentHypaV3Data)
+        if (incomingHypaV3DataWasUnchanged) {
+          if (Object.prototype.hasOwnProperty.call(previousChat, 'hypaV3Data')) {
+            attemptedChat.hypaV3Data = cloneJsonValue(previousChat.hypaV3Data)
+          } else {
+            delete attemptedChat.hypaV3Data
+          }
+        }
       }
+      if (canUseServerCommands()) {
+        assertNoUnsupportedChatChanges(previousChat, attemptedChat, 'setChatToIndex')
+      }
+      const previous = {
+        selectedCharID: get(selectedCharID),
+        characterId,
+        chatId: previousChat.id,
+        chat: previousChat,
+      }
+      if (!replacePluginChatOwner(characterId, targetChatId, attemptedChat)) {
+        throw new Error('setChatToIndex target changed during chat hydration')
+      }
+      requirePluginV3BatchMutation(
+        await prepareCompatibleChatUpdateScoped(previousChat, attemptedChat, previous).dispatchAsync(),
+      )
     },
     getCurrentCharacterIndex: () => {
       return get(selectedCharID)
     },
     getCurrentChatIndex: () => {
-      const db = getDatabase()
-      const charId = get(selectedCharID)
-      return db.characters[charId].chatPage
+      const character = currentPluginCharacterSnapshot(get(selectedCharID))
+      return character?.chatPage
+    },
+    getCurrentLorebookEntries: async () => {
+      const characterIndex = get(selectedCharID)
+      let character = currentPluginCharacterSnapshot(characterIndex)
+      if (!character) return []
+
+      if (character.chaId && !(await ensureCharacterLorebookHydrated(character.chaId))) {
+        throw new Error('Current character lorebook is unavailable')
+      }
+      assertV3InstanceCurrent(instance)
+
+      character = character.chaId ? currentPluginCharacterOwnerSnapshot(character.chaId) : undefined
+      if (!character) return []
+      const chat = character.chats?.[character.chatPage]
+      return cloneJsonValue([...(character.globalLore ?? []), ...(chat?.localLore ?? []), ...getModuleLorebooks()])
     },
     //New names for character APIs, to match API naming conventions
     getCharacter: oldApis.getChar,
@@ -1588,6 +1634,42 @@ const makeRisuaiAPIV3 = (
       addPluginUnloadCallback(plugin.name, makeMenuUnloadCallback(menuDef, targetStore), instance.generation)
       return { id }
     },
+    setChatPanel: (
+      content: string | null,
+      options: {
+        id?: string
+        className?: string
+      } = {},
+    ) => {
+      const id = options.id || `${plugin.name}:default`
+      if (content === null || content === '') {
+        removeOwnedChatPanel(id, instance)
+        return { id }
+      }
+      if (typeof content !== 'string') {
+        throw new Error('content must be a string or null')
+      }
+
+      const panel: V3OwnedChatPanelDef = {
+        id,
+        pluginName: plugin.name,
+        html: sanitizePluginNetworkDeadHtml(content),
+        className:
+          typeof options.className === 'string'
+            ? DOMPurify.sanitize(options.className, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] })
+            : undefined,
+        __v3OwnerGeneration: instance.generation,
+        __v3OwnerToken: v4(),
+      }
+      const existingIndex = chatPanelStore.findIndex((item) => {
+        const owned = item as V3OwnedChatPanelDef
+        return item.id === id && item.pluginName === plugin.name && owned.__v3OwnerGeneration === instance.generation
+      })
+      if (existingIndex === -1) chatPanelStore.push(panel)
+      else chatPanelStore[existingIndex] = panel
+      addPluginUnloadCallback(plugin.name, makeChatPanelUnloadCallback(panel), instance.generation)
+      return { id }
+    },
     registerMCP: registerOwnedMCP,
     unregisterMCP: (identifier: string) => unregisterMCPModule(identifier),
     unregisterUIPart: (id: string) => {
@@ -1607,6 +1689,7 @@ const makeRisuaiAPIV3 = (
       removeFromMenuStore(additionalFloatingActionButtons)
       removeFromMenuStore(additionalHamburgerMenu)
       removeFromMenuStore(additionalChatMenu)
+      removeOwnedChatPanel(id, instance)
     },
     log: (message: string) => {
       console.log(`[RisuAI Plugin: ${plugin.name}] ${message}`)
@@ -1743,6 +1826,10 @@ const makeRisuaiAPIV3 = (
       )
     },
     sendChat: async (message: string) => {
+      const selectedCharacterIndex = get(selectedCharID)
+      const selectedCharacter = currentPluginCharacterSnapshot(selectedCharacterIndex)
+      const selectedChat = selectedCharacter?.chats?.[selectedCharacter.chatPage]
+      const target = captureActiveChatTarget()
       const conf = await getPluginPermission(plugin.name, 'sendChat', false, plugin.script, () =>
         assertV3InstanceCurrent(instance),
       )
@@ -1755,43 +1842,42 @@ const makeRisuaiAPIV3 = (
         throw new Error('Message must be a string')
       }
 
-      if (get(doingChat)) {
-        throw new Error('A chat is already in progress')
-      }
-
-      if (getModelInfo(getDatabase().aiModel).id.startsWith('pluginmodel:::')) {
+      if (
+        resolveModelProfileWithLegacyCompatibility({
+          database: currentPluginDatabaseSnapshot() as unknown as Database,
+        }).modelInfo.id.startsWith('pluginmodel:::')
+      ) {
         // Plugin-provided models are blocked from chat sends to keep plugin IPC
         // outside provider execution.
         throw new Error('Sending chat with plugin-based model is currently blocked')
       }
 
-      const charId = get(selectedCharID)
-      const char = getDatabase().characters[charId]
-      if (!char) {
+      if (!selectedCharacter) {
         throw new Error('No character selected')
       }
 
-      const chat = char.chats[char.chatPage]
-      if (!chat) {
+      if (!selectedChat || !target) {
         throw new Error('No active chat found')
+      }
+      if (isChatGenerationKnown(target.chatId)) {
+        throw new Error('A generation is already in progress for this chat')
       }
 
       if (message) {
-        const appendResult = await appendCurrentChatUserMessageForSend(message)
-        if (appendResult.status === 'queued') {
-          // The exact append is already accepted and durable. Resolve the API
-          // call so plugin retry loops do not append a duplicate, but do not
-          // start generation before the server accepts the message.
-          return true
+        if (canUseGenerationOperationProtocol()) {
+          const result = await coordinateAcceptedChatSend({ target, message })
+          return result.status === 'generated'
         }
-        if (appendResult.status !== 'ok') {
+        const appendResult = await appendCurrentChatUserMessageForSend(message, { expectedTarget: target })
+        if (appendResult.status === 'error') {
           throw new Error(appendResult.error)
         }
+
+        const result = await coordinateAcceptedChatSend({ target, append: appendResult })
+        return result.status === 'generated'
       }
 
-      await processSendChat(-1, {})
-
-      return true
+      return processSendChat(-1, { expectedTarget: target })
     },
     addPluginChannelListener: (channelName: string, callback: Function) => {
       pluginChannel.set(plugin.name + channelName, callback)
@@ -1803,7 +1889,8 @@ const makeRisuaiAPIV3 = (
     },
     postPluginChannelMessage: (pluginName: string, channelName: string, message: any) => {
       const currentPluginName = plugin.name
-      const receiverPlugin = getDatabase().plugins.find((p) => p.name === pluginName)
+      const receiverMatches = currentPluginCollectionSnapshot().filter((p) => p.name === pluginName)
+      const receiverPlugin = receiverMatches.length === 1 ? receiverMatches[0] : undefined
 
       if (!receiverPlugin) {
         console.warn(
@@ -1857,8 +1944,18 @@ export async function loadV3Plugins(plugins: RisuPlugin[]) {
     return
   }
 
-  const loadPromises = plugins.map((plugin) => executePluginV3(plugin, generation))
-  await Promise.all(loadPromises)
+  const loadResults = await Promise.allSettled(plugins.map((plugin) => executePluginV3(plugin, generation)))
+  if (generation !== activeV3Generation) return
+
+  const failure = loadResults.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+  if (!failure) return
+
+  await Promise.all(
+    v3PluginInstances
+      .filter((instance) => instance.generation === generation)
+      .map((instance) => unloadV3PluginInstance(instance)),
+  )
+  throw failure.reason
 }
 
 export async function executePluginV3(plugin: RisuPlugin, generation = ensureV3Generation()) {
@@ -1899,6 +1996,8 @@ export async function executePluginV3(plugin: RisuPlugin, generation = ensureV3G
   try {
     assertV3InstanceCurrent(instance)
     host.run(iframe, plugin.script)
+    await host.waitForInitialization()
+    assertV3InstanceCurrent(instance)
   } catch (error) {
     await unloadV3PluginInstance(instance)
     throw error
@@ -1926,9 +2025,11 @@ export const __v3PluginLifecycleTestHooks = {
     additionalFloatingActionButtons.splice(0, additionalFloatingActionButtons.length)
     additionalHamburgerMenu.splice(0, additionalHamburgerMenu.length)
     additionalChatMenu.splice(0, additionalChatMenu.length)
+    chatPanelStore.splice(0, chatPanelStore.length)
     bodyIntercepterStore.splice(0, bodyIntercepterStore.length)
     pluginV2.providers.clear()
     pluginV2.providerOptions.clear()
+    chatOutputListeners.clear()
     clearInMemoryPluginPermissions()
     syncCustomProviderStoreFromMap()
   },

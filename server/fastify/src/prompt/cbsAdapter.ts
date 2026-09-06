@@ -1,10 +1,23 @@
-import type { CBSRegisterArg, matcherArg } from '../../../../src/ts/cbs'
-import type { LLMModel } from '../../../../src/ts/model/modellist'
-import { risuChatParser } from '../../../../src/ts/parser/risuChatParser'
-import { dateTimeFormat, makeArray, parseArray, parseDict } from '../../../../src/ts/parser/risuChatParserHelpers'
-import { calcString } from '../../../../src/ts/process/infunctions'
-import { getChatVar, getGlobalChatVar, setChatVar } from '../../../../src/ts/parser/chatVarBackend'
-import { getActiveDatabase, getActiveSelectedCharID } from './promptScope.js'
+import type { FastifyDatabase } from './serverTypes.js'
+import type { CBSRegisterArg, CbsMatcherArg as matcherArg } from '@risuai/shared-core/cbs-contracts'
+import { risuChatParser } from '@risuai/shared-core/risuchat-parser'
+import { dateTimeFormat, makeArray, parseArray, parseDict } from '@risuai/shared-core/risuchat-parser-helpers'
+import { calculateString } from '@risuai/shared-core/calculation'
+import { getChatVar, getGlobalChatVar, setChatVar } from './chatVarBackend.js'
+import {
+  getActiveChatPage,
+  getActiveClientContext,
+  getActiveDatabase,
+  getActiveModelContext,
+  getActiveModelInfo,
+  getActiveSelectedCharID,
+  reportActiveCbsCallbackDiagnostic,
+} from './promptScope.js'
+import { getActiveModules, getModuleLorebooks } from './modules.js'
+import { pickHashRand } from '@risuai/shared-core/lore-hash'
+import { selectedPersonaIndexFromStableId } from '@risuai/shared-core/persona-selection-identity'
+
+const calculationVariables = { getChatVar, getGlobalChatVar }
 
 /**
  * Server-side `CBSRegisterArg` factory. Wires the DI fields the `registerCBS`
@@ -13,60 +26,75 @@ import { getActiveDatabase, getActiveSelectedCharID } from './promptScope.js'
  * active `promptScope` singleton rather than from browser resource state or
  * Svelte stores.
  *
- * Browser-context callbacks like `{{screenwidth}}` and
- * `{{metadata::browserlanguage}}` register with their original `cbs.ts` bodies,
- * which reference `window` / `navigator` globals and will throw at invocation on
- * the server.
+ * Browser-context callbacks never read server globals. `{{screenwidth}}`,
+ * `{{screenheight}}`, and `{{metadata::browserlanguage}}` resolve from the
+ * request-local client context reported with the generation request.
  *
  * `getCurrentTriggerId` returns `'null'` because manual triggers are a
  * browser UI concept.
  *
- * `getModelInfo` returns a placeholder shape (same as
- * `defaultCBSRegisterArg`) because variable expansion does not read model
- * metadata.
+ * Model metadata is read lazily from the active prompt scope so CBS sees the
+ * same resolved profile/request model that assembly sends to dispatch.
  */
 
-// In-process pseudo-random generator, ported from src/ts/util/loreHash.ts.
-function sfc32(a: number, b: number, c: number, d: number): () => number {
-  return () => {
-    a |= 0
-    b |= 0
-    c |= 0
-    d |= 0
-    const t = (((a + b) | 0) + d) | 0
-    d = (d + 1) | 0
-    a = b ^ (b >>> 9)
-    b = (c + (c << 3)) | 0
-    c = (c << 21) | (c >>> 11)
-    c = (c + t) | 0
-    return (t >>> 0) / 4294967296
-  }
+function getScopedModules() {
+  const database = getActiveDatabase()
+  if (!database) return []
+  const currentChar = database.characters[getActiveSelectedCharID()]
+  const currentChat = currentChar?.chats[getActiveChatPage()]
+  return getActiveModules(database, currentChar, currentChat)
 }
 
-// Deterministic hash-seeded RNG, ported from src/ts/util/loreHash.ts.
-function pickHashRand(cid: number, word: string): number {
-  let hashAddress = 5515
-  const rand = (w: string) => {
-    for (let i = 0; i < w.length; i++) {
-      hashAddress = (hashAddress << 5) + hashAddress + w.charCodeAt(i)
-    }
-    return hashAddress
-  }
-  const randF = sfc32(rand(word), rand(word), rand(word), rand(word))
-  const v = cid % 1000
-  for (let i = 0; i < v; i++) randF()
-  return randF()
+function selectedPersonaProfileField(field: 'name' | 'personaPrompt'): string | undefined {
+  const database = getActiveDatabase()
+  if (!database) return undefined
+  const persona = database.personas?.[selectedPersonaIndexFromStableId(database)]
+  if (!persona || typeof persona.id !== 'string') return undefined
+  const value = persona[field]
+  return typeof value === 'string' ? value : ''
 }
 
-const PLACEHOLDER_MODEL: LLMModel = {
-  id: 'placeholder',
-  name: 'Placeholder Model',
-  shortName: 'Placeholder',
-  internalID: 'placeholder',
-  format: 0,
-  provider: 0,
-  tokenizer: 0,
-} as LLMModel
+function reportedScreenWidth(): string {
+  const value = getActiveClientContext()?.screenWidth
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.round(value).toString()
+  reportActiveCbsCallbackDiagnostic('screenwidth', 'client_context_unavailable')
+  return ''
+}
+
+function reportedBrowserLanguage(): string {
+  const value = getActiveClientContext()?.browserLanguage
+  if (typeof value === 'string' && value.length > 0) return value
+  reportActiveCbsCallbackDiagnostic('browserlanguage', 'client_context_unavailable')
+  return ''
+}
+
+function reportedScreenHeight(): string {
+  const value = getActiveClientContext()?.screenHeight
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.round(value).toString()
+  reportActiveCbsCallbackDiagnostic('screenheight', 'client_context_unavailable')
+  return ''
+}
+
+/**
+ * Checked generation input is adapted to the legacy callback's required scalar
+ * surface. Empty prompt strings are parser identities; absent toggle is false.
+ * Model callbacks use the resolved prompt scope before these legacy fallbacks.
+ * The metadata locale fallback is empty when no application locale was saved.
+ * Character/chat references remain the selected mutable script context.
+ */
+export function adaptServerCbsDatabase(database: FastifyDatabase) {
+  return {
+    ...database,
+    aiModel: database.aiModel ?? '',
+    subModel: database.subModel ?? '',
+    maxContext: database.maxContext ?? 0,
+    mainPrompt: database.mainPrompt ?? '',
+    jailbreak: database.jailbreak ?? '',
+    globalNote: database.globalNote ?? '',
+    jailbreakToggle: database.jailbreakToggle ?? false,
+    language: database.language ?? '',
+  }
+}
 
 export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
   return {
@@ -75,15 +103,15 @@ export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
       if (!db) {
         throw new Error('promptScope not set; call setActivePromptScope before expandVariables')
       }
-      return db
+      return adaptServerCbsDatabase(db)
     },
     getUserName: () => {
       const db = getActiveDatabase()
-      return db?.username ?? 'User'
+      return selectedPersonaProfileField('name') ?? db?.username ?? 'User'
     },
     getPersonaPrompt: () => {
       const db = getActiveDatabase()
-      return db?.personaPrompt ?? ''
+      return selectedPersonaProfileField('personaPrompt') ?? db?.personaPrompt ?? ''
     },
     risuChatParser: (text: string, arg: matcherArg) =>
       risuChatParser(text, {
@@ -97,7 +125,9 @@ export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
         role: arg.role,
         runVar: arg.runVar,
         cbsConditions: arg.cbsConditions,
+        callStack: arg.callStack,
         callbackMemo: arg.callbackMemo,
+        chatVariables: calculationVariables,
       }),
     makeArray,
     safeStructuredClone: <T>(obj: T) => structuredClone(obj),
@@ -110,18 +140,22 @@ export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
     getChatVar,
     setChatVar,
     getGlobalChatVar,
-    calcString: (str: string) => calcString(str) ?? 0,
+    calcString: (str: string) => calculateString(str, calculationVariables) ?? 0,
     dateTimeFormat,
-    // Module + lorebook callbacks intentionally resolve to empty lists in server
-    // prompt assembly.
-    getModules: () => [],
-    getModuleLorebooks: () => [],
+    // Match the browser parser's module scope: database-enabled, current-chat,
+    // current-character, and effective prompt/agent module integration.
+    getModules: getScopedModules,
+    getModuleLorebooks: () => getModuleLorebooks(getScopedModules()),
     pickHashRand,
     getSelectedCharID: getActiveSelectedCharID,
-    getModelInfo: () => PLACEHOLDER_MODEL,
+    getModelInfo: getActiveModelInfo,
+    getModelContext: getActiveModelContext,
     callInternalFunction: () => '',
     isMobile: false,
     appVer: '2026.4.181',
     getCurrentTriggerId: () => 'null',
+    getScreenWidth: reportedScreenWidth,
+    getScreenHeight: reportedScreenHeight,
+    getBrowserLanguage: reportedBrowserLanguage,
   }
 }

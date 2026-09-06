@@ -50,10 +50,14 @@ vi.mock('./process/scripts', () => ({
   resetScriptCache: vi.fn(),
 }))
 
-import { exportAllChats, exportChat } from './characters'
+import { exportAllChats, exportChat, matchesAllChatsExportFence } from './characters'
+import { language } from '../lang'
+import { coldStorageHeader } from './process/coldstorage.svelte'
 import { replaceResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 import type { Chat, character, Database } from './storage/database.svelte'
+
+const clipboardWrite = vi.fn()
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void
@@ -120,6 +124,10 @@ function downloadedJson(): Record<string, unknown> {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { write: clipboardWrite },
+  })
   selectedCharID.set(0)
 })
 
@@ -164,7 +172,7 @@ describe('chat export stable targets', () => {
     dialog.resolve('0')
 
     await vi.waitFor(() => {
-      expect(exportMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-a-target')
+      expect(exportMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-a-target', { strict: true })
     })
 
     setDatabase([characterB, { ...characterA, chats: [otherChat, targetChat] } as character])
@@ -198,7 +206,7 @@ describe('chat export stable targets', () => {
     setDatabase([characterB, { ...characterA, chats: [...characterA.chats].reverse() } as character])
     selectedCharID.set(0)
     hydration.resolve()
-    await exporting
+    const result = await exporting
 
     expect(exportMocks.ensureAllChatsHydrated).toHaveBeenCalledWith({ strict: true })
     expect(downloadedJson()).toMatchObject({
@@ -206,6 +214,57 @@ describe('chat export stable targets', () => {
       data: [{ id: 'chat-a-2' }, { id: 'chat-a-1' }],
     })
     expect(exportMocks.downloadFile.mock.calls[0]?.[0]).toContain('Character A_all_chats_')
+    expect(exportMocks.downloadFile.mock.calls[0]?.[2]).toEqual({ revokeObjectUrlAfterMs: null })
+    expect(result).toMatchObject({
+      success: true,
+      fence: {
+        chats: [
+          {
+            chatId: 'chat-a-2',
+            messageCount: 1,
+            lastMessageId: 'chat-a-2-message',
+            lastMessageContentHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          },
+          {
+            chatId: 'chat-a-1',
+            messageCount: 1,
+            lastMessageId: 'chat-a-1-message',
+            lastMessageContentHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          },
+        ],
+      },
+    })
+    if (!result.success) throw new Error('expected a successful export')
+    const exportedChats = [...characterA.chats].reverse()
+    expect(matchesAllChatsExportFence(exportedChats, result.fence)).toBe(true)
+    expect(
+      matchesAllChatsExportFence(
+        [
+          {
+            ...characterA.chats[0],
+            message: [...characterA.chats[0].message, { role: 'char', data: 'new', chatId: 'new-message' }],
+          } as Chat,
+          characterA.chats[1],
+        ],
+        result.fence,
+      ),
+    ).toBe(false)
+    expect(matchesAllChatsExportFence([...exportedChats, makeChat('chat-a-3', 'Chat A3', 'a3')], result.fence)).toBe(
+      false,
+    )
+    expect(matchesAllChatsExportFence(exportedChats.slice(1), result.fence)).toBe(false)
+    expect(
+      matchesAllChatsExportFence(
+        [
+          {
+            ...exportedChats[0],
+            message: [{ ...exportedChats[0].message[0], data: 'edited without changing the message id' }],
+          },
+          exportedChats[1],
+        ],
+        result.fence,
+      ),
+    ).toBe(false)
     expect(exportMocks.alertError).not.toHaveBeenCalled()
   })
 
@@ -227,6 +286,40 @@ describe('chat export stable targets', () => {
     expect(exportMocks.alertError).not.toHaveBeenCalled()
   })
 
+  it('alerts and creates no artifact when strict chat hydration fails', async () => {
+    const targetChat = makeChat('chat-a-target', 'Target Chat', 'stale shell message')
+    setDatabase([makeCharacter('char-a', 'Character A', [targetChat])])
+    const hydrationError = new Error('strict hydration failed')
+    exportMocks.alertSelect.mockResolvedValueOnce('0')
+    exportMocks.hydrateChatMessages.mockRejectedValueOnce(hydrationError)
+
+    await exportChat({ characterId: 'char-a', chatId: 'chat-a-target' })
+
+    expect(exportMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-a-target', { strict: true })
+    expect(exportMocks.alertError).toHaveBeenCalledOnce()
+    expect(exportMocks.alertError).toHaveBeenCalledWith(hydrationError)
+    expect(exportMocks.downloadFile).not.toHaveBeenCalled()
+    expect(clipboardWrite).not.toHaveBeenCalled()
+    expect(exportMocks.alertNormal).not.toHaveBeenCalled()
+  })
+
+  it('fails a single-chat export before creating an artifact when the chat is a cold-storage pointer', async () => {
+    const targetChat = makeChat('chat-a-target', 'Archived Chat', `${coldStorageHeader}archive-key`)
+    setDatabase([makeCharacter('char-a', 'Character A', [targetChat])])
+    exportMocks.alertSelect.mockResolvedValueOnce('0')
+
+    await exportChat({ characterId: 'char-a', chatId: 'chat-a-target' })
+
+    expect(exportMocks.alertError).toHaveBeenCalledOnce()
+    expect(exportMocks.alertError.mock.calls[0][0]).toMatchObject({
+      message: language.chatExportColdStorageBlocked(['Archived Chat']),
+    })
+    expect(exportMocks.downloadFile).not.toHaveBeenCalled()
+    expect(clipboardWrite).not.toHaveBeenCalled()
+    expect(exportMocks.alertNormal).not.toHaveBeenCalled()
+    expect(targetChat.message[0].data).toBe(`${coldStorageHeader}archive-key`)
+  })
+
   it('aborts without downloading when the chat vanishes during hydration', async () => {
     const targetChat = makeChat('chat-a-target', 'Target Chat', 'target')
     const characterA = makeCharacter('char-a', 'Character A', [targetChat])
@@ -238,7 +331,7 @@ describe('chat export stable targets', () => {
 
     const exporting = exportChat({ characterId: 'char-a', chatId: 'chat-a-target' })
     await vi.waitFor(() => {
-      expect(exportMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-a-target')
+      expect(exportMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-a-target', { strict: true })
     })
     setDatabase([{ ...characterA, chats: [] } as character])
     hydration.resolve()
@@ -258,9 +351,36 @@ describe('chat export stable targets', () => {
     const exporting = exportAllChats('char-a')
     setDatabase([])
     hydration.resolve()
-    await exporting
+    await expect(exporting).resolves.toEqual({ success: false })
 
     expect(exportMocks.downloadFile).not.toHaveBeenCalled()
     expect(exportMocks.alertError).not.toHaveBeenCalled()
+  })
+
+  it('fails an all-chat export before fence capture or download when any chat is a cold-storage pointer', async () => {
+    const liveChat = makeChat('chat-live', 'Live Chat', 'live message')
+    const firstStub = makeChat('chat-stub-a', 'Archived A', `${coldStorageHeader}archive-a`)
+    const secondStub = makeChat('chat-stub-b', 'Archived B', `${coldStorageHeader}archive-b`)
+    setDatabase([makeCharacter('char-a', 'Character A', [liveChat, firstStub, secondStub])])
+
+    await expect(exportAllChats('char-a')).resolves.toEqual({ success: false })
+
+    expect(exportMocks.alertError).toHaveBeenCalledOnce()
+    expect(exportMocks.alertError.mock.calls[0][0]).toMatchObject({
+      message: language.chatExportColdStorageBlocked(['Archived A', 'Archived B']),
+    })
+    expect(exportMocks.downloadFile).not.toHaveBeenCalled()
+    expect(firstStub.message[0].data).toBe(`${coldStorageHeader}archive-a`)
+    expect(secondStub.message[0].data).toBe(`${coldStorageHeader}archive-b`)
+  })
+
+  it('reports a failed all-chat download to its caller', async () => {
+    const downloadError = new Error('download failed')
+    setDatabase([makeCharacter('char-a', 'Character A', [makeChat('chat-a', 'Chat A', 'a')])])
+    exportMocks.downloadFile.mockRejectedValueOnce(downloadError)
+
+    await expect(exportAllChats('char-a')).resolves.toEqual({ success: false })
+
+    expect(exportMocks.alertError).toHaveBeenCalledWith(downloadError)
   })
 })

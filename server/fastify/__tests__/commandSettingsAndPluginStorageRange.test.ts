@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { setupAuthedClient } from './helpers/auth.js'
-import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
+import { injectComposedResourceDatabase } from './helpers/resourceDatabase.js'
 import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
 
@@ -45,7 +45,6 @@ async function startHarness(): Promise<Harness> {
     assetGc: false,
     memoryWorker: false,
   })
-  installResourceDatabaseBootstrapAdapter(app)
   return { app, dataDir }
 }
 
@@ -57,10 +56,12 @@ function seedDatabase(): Record<string, unknown> {
     loreBookPage: 0,
     currentPluginProvider: 'none',
     enabledModules: [],
-    hypaV3Presets: [{ name: 'hypa-0' }],
+    hypaV3Presets: [{ id: 'hypa-0', name: 'hypa-0', settings: {} }],
+    selectedHypaV3PresetId: 'hypa-0',
+    hypaV3PresetId: 0,
     botPresets: [{ name: 'preset-0' }, { name: 'preset-1' }],
     modules: [{ id: 'mod-a', name: 'Module A' }],
-    plugins: [{ name: 'plugin-a' }],
+    plugins: [{ name: 'plugin-a', version: '3.0' }],
     personas: [{ name: 'persona-a' }],
     loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
     loreBook: [
@@ -183,13 +184,13 @@ function mutateRawDb(mutator: (db: DatabaseSync) => void): void {
 }
 
 async function fetchBootstrapDatabase(): Promise<Record<string, unknown>> {
-  const res = await harness.app.inject({
+  const res = await injectComposedResourceDatabase(harness.app, {
     method: 'GET',
     url: '/api/v1/bootstrap',
     headers: { 'risu-auth': assertion },
   })
   expect(res.statusCode, JSON.stringify(res.json())).toBe(200)
-  return res.json().database as Record<string, unknown>
+  return res.resourceDatabase as Record<string, unknown>
 }
 
 /** Assert no character or chat row was rewritten (every rowid stayed put). */
@@ -230,7 +231,7 @@ afterEach(async () => {
   rmSync(harness.dataDir, { recursive: true, force: true })
 })
 
-describe('Phase 2 settings-scalar mutation range', () => {
+describe('settings-scalar mutation range', () => {
   it('settings/:group writes only the settings row', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
@@ -260,7 +261,12 @@ describe('Phase 2 settings-scalar mutation range', () => {
       url: '/api/v1/commands/settings/memory',
       payload: {
         baseRevision: revision,
-        patch: { hypaV3Presets: [{ name: 'hypa-0' }, { name: 'hypa-1' }] },
+        patch: {
+          hypaV3Presets: [
+            { id: 'hypa-0', name: 'hypa-0', settings: {} },
+            { id: 'hypa-1', name: 'hypa-1', settings: {} },
+          ],
+        },
       },
     })
 
@@ -268,11 +274,49 @@ describe('Phase 2 settings-scalar mutation range', () => {
     expect(metric.writtenTables).toEqual(['hypa_v3_presets', 'settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
-    expect(readCollection('hypa_v3_presets')).toEqual([{ name: 'hypa-0' }, { name: 'hypa-1' }])
+    expect(readCollection('hypa_v3_presets')).toEqual([
+      { id: 'hypa-0', name: 'hypa-0', settings: {} },
+      { id: 'hypa-1', name: 'hypa-1', settings: {} },
+    ])
     // The presets array lives in its table, not the settings row.
     expect(readSettings().hypaV3Presets).toBeUndefined()
     // Other collection tables are untouched.
     expect(readCollection('bot_presets')).toHaveLength(2)
+  })
+
+  it('persists retained legacy memory settings through the browser-owned memory group', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric, body } = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/memory',
+      payload: {
+        baseRevision: revision,
+        patch: {
+          memoryAlgorithmType: 'hypaMemoryV2',
+          supaModelType: 'distilbart',
+          hypaMemory: true,
+          hypav2: true,
+          hanuraiEnable: false,
+          legacyMemoryMigrationNoticeDismissed: true,
+        },
+      },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-settings')
+    expect(metric.writtenTables).toEqual(['settings'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(body.event).toMatchObject({ type: 'settings.updated', resource: 'settings', id: 'memory' })
+    expect(readSettings()).toMatchObject({
+      memoryAlgorithmType: 'hypaMemoryV2',
+      supaModelType: 'distilbart',
+      hypaMemory: true,
+      hypav2: true,
+      hanuraiEnable: false,
+      legacyMemoryMigrationNoticeDismissed: true,
+    })
   })
 
   it('prompt-settings writes only the settings row', async () => {
@@ -386,7 +430,7 @@ describe('Phase 2 settings-scalar mutation range', () => {
   })
 })
 
-describe('Phase 2 plugin-storage mutation range', () => {
+describe('plugin-storage mutation range', () => {
   it('PUT plugin-storage/:key upserts one key and leaves siblings put', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()

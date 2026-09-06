@@ -1,4 +1,4 @@
-import type { ServerToolCall } from '../../../../src/ts/process/request/serverToolProtocol.js'
+import type { ServerToolCall } from '@risuai/protocol/server-tool'
 
 export interface CompletionStreamFrame {
   kind: 'token' | 'done' | 'error'
@@ -9,8 +9,11 @@ export interface CompletionStreamFrame {
   statusText?: string
   code?: string
   reason?: string
+  /** Provider-declared terminal failure; retry/fallback policy must stop. */
+  nonRetryable?: boolean
   alternates?: string[]
   toolCalls?: ServerToolCall[]
+  apiMetadata?: Record<string, unknown>
 }
 
 export interface CompletionResult {
@@ -21,6 +24,9 @@ export interface CompletionResult {
   statusText?: string
   code?: string
   aborted?: boolean
+  /** Provider-declared terminal failure; retry/fallback policy must stop. */
+  nonRetryable?: boolean
   alternates?: string[]
   toolCalls?: ServerToolCall[]
+  apiMetadata?: Record<string, unknown>
 }

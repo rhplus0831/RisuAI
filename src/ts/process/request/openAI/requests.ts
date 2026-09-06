@@ -1,27 +1,34 @@
 import { language } from 'src/lang'
 import { alertError } from 'src/ts/alert'
-import { getDatabase } from 'src/ts/storage/database.svelte'
-import { LLMFlags, LLMFormat } from 'src/ts/model/modellist'
+import type { Database } from 'src/ts/storage/database.svelte'
+import { LLMFlags, LLMFormat, LLMProvider } from 'src/ts/model/modellist'
 import { strongBan, tokenizeNum } from 'src/ts/tokenizer'
 import { getFreeOpenRouterModels } from 'src/ts/model/openrouter'
 import { addFetchLog, fetchNative, globalFetch, textifyReadableStream } from 'src/ts/globalApi.svelte'
 import { simplifySchema } from 'src/ts/util'
 import { isLocalNetworkUrl } from 'src/ts/network/localNetwork'
+import { normalizeLegacyOpenAIModelId } from '@risuai/shared-core/legacy-openai-model-aliases'
 
 import { extractJSON, getOpenAIJSONSchema } from '../../templates/jsonSchema'
 import { applyChatTemplate } from '../../templates/chatTemplate'
 import { supportsInlayImage } from '../../files/inlays'
 import { callTool, decodeToolCall, encodeToolCall } from '../../mcp/mcp'
 import type { RequestDataArgumentExtended, requestDataResponse, StreamResponseChunk } from '../request'
-import { applyAdditionalParameters, applyParameters, getAdditionalParameters } from '../shared'
+import {
+  applyAdditionalParameters,
+  applyParameters,
+  getAdditionalParameters,
+  getRequestAdditionalParameters,
+} from '../shared'
 
 import type {
   Contents,
   OpenAIChatExtra,
   OpenAIChatFull,
+  ResponseFunctionCallItem,
   ResponseInputItem,
   ResponseItem,
-  ResponseOutputItem,
+  ResponseOutputContent,
   ToolCall,
 } from './types'
 
@@ -33,6 +40,19 @@ interface LocalNetworkRequestOptions {
 const CHAT_COMPLETIONS_SUFFIX = '/chat/completions'
 const RESPONSES_SUFFIX = '/responses'
 const COMPLETIONS_SUFFIX = '/completions'
+
+function isOfficialOpenAIURL(url: string): boolean {
+  try {
+    return new URL(url).hostname === 'api.openai.com'
+  } catch {
+    return false
+  }
+}
+
+function shouldUseOpenAIFlexProcessing(aiModel: string, url: string, provider: LLMProvider): boolean {
+  const isCustomEndpoint = aiModel === 'reverse_proxy' || aiModel === 'custom-api' || aiModel.startsWith('xcustom:::')
+  return (provider === LLMProvider.OpenAI || isCustomEndpoint) && isOfficialOpenAIURL(url)
+}
 
 function appendOperationPath(baseUrl: string, suffix: string): string {
   const trimmed = baseUrl.replace(/\/+$/, '')
@@ -95,72 +115,11 @@ function resolveOpenAIWireModel(
   internalID: string | undefined,
   allowInternalFallback: boolean,
 ): string {
-  return requestModel === 'gpt35'
-    ? 'gpt-3.5-turbo'
-    : requestModel === 'gpt35_0613'
-      ? 'gpt-3.5-turbo-0613'
-      : requestModel === 'gpt35_16k'
-        ? 'gpt-3.5-turbo-16k'
-        : requestModel === 'gpt35_16k_0613'
-          ? 'gpt-3.5-turbo-16k-0613'
-          : requestModel === 'gpt4'
-            ? 'gpt-4'
-            : requestModel === 'gpt45'
-              ? 'gpt-4.5-preview'
-              : requestModel === 'gpt4_32k'
-                ? 'gpt-4-32k'
-                : requestModel === 'gpt4_0613'
-                  ? 'gpt-4-0613'
-                  : requestModel === 'gpt4_32k_0613'
-                    ? 'gpt-4-32k-0613'
-                    : requestModel === 'gpt4_1106'
-                      ? 'gpt-4-1106-preview'
-                      : requestModel === 'gpt4_0125'
-                        ? 'gpt-4-0125-preview'
-                        : requestModel === 'gptvi4_1106'
-                          ? 'gpt-4-vision-preview'
-                          : requestModel === 'gpt35_0125'
-                            ? 'gpt-3.5-turbo-0125'
-                            : requestModel === 'gpt35_1106'
-                              ? 'gpt-3.5-turbo-1106'
-                              : requestModel === 'gpt35_0301'
-                                ? 'gpt-3.5-turbo-0301'
-                                : requestModel === 'gpt4_0314'
-                                  ? 'gpt-4-0314'
-                                  : requestModel === 'gpt4_turbo_20240409'
-                                    ? 'gpt-4-turbo-2024-04-09'
-                                    : requestModel === 'gpt4_turbo'
-                                      ? 'gpt-4-turbo'
-                                      : requestModel === 'gpt4o'
-                                        ? 'gpt-4o'
-                                        : requestModel === 'gpt4o-2024-05-13'
-                                          ? 'gpt-4o-2024-05-13'
-                                          : requestModel === 'gpt4om'
-                                            ? 'gpt-4o-mini'
-                                            : requestModel === 'gpt4om-2024-07-18'
-                                              ? 'gpt-4o-mini-2024-07-18'
-                                              : requestModel === 'gpt4o-2024-08-06'
-                                                ? 'gpt-4o-2024-08-06'
-                                                : requestModel === 'gpt4o-2024-11-20'
-                                                  ? 'gpt-4o-2024-11-20'
-                                                  : requestModel === 'gpt4o-chatgpt'
-                                                    ? 'chatgpt-4o-latest'
-                                                    : requestModel === 'gpt4o1-preview'
-                                                      ? 'o1-preview'
-                                                      : requestModel === 'gpt4o1-mini'
-                                                        ? 'o1-mini'
-                                                        : allowInternalFallback && internalID
-                                                          ? internalID
-                                                          : !requestModel
-                                                            ? 'gpt-3.5-turbo'
-                                                            : requestModel
+  const selectedModel = requestModel || (allowInternalFallback ? internalID : undefined) || 'gpt-3.5-turbo'
+  return normalizeLegacyOpenAIModelId(selectedModel)
 }
 
-function getLocalNetworkRequestOptions(
-  url: string,
-  db = getDatabase(),
-  useStreaming = false,
-): LocalNetworkRequestOptions {
+function getLocalNetworkRequestOptions(url: string, db: Database, useStreaming = false): LocalNetworkRequestOptions {
   if (!db.localNetworkMode || !isLocalNetworkUrl(url)) {
     return {}
   }
@@ -184,12 +143,16 @@ function serverOwnedOllamaHeaders(
 export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   let formatedChat: OpenAIChatExtra[] = []
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const aiModel = arg.aiModel ?? ''
   const resolvedProfile = arg.resolvedProfile
   const providerOptions = resolvedProfile?.providerOptions
   const runtimeOptions = resolvedProfile?.runtimeOptions
   const hasResolvedProfile = resolvedProfile !== undefined
+  const deepseekThinkingType = hasResolvedProfile ? runtimeOptions?.deepseekThinkingType : db.deepseekThinkingType
+  const deepseekReasoningEffort = hasResolvedProfile
+    ? runtimeOptions?.deepseekReasoningEffort
+    : db.deepseekReasoningEffort
   const reverseProxyOobaSystemHoist =
     aiModel === 'reverse_proxy' &&
     (hasResolvedProfile ? providerOptions?.reverseProxy?.oobaSystemHoist === true : db.reverseProxyOobaMode)
@@ -356,10 +319,10 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
     }
 
     if (bia[1] === -101) {
-      arg.bias = await strongBan(bia[0], arg.bias)
+      arg.bias = await strongBan(bia[0], arg.bias, db)
       continue
     }
-    const tokens = await tokenizeNum(bia[0])
+    const tokens = await tokenizeNum(bia[0], db)
 
     for (const token of tokens) {
       arg.bias[token] = bia[1]
@@ -468,16 +431,27 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
       {},
       arg.mode,
       {
+        database: db,
         modelId: arg.modelInfo.id,
+        runtimeOptions: arg.resolvedProfile?.runtimeOptions,
       },
     )
     const headers: Record<string, string> = {
       Authorization: 'Bearer ' + (hasResolvedProfile ? (providerOptions?.apiKey ?? '') : (arg.key ?? db.mistralKey)),
     }
-    if (hasResolvedProfile) {
-      Object.assign(headers, providerOptions?.extraHeaders ?? {})
-      body = applyAdditionalParameters(body, headers, providerOptions?.additionalParams ?? [])
-    }
+    if (hasResolvedProfile) Object.assign(headers, providerOptions?.extraHeaders ?? {})
+    body = applyAdditionalParameters(
+      body,
+      headers,
+      hasResolvedProfile
+        ? getRequestAdditionalParameters(
+            db,
+            aiModel,
+            providerOptions?.additionalParams ?? [],
+            providerOptions?.extraHeaders,
+          )
+        : getAdditionalParameters(db, aiModel),
+    )
 
     const targs = {
       body,
@@ -560,7 +534,7 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
     body.seed = db.generationSeed
   }
 
-  if (db.jsonSchemaEnabled || arg.schema) {
+  if ((db.jsonSchemaEnabled || arg.schema) && !arg.modelInfo.flags.includes(LLMFlags.noStructuredOutput)) {
     body.response_format = {
       type: 'json_schema',
       json_schema: getOpenAIJSONSchema(arg.schema),
@@ -608,14 +582,16 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
   }
 
   body = applyParameters(body, arg.modelInfo.parameters, {}, arg.mode, {
+    database: db,
     modelId: arg.modelInfo.id,
+    runtimeOptions: arg.resolvedProfile?.runtimeOptions,
   })
 
   if (arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingToggle)) {
-    if (db.deepseekThinkingType === 'enabled') {
+    if (deepseekThinkingType === 'enabled') {
       body.thinking = {
         type: 'enabled',
-        reasoning_effort: db.deepseekReasoningEffort ?? 'high',
+        reasoning_effort: deepseekReasoningEffort ?? 'high',
       }
       delete body.temperature
       delete body.top_p
@@ -652,7 +628,7 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
     }
   }
 
-  if (supportsInlayImage()) {
+  if (supportsInlayImage(resolvedProfile?.modelInfo ?? arg.modelInfo)) {
     // inlay models doesn't support logit_bias
     // OpenAI's gpt based llm model supports both logit_bias and inlay image
     if (
@@ -705,6 +681,11 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
     }
   }
 
+  const resolvedProvider = resolvedProfile?.modelInfo.provider ?? arg.modelInfo.provider
+  if (db.openAIFlexProcessing && shouldUseOpenAIFlexProcessing(aiModel, replacerURL, resolvedProvider)) {
+    body.service_tier = 'flex'
+  }
+
   let headers: Record<string, string> = {
     Authorization:
       'Bearer ' +
@@ -748,13 +729,18 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
     }
     body.n = hasResolvedProfile ? (runtimeOptions?.genTime ?? db.genTime) : db.genTime
   }
-  if (aiModel === 'reverse_proxy' || aiModel.startsWith('xcustom:::')) {
-    body = applyAdditionalParameters(
-      body,
-      headers,
-      hasResolvedProfile ? (providerOptions?.additionalParams ?? []) : getAdditionalParameters(aiModel),
-    )
-  }
+  body = applyAdditionalParameters(
+    body,
+    headers,
+    hasResolvedProfile
+      ? getRequestAdditionalParameters(
+          db,
+          aiModel,
+          providerOptions?.additionalParams ?? [],
+          providerOptions?.extraHeaders,
+        )
+      : getAdditionalParameters(db, aiModel),
+  )
 
   // Some aux flows are intentionally non-streaming (e.g. memory/translate).
   // If custom Additional Parameters contains stream=true, force non-stream mode back.
@@ -844,7 +830,7 @@ export async function requestHTTPOpenAI(
   arg: RequestDataArgumentExtended,
   networkOptions: LocalNetworkRequestOptions = {},
 ): Promise<requestDataResponse> {
-  const db = getDatabase()
+  const db = arg.database
   const res = await globalFetch(replacerURL, {
     body: body,
     headers: serverOwnedOllamaHeaders(arg, headers),
@@ -1076,7 +1062,7 @@ export async function requestHTTPOpenAI(
 
 export async function requestOpenAILegacyInstruct(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const aiModel = arg.aiModel ?? ''
   const resolvedProfile = arg.resolvedProfile
   const providerOptions = resolvedProfile?.providerOptions
@@ -1150,9 +1136,18 @@ export async function requestOpenAILegacyInstruct(arg: RequestDataArgumentExtend
     Object.assign(headers, providerOptions?.extraHeaders ?? {})
   }
 
-  if (hasResolvedProfile && (aiModel === 'reverse_proxy' || aiModel.startsWith('xcustom:::'))) {
-    body = applyAdditionalParameters(body, headers, providerOptions?.additionalParams ?? [])
-  }
+  body = applyAdditionalParameters(
+    body,
+    headers,
+    hasResolvedProfile
+      ? getRequestAdditionalParameters(
+          db,
+          aiModel,
+          providerOptions?.additionalParams ?? [],
+          providerOptions?.extraHeaders,
+        )
+      : getAdditionalParameters(db, aiModel),
+  )
 
   if (arg.previewBody) {
     return {
@@ -1185,9 +1180,252 @@ export async function requestOpenAILegacyInstruct(arg: RequestDataArgumentExtend
   }
 }
 
+function responseTextContentToString(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content
+    .map((item) =>
+      item && typeof item === 'object' && typeof (item as { text?: unknown }).text === 'string'
+        ? (item as { text: string }).text
+        : '',
+    )
+    .join('\n')
+}
+
+async function decodeRememberedToolCallsForResponses(text: string): Promise<ResponseItem[]> {
+  const items: ResponseItem[] = []
+  const segments = text.split(/(<tool_call>.*?<\/tool_call>)/gms)
+  let currentContent = ''
+
+  for (const segment of segments) {
+    const toolCallMatch = segment.match(/<tool_call>(.*?)<\/tool_call>/s)
+    if (!toolCallMatch) {
+      currentContent += segment
+      continue
+    }
+    if (currentContent.trim()) {
+      items.push({
+        content: [{ type: 'output_text', text: currentContent, annotations: [] }],
+        role: 'assistant',
+        status: 'completed',
+        type: 'message',
+      })
+      currentContent = ''
+    }
+
+    const decoded = await decodeToolCall(toolCallMatch[1])
+    if (!decoded) continue
+    items.push(
+      {
+        type: 'function_call',
+        call_id: decoded.call.id,
+        name: decoded.call.name,
+        arguments: decoded.call.arg,
+        status: 'completed',
+      },
+      {
+        type: 'function_call_output',
+        call_id: decoded.call.id,
+        output: decoded.response
+          .filter((item) => item.type === 'text')
+          .map((item) => item.text)
+          .join('\n'),
+      },
+    )
+  }
+
+  if (currentContent.trim()) {
+    items.push({
+      content: [{ type: 'output_text', text: currentContent, annotations: [] }],
+      role: 'assistant',
+      status: 'completed',
+      type: 'message',
+    })
+  }
+  return items
+}
+
+async function buildClientResponseInputItems(arg: RequestDataArgumentExtended): Promise<ResponseItem[]> {
+  const db = arg.database
+  const developerRole = arg.modelInfo.flags.includes(LLMFlags.DeveloperRole)
+  const detail = db.gptVisionQuality === 'low' || db.gptVisionQuality === 'high' ? db.gptVisionQuality : 'auto'
+  const items: ResponseItem[] = []
+
+  for (const message of arg.formated as OpenAIChatExtra[]) {
+    if (message.role === 'function') continue
+    if (message.role === 'tool') {
+      if (message.tool_call_id) {
+        items.push({
+          type: 'function_call_output',
+          call_id: message.tool_call_id,
+          output: responseTextContentToString(message.content),
+        })
+      }
+      continue
+    }
+    if (message.role === 'assistant') {
+      if (typeof message.content === 'string' && message.content.includes('<tool_call>')) {
+        items.push(...(await decodeRememberedToolCallsForResponses(message.content)))
+        continue
+      }
+      const text = responseTextContentToString(message.content)
+      items.push({
+        content: text ? [{ type: 'output_text', text, annotations: [] }] : [],
+        role: 'assistant',
+        status: 'completed',
+        type: 'message',
+      })
+      for (const toolCall of message.tool_calls ?? []) {
+        if (!toolCall.id || !toolCall.function?.name) continue
+        items.push({
+          type: 'function_call',
+          call_id: toolCall.id,
+          name: toolCall.function.name,
+          arguments: toolCall.function.arguments,
+          status: 'completed',
+        })
+      }
+      continue
+    }
+    if (message.role !== 'user' && message.role !== 'system' && message.role !== 'developer') continue
+
+    const role = message.role === 'system' && developerRole ? 'developer' : message.role
+    const content: ResponseInputItem['content'] = []
+    const text = responseTextContentToString(message.content)
+    if (text || db.newOAIHandle === false) content.push({ type: 'input_text', text })
+    for (const multimodal of message.multimodals ?? []) {
+      if (multimodal.type === 'image') {
+        content.push({ type: 'input_image', detail, image_url: multimodal.base64 })
+      } else {
+        content.push({ type: 'input_file', file_data: multimodal.base64 })
+      }
+    }
+    if (content.length > 0) items.push({ role, content })
+  }
+
+  const last = items.at(-1)
+  if (last && 'type' in last && last.type === 'message') last.status = 'incomplete'
+  return items
+}
+
+function sanitizeResponsesContinuationItem(value: unknown): ResponseItem | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const item = value as Record<string, unknown>
+  if (item.type === 'function_call' && typeof item.call_id === 'string' && typeof item.name === 'string') {
+    let argumentsText = ''
+    if (typeof item.arguments === 'string') {
+      argumentsText = item.arguments
+    } else if (item.arguments && typeof item.arguments === 'object') {
+      try {
+        argumentsText = JSON.stringify(item.arguments)
+      } catch {
+        return null
+      }
+    }
+    return {
+      type: 'function_call',
+      call_id: item.call_id,
+      name: item.name,
+      arguments: argumentsText,
+      status: typeof item.status === 'string' ? item.status : 'completed',
+    }
+  }
+  if (item.type !== 'message') return null
+
+  const content: ResponseOutputContent[] = []
+  for (const rawContent of Array.isArray(item.content) ? item.content : []) {
+    if (!rawContent || typeof rawContent !== 'object' || Array.isArray(rawContent)) continue
+    const contentItem = rawContent as Record<string, unknown>
+    if (contentItem.type === 'output_text') {
+      content.push({
+        type: 'output_text',
+        text: typeof contentItem.text === 'string' ? contentItem.text : '',
+        annotations: Array.isArray(contentItem.annotations) ? contentItem.annotations : [],
+      })
+      continue
+    }
+    if (contentItem.type === 'refusal') {
+      content.push({ type: 'refusal', refusal: typeof contentItem.refusal === 'string' ? contentItem.refusal : '' })
+    }
+  }
+  return {
+    type: 'message',
+    role: 'assistant',
+    status: item.status === 'in_progress' || item.status === 'incomplete' ? item.status : 'completed',
+    content,
+  }
+}
+
+function collectResponsesReasoningText(value: unknown): string[] {
+  if (typeof value === 'string') return value.length > 0 ? [value] : []
+  if (Array.isArray(value)) return value.flatMap(collectResponsesReasoningText)
+  if (!value || typeof value !== 'object') return []
+  const record = value as Record<string, unknown>
+  return ['text', 'summary_text', 'reasoning_text', 'reasoning', 'summary'].flatMap((key) =>
+    collectResponsesReasoningText(record[key]),
+  )
+}
+
+function responseOutputRecords(data: unknown): Record<string, unknown>[] {
+  if (!data || typeof data !== 'object') return []
+  const output = (data as { output?: unknown }).output
+  return Array.isArray(output)
+    ? output.filter(
+        (item): item is Record<string, unknown> => !!item && typeof item === 'object' && !Array.isArray(item),
+      )
+    : []
+}
+
+function extractClientResponsesText(data: unknown, arg: RequestDataArgumentExtended): string {
+  if (!data || typeof data !== 'object') return ''
+  const body = data as Record<string, unknown>
+  const hasTopLevelOutputText = typeof body.output_text === 'string'
+  const texts = hasTopLevelOutputText ? [body.output_text as string] : []
+  const refusals: string[] = []
+  const thoughts: string[] = []
+
+  for (const item of responseOutputRecords(data)) {
+    if (item.type === 'reasoning') {
+      thoughts.push(
+        ...collectResponsesReasoningText(item.summary),
+        ...collectResponsesReasoningText(item.content),
+        ...collectResponsesReasoningText(item.text),
+        ...collectResponsesReasoningText(item.summary_text),
+        ...collectResponsesReasoningText(item.reasoning_text),
+        ...collectResponsesReasoningText(item.reasoning),
+      )
+    }
+    if (item.type !== 'message' || !Array.isArray(item.content)) continue
+    for (const rawContent of item.content) {
+      if (!rawContent || typeof rawContent !== 'object') continue
+      const content = rawContent as Record<string, unknown>
+      if (!hasTopLevelOutputText && content.type === 'output_text' && typeof content.text === 'string') {
+        texts.push(content.text)
+      }
+      if (content.type === 'refusal' && typeof content.refusal === 'string') refusals.push(content.refusal)
+    }
+  }
+
+  let result = texts.length > 0 ? texts.join('\n') : refusals.join('\n')
+  if (thoughts.length > 0 && !result.startsWith('<Thoughts>')) {
+    result = `<Thoughts>\n\n${thoughts.join('\n\n')}\n\n</Thoughts>\n${result}`
+  }
+  if (arg.extractJson && (arg.database.jsonSchemaEnabled || arg.schema)) {
+    return extractJSON(result, arg.extractJson)
+  }
+  return result
+}
+
+function extractClientResponsesFunctionCalls(data: unknown): ResponseFunctionCallItem[] {
+  return responseOutputRecords(data)
+    .map(sanitizeResponsesContinuationItem)
+    .filter(
+      (item): item is ResponseFunctionCallItem => item !== null && 'type' in item && item.type === 'function_call',
+    )
+}
+
 export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
-  const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const aiModel = arg.aiModel
   const resolvedProfile = arg.resolvedProfile
   const providerOptions = resolvedProfile?.providerOptions
@@ -1195,67 +1433,17 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
   const hasResolvedProfile = resolvedProfile !== undefined
   const maxTokens = arg.maxTokens
 
-  const items: ResponseItem[] = []
-
-  for (let i = 0; i < formated.length; i++) {
-    const content = formated[i]
-    switch (content.role) {
-      case 'function':
-        break
-      case 'assistant': {
-        const item: ResponseOutputItem = {
-          content: [],
-          role: content.role,
-          status: 'complete',
-          type: 'message',
-        }
-
-        item.content.push({
-          type: 'output_text',
-          text: content.content,
-          annotations: [],
-        })
-
-        items.push(item)
-        break
-      }
-      case 'user':
-      case 'system': {
-        const item: ResponseInputItem = {
-          content: [],
-          role: content.role,
-        }
-
-        item.content.push({
-          type: 'input_text',
-          text: content.content,
-        })
-
-        content.multimodals ??= []
-        for (const multimodal of content.multimodals) {
-          if (multimodal.type === 'image') {
-            item.content.push({
-              type: 'input_image',
-              detail: 'auto',
-              image_url: multimodal.base64,
-            })
-          } else {
-            item.content.push({
-              type: 'input_file',
-              file_data: multimodal.base64,
-            })
-          }
-        }
-
-        items.push(item)
-        break
-      }
-    }
-  }
-
-  if (items[items.length - 1].role === 'assistant') {
-    ;(items[items.length - 1] as ResponseOutputItem).status = 'incomplete'
-  }
+  const items = await buildClientResponseInputItems(arg)
+  const modelTools = hasResolvedProfile ? (runtimeOptions?.modelTools ?? []) : db.modelTools
+  const tools = [
+    ...(arg.tools ?? []).map((tool) => ({
+      type: 'function',
+      name: tool.name,
+      description: tool.description,
+      parameters: simplifySchema(tool.inputSchema),
+    })),
+    ...(modelTools.includes('search') ? [{ type: 'web_search_preview' }] : []),
+  ]
 
   let body = applyParameters(
     {
@@ -1264,19 +1452,29 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
         : (arg.modelInfo.internalID ?? aiModel),
       input: items,
       max_output_tokens: maxTokens,
-      tools: [],
+      tools,
       store: false,
     },
     ['temperature', 'top_p'],
     {},
     arg.mode,
     {
+      database: db,
       modelId: arg.modelInfo.id,
+      runtimeOptions: arg.resolvedProfile?.runtimeOptions,
     },
   )
 
   if (aiModel === 'ollama-cloud') {
     delete body.store
+  }
+  if (body.tools.length === 0) delete body.tools
+  if ((db.jsonSchemaEnabled || arg.schema) && !arg.modelInfo.flags.includes(LLMFlags.noStructuredOutput)) {
+    body.text ??= {}
+    body.text.format = {
+      type: 'json_schema',
+      ...getOpenAIJSONSchema(arg.schema),
+    }
   }
 
   let requestURL = arg.customURL ?? 'https://api.openai.com/v1/responses'
@@ -1346,13 +1544,18 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
     Object.assign(headers, providerOptions?.extraHeaders ?? {})
   }
 
-  if (aiModel === 'reverse_proxy' || aiModel?.startsWith('xcustom:::')) {
-    body = applyAdditionalParameters(
-      body,
-      headers,
-      hasResolvedProfile ? (providerOptions?.additionalParams ?? []) : getAdditionalParameters(aiModel),
-    )
-  }
+  body = applyAdditionalParameters(
+    body,
+    headers,
+    hasResolvedProfile
+      ? getRequestAdditionalParameters(
+          db,
+          aiModel,
+          providerOptions?.additionalParams ?? [],
+          providerOptions?.extraHeaders,
+        )
+      : getAdditionalParameters(db, aiModel),
+  )
 
   if (arg.previewBody) {
     return {
@@ -1363,21 +1566,6 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
         headers: headers,
       }),
     }
-  }
-
-  const modelTools = hasResolvedProfile ? (runtimeOptions?.modelTools ?? []) : db.modelTools
-  if (modelTools.includes('search')) {
-    body.tools.push('web_search_preview')
-  }
-  if (arg.tools?.length) {
-    body.tools.push(
-      ...arg.tools.map((tool) => ({
-        type: 'function',
-        name: tool.name,
-        description: tool.description,
-        parameters: simplifySchema(tool.inputSchema),
-      })),
-    )
   }
 
   const localNetworkOptions = arg.serverOwnedOllamaAuth ? {} : getLocalNetworkRequestOptions(requestURL, db, false)
@@ -1403,34 +1591,25 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
       }
     }
 
-    const output = Array.isArray(response.data?.output) ? response.data.output : []
-    const result = output
-      .filter((item: unknown) => !!item && typeof item === 'object' && (item as { type?: unknown }).type === 'message')
-      .flatMap((item: { content?: unknown }) => (Array.isArray(item.content) ? item.content : []))
-      .filter(
-        (item: unknown): item is { type: 'output_text'; text: string } =>
-          !!item &&
-          typeof item === 'object' &&
-          (item as { type?: unknown }).type === 'output_text' &&
-          typeof (item as { text?: unknown }).text === 'string',
-      )
-      .map((item: { text: string }) => item.text)
-      .join('')
-    const functionCalls = output.filter(
-      (
-        item: unknown,
-      ): item is {
-        type: 'function_call'
-        call_id?: string
-        id?: string
-        name: string
-        arguments: string | Record<string, unknown>
-      } =>
-        !!item &&
-        typeof item === 'object' &&
-        (item as { type?: unknown }).type === 'function_call' &&
-        typeof (item as { name?: unknown }).name === 'string',
-    )
+    const data = response.data as unknown
+    const dataRecord = data && typeof data === 'object' ? (data as Record<string, unknown>) : {}
+    const result = extractClientResponsesText(data, arg)
+    if (dataRecord.status === 'failed' || dataRecord.error) {
+      return { type: 'fail', result: JSON.stringify(dataRecord.error ?? data) }
+    }
+    if (dataRecord.status === 'incomplete') {
+      const incompleteDetails =
+        dataRecord.incomplete_details && typeof dataRecord.incomplete_details === 'object'
+          ? (dataRecord.incomplete_details as Record<string, unknown>)
+          : {}
+      const reason =
+        typeof incompleteDetails.reason === 'string'
+          ? `Incomplete response: ${incompleteDetails.reason}`
+          : 'Incomplete response'
+      return { type: 'fail', result: result ? `${reason}\n${result}` : reason }
+    }
+    const output = responseOutputRecords(data)
+    const functionCalls = extractClientResponsesFunctionCalls(data)
 
     if (functionCalls.length === 0) {
       const finalResult = [prefix, result].filter(Boolean).join('\n\n')
@@ -1444,18 +1623,25 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
     }
 
     if (!db.simplifiedToolUse && result) prefix = [prefix, result].filter(Boolean).join('\n\n')
-    body.input.push(...output)
+    for (const outputItem of output) {
+      const sanitized = sanitizeResponsesContinuationItem(outputItem)
+      if (!sanitized) continue
+      if (db.simplifiedToolUse && 'type' in sanitized && sanitized.type === 'message') {
+        body.input.push({ ...sanitized, content: [] })
+      } else {
+        body.input.push(sanitized)
+      }
+    }
     const callCodes: string[] = []
     for (const functionCall of functionCalls) {
-      const callId = functionCall.call_id || functionCall.id
-      if (!callId) continue
+      const callId = functionCall.call_id
       const tool = arg.tools?.find((candidate) => candidate.name === functionCall.name)
       let parsedArguments: Record<string, unknown> = {}
       try {
-        parsedArguments =
-          typeof functionCall.arguments === 'string'
-            ? (JSON.parse(functionCall.arguments || '{}') as Record<string, unknown>)
-            : (functionCall.arguments ?? {})
+        const parsed = JSON.parse(functionCall.arguments || '{}') as unknown
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          parsedArguments = parsed as Record<string, unknown>
+        }
       } catch {
         parsedArguments = {}
       }
@@ -1474,10 +1660,7 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
                 call: {
                   id: callId,
                   name: functionCall.name,
-                  arg:
-                    typeof functionCall.arguments === 'string'
-                      ? functionCall.arguments
-                      : JSON.stringify(functionCall.arguments ?? {}),
+                  arg: functionCall.arguments,
                 },
                 response: toolResponse,
               }),
@@ -1499,7 +1682,7 @@ function getTranStream(arg: RequestDataArgumentExtended): TransformStream<Uint8A
   let dataUint: Uint8Array | Buffer = new Uint8Array([])
   let reasoningContent = ''
   let reasoningFromStructured = false
-  const db = getDatabase()
+  const db = arg.database
 
   const appendStreamingFragment = (current: string, incoming?: string) => {
     if (!incoming) {
@@ -1667,7 +1850,10 @@ function wrapToolStream(
 ): ReadableStream<StreamResponseChunk> {
   return new ReadableStream<StreamResponseChunk>({
     async start(controller) {
-      const db = getDatabase()
+      const db = arg.database
+      const deepseekThinkingType = arg.resolvedProfile
+        ? arg.resolvedProfile.runtimeOptions.deepseekThinkingType
+        : db.deepseekThinkingType
       let reader = stream.getReader()
       let prefix = ''
       let lastValue
@@ -1699,7 +1885,7 @@ function wrapToolStream(
             let assistantReasoningContent = ''
             const shouldPassDeepSeekReasoning =
               arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingInput) ||
-              (arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingToggle) && db.deepseekThinkingType === 'enabled')
+              (arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingToggle) && deepseekThinkingType === 'enabled')
 
             if (shouldPassDeepSeekReasoning) {
               const extracted = extractThoughts(content)

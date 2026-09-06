@@ -1,12 +1,22 @@
-import type { Database, character } from '../storage/database.svelte'
+import type { Database, character } from '../storage/databaseTypes'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
+import type {
+  ServerCharacterOrderResource,
+  ServerCharacterSelectionResource,
+} from '@risuai/protocol/character-resource'
 import { normalizeAgentPresets, validateAgentPresetRecord } from '../agentPresetRecords'
+import {
+  isValidTranslatorPresetOutputKey,
+  TRANSLATOR_PRESET_MAX_STEPS,
+  type TranslatorPresetStep,
+} from '../translator/presets'
 import { changeLanguage } from '../../lang'
 import { shouldPreserveLiveChatGenerationSettingsForResource } from './chatGenerationSettingsResourceGuard'
 import { isCanonicalLoadoutCollection } from './loadoutCanonical'
 import {
   isModelProfileSettingsGroup,
   SERVER_SETTINGS_GROUP_BY_KEY,
+  SETTINGS_GROUPS,
   type SettingsGroup,
   type SettingsGroupProjectionEpochs,
 } from './settingsGroups'
@@ -14,6 +24,23 @@ import type { PromptItemMutationOperation, PromptTemplateOwnerStateSnapshot } fr
 import { applySettingsRuntimeProjectionEffects } from './settingsRuntimeProjectionHooks'
 import { applyPendingSettingsProjectionOverlays } from './settingsPendingProjection'
 import { reapplyRetainedCharacterProjections } from './chatRetainedProjection'
+import {
+  SERVER_CHARACTER_SHELL_MARKER,
+  SERVER_CHARACTER_SUMMARY_VERSION,
+} from '@risuai/protocol/character-summary-resource'
+import {
+  SERVER_SHELL_SETTINGS_KEYS,
+  isServerShellSettings,
+  type ServerShellSettings,
+} from '@risuai/protocol/shell-resource'
+import {
+  SERVER_STANDALONE_SETTING_NAMES,
+  type ServerStandaloneSettingName,
+  type ServerStandaloneSettingPayload,
+} from '@risuai/protocol/standalone-settings'
+import { projectChatMetadata, type ChatMetadataOwnerState } from './chatMetadataOwner'
+import { hypaV3PresetIndexFromStableId } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
+import { invalidateModuleRenderRevision } from '../moduleRenderRevision'
 
 let nextCharacterRowProjectionEpoch = 0
 let characterRowProjectionBaseline = 0
@@ -82,6 +109,10 @@ export function markChatBodyResourceRevision(chatId: string, revision: number): 
   chatBodyResourceRevisions.set(chatId, Math.max(chatBodyResourceRevisions.get(chatId) ?? -1, revision))
 }
 
+export function isChatBodyResourceLoaded(chatId: string): boolean {
+  return nonEmptyString(chatId) && chatBodyResourceRevisions.has(chatId)
+}
+
 function advanceChatBodyProjectionEpoch(chatId: string): void {
   chatBodyProjectionEpochs.set(chatId, ++nextChatBodyProjectionEpoch)
 }
@@ -116,6 +147,10 @@ export function markCharacterLorebookBodyResourceRevision(characterId: string, r
     characterId,
     Math.max(characterLorebookBodyResourceRevisions.get(characterId) ?? -1, revision),
   )
+}
+
+export function isCharacterLorebookBodyResourceLoaded(characterId: string): boolean {
+  return nonEmptyString(characterId) && characterLorebookBodyResourceRevisions.has(characterId)
 }
 
 function advanceCharacterLorebookBodyProjectionEpoch(characterId: string): void {
@@ -437,6 +472,7 @@ export interface ServerAgentPresetCollectionMutationLocalEffectPayload {
 }
 
 export interface ServerCharactersResourcePayload {
+  version: typeof SERVER_CHARACTER_SUMMARY_VERSION
   revision: number
   characters: character[]
   characterOrder: Database['characterOrder']
@@ -448,17 +484,9 @@ export interface ServerCharacterResourcePayload {
   character: character
 }
 
-export interface ServerCharacterOrderResourcePayload {
-  revision: number
-  characterOrder: Database['characterOrder']
-}
+export type ServerCharacterOrderResourcePayload = ServerCharacterOrderResource
 
-export interface ServerCharacterSelectionResourcePayload {
-  revision: number
-  characterId: string
-  currentChar: number
-  lastInteraction?: number
-}
+export type ServerCharacterSelectionResourcePayload = ServerCharacterSelectionResource
 
 export interface ServerChatGenerationSettingsLocalEffectPayload {
   revision: number
@@ -593,10 +621,16 @@ export interface SettingsResourceState {
   value: ServerSettingsValues
   revision: number | null
   fullRevision: number | null
+  shellRevision: number | null
   pointerValueRevisions: Record<'characterOrder' | 'currentChar', number | null>
   enabledModulesRevision: number | null
   loreBookPageRevision: number | null
   groupRevisions: Partial<Record<SettingsGroup, number>>
+  groupStatuses: Partial<Record<SettingsGroup, ServerResourceStatus>>
+  groupErrors: Partial<Record<SettingsGroup, string>>
+  standaloneRevisions: Partial<Record<ServerStandaloneSettingName, number>>
+  standaloneStatuses: Partial<Record<ServerStandaloneSettingName, ServerResourceStatus>>
+  standaloneErrors: Partial<Record<ServerStandaloneSettingName, string>>
   status: ServerResourceStatus
   error: string | null
 }
@@ -631,6 +665,7 @@ export const settingsResourceState = $state<SettingsResourceState>({
   value: {},
   revision: null,
   fullRevision: null,
+  shellRevision: null,
   pointerValueRevisions: {
     characterOrder: null,
     currentChar: null,
@@ -638,6 +673,11 @@ export const settingsResourceState = $state<SettingsResourceState>({
   enabledModulesRevision: null,
   loreBookPageRevision: null,
   groupRevisions: {},
+  groupStatuses: {},
+  groupErrors: {},
+  standaloneRevisions: {},
+  standaloneStatuses: {},
+  standaloneErrors: {},
   status: 'idle',
   error: null,
 })
@@ -668,24 +708,571 @@ export const charactersResourceState = $state<CharactersResourceState>({
   rowErrors: {},
 })
 
+export interface HypaV3PresetOwnerStateSnapshot {
+  hypaV3Presets: Database['hypaV3Presets']
+  selectedHypaV3PresetId: string | null
+  /** Derived compatibility projection. Never use this field as preset identity. */
+  hypaV3PresetId: number
+}
+
+export type HypaV3PresetOwnerStateDraft = Omit<HypaV3PresetOwnerStateSnapshot, 'hypaV3PresetId'>
+
+/**
+ * Read the canonical Hypa V3 preset collection and stable selection together.
+ * Missing, duplicate, unknown, or numerically inconsistent owners fail closed;
+ * normal reads never repair rows or fall back to the numeric projection.
+ */
+export function getHypaV3PresetOwnerStateSnapshot(): HypaV3PresetOwnerStateSnapshot | null {
+  if (hypaV3PresetOwnerHasResourceError()) return null
+
+  const hypaV3Presets = collectionsResourceState.values.hypaV3Presets
+  const settings = settingsResourceState.value as Record<string, unknown>
+  if (!Array.isArray(hypaV3Presets) || !isUniquePresetCollection(hypaV3Presets)) return null
+
+  const selectedHypaV3PresetId = settings.selectedHypaV3PresetId
+  if (selectedHypaV3PresetId !== null && !nonEmptyString(selectedHypaV3PresetId)) return null
+  const stableSelectedHypaV3PresetId = selectedHypaV3PresetId as string | null
+  const hypaV3PresetId = hypaV3PresetIndexFromStableId({
+    selectedHypaV3PresetId: stableSelectedHypaV3PresetId,
+    hypaV3Presets,
+  })
+  if (
+    (hypaV3Presets.length === 0 ? selectedHypaV3PresetId !== null || hypaV3PresetId !== -1 : hypaV3PresetId === -1) ||
+    settings.hypaV3PresetId !== hypaV3PresetId
+  ) {
+    return null
+  }
+
+  return {
+    hypaV3Presets: cloneJsonValue(hypaV3Presets) as Database['hypaV3Presets'],
+    selectedHypaV3PresetId: stableSelectedHypaV3PresetId,
+    hypaV3PresetId,
+  }
+}
+
+/**
+ * Apply one optimistic Hypa V3 owner mutation atomically. The callback edits a
+ * detached draft with stable identity only; commit derives the numeric
+ * compatibility projection from the resulting unique collection.
+ */
+export function updateHypaV3PresetOwnerState(mutator: (draft: HypaV3PresetOwnerStateDraft) => boolean | void): boolean {
+  const current = getHypaV3PresetOwnerStateSnapshot()
+  if (!current) return false
+
+  const draft: HypaV3PresetOwnerStateDraft = {
+    hypaV3Presets: cloneJsonValue(current.hypaV3Presets),
+    selectedHypaV3PresetId: current.selectedHypaV3PresetId,
+  }
+  if (mutator(draft) === false || !isUniquePresetCollection(draft.hypaV3Presets)) return false
+  if (draft.selectedHypaV3PresetId !== null && !nonEmptyString(draft.selectedHypaV3PresetId)) return false
+
+  const hypaV3PresetId = hypaV3PresetIndexFromStableId(draft)
+  if (
+    draft.hypaV3Presets.length === 0
+      ? draft.selectedHypaV3PresetId !== null || hypaV3PresetId !== -1
+      : hypaV3PresetId === -1
+  ) {
+    return false
+  }
+
+  collectionsResourceState.values.hypaV3Presets = cloneJsonValue(draft.hypaV3Presets)
+  const settings = settingsResourceState.value as Record<string, unknown>
+  settings.selectedHypaV3PresetId = draft.selectedHypaV3PresetId
+  settings.hypaV3PresetId = hypaV3PresetId
+  return true
+}
+
+function hypaV3PresetOwnerHasResourceError(): boolean {
+  return (
+    settingsResourceState.status === 'error' ||
+    settingsResourceState.groupStatuses.memory === 'error' ||
+    collectionsResourceState.statuses.hypaV3Presets === 'error'
+  )
+}
+
+export interface PersonaOwnerStateSnapshot {
+  personas: Database['personas']
+  selectedPersonaId: string | null
+  /** Derived compatibility projection. Never use this field as persona identity. */
+  selectedPersona: number
+  username: string
+  userIcon: string
+  personaPrompt: string
+  userNote: string
+}
+
+export type PersonaOwnerStateDraft = Omit<PersonaOwnerStateSnapshot, 'selectedPersona'>
+
+/**
+ * Read the canonical persona collection and stable selection owner together.
+ * Missing, duplicate, mismatched, or errored owners fail closed; normal reads
+ * never repair rows or fall back to the legacy numeric pointer.
+ */
+export function getPersonaOwnerStateSnapshot(): PersonaOwnerStateSnapshot | null {
+  if (personaOwnerHasResourceError()) return null
+
+  const personas = collectionsResourceState.values.personas
+  const settings = settingsResourceState.value as Record<string, unknown>
+  if (!Array.isArray(personas) || !isUniquePresetCollection(personas)) return null
+
+  const selectedPersonaId = settings.selectedPersonaId
+  if (selectedPersonaId !== null && !nonEmptyString(selectedPersonaId)) return null
+  const stableSelectedPersonaId = selectedPersonaId as string | null
+  const selectedPersona = personaSelectionIndex(personas, stableSelectedPersonaId)
+  if (
+    (personas.length === 0 ? selectedPersonaId !== null || selectedPersona !== -1 : selectedPersona === -1) ||
+    settings.selectedPersona !== selectedPersona ||
+    typeof settings.username !== 'string' ||
+    typeof settings.userIcon !== 'string' ||
+    typeof settings.personaPrompt !== 'string' ||
+    typeof settings.userNote !== 'string'
+  ) {
+    return null
+  }
+
+  return {
+    personas: cloneJsonValue(personas) as Database['personas'],
+    selectedPersonaId: stableSelectedPersonaId,
+    selectedPersona,
+    username: settings.username,
+    userIcon: settings.userIcon,
+    personaPrompt: settings.personaPrompt,
+    userNote: settings.userNote,
+  }
+}
+
+/**
+ * Apply one optimistic persona-owner mutation atomically. The callback edits a
+ * detached draft that exposes only stable selection identity; commit derives
+ * the numeric compatibility pointer from the resulting unique rows.
+ */
+export function updatePersonaOwnerState(mutator: (draft: PersonaOwnerStateDraft) => boolean | void): boolean {
+  const current = getPersonaOwnerStateSnapshot()
+  if (!current) return false
+
+  const draft: PersonaOwnerStateDraft = {
+    personas: cloneJsonValue(current.personas),
+    selectedPersonaId: current.selectedPersonaId,
+    username: current.username,
+    userIcon: current.userIcon,
+    personaPrompt: current.personaPrompt,
+    userNote: current.userNote,
+  }
+  if (mutator(draft) === false || !isUniquePresetCollection(draft.personas)) return false
+  if (draft.selectedPersonaId !== null && !nonEmptyString(draft.selectedPersonaId)) return false
+
+  const selectedPersona = personaSelectionIndex(draft.personas, draft.selectedPersonaId)
+  if (
+    (draft.personas.length === 0
+      ? draft.selectedPersonaId !== null || selectedPersona !== -1
+      : selectedPersona === -1) ||
+    typeof draft.username !== 'string' ||
+    typeof draft.userIcon !== 'string' ||
+    typeof draft.personaPrompt !== 'string' ||
+    typeof draft.userNote !== 'string'
+  ) {
+    return false
+  }
+
+  collectionsResourceState.values.personas = cloneJsonValue(draft.personas)
+  const settings = settingsResourceState.value as Record<string, unknown>
+  settings.selectedPersonaId = draft.selectedPersonaId
+  settings.selectedPersona = selectedPersona
+  settings.username = draft.username
+  settings.userIcon = draft.userIcon
+  settings.personaPrompt = draft.personaPrompt
+  settings.userNote = draft.userNote
+  return true
+}
+
+/**
+ * Reassert one retained optimistic create across a split collection refresh.
+ * The row and stable selection were already captured by the durable attempt;
+ * this only restores that exact row and re-derives the numeric projection.
+ */
+export function reassertPendingPersonaOwnerRow(persona: Database['personas'][number]): boolean {
+  if (personaOwnerHasResourceError() || !isPlainRecord(persona) || !nonEmptyString(persona.id)) return false
+  const personas = collectionsResourceState.values.personas
+  const settings = settingsResourceState.value as Record<string, unknown>
+  if (!Array.isArray(personas) || !isUniquePresetCollection(personas)) return false
+  if (personas.some((candidate) => isPlainRecord(candidate) && candidate.id === persona.id)) return false
+
+  const selectedPersonaId = settings.selectedPersonaId
+  if (selectedPersonaId !== null && !nonEmptyString(selectedPersonaId)) return false
+  const stableSelectedPersonaId = selectedPersonaId as string | null
+  if (
+    typeof settings.username !== 'string' ||
+    typeof settings.userIcon !== 'string' ||
+    typeof settings.personaPrompt !== 'string' ||
+    typeof settings.userNote !== 'string'
+  ) {
+    return false
+  }
+
+  const nextPersonas = [...personas, cloneJsonValue(persona)]
+  if (!isUniquePresetCollection(nextPersonas)) return false
+  const selectedPersona = personaSelectionIndex(nextPersonas, stableSelectedPersonaId)
+  if (selectedPersona === -1) return false
+
+  collectionsResourceState.values.personas = nextPersonas as Database['personas']
+  settings.selectedPersona = selectedPersona
+  return true
+}
+
+function personaOwnerHasResourceError(): boolean {
+  return (
+    settingsResourceState.status === 'error' ||
+    settingsResourceState.groupStatuses.account === 'error' ||
+    settingsResourceState.standaloneStatuses.selectedPersonaId === 'error' ||
+    settingsResourceState.standaloneStatuses.selectedPersona === 'error' ||
+    settingsResourceState.standaloneStatuses.personaPrompt === 'error' ||
+    settingsResourceState.standaloneStatuses.userIcon === 'error' ||
+    settingsResourceState.standaloneStatuses.userNote === 'error' ||
+    collectionsResourceState.statuses.personas === 'error'
+  )
+}
+
+function personaSelectionIndex(personas: readonly unknown[], selectedPersonaId: string | null): number {
+  if (!selectedPersonaId) return -1
+  let selectedIndex = -1
+  for (let index = 0; index < personas.length; index += 1) {
+    const persona = personas[index]
+    if (!isPlainRecord(persona) || persona.id !== selectedPersonaId) continue
+    if (selectedIndex !== -1) return -1
+    selectedIndex = index
+  }
+  return selectedIndex
+}
+
+/**
+ * Read-only owner boundary for chat metadata consumers. This deliberately
+ * projects scalar display metadata instead of exposing the chat record, whose
+ * message and other body fields remain owned by their dedicated projections.
+ */
+export function getChatMetadataOwnerState(chatId: string): ChatMetadataOwnerState | undefined {
+  if (!nonEmptyString(chatId)) return undefined
+
+  let match: ChatMetadataOwnerState | undefined
+  for (const character of charactersResourceState.characters) {
+    for (const chat of character.chats ?? []) {
+      if (chat?.id !== chatId) continue
+      if (match) return undefined
+      match = projectChatMetadata(chatId, chat)
+    }
+  }
+  return match
+}
+
+// Chat metadata is intentionally a closed, scalar owner surface. Keep this
+// list in sync with the fields the metadata owner is allowed to persist; do
+// not widen it into a generic chat/database snapshot.
+export const CHAT_METADATA_OWNER_KEYS = [
+  'name',
+  'note',
+  'sdData',
+  'lastMemory',
+  'hypaContextTruncationAcknowledged',
+  'suggestMessages',
+  'bindedPersona',
+  'fmIndex',
+  'selectedDraftHookId',
+  'translatorPresetId',
+  'autoTranslate',
+  'autoTranslateBotOnly',
+  'bilingualDisplay',
+  'bilingualEmphasis',
+  'folderId',
+  'lastDate',
+  'bookmarks',
+  'bookmarkNames',
+  'modules',
+  'pinned',
+] as const
+
+export const CHAT_FOLDER_METADATA_OWNER_KEYS = ['name', 'color', 'folded'] as const
+
+export type ChatMetadataOwnerKey = (typeof CHAT_METADATA_OWNER_KEYS)[number]
+export type ChatFolderMetadataOwnerKey = (typeof CHAT_FOLDER_METADATA_OWNER_KEYS)[number]
+export type ChatMetadataOwnerFields = Partial<Record<ChatMetadataOwnerKey, unknown>>
+export type ChatFolderMetadataOwnerFields = Partial<Record<ChatFolderMetadataOwnerKey, unknown>>
+
+export interface ChatMetadataOwnerSnapshot {
+  characterId: string
+  chatId: string
+  metadata: ChatMetadataOwnerFields
+  projectionEpoch: number
+  revision: number | null
+}
+
+export interface ChatFolderMetadataOwnerSnapshot {
+  characterId: string
+  folderId: string
+  metadata: ChatFolderMetadataOwnerFields
+  projectionEpoch: number
+  revision: number | null
+}
+
+export type ChatScriptstateOwnerValue = string | number | boolean
+
+export interface ChatScriptstateOwnerSnapshot {
+  characterId: string
+  chatId: string
+  scriptstate: Record<string, ChatScriptstateOwnerValue> | undefined
+  projectionEpoch: number
+  revision: number | null
+}
+
+/** Read one uniquely-owned chat metadata row without exposing transcript data. */
+export function getChatMetadataOwnerSnapshot(
+  characterId: string,
+  chatId: string,
+): ChatMetadataOwnerSnapshot | undefined {
+  const character = getCharacterResourceOwner(characterId)
+  const chat = uniqueChatOwner(character, chatId)
+  if (!character || !chat) return undefined
+  return {
+    characterId,
+    chatId,
+    metadata: snapshotOwnerFields(chat as unknown as Record<string, unknown>, CHAT_METADATA_OWNER_KEYS),
+    projectionEpoch: captureCharacterRowProjectionEpoch(characterId),
+    revision: charactersResourceState.rowRevisions[characterId] ?? null,
+  }
+}
+
+/** Read one uniquely-owned chat-folder metadata row without exposing chat bodies. */
+export function getChatFolderMetadataOwnerSnapshot(
+  characterId: string,
+  folderId: string,
+): ChatFolderMetadataOwnerSnapshot | undefined {
+  const character = getCharacterResourceOwner(characterId)
+  const folder = uniqueFolderOwner(character, folderId)
+  if (!character || !folder) return undefined
+  return {
+    characterId,
+    folderId,
+    metadata: snapshotOwnerFields(folder as unknown as Record<string, unknown>, CHAT_FOLDER_METADATA_OWNER_KEYS),
+    projectionEpoch: captureCharacterRowProjectionEpoch(characterId),
+    revision: charactersResourceState.rowRevisions[characterId] ?? null,
+  }
+}
+
+/** Read one uniquely-owned chat scriptstate map without exposing the chat row. */
+export function getChatScriptstateOwnerSnapshot(
+  characterId: string,
+  chatId: string,
+): ChatScriptstateOwnerSnapshot | undefined {
+  const chat = uniqueGlobalChatOwner(characterId, chatId)
+  if (!chat) return undefined
+  return {
+    characterId,
+    chatId,
+    scriptstate: chat.scriptstate ? { ...chat.scriptstate } : undefined,
+    projectionEpoch: captureCharacterRowProjectionEpoch(characterId),
+    revision: charactersResourceState.rowRevisions[characterId] ?? null,
+  }
+}
+
+/** Apply one optimistic scriptstate value to its exact stable-id chat owner. */
+export function applyChatScriptstateOwnerValue(
+  characterId: string,
+  chatId: string,
+  key: string,
+  value: ChatScriptstateOwnerValue,
+): boolean {
+  if (!nonEmptyString(key) || !isChatScriptstateOwnerValue(value)) return false
+  const chat = uniqueGlobalChatOwner(characterId, chatId)
+  if (!chat || chat.scriptstate?.[key] === value) return false
+  chat.scriptstate ??= {}
+  chat.scriptstate[key] = value
+  advanceCharacterRowProjectionEpoch(characterId)
+  return true
+}
+
+/** Apply a closed-set optimistic chat metadata patch to its unique owner. */
+export function applyChatMetadataOwnerPatch(
+  characterId: string,
+  chatId: string,
+  patch: ChatMetadataOwnerFields,
+): boolean {
+  const character = getCharacterResourceOwner(characterId)
+  const chat = uniqueChatOwner(character, chatId)
+  if (!character || !chat || !hasOnlyOwnerFields(patch, CHAT_METADATA_OWNER_KEYS)) return false
+  applyOwnerFields(chat as unknown as Record<string, unknown>, patch, CHAT_METADATA_OWNER_KEYS)
+  advanceCharacterRowProjectionEpoch(characterId)
+  return true
+}
+
+/** Restore a failed optimistic chat metadata patch only if its attempted fields still match. */
+export function restoreChatMetadataOwnerSnapshot(snapshot: {
+  characterId: string
+  chatId: string
+  metadata: ChatMetadataOwnerFields
+  attempted?: ChatMetadataOwnerFields
+}): boolean {
+  const character = getCharacterResourceOwner(snapshot.characterId)
+  const chat = uniqueChatOwner(character, snapshot.chatId)
+  if (
+    !character ||
+    !chat ||
+    !hasOnlyOwnerFields(snapshot.metadata, CHAT_METADATA_OWNER_KEYS) ||
+    (snapshot.attempted !== undefined && !hasOnlyOwnerFields(snapshot.attempted, CHAT_METADATA_OWNER_KEYS))
+  ) {
+    return false
+  }
+  const target = chat as unknown as Record<string, unknown>
+  if (
+    snapshot.attempted &&
+    Object.entries(snapshot.attempted).some(([key, value]) => !ownerFieldMatches(target, key, value))
+  ) {
+    return false
+  }
+  if (snapshot.attempted) {
+    restoreAttemptedOwnerFields(target, snapshot.metadata, snapshot.attempted, CHAT_METADATA_OWNER_KEYS)
+  } else {
+    applyOwnerFields(target, snapshot.metadata, CHAT_METADATA_OWNER_KEYS, true)
+  }
+  advanceCharacterRowProjectionEpoch(snapshot.characterId)
+  return true
+}
+
+/** Apply a closed-set optimistic chat-folder metadata patch to its unique owner. */
+export function applyChatFolderMetadataOwnerPatch(
+  characterId: string,
+  folderId: string,
+  patch: ChatFolderMetadataOwnerFields,
+): boolean {
+  const character = getCharacterResourceOwner(characterId)
+  const folder = uniqueFolderOwner(character, folderId)
+  if (!character || !folder || !hasOnlyOwnerFields(patch, CHAT_FOLDER_METADATA_OWNER_KEYS)) return false
+  applyOwnerFields(folder as unknown as Record<string, unknown>, patch, CHAT_FOLDER_METADATA_OWNER_KEYS)
+  advanceCharacterRowProjectionEpoch(characterId)
+  return true
+}
+
+/** Restore a failed optimistic chat-folder metadata patch only if still current. */
+export function restoreChatFolderMetadataOwnerSnapshot(snapshot: {
+  characterId: string
+  folderId: string
+  metadata: ChatFolderMetadataOwnerFields
+  attempted?: ChatFolderMetadataOwnerFields
+}): boolean {
+  const character = getCharacterResourceOwner(snapshot.characterId)
+  const folder = uniqueFolderOwner(character, snapshot.folderId)
+  if (
+    !character ||
+    !folder ||
+    !hasOnlyOwnerFields(snapshot.metadata, CHAT_FOLDER_METADATA_OWNER_KEYS) ||
+    (snapshot.attempted !== undefined && !hasOnlyOwnerFields(snapshot.attempted, CHAT_FOLDER_METADATA_OWNER_KEYS))
+  ) {
+    return false
+  }
+  const target = folder as unknown as Record<string, unknown>
+  if (
+    snapshot.attempted &&
+    Object.entries(snapshot.attempted).some(([key, value]) => !ownerFieldMatches(target, key, value))
+  ) {
+    return false
+  }
+  if (snapshot.attempted) {
+    restoreAttemptedOwnerFields(target, snapshot.metadata, snapshot.attempted, CHAT_FOLDER_METADATA_OWNER_KEYS)
+  } else {
+    applyOwnerFields(target, snapshot.metadata, CHAT_FOLDER_METADATA_OWNER_KEYS, true)
+  }
+  advanceCharacterRowProjectionEpoch(snapshot.characterId)
+  return true
+}
+
+function uniqueChatOwner(character: character | undefined, chatId: string): character['chats'][number] | undefined {
+  if (!character || !nonEmptyString(chatId)) return undefined
+  const matches = (character.chats ?? []).filter((chat) => chat?.id === chatId)
+  return matches.length === 1 ? matches[0] : undefined
+}
+
+function uniqueGlobalChatOwner(characterId: string, chatId: string): character['chats'][number] | undefined {
+  const character = getCharacterResourceOwner(characterId)
+  if (!character || !nonEmptyString(chatId)) return undefined
+
+  let match: character['chats'][number] | undefined
+  let owner: character | undefined
+  for (const candidate of charactersResourceState.characters) {
+    for (const chat of candidate.chats ?? []) {
+      if (chat?.id !== chatId) continue
+      if (match) return undefined
+      match = chat
+      owner = candidate
+    }
+  }
+  return owner === character ? match : undefined
+}
+
+function isChatScriptstateOwnerValue(value: unknown): value is ChatScriptstateOwnerValue {
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+}
+
+function uniqueFolderOwner(
+  character: character | undefined,
+  folderId: string,
+): NonNullable<character['chatFolders']>[number] | undefined {
+  if (!character || !nonEmptyString(folderId)) return undefined
+  const matches = (character.chatFolders ?? []).filter((folder) => folder?.id === folderId)
+  return matches.length === 1 ? matches[0] : undefined
+}
+
+function snapshotOwnerFields(target: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
+  const snapshot: Record<string, unknown> = {}
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(target, key) && target[key] !== undefined) {
+      snapshot[key] = cloneJsonValue(target[key])
+    }
+  }
+  return snapshot
+}
+
+function hasOnlyOwnerFields(patch: Record<string, unknown>, keys: readonly string[]): boolean {
+  const allowed = new Set(keys)
+  return Object.keys(patch).every((key) => allowed.has(key))
+}
+
+function applyOwnerFields(
+  target: Record<string, unknown>,
+  fields: Record<string, unknown>,
+  keys: readonly string[],
+  deleteMissing = false,
+): void {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(fields, key)) {
+      const value = fields[key]
+      if (value === undefined) delete target[key]
+      else target[key] = cloneJsonValue(value)
+    } else if (deleteMissing) {
+      delete target[key]
+    }
+  }
+}
+
+function restoreAttemptedOwnerFields(
+  target: Record<string, unknown>,
+  metadata: Record<string, unknown>,
+  attempted: Record<string, unknown>,
+  keys: readonly string[],
+): void {
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(attempted, key)) continue
+    if (Object.prototype.hasOwnProperty.call(metadata, key)) {
+      applyOwnerFields(target, { [key]: metadata[key] }, [key])
+    } else {
+      delete target[key]
+    }
+  }
+}
+
+function ownerFieldMatches(target: Record<string, unknown>, key: string, expected: unknown): boolean {
+  const present = Object.prototype.hasOwnProperty.call(target, key) && target[key] !== undefined
+  if (expected === undefined) return !present
+  return present && JSON.stringify(target[key]) === JSON.stringify(expected)
+}
+
 const collectionNameSet = new Set<string>(SERVER_COLLECTION_NAMES)
-const guardedResourceValueMemo = new WeakMap<object, object>()
-let resourceDatabaseWriteDepth = 0
-let resourceDatabaseWriteGuardEnabled = false
-let resourceDatabaseWriteChanged = false
-let resourceDatabaseFacadeEpoch = $state(0)
-
-export function setResourceDatabaseWriteGuardEnabled(enabled: boolean): void {
-  resourceDatabaseWriteGuardEnabled = enabled
-}
-
-export function isResourceDatabaseWriteActive(): boolean {
-  return resourceDatabaseWriteDepth > 0
-}
-
-export function getResourceDatabaseFacadeEpoch(): number {
-  return resourceDatabaseFacadeEpoch
-}
 
 export function isServerCollectionName(value: string): value is ServerCollectionName {
   return collectionNameSet.has(value)
@@ -701,9 +1288,23 @@ export function failSettingsResourceLoad(error: string): void {
   settingsResourceState.error = error
 }
 
+export function beginSettingsGroupResourceLoad(group: SettingsGroup): void {
+  settingsResourceState.groupStatuses[group] = 'loading'
+  delete settingsResourceState.groupErrors[group]
+}
+
+export function failSettingsGroupResourceLoad(group: SettingsGroup, error: string): void {
+  settingsResourceState.groupStatuses[group] = 'error'
+  settingsResourceState.groupErrors[group] = error
+}
+
 export function applySettingsResource(payload: ServerSettingsResourcePayload): boolean {
   if (isOlderRevision(payload.revision, settingsResourceState.fullRevision)) return false
+  if (isOlderRevision(payload.revision, settingsResourceState.shellRevision)) return false
   if (Object.values(settingsResourceState.groupRevisions).some((revision) => revision > payload.revision)) return false
+  if (Object.values(settingsResourceState.standaloneRevisions).some((revision) => revision > payload.revision)) {
+    return false
+  }
   const preserveEnabledModules = (settingsResourceState.enabledModulesRevision ?? -1) > payload.revision
   const liveEnabledModules = preserveEnabledModules
     ? cloneJsonValue((settingsResourceState.value as Record<string, unknown>).enabledModules)
@@ -730,6 +1331,7 @@ export function applySettingsResource(payload: ServerSettingsResourcePayload): b
       ? maxRevision(settingsResourceState.revision, payload.revision)
       : payload.revision
   settingsResourceState.fullRevision = payload.revision
+  settingsResourceState.shellRevision = payload.revision
   settingsResourceState.pointerValueRevisions.characterOrder = payload.revision
   settingsResourceState.pointerValueRevisions.currentChar = payload.revision
   settingsResourceState.enabledModulesRevision = preserveEnabledModules
@@ -737,6 +1339,22 @@ export function applySettingsResource(payload: ServerSettingsResourcePayload): b
     : null
   settingsResourceState.loreBookPageRevision = preserveLoreBookPage ? settingsResourceState.loreBookPageRevision : null
   settingsResourceState.groupRevisions = {}
+  settingsResourceState.groupStatuses = Object.fromEntries(SETTINGS_GROUPS.map((group) => [group, 'ready'])) as Partial<
+    Record<SettingsGroup, ServerResourceStatus>
+  >
+  settingsResourceState.groupErrors = {}
+  settingsResourceState.standaloneRevisions = Object.fromEntries(
+    SERVER_STANDALONE_SETTING_NAMES.map((setting) => [
+      setting,
+      setting === 'loreBookPage' && preserveLoreBookPage
+        ? settingsResourceState.loreBookPageRevision
+        : payload.revision,
+    ]),
+  ) as Partial<Record<ServerStandaloneSettingName, number>>
+  settingsResourceState.standaloneStatuses = Object.fromEntries(
+    SERVER_STANDALONE_SETTING_NAMES.map((setting) => [setting, 'ready']),
+  ) as Partial<Record<ServerStandaloneSettingName, ServerResourceStatus>>
+  settingsResourceState.standaloneErrors = {}
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
   applyRuntimeLanguage(settingsResourceState.value.language)
@@ -744,7 +1362,84 @@ export function applySettingsResource(payload: ServerSettingsResourcePayload): b
   advanceAllSettingsProjectionEpochs()
   advanceSettingsProjectionEpoch({ authoritativeFull: true })
   if (!preserveLoreBookPage) advanceLorebookPageProjectionEpoch()
-  markResourceDatabaseChanged()
+  invalidateModuleRenderRevision()
+  return true
+}
+
+export interface ServerShellSettingsResourcePayload {
+  revision: number
+  settings: ServerShellSettings
+}
+
+export function canApplyShellSettingsResource(payload: ServerShellSettingsResourcePayload): boolean {
+  if (!Number.isSafeInteger(payload.revision) || payload.revision < 0 || !isServerShellSettings(payload.settings)) {
+    return false
+  }
+  const knownRevision = Math.max(
+    settingsResourceState.fullRevision ?? -1,
+    settingsResourceState.shellRevision ?? -1,
+    ...Object.values(settingsResourceState.groupRevisions).map((revision) => revision ?? -1),
+  )
+  return payload.revision >= knownRevision
+}
+
+/** Merge only the exact shell allowlist without claiming a complete settings group. */
+export function applyShellSettingsResource(payload: ServerShellSettingsResourcePayload): boolean {
+  if (!canApplyShellSettingsResource(payload)) return false
+
+  const target = settingsResourceState.value as Record<string, unknown>
+  for (const key of SERVER_SHELL_SETTINGS_KEYS) target[key] = cloneJsonValue(payload.settings[key])
+  applyPendingSettingsProjectionOverlays(target, new Set(SERVER_SHELL_SETTINGS_KEYS))
+  settingsResourceState.shellRevision = payload.revision
+  settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
+  settingsResourceState.status = 'ready'
+  settingsResourceState.error = null
+  applyRuntimeLanguage(target.language)
+  applySettingsRuntimeProjectionEffects(SERVER_SHELL_SETTINGS_KEYS)
+  for (const settingsGroup of new Set(
+    SERVER_SHELL_SETTINGS_KEYS.map((key) => SERVER_SETTINGS_GROUP_BY_KEY[key]).filter(
+      (candidate): candidate is SettingsGroup => candidate !== undefined,
+    ),
+  )) {
+    advanceSettingsGroupProjectionEpoch(settingsGroup)
+  }
+  advanceSettingsProjectionEpoch()
+  return true
+}
+
+export function beginStandaloneSettingResourceLoad(setting: ServerStandaloneSettingName): void {
+  settingsResourceState.standaloneStatuses[setting] = 'loading'
+  delete settingsResourceState.standaloneErrors[setting]
+}
+
+export function failStandaloneSettingResourceLoad(setting: ServerStandaloneSettingName, error: string): void {
+  settingsResourceState.standaloneStatuses[setting] = 'error'
+  settingsResourceState.standaloneErrors[setting] = error
+}
+
+/** Apply one legacy top-level value without claiming a complete settings group. */
+export function applyStandaloneSettingResource(payload: ServerStandaloneSettingPayload): boolean {
+  const currentRevision = Math.max(
+    settingsResourceState.revision ?? -1,
+    settingsResourceState.fullRevision ?? -1,
+    settingsResourceState.standaloneRevisions[payload.setting] ?? -1,
+    payload.setting === 'loreBookPage' ? (settingsResourceState.loreBookPageRevision ?? -1) : -1,
+  )
+  if (payload.revision < currentRevision) return false
+
+  const target = settingsResourceState.value as Record<string, unknown>
+  if (payload.state.present) target[payload.setting] = cloneJsonValue(payload.state.value)
+  else delete target[payload.setting]
+  applyPendingSettingsProjectionOverlays(target, new Set([payload.setting]))
+  settingsResourceState.standaloneRevisions[payload.setting] = payload.revision
+  settingsResourceState.standaloneStatuses[payload.setting] = 'ready'
+  delete settingsResourceState.standaloneErrors[payload.setting]
+  settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
+  if (payload.setting === 'loreBookPage') {
+    settingsResourceState.loreBookPageRevision = payload.revision
+    advanceLorebookPageProjectionEpoch()
+  }
+  advanceSettingsProjectionEpoch()
   return true
 }
 
@@ -757,6 +1452,7 @@ export function applySettingsGroupResource(
     : -1
   const currentRevision = Math.max(
     settingsResourceState.fullRevision ?? -1,
+    settingsResourceState.shellRevision ?? -1,
     settingsResourceState.groupRevisions[payload.group] ?? -1,
     sharedModelProfileRevision,
     payload.group === 'modules' ? (settingsResourceState.enabledModulesRevision ?? -1) : -1,
@@ -775,7 +1471,10 @@ export function applySettingsGroupResource(
   }
   applyPendingSettingsProjectionOverlays(target, new Set(groupKeys))
   settingsResourceState.groupRevisions[payload.group] = payload.revision
+  settingsResourceState.groupStatuses[payload.group] = 'ready'
+  delete settingsResourceState.groupErrors[payload.group]
   if (payload.group === 'providers') settingsResourceState.groupRevisions.models = payload.revision
+  if (payload.group === 'providers') settingsResourceState.groupStatuses.models = 'ready'
   if (payload.group === 'modules') settingsResourceState.enabledModulesRevision = payload.revision
   settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
   settingsResourceState.status = 'ready'
@@ -788,7 +1487,9 @@ export function applySettingsGroupResource(
     advanceSettingsGroupProjectionEpoch('providers', { preserveAcknowledgementTaint: true })
   }
   advanceSettingsProjectionEpoch()
-  markResourceDatabaseChanged()
+  if (payload.group === 'modules' || payload.group === 'advanced' || payload.group === 'agents') {
+    invalidateModuleRenderRevision()
+  }
   return true
 }
 
@@ -846,7 +1547,6 @@ export function applySettingsPatchLocalEffect(payload: ServerSettingsPatchLocalE
     collectionsResourceState.statuses.hypaV3Presets = 'ready'
     delete collectionsResourceState.errors.hypaV3Presets
   }
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -870,7 +1570,6 @@ export function applyPluginStorageLocalEffect(payload: ServerPluginStorageLocalE
   collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
   collectionsResourceState.statuses.pluginCustomStorage = 'ready'
   delete collectionsResourceState.errors.pluginCustomStorage
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -901,7 +1600,6 @@ export function applyPluginCollectionMutationLocalEffect(
   collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
   collectionsResourceState.statuses.plugins = 'ready'
   delete collectionsResourceState.errors.plugins
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -924,7 +1622,6 @@ export function applyPluginProviderLocalEffect(payload: ServerPluginProviderLoca
   settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -952,7 +1649,6 @@ export function applyModuleCollectionMutationLocalEffect(
   collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
   collectionsResourceState.statuses.modules = 'ready'
   delete collectionsResourceState.errors.modules
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1012,12 +1708,11 @@ export function applyGlobalLorebookMutationLocalEffect(
     settingsResourceState.status = 'ready'
     settingsResourceState.error = null
   }
-  markResourceDatabaseChanged()
   return true
 }
 
 /**
- * Fence an accepted optimistic lorebook-entry mutation. The bridge already
+ * Fence an accepted optimistic lorebook-entry mutation. The owner already
  * contains the accepted collection (and may contain a newer queued edit), so
  * only advance the owning resource revision after validating the live target.
  */
@@ -1042,7 +1737,6 @@ export function applyLorebookMutationLocalEffect(payload: ServerLorebookMutation
     collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
     collectionsResourceState.statuses.loreBook = 'ready'
     delete collectionsResourceState.errors.loreBook
-    markResourceDatabaseChanged()
     return true
   }
 
@@ -1068,7 +1762,6 @@ export function applyLorebookMutationLocalEffect(payload: ServerLorebookMutation
     markCharacterLorebookBodyResourceRevision(payload.characterId, payload.revision)
     markCharacterLorebookProjectionApplied(payload.characterId)
   }
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1090,7 +1783,6 @@ export function applyModuleEnabledLocalEffect(payload: ServerModuleEnabledLocalE
   settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1132,7 +1824,6 @@ export function applyPromptItemMutationLocalEffect(payload: ServerPromptItemMuta
   collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
   collectionsResourceState.statuses[collectionName] = 'ready'
   delete collectionsResourceState.errors[collectionName]
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1140,7 +1831,9 @@ export function applyPromptItemMutationLocalEffect(payload: ServerPromptItemMuta
  * Apply a response-confirmed split-preset field PATCH without re-reading the
  * complete collection and, when selected fields were projected, settings.
  * Canonical values only replace this attempt while its exact optimistic value
- * is still live, preserving a later coalesced edit to the same field.
+ * is still live, preserving a later coalesced edit to the same field. A prompt
+ * owner receipt applies only to the prompt-preset row; the aggregate
+ * `promptTemplate` resource remains a compatibility projection.
  */
 export function applySplitPresetPatchLocalEffect(payload: ServerSplitPresetPatchLocalEffectPayload): boolean {
   if (!nonEmptyString(payload.presetId) || (payload.presetKind !== 'model' && payload.presetKind !== 'prompt')) {
@@ -1174,18 +1867,10 @@ export function applySplitPresetPatchLocalEffect(payload: ServerSplitPresetPatch
     if (
       payload.presetKind !== 'prompt' ||
       !Object.prototype.hasOwnProperty.call(payload.attemptedPatch, 'promptTemplate') ||
-      !Object.prototype.hasOwnProperty.call(payload.preset, 'promptTemplate') ||
-      collectionsResourceState.statuses.promptTemplate !== 'ready' ||
-      collectionsResourceState.revisions.promptTemplate === undefined
+      !Object.prototype.hasOwnProperty.call(payload.preset, 'promptTemplate')
     ) {
       return false
     }
-    if (isJsonValueEqual(collectionsResourceState.values.promptTemplate, payload.attemptedPatch.promptTemplate)) {
-      collectionsResourceState.values.promptTemplate = cloneJsonValue(payload.preset.promptTemplate) as never
-    }
-    collectionsResourceState.revisions.promptTemplate = payload.revision
-    collectionsResourceState.statuses.promptTemplate = 'ready'
-    delete collectionsResourceState.errors.promptTemplate
   }
 
   const preset = matches[0]
@@ -1212,7 +1897,6 @@ export function applySplitPresetPatchLocalEffect(payload: ServerSplitPresetPatch
   collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
   collectionsResourceState.statuses[collectionName] = 'ready'
   delete collectionsResourceState.errors[collectionName]
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1289,7 +1973,6 @@ export function applyPresetReorderLocalEffect(payload: ServerPresetReorderLocalE
     settingsResourceState.status = 'ready'
     settingsResourceState.error = null
   }
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1333,7 +2016,6 @@ export function applyLoadoutMutationLocalEffect(payload: ServerLoadoutMutationLo
     settingsResourceState.error = null
     changed = true
   }
-  if (changed) markResourceDatabaseChanged()
   return true
 }
 
@@ -1393,7 +2075,9 @@ export function applyCollectionsResource(
   }
   if (applied) {
     collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
-    markResourceDatabaseChanged()
+  }
+  if (appliedNames.some((name) => name === 'modules' || name === 'personas' || name === 'promptPresets')) {
+    invalidateModuleRenderRevision()
   }
   return applied
 }
@@ -1494,7 +2178,6 @@ export function applyLegacyPresetPatchLocalEffect(payload: ServerLegacyPresetPat
   collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
   collectionsResourceState.statuses.botPresets = 'ready'
   delete collectionsResourceState.errors.botPresets
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1571,7 +2254,9 @@ export function applyPersonaPatchLocalEffect(payload: ServerPersonaPatchLocalEff
 
   if (
     payload.legacyProfileProjectionApplied &&
-    (settingsResourceState.status !== 'ready' || settingsResourceState.fullRevision === null)
+    (settingsResourceState.status !== 'ready' ||
+      settingsResourceState.fullRevision === null ||
+      !getPersonaOwnerStateSnapshot())
   ) {
     return false
   }
@@ -1587,8 +2272,6 @@ export function applyPersonaPatchLocalEffect(payload: ServerPersonaPatchLocalEff
     settingsResourceState.status = 'ready'
     settingsResourceState.error = null
   }
-
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1605,6 +2288,7 @@ export function applyPersonaMutationLocalEffect(payload: ServerPersonaMutationLo
     !['create', 'delete', 'select', 'reorder'].includes(payload.operation) ||
     typeof payload.collectionWritten !== 'boolean' ||
     typeof payload.settingsWritten !== 'boolean' ||
+    !payload.settingsWritten ||
     ((payload.operation === 'create' || payload.operation === 'delete' || payload.operation === 'reorder') &&
       !payload.collectionWritten)
   ) {
@@ -1634,22 +2318,12 @@ export function applyPersonaMutationLocalEffect(payload: ServerPersonaMutationLo
     return false
   }
 
-  if (payload.settingsWritten) {
-    const settings = settingsResourceState.value as Record<string, unknown>
-    const selectedPersona = settings.selectedPersona
-    if (
-      settingsResourceState.status !== 'ready' ||
-      settingsResourceState.fullRevision === null ||
-      !Number.isInteger(selectedPersona) ||
-      (selectedPersona as number) < 0 ||
-      (selectedPersona as number) >= personas.length ||
-      typeof settings.username !== 'string' ||
-      typeof settings.userIcon !== 'string' ||
-      typeof settings.personaPrompt !== 'string' ||
-      typeof settings.userNote !== 'string'
-    ) {
-      return false
-    }
+  if (!getPersonaOwnerStateSnapshot()) return false
+  if (
+    payload.settingsWritten &&
+    (settingsResourceState.status !== 'ready' || settingsResourceState.fullRevision === null)
+  ) {
+    return false
   }
 
   let changed = false
@@ -1667,19 +2341,18 @@ export function applyPersonaMutationLocalEffect(payload: ServerPersonaMutationLo
     settingsResourceState.error = null
     changed = true
   }
-  if (changed) markResourceDatabaseChanged()
   return true
 }
 
 /**
  * Fence both tables written by one accepted translator-preset PATCH. The
- * optimistic row and its selected legacy mirror are already resident, so this
- * advances only the collection and language-group revision fences. Projection
- * epochs and acknowledgement taints remain owned by authoritative reads.
+ * optimistic canonical row is already resident, so this advances only the
+ * collection and language-group revision fences. Projection epochs and
+ * acknowledgement taints remain owned by authoritative reads.
  */
 export function applyTranslatorPresetPatchLocalEffect(payload: ServerTranslatorPresetPatchLocalEffectPayload): boolean {
   const attemptedKeys = isPlainRecord(payload.attemptedPatch) ? Object.keys(payload.attemptedPatch).sort() : []
-  const allowedKeys = new Set(['name', 'prompt', 'maxResponse'])
+  const allowedKeys = new Set(['name', 'prompt', 'maxResponse', 'steps'])
   if (
     !Number.isInteger(payload.revision) ||
     payload.revision < 0 ||
@@ -1717,20 +2390,13 @@ export function applyTranslatorPresetPatchLocalEffect(payload: ServerTranslatorP
   }
 
   const targetMatches = presets.filter((preset) => preset.id === payload.presetId)
-  const selectedIndex = settings.translatorPresetId
-  if (
-    !Number.isInteger(selectedIndex) ||
-    (selectedIndex as number) < 0 ||
-    (selectedIndex as number) >= presets.length
-  ) {
-    return false
-  }
-  const selectedPreset = presets[selectedIndex as number]
+  const selectedPresetId = settings.translatorPresetId
+  const selectedMatches =
+    typeof selectedPresetId === 'string' ? presets.filter((preset) => preset.id === selectedPresetId) : []
   if (
     targetMatches.length !== 1 ||
-    selectedPreset.id !== payload.selectedPresetId ||
-    !isJsonValueEqual(settings.translatorPrompt, selectedPreset.prompt) ||
-    !isJsonValueEqual(settings.translatorMaxResponse, selectedPreset.maxResponse)
+    selectedMatches.length !== 1 ||
+    selectedMatches[0].id !== payload.selectedPresetId
   ) {
     return false
   }
@@ -1747,7 +2413,6 @@ export function applyTranslatorPresetPatchLocalEffect(payload: ServerTranslatorP
     settingsResourceState.status = 'ready'
     settingsResourceState.error = null
   }
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1799,7 +2464,6 @@ export function applyAgentPresetCollectionMutationLocalEffect(
   settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1836,7 +2500,7 @@ function applyAgentPresetFieldPatchLocalEffect(
         'destination',
         'failurePolicy',
       ])
-    : new Set(['name', 'description', 'enabled', 'maxConcurrency'])
+    : new Set(['name', 'description', 'moduleIntergration', 'finalOutputTemplate', 'enabled', 'maxConcurrency'])
   const fieldEntries = isPlainRecord(payload.fields) ? Object.entries(payload.fields) : []
   if (
     !Number.isInteger(payload.revision) ||
@@ -1857,7 +2521,12 @@ function applyAgentPresetFieldPatchLocalEffect(
       !isCanonicalJsonFieldState(field.attempted) ||
       !isCanonicalJsonFieldState(field.canonical) ||
       (isStepPatch && !field.canonical.present) ||
-      (!isStepPatch && !field.canonical.present && key !== 'description' && key !== 'maxConcurrency')
+      (!isStepPatch &&
+        !field.canonical.present &&
+        key !== 'description' &&
+        key !== 'moduleIntergration' &&
+        key !== 'finalOutputTemplate' &&
+        key !== 'maxConcurrency')
     ) {
       return false
     }
@@ -1913,7 +2582,6 @@ function applyAgentPresetFieldPatchLocalEffect(
   settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1981,7 +2649,6 @@ function markLegacyPresetCollectionApplied(revision: number): void {
   collectionsResourceState.statuses.botPresets = 'ready'
   delete collectionsResourceState.errors.botPresets
   advanceCollectionProjectionEpoch('botPresets')
-  markResourceDatabaseChanged()
 }
 
 function uniqueLegacyPresetRowsById(rows: readonly unknown[]): Map<string, Record<string, unknown>> | null {
@@ -2036,10 +2703,7 @@ export function applyCharactersResource(
   payload: ServerCharactersResourcePayload,
   options: { preserveResidentChatBodies?: boolean } = {},
 ): boolean {
-  if (isOlderRevision(payload.revision, charactersResourceState.listRevision)) return false
-  if (isOlderRevision(payload.revision, charactersResourceState.orderRevision)) return false
-  if (isOlderRevision(payload.revision, charactersResourceState.selectionRevision)) return false
-  if (Object.values(charactersResourceState.rowRevisions).some((revision) => revision > payload.revision)) return false
+  if (!canApplyCharactersResource(payload)) return false
 
   const preserveResidentChatBodies = options.preserveResidentChatBodies ?? true
   if (!preserveResidentChatBodies) resetCharacterBodyResourceRevisions()
@@ -2054,11 +2718,19 @@ export function applyCharactersResource(
     : null
   charactersResourceState.characters = payload.characters.map((candidate) => {
     const nextCharacter = cloneJsonValue(candidate)
+    const existing = existingById?.get(candidate.chaId)
+    if (isCharacterSummaryShell(nextCharacter)) {
+      const existingRevision = charactersResourceState.rowRevisions[candidate.chaId]
+      if (existing && !isCharacterSummaryShell(existing) && existingRevision === payload.revision) {
+        return cloneJsonValue(existing)
+      }
+      return nextCharacter
+    }
     const appliesLorebookBody =
       nextCharacter.globalLore !== undefined &&
       !hasNewerCharacterLorebookBodyResourceRevision(nextCharacter.chaId, payload.revision)
     if (appliesLorebookBody) appliedLorebookBodyIds.add(nextCharacter.chaId)
-    return preserveResidentCharacterChatBodies(nextCharacter, existingById?.get(candidate.chaId), payload.revision)
+    return preserveResidentCharacterChatBodies(nextCharacter, existing, payload.revision)
   })
   if (preserveResidentChatBodies) {
     markRemovedCharacterBodyProjections(previousCharacters, charactersResourceState.characters)
@@ -2093,8 +2765,15 @@ export function applyCharactersResource(
   if (!preserveResidentChatBodies) advanceAllCharacterLorebookBodyProjectionEpochs()
   advanceAllCharacterLorebookProjectionEpochs()
   reapplyRetainedCharacterProjections()
-  markResourceDatabaseChanged()
   return true
+}
+
+export function canApplyCharactersResource(payload: ServerCharactersResourcePayload): boolean {
+  if (payload.version !== SERVER_CHARACTER_SUMMARY_VERSION) return false
+  if (isOlderRevision(payload.revision, charactersResourceState.listRevision)) return false
+  if (isOlderRevision(payload.revision, charactersResourceState.orderRevision)) return false
+  if (isOlderRevision(payload.revision, charactersResourceState.selectionRevision)) return false
+  return !Object.values(charactersResourceState.rowRevisions).some((revision) => revision > payload.revision)
 }
 
 /**
@@ -2138,7 +2817,6 @@ export function applyCharacterCollectionMutationLocalEffect(
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
   charactersResourceState.status = 'ready'
   charactersResourceState.error = null
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -2148,8 +2826,9 @@ export function applyCharacterResource(payload: ServerCharacterResourcePayload):
   if (isOlderRevision(payload.revision, charactersResourceState.rowRevisions[characterId] ?? null)) return false
   if (isOlderRevision(payload.revision, charactersResourceState.listRevision)) return false
 
-  const index = charactersResourceState.characters.findIndex((candidate) => candidate?.chaId === characterId)
-  const previousCharacter = index >= 0 ? charactersResourceState.characters[index] : undefined
+  const index = uniqueCharacterOwnerIndex(characterId)
+  if (index < 0) return false
+  const previousCharacter = charactersResourceState.characters[index]
   const incomingCharacter = cloneJsonValue(payload.character)
   const appliesLorebookBody =
     incomingCharacter.globalLore !== undefined &&
@@ -2176,8 +2855,30 @@ export function applyCharacterResource(payload: ServerCharacterResourcePayload):
   advanceCharacterRowProjectionEpoch(characterId)
   advanceCharacterLorebookProjectionEpoch(characterId)
   reapplyRetainedCharacterProjections(characterId)
-  markResourceDatabaseChanged()
   return true
+}
+
+/** Return a character row only when its stable id identifies exactly one owner. */
+export function getCharacterResourceOwner(characterId: string): character | undefined {
+  const index = uniqueCharacterOwnerIndex(characterId)
+  return index >= 0 ? charactersResourceState.characters[index] : undefined
+}
+
+/** Notify owner consumers after an optimistic mutation of one ready character row. */
+export function markCharacterResourceOwnerChanged(characterId: string): boolean {
+  if (!getCharacterResourceOwner(characterId)) return false
+  advanceCharacterRowProjectionEpoch(characterId)
+  return true
+}
+
+function uniqueCharacterOwnerIndex(characterId: string): number {
+  let ownerIndex = -1
+  for (const [index, candidate] of charactersResourceState.characters.entries()) {
+    if (candidate?.chaId !== characterId) continue
+    if (ownerIndex >= 0) return -1
+    ownerIndex = index
+  }
+  return ownerIndex
 }
 
 export function applyCharacterOrderResource(payload: ServerCharacterOrderResourcePayload): boolean {
@@ -2187,7 +2888,6 @@ export function applyCharacterOrderResource(payload: ServerCharacterOrderResourc
   charactersResourceState.characterOrder = cloneJsonValue(payload.characterOrder)
   charactersResourceState.orderRevision = payload.revision
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -2202,7 +2902,6 @@ export function applyCharacterOrderLocalEffect(payload: ServerCharacterOrderLoca
 
   charactersResourceState.orderRevision = payload.revision
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -2229,7 +2928,6 @@ export function applyCharacterSelectionResource(payload: ServerCharacterSelectio
   charactersResourceState.rowStatuses[payload.characterId] = 'ready'
   delete charactersResourceState.rowErrors[payload.characterId]
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -2260,7 +2958,6 @@ export function applyChatGenerationSettingsLocalEffect(
   charactersResourceState.rowStatuses[payload.characterId] = 'ready'
   delete charactersResourceState.rowErrors[payload.characterId]
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -2284,7 +2981,6 @@ export function applyCharacterPatchLocalEffect(payload: ServerCharacterPatchLoca
   charactersResourceState.rowStatuses[payload.characterId] = 'ready'
   delete charactersResourceState.rowErrors[payload.characterId]
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -2305,7 +3001,6 @@ export function applyCharacterRowMutationLocalEffect(payload: ServerCharacterRow
   charactersResourceState.rowStatuses[payload.characterId] = 'ready'
   delete charactersResourceState.rowErrors[payload.characterId]
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -2327,7 +3022,6 @@ export function applyCharacterSelectionLocalEffect(payload: ServerCharacterSelec
   charactersResourceState.rowStatuses[payload.characterId] = 'ready'
   delete charactersResourceState.rowErrors[payload.characterId]
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -2348,14 +3042,15 @@ export function applyChatPatchLocalEffect(payload: ServerChatPatchLocalEffectPay
   charactersResourceState.rowStatuses[payload.characterId] = 'ready'
   delete charactersResourceState.rowErrors[payload.characterId]
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
-  markResourceDatabaseChanged()
   return true
 }
 
 export function resetServerResourceState(): void {
+  invalidateModuleRenderRevision()
   settingsResourceState.value = {}
   settingsResourceState.revision = null
   settingsResourceState.fullRevision = null
+  settingsResourceState.shellRevision = null
   settingsResourceState.pointerValueRevisions = {
     characterOrder: null,
     currentChar: null,
@@ -2363,6 +3058,11 @@ export function resetServerResourceState(): void {
   settingsResourceState.enabledModulesRevision = null
   settingsResourceState.loreBookPageRevision = null
   settingsResourceState.groupRevisions = {}
+  settingsResourceState.groupStatuses = {}
+  settingsResourceState.groupErrors = {}
+  settingsResourceState.standaloneRevisions = {}
+  settingsResourceState.standaloneStatuses = {}
+  settingsResourceState.standaloneErrors = {}
   settingsResourceState.status = 'idle'
   settingsResourceState.error = null
 
@@ -2397,7 +3097,6 @@ export function resetServerResourceState(): void {
   advanceAllChatBodyProjectionEpochs()
   advanceAllCharacterLorebookBodyProjectionEpochs()
   advanceAllCharacterLorebookProjectionEpochs()
-  markResourceDatabaseChanged()
 }
 
 /**
@@ -2405,8 +3104,10 @@ export function resetServerResourceState(): void {
  * the currently rendered database while its authoritative reads are in flight.
  */
 export function resetServerResourceRevisionFencesForDatabaseReplacement(): void {
+  invalidateModuleRenderRevision()
   settingsResourceState.revision = null
   settingsResourceState.fullRevision = null
+  settingsResourceState.shellRevision = null
   settingsResourceState.pointerValueRevisions = {
     characterOrder: null,
     currentChar: null,
@@ -2414,6 +3115,7 @@ export function resetServerResourceRevisionFencesForDatabaseReplacement(): void 
   settingsResourceState.enabledModulesRevision = null
   settingsResourceState.loreBookPageRevision = null
   settingsResourceState.groupRevisions = {}
+  settingsResourceState.standaloneRevisions = {}
 
   collectionsResourceState.revision = null
   collectionsResourceState.fullRevision = null
@@ -2435,10 +3137,10 @@ export function resetServerResourceRevisionFencesForDatabaseReplacement(): void 
   advanceAllChatBodyProjectionEpochs()
   advanceAllCharacterLorebookBodyProjectionEpochs()
   advanceAllCharacterLorebookProjectionEpochs()
-  markResourceDatabaseChanged()
 }
 
 export function replaceResourceDatabase(database: Database, revision?: number): void {
+  invalidateModuleRenderRevision()
   resetCharacterBodyResourceRevisions()
   const nextRevision = normalizeOptionalRevision(revision)
   const databaseRecord = cloneJsonValue(database) as unknown as Record<string, unknown>
@@ -2451,6 +3153,7 @@ export function replaceResourceDatabase(database: Database, revision?: number): 
   settingsResourceState.value = settings as ServerSettingsValues
   settingsResourceState.revision = nextRevision
   settingsResourceState.fullRevision = nextRevision
+  settingsResourceState.shellRevision = nextRevision
   settingsResourceState.pointerValueRevisions = {
     characterOrder: nextRevision,
     currentChar: nextRevision,
@@ -2458,6 +3161,17 @@ export function replaceResourceDatabase(database: Database, revision?: number): 
   settingsResourceState.enabledModulesRevision = null
   settingsResourceState.loreBookPageRevision = null
   settingsResourceState.groupRevisions = {}
+  settingsResourceState.groupStatuses = Object.fromEntries(SETTINGS_GROUPS.map((group) => [group, 'ready'])) as Partial<
+    Record<SettingsGroup, ServerResourceStatus>
+  >
+  settingsResourceState.groupErrors = {}
+  settingsResourceState.standaloneRevisions = Object.fromEntries(
+    SERVER_STANDALONE_SETTING_NAMES.map((setting) => [setting, nextRevision]),
+  ) as Partial<Record<ServerStandaloneSettingName, number>>
+  settingsResourceState.standaloneStatuses = Object.fromEntries(
+    SERVER_STANDALONE_SETTING_NAMES.map((setting) => [setting, 'ready']),
+  ) as Partial<Record<ServerStandaloneSettingName, ServerResourceStatus>>
+  settingsResourceState.standaloneErrors = {}
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
 
@@ -2516,7 +3230,6 @@ export function replaceResourceDatabase(database: Database, revision?: number): 
   advanceAllChatBodyProjectionEpochs()
   advanceAllCharacterLorebookBodyProjectionEpochs()
   advanceAllCharacterLorebookProjectionEpochs()
-  markResourceDatabaseChanged()
 }
 
 export function areServerDatabaseResourcesReady(): boolean {
@@ -2530,85 +3243,6 @@ export function areServerDatabaseResourcesReady(): boolean {
 export function composeResourceDatabaseSnapshot(): Database {
   return cloneJsonValue(composeResourceDatabaseRecord()) as unknown as Database
 }
-
-export function getResourceDatabase(options: { snapshot?: boolean } = {}): Database {
-  // A consumer that only retains the deprecated whole-database facade still
-  // tracks resource-backed writes without requiring a new proxy identity.
-  void resourceDatabaseFacadeEpoch
-  return options.snapshot ? composeResourceDatabaseSnapshot() : resourceDatabaseCompatibilityProxy
-}
-
-export function withResourceDatabaseWrite<T>(callback: (database: Database) => T): T {
-  const outermost = resourceDatabaseWriteDepth === 0
-  if (outermost) resourceDatabaseWriteChanged = false
-  resourceDatabaseWriteDepth += 1
-  let finished = false
-  const finish = () => {
-    if (finished) return
-    resourceDatabaseWriteDepth -= 1
-    if (resourceDatabaseWriteDepth === 0 && resourceDatabaseWriteChanged) {
-      resourceDatabaseFacadeEpoch += 1
-      resourceDatabaseWriteChanged = false
-    }
-    finished = true
-  }
-  try {
-    const result = callback(resourceDatabaseCompatibilityProxy)
-    if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
-      return Promise.resolve(result).finally(finish) as T
-    }
-    finish()
-    return result
-  } catch (error) {
-    finish()
-    throw error
-  }
-}
-
-export const resourceDatabaseCompatibilityProxy = new Proxy({} as Database, {
-  get(_target, property) {
-    if (property === Symbol.toStringTag) return 'ResourceDatabase'
-    if (property === 'toJSON') return composeResourceDatabaseSnapshot
-    if (typeof property !== 'string') return undefined
-    return guardResourceDatabaseValue(resourceDatabaseField(property))
-  },
-  has(_target, property) {
-    return typeof property === 'string' && resourceDatabaseKeys().includes(property)
-  },
-  ownKeys() {
-    return resourceDatabaseKeys()
-  },
-  getOwnPropertyDescriptor(_target, property) {
-    if (typeof property !== 'string' || !resourceDatabaseKeys().includes(property)) return undefined
-    return {
-      configurable: true,
-      enumerable: true,
-      value: guardResourceDatabaseValue(resourceDatabaseField(property)),
-      writable: true,
-    }
-  },
-  set(_target, property, value) {
-    assertResourceDatabaseWriteAllowed()
-    if (typeof property !== 'string') return false
-    setResourceDatabaseField(property, value)
-    markResourceDatabaseChanged()
-    return true
-  },
-  deleteProperty(_target, property) {
-    assertResourceDatabaseWriteAllowed()
-    if (typeof property !== 'string') return false
-    deleteResourceDatabaseField(property)
-    markResourceDatabaseChanged()
-    return true
-  },
-  defineProperty(_target, property, descriptor) {
-    assertResourceDatabaseWriteAllowed()
-    if (typeof property !== 'string' || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) return false
-    setResourceDatabaseField(property, descriptor.value)
-    markResourceDatabaseChanged()
-    return true
-  },
-})
 
 function composeResourceDatabaseRecord(): Record<string, unknown> {
   const record: Record<string, unknown> = {
@@ -2625,138 +3259,13 @@ function composeResourceDatabaseRecord(): Record<string, unknown> {
   return record
 }
 
-function resourceDatabaseField(property: string): unknown {
-  if (property === 'characters') return charactersResourceState.characters
-  if (property === 'characterOrder' || property === 'currentChar') {
-    if (shouldUseCharacterPointerResource(property)) {
-      return property === 'characterOrder'
-        ? charactersResourceState.characterOrder
-        : charactersResourceState.currentChar
-    }
-  }
-  if (isServerCollectionName(property)) {
-    return collectionsResourceState.values[property]
-  }
-  return (settingsResourceState.value as Record<string, unknown>)[property]
-}
-
-function resourceDatabaseKeys(): string[] {
-  const keys = new Set<string>([
-    ...Object.keys(settingsResourceState.value),
-    ...Object.keys(collectionsResourceState.values),
-    'characters',
-  ])
-  if (shouldUseCharacterPointerResource('characterOrder')) keys.add('characterOrder')
-  if (shouldUseCharacterPointerResource('currentChar')) keys.add('currentChar')
-  return Array.from(keys)
-}
-
-function setResourceDatabaseField(property: string, value: unknown): void {
-  if (property === 'characters') {
-    charactersResourceState.characters = value as character[]
-    charactersResourceState.status = 'ready'
-    advanceCharacterListProjectionEpoch()
-    return
-  }
-  if (isServerCollectionName(property)) {
-    collectionsResourceState.values[property] = value as never
-    collectionsResourceState.statuses[property] = 'ready'
-    return
-  }
-  ;(settingsResourceState.value as Record<string, unknown>)[property] = value
-  settingsResourceState.status = 'ready'
-  mirrorCharacterPointerField(property, value)
-  noteSettingsPointerValueWrite(property)
-}
-
-function deleteResourceDatabaseField(property: string): void {
-  if (property === 'characters') {
-    charactersResourceState.characters = []
-    charactersResourceState.rowRevisions = {}
-    charactersResourceState.rowStatuses = {}
-    charactersResourceState.rowErrors = {}
-    advanceCharacterListProjectionEpoch()
-    return
-  }
-  if (isServerCollectionName(property)) {
-    delete collectionsResourceState.values[property]
-    delete collectionsResourceState.revisions[property]
-    delete collectionsResourceState.statuses[property]
-    delete collectionsResourceState.errors[property]
-    return
-  }
-  delete (settingsResourceState.value as Record<string, unknown>)[property]
-  if (property === 'characterOrder') charactersResourceState.characterOrder = []
-  if (property === 'currentChar') charactersResourceState.currentChar = -1
-  noteSettingsPointerValueWrite(property)
-}
-
-function mirrorCharacterPointerField(property: string, value: unknown): void {
-  if (property === 'characterOrder' && Array.isArray(value)) {
-    charactersResourceState.characterOrder = value as Database['characterOrder']
-  }
-  if (property === 'currentChar' && Number.isInteger(value)) {
-    charactersResourceState.currentChar = value as number
-  }
-}
-
-function noteSettingsPointerValueWrite(property: string): void {
-  if (property !== 'characterOrder' && property !== 'currentChar') return
-  const targetedRevision =
-    property === 'characterOrder' ? charactersResourceState.orderRevision : charactersResourceState.selectionRevision
-  settingsResourceState.pointerValueRevisions[property] = Math.max(
-    settingsResourceState.pointerValueRevisions[property] ?? -1,
-    settingsResourceState.fullRevision ?? -1,
-    settingsResourceState.revision ?? -1,
-    charactersResourceState.listRevision ?? -1,
-    targetedRevision ?? -1,
+function isCharacterSummaryShell(value: unknown): boolean {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    (value as Record<string, unknown>)[SERVER_CHARACTER_SHELL_MARKER] === true
   )
-}
-
-function guardResourceDatabaseValue<T>(value: T): T {
-  if (!value || typeof value !== 'object') return value
-  const existing = guardedResourceValueMemo.get(value)
-  if (existing) return existing as T
-
-  const guarded = new Proxy(value as object, {
-    get(target, property, receiver) {
-      return guardResourceDatabaseValue(Reflect.get(target, property, receiver))
-    },
-    set(target, property, nextValue, receiver) {
-      assertResourceDatabaseWriteAllowed()
-      const applied = Reflect.set(target, property, nextValue, receiver)
-      if (applied) markResourceDatabaseChanged()
-      return applied
-    },
-    deleteProperty(target, property) {
-      assertResourceDatabaseWriteAllowed()
-      const applied = Reflect.deleteProperty(target, property)
-      if (applied) markResourceDatabaseChanged()
-      return applied
-    },
-    defineProperty(target, property, descriptor) {
-      assertResourceDatabaseWriteAllowed()
-      const applied = Reflect.defineProperty(target, property, descriptor)
-      if (applied) markResourceDatabaseChanged()
-      return applied
-    },
-  })
-  guardedResourceValueMemo.set(value, guarded)
-  return guarded as T
-}
-
-function assertResourceDatabaseWriteAllowed(): void {
-  if (resourceDatabaseWriteGuardEnabled && resourceDatabaseWriteDepth === 0) {
-    throw new TypeError('The resource database compatibility view is read-only outside withResourceDatabaseWrite')
-  }
-}
-
-function markResourceDatabaseChanged(): void {
-  if (resourceDatabaseWriteDepth > 0) {
-    resourceDatabaseWriteChanged = true
-    return
-  }
-  resourceDatabaseFacadeEpoch += 1
 }
 
 function preserveResidentCharacterChatBodies(
@@ -2799,7 +3308,7 @@ function preserveResidentCharacterChatBodies(
 }
 
 function applyRuntimeLanguage(value: unknown): void {
-  changeLanguage(typeof value === 'string' ? value : 'en')
+  void changeLanguage(typeof value === 'string' ? value : 'en')
 }
 
 function shouldUseCharacterPointerResource(property: 'characterOrder' | 'currentChar'): boolean {
@@ -3030,26 +3539,85 @@ function isUniquePresetCollection(value: readonly unknown[]): boolean {
   return true
 }
 
-function isCanonicalTranslatorPresetRecord(value: unknown): value is {
+type CanonicalTranslatorPresetRecord = {
   id: string
   name: string
   prompt: string
   maxResponse: number
-} {
-  if (!isPlainRecord(value)) return false
-  return (
-    isJsonValueEqual(Object.keys(value).sort(), ['id', 'maxResponse', 'name', 'prompt']) &&
-    nonEmptyString(value.id) &&
-    typeof value.name === 'string' &&
-    typeof value.prompt === 'string' &&
-    typeof value.maxResponse === 'number' &&
-    Number.isFinite(value.maxResponse)
-  )
+  steps?: TranslatorPresetStep[]
 }
 
-function isCanonicalTranslatorPresetCollection(
-  value: readonly unknown[],
-): value is Array<{ id: string; name: string; prompt: string; maxResponse: number }> {
+function isCanonicalTranslatorPresetSteps(value: unknown): value is TranslatorPresetStep[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > TRANSLATOR_PRESET_MAX_STEPS) return false
+
+  const stepIds = new Set<string>()
+  const outputKeys = new Set<string>()
+  for (const candidate of value) {
+    if (!isPlainRecord(candidate)) return false
+    const expectedKeys =
+      candidate.outputKey === undefined
+        ? ['enabled', 'id', 'maxResponse', 'model', 'name', 'prompt']
+        : ['enabled', 'id', 'maxResponse', 'model', 'name', 'outputKey', 'prompt']
+    if (
+      !isJsonValueEqual(Object.keys(candidate).sort(), expectedKeys) ||
+      !nonEmptyString(candidate.id) ||
+      stepIds.has(candidate.id) ||
+      !nonEmptyString(candidate.name) ||
+      typeof candidate.enabled !== 'boolean' ||
+      typeof candidate.prompt !== 'string' ||
+      typeof candidate.maxResponse !== 'number' ||
+      !Number.isFinite(candidate.maxResponse) ||
+      !isPlainRecord(candidate.model)
+    ) {
+      return false
+    }
+    stepIds.add(candidate.id)
+
+    const model = candidate.model
+    if (
+      (model.mode === 'inheritTranslate' && !isJsonValueEqual(Object.keys(model), ['mode'])) ||
+      (model.mode === 'modelProfile' &&
+        (!isJsonValueEqual(Object.keys(model).sort(), ['mode', 'profileId']) || !nonEmptyString(model.profileId))) ||
+      (model.mode !== 'inheritTranslate' && model.mode !== 'modelProfile')
+    ) {
+      return false
+    }
+
+    if (candidate.outputKey !== undefined) {
+      if (
+        typeof candidate.outputKey !== 'string' ||
+        !isValidTranslatorPresetOutputKey(candidate.outputKey) ||
+        outputKeys.has(candidate.outputKey)
+      ) {
+        return false
+      }
+      outputKeys.add(candidate.outputKey)
+    }
+  }
+  return true
+}
+
+function isCanonicalTranslatorPresetRecord(value: unknown): value is CanonicalTranslatorPresetRecord {
+  if (!isPlainRecord(value) || !isJsonValue(value)) return false
+  const keys = Object.keys(value).sort()
+  if (
+    (!isJsonValueEqual(keys, ['id', 'maxResponse', 'name', 'prompt']) &&
+      !isJsonValueEqual(keys, ['id', 'maxResponse', 'name', 'prompt', 'steps'])) ||
+    !nonEmptyString(value.id) ||
+    typeof value.name !== 'string' ||
+    typeof value.prompt !== 'string' ||
+    typeof value.maxResponse !== 'number' ||
+    !Number.isFinite(value.maxResponse)
+  ) {
+    return false
+  }
+  if (!Object.prototype.hasOwnProperty.call(value, 'steps')) return true
+  if (!isCanonicalTranslatorPresetSteps(value.steps)) return false
+
+  return value.prompt === value.steps[0].prompt && value.maxResponse === value.steps[0].maxResponse
+}
+
+function isCanonicalTranslatorPresetCollection(value: readonly unknown[]): value is CanonicalTranslatorPresetRecord[] {
   return value.every(isCanonicalTranslatorPresetRecord) && isUniquePresetCollection(value)
 }
 

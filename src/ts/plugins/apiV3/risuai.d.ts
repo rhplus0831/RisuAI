@@ -101,6 +101,25 @@
 // ============================================================================
 
 /**
+ * Inlay asset shape returned by `risuai.readInlay`.
+ * `data` is a base64 data URI for image, audio, and video assets.
+ */
+interface InlayAssetForPlugin {
+  /** Asset data string */
+  data: string
+  /** File extension without a leading dot */
+  ext: string
+  /** Original asset filename */
+  name: string
+  /** Asset category */
+  type: 'image' | 'video' | 'audio' | 'signature'
+  /** Pixel height for images/videos */
+  height?: number
+  /** Pixel width for images/videos */
+  width?: number
+}
+
+/**
  * MCP tool definition
  */
 interface MCPToolDef {
@@ -251,6 +270,22 @@ type ScriptMode = 'display' | 'output' | 'input' | 'process'
 type ReplacerType = 'beforeRequest' | 'afterRequest'
 
 /**
+ * Argument passed to chat lifecycle listeners
+ */
+type ChatOutputListenerArg = {
+  /** Current character */
+  char: any
+  /** Current chat */
+  chat: any
+  /** Index of the character in the database. Use with `setCharacterToIndex`. */
+  characterIndex: number
+  /** Index of the chat within the character. Use with `setChatToIndex`. */
+  chatIndex: number
+  /** Current index of the generated message in `chat.message`, or -1 if it is no longer present */
+  messageIndex: number
+}
+
+/**
  * Risuai Plugin definition
  */
 interface RisuPlugin {
@@ -264,8 +299,8 @@ interface RisuPlugin {
   arguments: { [key: string]: 'int' | 'string' | string[] }
   /** Actual argument values */
   realArg: { [key: string]: number | string }
-  /** API version */
-  version?: 1 | 2 | '2.1' | '3.0'
+  /** API version. Fastify accepts only Plugin API 3.0. */
+  version: '3.0'
   /** Custom links for plugin UI */
   customLink: {
     link: string
@@ -297,8 +332,15 @@ interface RisuModule {
   trigger?: any[]
   /** Module ID */
   id: string
+  /** Optional installation-local organizational folder ID */
+  folderId?: string
   /** Low level system access */
   lowLevelAccess?: boolean
+  /** Local-only model-profile selections for module-owned LLM and axLLM calls */
+  scriptModelOverrides?: {
+    llmProfileId?: string
+    axLlmProfileId?: string
+  }
   /** Hide icon in UI */
   hideIcon?: boolean
   /** Background embedding */
@@ -947,6 +989,11 @@ interface SafeMutationObserver {
    * @returns Promise that resolves when observer is set up
    */
   observe(element: SafeElement, options: MutationObserverInit): Promise<void>
+
+  /**
+   * Stops observing all target elements for changes
+   */
+  disconnect(): Promise<void>
 }
 
 // ============================================================================
@@ -1326,6 +1373,16 @@ interface RisuaiPluginAPI {
    */
   getCurrentChatIndex: () => Promise<number>
 
+  /**
+   * Gets detached raw lorebook entries for the current character, current
+   * chat, and currently active modules, in that order. In server-backed mode,
+   * the current character lorebook is hydrated before the snapshot is returned.
+   * This does not apply activation matching or token-budget filtering.
+   *
+   * @returns Raw current character, chat, and active-module lorebook entries
+   */
+  getCurrentLorebookEntries(): Promise<any[]>
+
   // ========== Storage APIs ==========
 
   /** Plugin-specific storage persisted by the host. */
@@ -1563,6 +1620,18 @@ interface RisuaiPluginAPI {
   ): Promise<UIPartResponse>
 
   /**
+   * Sets HTML content in a panel between the chat composer and transcript.
+   * Calling this again with the same ID replaces the plugin's panel in place.
+   * Pass `null` or an empty string to remove it. Panel HTML is sanitized, and
+   * all panels owned by the plugin are removed automatically on unload.
+   *
+   * @param content - Sanitized panel HTML, or null/empty to remove the panel
+   * @param options - Optional stable ID and additional section class names
+   * @returns The stable panel ID
+   */
+  setChatPanel(content: string | null, options?: { id?: string; className?: string }): Promise<UIPartResponse>
+
+  /**
    * Unregisters a UI part
    * @param id - UI part ID returned during registration
    */
@@ -1790,6 +1859,57 @@ interface RisuaiPluginAPI {
    */
   removeRisuReplacer(type: ReplacerType, func: Function): Promise<void>
 
+  // ========== Chat Listeners ==========
+
+  /**
+   * Adds a listener that fires after a model output has been processed and
+   * committed to the chat.
+   *
+   * The listener runs once per output event after streaming completes, after the
+   * existing Lua `output` trigger has finished, and after host-side output
+   * transformations such as inlay screen processing have been written to the chat.
+   * Listeners are awaited sequentially and receive the same event snapshot. A slow
+   * listener delays the remaining chat flow. To run background work without
+   * blocking, fire off an async function without awaiting it inside the listener.
+   *
+   * The listener receives plain snapshots of `char` and the committed chat,
+   * matching the convention of `getCharacterFromIndex` / `getChatFromIndex`.
+   * Mutations to those snapshots do not propagate back to the host. To persist
+   * changes from background work, use `characterIndex`, `chatIndex`, and
+   * `messageIndex` with APIs such as `setChatToIndex`. If you need to merge with
+   * changes saved by another listener, read the latest chat with `getChatFromIndex`
+   * before saving.
+   *
+   * The `characterIndex` and `chatIndex` are captured when the listener fires,
+   * so background work can locate the original chat even if the user navigates
+   * elsewhere. `messageIndex` is resolved against the provided chat snapshot and
+   * points to the model output message when it is still present. It may be -1 if a
+   * Lua output trigger or host-side output processing removed that message.
+   *
+   * Modes:
+   * - 'output': fires after an AI message is appended to or updated in the chat
+   *
+   * @param mode - Listener mode
+   * @param func - Listener function. Receives the current character, chat, and generated message index.
+   *
+   * @example
+   * ```typescript
+   * await risuai.addRisuChatListener('output', async ({ chat, messageIndex }) => {
+   *   const message = chat.message[messageIndex];
+   *   if (!message) return;
+   *   console.log('Model said:', message.data);
+   * });
+   * ```
+   */
+  addRisuChatListener(mode: 'output', func: (arg: ChatOutputListenerArg) => void | Promise<void>): Promise<void>
+
+  /**
+   * Removes a chat listener.
+   * @param mode - Listener mode
+   * @param func - Listener function to remove
+   */
+  removeRisuChatListener(mode: 'output', func: (arg: ChatOutputListenerArg) => void | Promise<void>): Promise<void>
+
   // ========== Body Interceptors ==========
 
   /**
@@ -1834,6 +1954,16 @@ interface RisuaiPluginAPI {
    * @returns Image data
    */
   readImage(path?: string): Promise<any>
+
+  /**
+   * Reads a user-attached inlay asset by the ID found in an
+   * `{{inlayed::<id>}}` message placeholder. In Fastify mode this resolves the
+   * ID through the authenticated inlay catalog and immutable asset endpoint.
+   *
+   * @param id - Inlay catalog asset ID or legacy alias
+   * @returns The inlay data and metadata, or null when no asset exists
+   */
+  readInlay(id: string): Promise<InlayAssetForPlugin | null>
 
   /**
    * Saves an asset

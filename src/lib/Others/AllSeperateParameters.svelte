@@ -1,15 +1,16 @@
 <script lang="ts">
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import Help from './Help.svelte'
   import { language } from 'src/lang'
   import SliderInput from '../UI/GUI/SliderInput.svelte'
+  import SegmentedControl from '../UI/GUI/SegmentedControl.svelte'
   import ClaudeThinkingSeparateParams from '../Setting/Pages/ClaudeThinkingSeparateParams.svelte'
   import type { SeparateParameters } from 'src/ts/storage/database.svelte'
   import { downloadFile } from 'src/ts/globalApi.svelte'
   import { FileDownIcon, FileUpIcon } from '@lucide/svelte'
   import { selectSingleFile } from 'src/ts/filePicker'
   import { getModelInfo } from 'src/ts/model/modellist'
-  import { normalizeModelRole, resolveModelForRole } from 'src/ts/model/modelRoles'
+  import { normalizeModelRole, resolveModelForRole } from '@risuai/shared-core/model-roles'
   import {
     parseSeperateParametersImport,
     type SeperateParametersImportOperation,
@@ -36,16 +37,64 @@
     guardedImport?: GuardedSeperateParametersImport
   } = $props()
 
-  let effectiveModel = $derived.by(() => {
-    if (!paramKey) return resolveModelForRole(getDatabase(), 'chatAux')
-    const role = normalizeModelRole(paramKey)
-    if (role) {
-      return resolveModelForRole(getDatabase(), role)
-    }
-    return paramKey
+  let modelCatalog = $derived({
+    customModels:
+      settingsResourceState.groupStatuses.providers === 'ready' ? settingsResourceState.value.customModels : undefined,
+    enableCustomFlags:
+      settingsResourceState.groupStatuses.advanced === 'ready' ? settingsResourceState.value.enableCustomFlags : false,
+    customFlags:
+      settingsResourceState.groupStatuses.advanced === 'ready' ? settingsResourceState.value.customFlags : undefined,
   })
-  let modelInfo = $derived(getModelInfo(effectiveModel))
-  let hasTemperature = $derived(modelInfo.parameters.includes('temperature'))
+  let effectiveModel = $derived.by(() => {
+    const role = normalizeModelRole(paramKey ?? 'chatAux')
+    if (!role) return paramKey ?? ''
+    if (settingsResourceState.groupStatuses.providers !== 'ready') return ''
+    if (role !== 'chatMain' && role !== 'chatAux' && settingsResourceState.groupStatuses.runtime !== 'ready') return ''
+    return resolveModelForRole(settingsResourceState.value, role)
+  })
+  let modelInfo = $derived(
+    effectiveModel &&
+      (!effectiveModel.startsWith('xcustom:::') || settingsResourceState.groupStatuses.providers === 'ready')
+      ? getModelInfo(effectiveModel, modelCatalog)
+      : undefined,
+  )
+  let modelParameters = $derived(modelInfo?.parameters ?? [])
+  let hasTemperature = $derived(modelParameters.includes('temperature'))
+  let hasReasoningEffort = $derived(
+    modelParameters.includes('reasoning_effort') ||
+      modelParameters.includes('reasoning_effort_min_medium') ||
+      modelParameters.includes('reasoning_effort_none') ||
+      modelParameters.includes('reasoning_effort_xhigh'),
+  )
+  let hasVerbosity = $derived(modelParameters.includes('verbosity'))
+  const verbosityOptions = [
+    { value: 0, label: 'Low' },
+    { value: 1, label: 'Medium' },
+    { value: 2, label: 'High' },
+  ]
+  let reasoningEffortOptions = $derived([
+    ...(!modelParameters.includes('reasoning_effort_min_medium')
+      ? [
+          {
+            value: -1,
+            label: modelParameters.includes('reasoning_effort_none') ? 'None' : 'Minimal',
+          },
+        ]
+      : []),
+    ...(!modelParameters.includes('reasoning_effort_min_medium') ? [{ value: 0, label: 'Low' }] : []),
+    { value: 1, label: 'Medium' },
+    { value: 2, label: 'High' },
+    ...(modelParameters.includes('reasoning_effort_xhigh') ? [{ value: 3, label: 'XHigh' }] : []),
+  ])
+
+  $effect(() => {
+    if (!modelParameters.includes('reasoning_effort_xhigh') && value.reasoning_effort === 3) {
+      value.reasoning_effort = 2
+    }
+    if (modelParameters.includes('reasoning_effort_min_medium') && (value.reasoning_effort ?? 1) < 1) {
+      value.reasoning_effort = 1
+    }
+  })
 
   async function importParametersJson(): Promise<void> {
     const target = guardedImport?.captureTarget() ?? null
@@ -151,7 +200,8 @@
   min={0}
   max={200}
   marginBottom
-  step={0.01}
+  step={1}
+  multiple={0.01}
   fixed={2}
   bind:value={value.frequency_penalty}
   disableable
@@ -161,22 +211,21 @@
   min={0}
   max={200}
   marginBottom
-  step={0.01}
+  step={1}
+  multiple={0.01}
   fixed={2}
   bind:value={value.presence_penalty}
   disableable
   ariaLabel={language.modelProfiles.runtimeFields.presencePenalty} />
-<ClaudeThinkingSeparateParams bind:value {paramKey} />
-<span class="text-textcolor">{language.modelProfiles.runtimeFields.verbosity}</span>
-<SliderInput
-  min={0}
-  max={2}
-  marginBottom
-  step={1}
-  fixed={0}
-  bind:value={value.verbosity}
-  disableable
-  ariaLabel={language.modelProfiles.runtimeFields.verbosity} />
+<ClaudeThinkingSeparateParams bind:value {modelInfo} />
+{#if hasReasoningEffort}
+  <span class="text-textcolor">{language.modelProfiles.runtimeFields.reasoningEffort}</span>
+  <SegmentedControl bind:value={value.reasoning_effort} options={reasoningEffortOptions} />
+{/if}
+{#if hasVerbosity}
+  <span class="text-textcolor">{language.modelProfiles.runtimeFields.verbosity}</span>
+  <SegmentedControl bind:value={value.verbosity} options={verbosityOptions} />
+{/if}
 
 {#if withImportExport}
   <div class="flex">

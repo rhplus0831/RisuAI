@@ -15,7 +15,7 @@ vi.mock(
       getCurrentCharacter: () => ({}),
       getDatabase: () => testDatabaseState.db,
       reapplyPendingPresetProjections: () => {},
-    }) as typeof import('../../../storage/database.svelte'),
+    }) as unknown as typeof import('../../../storage/database.svelte'),
 )
 
 vi.mock(import('../../../globalApi.svelte'), () => ({
@@ -42,9 +42,12 @@ beforeEach(() => {
   testDatabaseState.db = {
     characters: [
       {
+        chaId: 'loop-character',
         chatPage: 0,
         chats: [
           {
+            id: 'loop-chat',
+            message: [],
             scriptstate: {},
           },
         ],
@@ -53,6 +56,7 @@ beforeEach(() => {
     ],
     globalChatVariables: {},
     templateDefaultVariables: '',
+    currentChar: 0,
   }
   resetChatVariables()
 })

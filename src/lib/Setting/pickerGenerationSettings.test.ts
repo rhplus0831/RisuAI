@@ -1,6 +1,8 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IDBFactory } from 'fake-indexeddb'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 const presetSpies = vi.hoisted(() => ({
   changeToPreset: vi.fn(),
@@ -38,6 +40,16 @@ const alertSpies = vi.hoisted(() => ({
   alertConfirm: vi.fn(),
   alertError: vi.fn(),
   alertNormal: vi.fn(),
+}))
+
+const sortableSpies = vi.hoisted(() => ({
+  create: vi.fn(),
+  destroy: vi.fn(),
+  option: vi.fn(),
+}))
+
+vi.mock('sortablejs', () => ({
+  default: { create: sortableSpies.create },
 }))
 
 vi.mock('../../ts/storage/database.svelte', async (importActual) => {
@@ -84,8 +96,8 @@ vi.mock('../../ts/alert', async (importActual) => {
 import Botpreset from './botpreset.svelte'
 import ListedPersona from './listedPersona.svelte'
 import { clearCachedServerCommandRevision, type ServerCommandResult } from 'src/ts/server/commands'
-import { setResourceWriteGuardEnabled } from 'src/ts/server/resourceWriteGuard.svelte'
-import { flushRegisteredPendingBridgePatches } from 'src/ts/server/pendingBridgeFlushRegistry'
+
+import { flushRegisteredPendingOwnerMutations } from 'src/ts/server/pendingOwnerMutationRegistry'
 import {
   clearPendingMutationOutbox,
   listPendingMutations,
@@ -94,13 +106,17 @@ import {
 } from 'src/ts/server/pendingMutationOutbox'
 import { selectedCharID, type GenerationSettingsPickerMode } from 'src/ts/stores.svelte'
 import {
-  getDatabase,
   reapplyPendingPresetProjections,
   resetPendingPresetMutationsForTests,
   setDatabaseLite,
 } from 'src/ts/storage/database.svelte'
 import { language } from 'src/lang'
-import { applyCollectionsResource, type ServerCollectionName } from 'src/ts/server/resourceState.svelte'
+import {
+  applyCollectionsResource,
+  collectionsResourceState,
+  type ServerCollectionName,
+} from 'src/ts/server/resourceState.svelte'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -115,6 +131,7 @@ interface CapturedFetch {
 interface StubCommandFetchOptions {
   generationSettingsResponse?: Promise<Response>
   modelPatchResponse?: Promise<Response>
+  promptCreateResponse?: Promise<Response>
   promptPatchResponse?: Promise<Response>
   promptDeleteResponse?: Promise<Response>
   modelSelectResponse?: Promise<Response>
@@ -198,6 +215,21 @@ function stubCommandFetch(options: StubCommandFetchOptions = {}): CapturedFetch[
           ownerProjectionApplied: false,
         })
       }
+      if (init.method === 'POST' && url === '/api/v1/commands/prompt-presets') {
+        if (options.promptCreateResponse) return options.promptCreateResponse
+        const promptPresetId = body?.preset?.id
+        return jsonResponse({
+          status: 'ok',
+          revision: 201,
+          event: {
+            type: 'promptPreset.created',
+            revision: 201,
+            resource: 'promptPreset',
+            id: promptPresetId,
+          },
+          promptPresetId,
+        })
+      }
       if (init.method === 'DELETE' && url.endsWith('/prompt-presets/preset-b') && options.promptDeleteResponse) {
         return options.promptDeleteResponse
       }
@@ -275,6 +307,7 @@ async function waitForCommandFetches(calls: CapturedFetch[]): Promise<void> {
 function seedDb(): void {
   selectedCharID.set(0)
   setDatabaseLite({
+    currentChar: 0,
     modelPresetsId: 0,
     modelPresets: [
       {
@@ -326,6 +359,11 @@ function seedDb(): void {
       },
     ],
     selectedPersona: 0,
+    selectedPersonaId: 'persona-a',
+    username: 'Persona A',
+    personaPrompt: 'Persona A prompt',
+    userIcon: '',
+    userNote: 'A note',
     personas: [
       {
         id: 'persona-a',
@@ -396,19 +434,22 @@ function pickerSelectionControl(kind: 'model' | 'prompt' | 'persona', id: string
   return row.querySelector<HTMLElement>('[data-risu-picker-select]') ?? row
 }
 
-function createPresetDataTransfer(): DataTransfer {
-  const values = new Map<string, string>()
-  return {
-    getData: vi.fn((type: string) => values.get(type) ?? ''),
-    setData: vi.fn((type: string, value: string) => values.set(type, value)),
-  } as unknown as DataTransfer
+function promptPresetSortableOptions(): Record<string, any> {
+  const options = sortableSpies.create.mock.calls.at(-1)?.[1]
+  if (!options) throw new Error('Prompt preset Sortable options not found')
+  return options
 }
 
-function dispatchPresetDragEvent(element: Element, type: 'dragstart' | 'drop', dataTransfer: DataTransfer): Event {
-  const event = new Event(type, { bubbles: true, cancelable: true })
-  Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })
-  element.dispatchEvent(event)
-  return event
+function finishPromptPresetSort(presetId: string, oldIndex: number, newIndex: number): void {
+  const list = elementBySelector<HTMLElement>('[data-risu-preset-sortable-list]', 'prompt preset sortable list')
+  const item = pickerRow('prompt', presetId)
+  list.append(item)
+  promptPresetSortableOptions().onEnd({
+    from: list,
+    item,
+    oldDraggableIndex: oldIndex,
+    newDraggableIndex: newIndex,
+  })
 }
 
 function expectPickerRowSelection(kind: 'model' | 'prompt' | 'persona', id: string, selected: boolean): void {
@@ -437,7 +478,7 @@ function mountPersonaPicker(mode: GenerationSettingsPickerMode, close = vi.fn())
 
 function globalPresetSelectionControl(kind: 'model' | 'prompt'): HTMLElement {
   if (kind === 'prompt') return pickerSelectionControl('prompt', 'preset-b')
-  const rows = target.querySelectorAll<HTMLElement>('tbody tr')
+  const rows = target.querySelectorAll<HTMLElement>('[data-model-preset-select]')
   expect(rows).toHaveLength(2)
   return rows[1]
 }
@@ -478,8 +519,11 @@ beforeEach(() => {
   alertSpies.alertConfirm.mockReset()
   presetSpies.reorderModelPresets.mockResolvedValue({ status: 'accepted' })
   presetSpies.reorderPromptPresets.mockResolvedValue({ status: 'accepted' })
+  sortableSpies.create.mockReturnValue({
+    destroy: sortableSpies.destroy,
+    option: sortableSpies.option,
+  })
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
   seedDb()
 })
 
@@ -490,11 +534,34 @@ afterEach(() => {
   }
   target.remove()
   document.body.innerHTML = ''
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
 describe('generation settings picker mode', () => {
+  it('reads preset owners directly and uses only stable row identities', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/lib/Setting/botpreset.svelte'), 'utf8')
+
+    expect(source).toContain('collectionsResourceState')
+    expect(source).toContain('settingsResourceState')
+    expect(source).toContain('livePresetIndex')
+    expect(source).not.toContain('getResourceDatabase')
+    expect(source).not.toContain('getDatabase(')
+    expect(source).not.toContain('`index:${')
+  })
+
+  it('fails closed when a preset collection has duplicate owner ids', async () => {
+    collectionsResourceState.values.promptPresets = [
+      { id: 'duplicate-owner', name: 'First duplicate' },
+      { id: 'duplicate-owner', name: 'Second duplicate' },
+    ]
+
+    mountPresetPicker('global')
+    await tick()
+
+    expect(target.querySelectorAll('[data-risu-generation-picker-row]')).toHaveLength(0)
+    expect(target.querySelector('[data-risu-preset-empty-state]')).toBeTruthy()
+  })
+
   it('gives the preset picker a blocking focus contract and owned close interactions', async () => {
     const opener = createModalOpener('Open presets')
     const close = mountPresetPicker('global')
@@ -521,7 +588,7 @@ describe('generation settings picker mode', () => {
     const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
     last!.dispatchEvent(tab)
     expect(tab.defaultPrevented).toBe(true)
-    expect(document.activeElement).toBe(initialFocus)
+    expect(document.activeElement).toBe(focusable[0])
 
     dialog.click()
     expect(close).not.toHaveBeenCalled()
@@ -600,6 +667,104 @@ describe('generation settings picker mode', () => {
     expect(close).not.toHaveBeenCalled()
   })
 
+  it('keeps archived prompt presets out of the active view and shows only them in the archive view', async () => {
+    getDatabase().promptPresets[1].archived = true
+    mountPresetPicker('global')
+
+    expect(pickerRow('prompt', 'preset-a')).toBeTruthy()
+    expect(target.querySelector('[data-risu-row-id="preset-b"]')).toBeNull()
+
+    const archiveView = elementBySelector<HTMLButtonElement>(
+      '[data-risu-preset-archive-view]',
+      'prompt preset archive view button',
+    )
+    expect(archiveView.getAttribute('aria-label')).toBe(language.showArchivedPromptPresets)
+    expect(archiveView.getAttribute('aria-pressed')).toBe('false')
+    archiveView.click()
+    await tick()
+
+    expect(target.querySelector('[data-risu-row-id="preset-a"]')).toBeNull()
+    expect(pickerRow('prompt', 'preset-b').dataset.risuRowIndex).toBe('1')
+    expect(archiveView.getAttribute('aria-label')).toBe(language.showActivePromptPresets)
+    expect(archiveView.getAttribute('aria-pressed')).toBe('true')
+    expect(target.querySelector(`[aria-label="${language.add}: ${language.promptPresets}"]`)).toBeNull()
+    expect(target.querySelector(`[aria-label="${language.import}: ${language.promptPresets}"]`)).toBeNull()
+  })
+
+  it('archives a prompt preset without selecting it and persists the archive field', async () => {
+    const calls = stubCommandFetch()
+    const close = mountPresetPicker('global')
+
+    const archiveAction = pickerRow('prompt', 'preset-a').querySelector<HTMLButtonElement>(
+      '[data-risu-preset-archive-action]',
+    )
+    expect(archiveAction?.getAttribute('aria-label')).toBe(`${language.archivePromptPreset}: Preset A`)
+    archiveAction!.click()
+    await tick()
+
+    expect(getDatabase().promptPresets[0].archived).toBe(true)
+    expect(getDatabase().promptPresetsId).toBe(0)
+    expect(target.querySelector('[data-risu-row-id="preset-a"]')).toBeNull()
+    expect(close).not.toHaveBeenCalled()
+
+    flushRegisteredPendingOwnerMutations({})
+    await waitForCommandFetches(calls)
+    expect(calls).toContainEqual(
+      expect.objectContaining({
+        url: '/api/v1/commands/prompt-presets/preset-a',
+        method: 'PATCH',
+        body: expect.objectContaining({ patch: { archived: true } }),
+      }),
+    )
+  })
+
+  it('restores an archived prompt preset to the active view', async () => {
+    getDatabase().promptPresets[1].archived = true
+    const calls = stubCommandFetch()
+    mountPresetPicker('global')
+
+    elementBySelector<HTMLButtonElement>('[data-risu-preset-archive-view]', 'prompt preset archive view button').click()
+    await tick()
+    const restoreAction = pickerRow('prompt', 'preset-b').querySelector<HTMLButtonElement>(
+      '[data-risu-preset-archive-action]',
+    )
+    expect(restoreAction?.getAttribute('aria-label')).toBe(`${language.restorePromptPreset}: Preset B`)
+    restoreAction!.click()
+    await tick()
+
+    expect(getDatabase().promptPresets[1].archived).toBe(false)
+    expect(target.querySelector('[data-risu-row-id="preset-b"]')).toBeNull()
+
+    flushRegisteredPendingOwnerMutations({})
+    await waitForCommandFetches(calls)
+    expect(calls).toContainEqual(
+      expect.objectContaining({
+        url: '/api/v1/commands/prompt-presets/preset-b',
+        method: 'PATCH',
+        body: expect.objectContaining({ patch: { archived: false } }),
+      }),
+    )
+
+    elementBySelector<HTMLButtonElement>('[data-risu-preset-archive-view]', 'prompt preset active view button').click()
+    await tick()
+    expect(pickerRow('prompt', 'preset-b')).toBeTruthy()
+  })
+
+  it('allows an archived prompt preset to be selected from the archive view', async () => {
+    getDatabase().promptPresets[1].archived = true
+    const calls = stubCommandFetch()
+    const close = mountPresetPicker('global')
+
+    elementBySelector<HTMLButtonElement>('[data-risu-preset-archive-view]', 'prompt preset archive view button').click()
+    await tick()
+    pickerSelectionControl('prompt', 'preset-b').click()
+    await waitForCommandFetches(calls)
+
+    expect(getDatabase().promptPresetsId).toBe(1)
+    expect(getDatabase().promptPresets[1].archived).toBe(true)
+    expect(close).toHaveBeenCalledOnce()
+  })
+
   it('projects and exports a quick prompt preset rename before lifecycle keepalive flushes it', async () => {
     const calls = stubCommandFetch()
     let exportedName: string | undefined
@@ -624,7 +789,7 @@ describe('generation settings picker mode', () => {
     await tick()
     expect(exportedName).toBe('Renamed before pagehide')
 
-    flushRegisteredPendingBridgePatches({ keepalive: true })
+    flushRegisteredPendingOwnerMutations({ keepalive: true })
 
     await waitForFetchCount(calls, 2)
     const patchCalls = calls.filter(
@@ -657,7 +822,7 @@ describe('generation settings picker mode', () => {
     await tick()
     expect(input!.value).toBe('Renamed Model Preset')
 
-    flushRegisteredPendingBridgePatches({})
+    flushRegisteredPendingOwnerMutations({})
     await waitForFetchCount(calls, 2)
     expect(calls).toContainEqual(
       expect.objectContaining({
@@ -717,7 +882,7 @@ describe('generation settings picker mode', () => {
         await tick()
         expect(input!.value).toBe(rejectedName)
 
-        flushRegisteredPendingBridgePatches({})
+        flushRegisteredPendingOwnerMutations({})
         await waitForFetchCount(calls, 2)
         response.resolve(jsonResponse({ error: 'preset no longer exists' }, 404))
 
@@ -759,13 +924,10 @@ describe('generation settings picker mode', () => {
       expect(input).toBeTruthy()
       input!.value = 'Queued prompt name'
       input!.dispatchEvent(new Event('input', { bubbles: true }))
-      flushRegisteredPendingBridgePatches({})
+      flushRegisteredPendingOwnerMutations({})
 
-      await vi.waitFor(() => {
-        expect(target.querySelector('[data-risu-preset-rename-status]')?.textContent).toContain(
-          language.presetRenameQueued,
-        )
-      })
+      await vi.waitFor(() => expect(alertSpies.alertNormal).toHaveBeenCalledWith(language.presetRenameQueued))
+      expect(target.querySelector('[data-risu-preset-rename-status]')).toBeNull()
       expect(input!.value).toBe('Queued prompt name')
       expect(getDatabase().promptPresets[0].name).toBe('Queued prompt name')
       expect(alertSpies.alertNormal).toHaveBeenCalledWith(language.presetRenameQueued)
@@ -815,12 +977,12 @@ describe('generation settings picker mode', () => {
         ])
       })
 
-      flushRegisteredPendingBridgePatches({})
+      flushRegisteredPendingOwnerMutations({})
       await vi.waitFor(async () => {
         expect(await listPendingMutations()).toEqual([])
       })
     } finally {
-      flushRegisteredPendingBridgePatches({})
+      flushRegisteredPendingOwnerMutations({})
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
     }
@@ -835,7 +997,9 @@ describe('generation settings picker mode', () => {
     expect(presetRow.getAttribute('tabindex')).toBeNull()
     expect(select).toBeInstanceOf(HTMLButtonElement)
     expect(presetRow.querySelector('button button, button input, button [role="button"]')).toBeNull()
+    expect(presetRow.querySelector(`[aria-label="${language.duplicate}: Preset A"]`)).toBeTruthy()
     expect(presetRow.querySelector(`[aria-label="${language.export}: Preset A"]`)).toBeTruthy()
+    expect(presetRow.querySelector(`[aria-label="${language.archivePromptPreset}: Preset A"]`)).toBeTruthy()
     expect(presetRow.querySelector(`[aria-label="${language.remove}: Preset A"]`)).toBeTruthy()
     expect(target.querySelector(`[aria-label="${language.add}: ${language.promptPresets}"]`)).toBeTruthy()
     expect(target.querySelector(`[aria-label="${language.import}: ${language.promptPresets}"]`)).toBeTruthy()
@@ -848,7 +1012,57 @@ describe('generation settings picker mode', () => {
     expect(edit.getAttribute('aria-pressed')).toBe('true')
   })
 
-  it('moves the dragged preset by stable id after the live list reorders', async () => {
+  it('duplicates a prompt preset with a fresh id and its hydrated prompt template', async () => {
+    const source = getDatabase().promptPresets[0]
+    source.promptTemplate = [
+      {
+        id: 'prompt-row-a',
+        type: 'plain',
+        type2: 'normal',
+        name: 'Source row',
+        text: 'Keep this prompt body',
+        role: 'system',
+      },
+    ]
+    const sourceSnapshot = safeStructuredClone(source)
+    const calls = stubCommandFetch()
+    const close = mountPresetPicker('global')
+
+    const duplicateAction = pickerRow('prompt', 'preset-a').querySelector<HTMLButtonElement>(
+      '[data-risu-preset-duplicate-action]',
+    )
+    expect(duplicateAction?.getAttribute('aria-label')).toBe(`${language.duplicate}: Preset A`)
+    duplicateAction!.click()
+    await tick()
+    await waitForCommandFetches(calls)
+
+    expect(getDatabase().promptPresets).toHaveLength(3)
+    const duplicate = getDatabase().promptPresets[2]
+    expect(duplicate.id).toEqual(expect.any(String))
+    expect(duplicate.id).not.toBe(sourceSnapshot.id)
+    expect(duplicate.name).toBe(language.presetCopyName('Preset A'))
+    expect({ ...duplicate, id: sourceSnapshot.id, name: sourceSnapshot.name }).toEqual(sourceSnapshot)
+    expect(duplicate.promptTemplate).not.toBe(source.promptTemplate)
+    expect(getDatabase().promptPresetsId).toBe(0)
+    expect(close).not.toHaveBeenCalled()
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/prompt-presets',
+      method: 'POST',
+      body: {
+        baseRevision: 200,
+        preset: duplicate,
+      },
+    })
+  })
+
+  it('does not expose prompt archive controls in the model preset picker', () => {
+    mountPresetPicker('active-chat-generation-settings', vi.fn(), 'model')
+
+    expect(target.querySelector('[data-risu-preset-archive-view]')).toBeNull()
+    expect(target.querySelector('[data-risu-preset-archive-action]')).toBeNull()
+  })
+
+  it('uses immediate fallback sorting on every pointer type and moves by stable id', async () => {
     const presetC = {
       ...getDatabase().promptPresets[0],
       id: 'preset-c',
@@ -856,17 +1070,72 @@ describe('generation settings picker mode', () => {
     }
     getDatabase().promptPresets.push(presetC)
     mountPresetPicker('global')
+    await tick()
 
-    const dataTransfer = createPresetDataTransfer()
-    dispatchPresetDragEvent(pickerRow('prompt', 'preset-b'), 'dragstart', dataTransfer)
-    expect(dataTransfer.setData).toHaveBeenCalledWith('presetId', 'preset-b')
+    const options = promptPresetSortableOptions()
+    expect(options).toMatchObject({
+      delay: 0,
+      delayOnTouchOnly: false,
+      forceFallback: true,
+      draggable: '[data-risu-preset-sortable-item]',
+      handle: '[data-risu-preset-drag-handle]',
+    })
+    expect(pickerRow('prompt', 'preset-b').hasAttribute('draggable')).toBe(false)
+    expect(pickerRow('prompt', 'preset-b').querySelector('[data-risu-preset-drag-handle]')).toBeTruthy()
 
     const [presetA, presetB] = getDatabase().promptPresets
     getDatabase().promptPresets = [presetB, presetC, presetA]
     await tick()
 
-    const dropTargets = pickerRoot('prompt', 'global').querySelectorAll<HTMLElement>('[role="listitem"]')
-    dispatchPresetDragEvent(dropTargets.item(dropTargets.length - 1), 'drop', dataTransfer)
+    finishPromptPresetSort('preset-b', 0, 2)
+
+    expect(presetSpies.reorderPromptPresets).toHaveBeenCalledOnce()
+    expect(presetSpies.reorderPromptPresets).toHaveBeenCalledWith(0, 3)
+    expect(pickerRow('prompt', 'preset-b').previousElementSibling?.getAttribute('data-risu-preset-sort-anchor')).toBe(
+      'preset-b',
+    )
+  })
+
+  it('leaves external file drops for the app-level importer', () => {
+    mountPresetPicker('global')
+    const targetRow = pickerRow('prompt', 'preset-a')
+    const dragOver = new Event('dragover', { bubbles: true, cancelable: true })
+    const drop = new Event('drop', { bubbles: true, cancelable: true })
+    targetRow.dispatchEvent(dragOver)
+    targetRow.dispatchEvent(drop)
+
+    expect(dragOver.defaultPrevented).toBe(false)
+    expect(drop.defaultPrevented).toBe(false)
+    expect(presetSpies.reorderPromptPresets).not.toHaveBeenCalled()
+  })
+
+  it('sorts a preset to the start of the list', async () => {
+    const presetC = {
+      ...getDatabase().promptPresets[0],
+      id: 'preset-c',
+      name: 'Preset C',
+    }
+    getDatabase().promptPresets.push(presetC)
+    mountPresetPicker('global')
+    await tick()
+
+    finishPromptPresetSort('preset-c', 2, 0)
+
+    expect(presetSpies.reorderPromptPresets).toHaveBeenCalledOnce()
+    expect(presetSpies.reorderPromptPresets).toHaveBeenCalledWith(2, 0)
+  })
+
+  it('sorts a preset to the end of the list', async () => {
+    const presetC = {
+      ...getDatabase().promptPresets[0],
+      id: 'preset-c',
+      name: 'Preset C',
+    }
+    getDatabase().promptPresets.push(presetC)
+    mountPresetPicker('global')
+    await tick()
+
+    finishPromptPresetSort('preset-a', 0, 2)
 
     expect(presetSpies.reorderPromptPresets).toHaveBeenCalledOnce()
     expect(presetSpies.reorderPromptPresets).toHaveBeenCalledWith(0, 3)
@@ -881,14 +1150,18 @@ describe('generation settings picker mode', () => {
     getDatabase().promptPresets.push(presetC)
     mountPresetPicker('global')
 
-    const dataTransfer = createPresetDataTransfer()
-    dispatchPresetDragEvent(pickerRow('prompt', 'preset-b'), 'dragstart', dataTransfer)
+    const vanishedRow = pickerRow('prompt', 'preset-b')
+    const list = elementBySelector<HTMLElement>('[data-risu-preset-sortable-list]', 'prompt preset sortable list')
 
     getDatabase().promptPresets = getDatabase().promptPresets.filter((preset) => preset.id !== 'preset-b')
     await tick()
 
-    const dropTargets = pickerRoot('prompt', 'global').querySelectorAll<HTMLElement>('[role="listitem"]')
-    dispatchPresetDragEvent(dropTargets.item(dropTargets.length - 1), 'drop', dataTransfer)
+    promptPresetSortableOptions().onEnd({
+      from: list,
+      item: vanishedRow,
+      oldDraggableIndex: 1,
+      newDraggableIndex: 2,
+    })
 
     expect(presetSpies.reorderPromptPresets).not.toHaveBeenCalled()
   })
@@ -902,11 +1175,9 @@ describe('generation settings picker mode', () => {
     getDatabase().promptPresets.push(presetC)
     presetSpies.reorderPromptPresets.mockResolvedValueOnce({ status: 'failed' })
     mountPresetPicker('global')
+    await tick()
 
-    const dataTransfer = createPresetDataTransfer()
-    dispatchPresetDragEvent(pickerRow('prompt', 'preset-a'), 'dragstart', dataTransfer)
-    const dropTargets = pickerRoot('prompt', 'global').querySelectorAll<HTMLElement>('[role="listitem"]')
-    dispatchPresetDragEvent(dropTargets.item(dropTargets.length - 1), 'drop', dataTransfer)
+    finishPromptPresetSort('preset-a', 0, 2)
     await settleModalFocus()
 
     expect(target.querySelector('[data-risu-preset-mutation-status]')?.textContent).toContain(
@@ -948,6 +1219,55 @@ describe('generation settings picker mode', () => {
       baseRevision: 200,
       baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
       patch: { promptPresetId: 'preset-a' },
+    })
+  })
+
+  it('auto-applies a prompt recommended model preset when the chat has no manual model selection', async () => {
+    getDatabase().promptPresets[0].recommendedModelPresetId = 'model-preset-b'
+    const calls = stubCommandFetch()
+    const close = mountPresetPicker('active-chat-generation-settings')
+
+    pickerSelectionControl('prompt', 'preset-a').click()
+    await tick()
+    await waitForCommandFetches(calls)
+
+    expect(close).toHaveBeenCalledOnce()
+    expect(getDatabase().characters[0].chats[0].generationSettings).toMatchObject({
+      promptPresetId: 'preset-a',
+      modelPresetId: 'model-preset-b',
+      modelPresetSelectionSource: 'prompt-recommendation',
+    })
+    expect(calls[1].body).toEqual({
+      baseRevision: 200,
+      baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      patch: {
+        modelPresetId: 'model-preset-b',
+        modelPresetSelectionSource: 'prompt-recommendation',
+        promptPresetId: 'preset-a',
+      },
+    })
+  })
+
+  it('marks a model preset chosen from the active-chat picker as manual', async () => {
+    const calls = stubCommandFetch()
+    const close = mountPresetPicker('active-chat-generation-settings', vi.fn(), 'model')
+
+    pickerSelectionControl('model', 'model-preset-b').click()
+    await tick()
+    await waitForCommandFetches(calls)
+
+    expect(close).toHaveBeenCalledOnce()
+    expect(getDatabase().characters[0].chats[0].generationSettings).toMatchObject({
+      modelPresetId: 'model-preset-b',
+      modelPresetSelectionSource: 'manual',
+    })
+    expect(calls[1].body).toEqual({
+      baseRevision: 200,
+      baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      patch: {
+        modelPresetId: 'model-preset-b',
+        modelPresetSelectionSource: 'manual',
+      },
     })
   })
 
@@ -1012,9 +1332,7 @@ describe('generation settings picker mode', () => {
       await waitForFetchCount(calls, 2)
 
       expect(close).not.toHaveBeenCalled()
-      expect(target.querySelector('[data-risu-preset-selection-status]')?.textContent).toContain(
-        language.presetSelectionSaving,
-      )
+      expect(target.querySelector('[data-risu-preset-selection-status]')).toBeNull()
 
       response.resolve(presetSelectionSuccess(kind))
       await vi.waitFor(() => expect(close).toHaveBeenCalledOnce())
@@ -1073,9 +1391,9 @@ describe('generation settings picker mode', () => {
         expectPickerRowSelection('prompt', 'preset-a', true)
         expectPickerRowSelection('prompt', 'preset-b', false)
       } else {
-        const rows = target.querySelectorAll<HTMLElement>('tbody tr')
-        expect(rows[0].classList.contains('bg-selected')).toBe(true)
-        expect(rows[1].classList.contains('bg-selected')).toBe(false)
+        const rows = target.querySelectorAll<HTMLElement>('[data-model-preset-select]')
+        expect(rows[0].getAttribute('aria-pressed')).toBe('true')
+        expect(rows[1].getAttribute('aria-pressed')).toBe('false')
       }
     })
   })

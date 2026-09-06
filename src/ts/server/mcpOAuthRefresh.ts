@@ -1,6 +1,6 @@
 import { MASKED_PROVIDER_SECRET } from '../providerSecretMask'
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
-import type { McpOAuthRefreshRequest, McpOAuthRefreshSuccess } from './mcpOAuthRefreshProtocol'
+import type { McpOAuthRefreshRequest, McpOAuthRefreshSuccess } from '@risuai/protocol/mcp-oauth-refresh'
 
 const MCP_OAUTH_REFRESH_ENDPOINT = '/api/v1/mcp/oauth/refresh'
 const MCP_OAUTH_REFRESH_MAX_IDENTITY_LENGTH = 8 * 1024

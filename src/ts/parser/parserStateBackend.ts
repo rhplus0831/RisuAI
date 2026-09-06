@@ -16,8 +16,9 @@ import type { Database } from '../storage/database.svelte'
  * browser tokenizer warm-up). Returning `0` on the server is fine
  * because server-side prompt assembly never sets `tokenizeAccurate`.
  *
- * The browser registers `getDatabase()` / `get(selectedCharID)` at
- * `chatVar.svelte`'s module init (since that file already pulls both).
+ * The browser registers a characters-only resource projection and
+ * `get(selectedCharID)` at `chatVar.svelte`'s module init. That preserves the
+ * tokenizer fallback without exposing the aggregate resource database.
  */
 
 export interface ParserStateBackend {

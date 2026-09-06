@@ -1,47 +1,56 @@
-import { get } from 'svelte/store'
-import { SvelteSet } from 'svelte/reactivity'
-import { selectedCharID } from '../stores.svelte'
+import { SvelteMap, SvelteSet } from 'svelte/reactivity'
+import type { ActiveChatTarget } from '../chatCommands'
 import {
-  getDatabase,
   hydrateServerCharacterLorebook,
   hydrateServerChatMessages,
   isServerChatMessagePlaceholder,
   type Message,
   type MessageTranslation,
-  withTrustedResourceWrite,
+  type Chat,
+  type character,
 } from '../storage/database.svelte'
 import { getRerollBuffer, getRerollId, seedRerollBufferFromAlternates } from '../process/rerollNavigation.svelte'
 import {
   isCharacterLorebookHydrated,
   isCharacterLorebookMutationReady,
   markCharacterLorebookHydrated,
-} from './lorebookBridge.svelte'
+  recordCanonicalCharacterLorebookScopes,
+} from './lorebookOwner.svelte'
 import { peekCachedServerCommandRevision } from './commands'
 import {
   fetchServerBulkCharacterLorebooks,
   fetchServerBulkChatMessages,
   fetchServerCharacterLorebook,
   fetchServerChatMessages,
+  fetchServerGenerationChatMessages,
 } from './hydrationReads'
 import { canUseServerResourceReads } from './resourceReads'
 import { beginHydrationRequest, recordBulkHydration, recordHydrationStaleDrop } from './protocolDiagnostics'
-import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT, normalizeChatDisplayTailCount } from '../chatDisplayTailCount'
+import { DEFAULT_CHAT_LOAD_INITIAL_PAGES, getInitialChatLoadPages } from '@risuai/shared-core/chat-load-pages'
 import { setChatStructureHydrationHooks } from './chatStructureHydrationHooks'
 import {
   captureCharacterLorebookBodyProjectionEpoch,
+  captureChatBodyProjectionEpoch,
   hasCharacterLorebookBodyProjectionEpochChanged,
+  hasChatBodyProjectionEpochChanged,
+  hasNewerChatBodyResourceRevision,
+  isChatBodyResourceLoaded,
   markCharacterLorebookBodyResourceRevision,
   markCharacterLorebookProjectionApplied,
   markChatBodyProjectionApplied,
   markChatBodyResourceRevision,
 } from './resourceState.svelte'
+import { charactersResourceState, getCharacterResourceOwner, settingsResourceState } from './resourceState.svelte'
 import { reapplyRetainedChatBodyProjections } from './chatRetainedProjection'
 import { acknowledgeHydratedGenerationPersistences } from '../process/generationPersistenceState'
+import { transcriptHasReplyForAcceptedSend } from '../process/acceptedSendRecoveryState'
+import { reconcileGenerationOperationTranscriptHydration } from './generationOperations'
+import { registerChatHydrationRuntime } from '../process/generationRuntimeBridge'
 
-export const BULK_HYDRATION_CONCURRENCY = 4
-export const ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW = DEFAULT_CHAT_DISPLAY_TAIL_COUNT
+export const BULK_HYDRATION_BATCH_SIZE = 32
+export const ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW = DEFAULT_CHAT_LOAD_INITIAL_PAGES
 
-// The bootstrap ships chat *stubs* (empty message[]). This bridge hydrates a
+// The bootstrap ships chat *stubs* (empty message[]). This owner hydrates a
 // chat's messages when it is opened and re-hydrates the open chat after a
 // resource apply re-stubs it. Bulk readers that need every chat call
 // `ensureAllChatsHydrated`.
@@ -60,7 +69,7 @@ const attemptedChatIds = new SvelteSet<string>()
 // hydrated chats. The chat screen uses this to offer an explicit retry instead
 // of silently revealing a greeting over missing history.
 const failedChatIds = new SvelteSet<string>()
-const inFlight = new Map<string, Promise<void>>()
+const inFlight = new Map<string, Promise<boolean>>()
 let chatHydrationGeneration = 0
 
 interface ChatHydrationFreshnessToken {
@@ -74,6 +83,10 @@ interface ChatHydrationFreshnessToken {
 // hydration request that started before them, even when the projected payload
 // happens to be byte-identical to the old local state.
 const chatProjectionEpochs = new Map<string, number>()
+// Explicit transcript owner projections. The legacy character/chat graph is
+// retained as a compatibility mirror, but consumers can read this map without
+// scanning it once a chat has entered the hydration owner lifecycle.
+const chatMessageOwnerProjections = new SvelteMap<string, Message[]>()
 
 // Local message edits are not routed through one single mutation primitive, so
 // each request also snapshots the chat content it is about to hydrate. Whenever
@@ -83,6 +96,11 @@ const chatProjectionEpochs = new Map<string, number>()
 // all. Both therefore make the older response stale without treating ordinary
 // concurrent range hydration as a local edit.
 const pendingChatHydrationFreshness = new Map<string, Set<ChatHydrationFreshnessToken>>()
+
+interface HydrationChatOwner {
+  character: character
+  chat: Chat
+}
 
 // Character ids whose `globalLore` this client has hydrated this session (only
 // when the EXPERIMENTAL `enableLorebookStubs` setting is on).
@@ -112,22 +130,123 @@ function finishCharacterLorebookHydrationState(characterId: string, generation: 
   }
 }
 
-function activeChatId(): string | undefined {
-  const selId = get(selectedCharID)
-  if (selId < 0) return undefined
-  const character = getDatabase().characters?.[selId]
+function characterRowsForHydration(): readonly character[] {
+  return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
+}
+
+function uniqueCharacterForHydration(characterId: string): character | undefined {
+  return characterId && charactersResourceState.status === 'ready' ? getCharacterResourceOwner(characterId) : undefined
+}
+
+function uniqueChatForHydration(chatId: string): HydrationChatOwner | undefined {
+  if (!chatId) return undefined
+  let owner: HydrationChatOwner | undefined
+  const characters = characterRowsForHydration()
+  const characterCounts = new Map<string, number>()
+  for (const character of characters) {
+    if (character?.chaId) characterCounts.set(character.chaId, (characterCounts.get(character.chaId) ?? 0) + 1)
+  }
+  for (const character of characters) {
+    if (!character?.chaId || characterCounts.get(character.chaId) !== 1) continue
+    for (const chat of character.chats ?? []) {
+      if (chat.id !== chatId) continue
+      if (owner) return undefined
+      owner = { character, chat }
+    }
+  }
+  return owner
+}
+
+function activeCharacterForHydration(): character | undefined {
+  if (charactersResourceState.status !== 'ready') return undefined
+  const selectedIndex = charactersResourceState.currentChar
+  if (selectedIndex < 0) return undefined
+  const candidate = characterRowsForHydration()[selectedIndex]
+  return candidate?.chaId ? uniqueCharacterForHydration(candidate.chaId) : undefined
+}
+
+function activeChatForHydration(): HydrationChatOwner | undefined {
+  const character = activeCharacterForHydration()
   if (!character) return undefined
   const chat = character.chats?.[character.chatPage ?? 0]
-  return chat?.id
+  if (!chat?.id) return undefined
+  const owner = uniqueChatForHydration(chat.id)
+  return owner?.character === character ? owner : undefined
+}
+
+function activeChatId(): string | undefined {
+  return activeChatForHydration()?.chat.id
 }
 
 function activeChatMessageArray(): Message[] | undefined {
-  const selId = get(selectedCharID)
-  if (selId < 0) return undefined
-  const character = getDatabase().characters?.[selId]
-  if (!character) return undefined
-  const chat = character.chats?.[character.chatPage ?? 0]
-  return chat?.message
+  return activeChatForHydration()?.chat.message
+}
+
+function chatMessageArray(chatId: string): Message[] | undefined {
+  const owner = uniqueChatForHydration(chatId)
+  return owner?.chat.message
+}
+
+export interface ChatMessageOwnerState {
+  chatId: string
+  messages: Message[]
+  projectionEpoch: number
+  resourceLoaded: boolean
+  hydrationPending: boolean
+  hydrationFailed: boolean
+}
+
+/**
+ * Read-only owner boundary for transcript consumers. The returned message
+ * array is the live projection updated by full, ranged, suffix, optimistic,
+ * and generation persistence effects; callers must use the epoch to reject
+ * work captured before a newer projection.
+ */
+export function getChatMessageOwnerState(chatId: string): ChatMessageOwnerState | undefined {
+  if (!chatId) return undefined
+  const messages = chatMessageOwnerProjections.get(chatId) ?? chatMessageArray(chatId)
+  if (!messages) return undefined
+  return {
+    chatId,
+    messages,
+    projectionEpoch: captureChatBodyProjectionEpoch(chatId),
+    resourceLoaded: isChatBodyResourceLoaded(chatId),
+    hydrationPending: isChatMessageHydrationPending(chatId, messages.length),
+    hydrationFailed: hasChatMessageHydrationFailed(chatId, messages.length),
+  }
+}
+
+function syncChatMessageOwnerProjection(chatId: string): void {
+  const legacyMessages = chatMessageArray(chatId)
+  if (!legacyMessages) return
+  const ownerMessages = chatMessageOwnerProjections.get(chatId)
+  if (!ownerMessages) {
+    // The owner array has stable identity so generation/optimistic callers can
+    // retain it across projections. Make that stable array reactive: later
+    // in-place splices must invalidate transcript consumers as well as update
+    // callers that already hold the owner reference.
+    const reactiveOwnerMessages = $state(cloneOwnerMessages(legacyMessages))
+    chatMessageOwnerProjections.set(chatId, reactiveOwnerMessages)
+    return
+  }
+  ownerMessages.splice(0, ownerMessages.length, ...cloneOwnerMessages(legacyMessages))
+}
+
+function cloneOwnerMessages(messages: readonly Message[]): Message[] {
+  try {
+    return structuredClone(messages) as Message[]
+  } catch {
+    return JSON.parse(JSON.stringify(messages)) as Message[]
+  }
+}
+
+function rerollTargetForChatId(chatId: string): ActiveChatTarget | null {
+  const owner = uniqueChatForHydration(chatId)
+  if (!owner?.character.chaId) return null
+  const selectedCharID = characterRowsForHydration().indexOf(owner.character)
+  const chatPage = owner.character.chats?.indexOf(owner.chat) ?? -1
+  if (selectedCharID < 0 || chatPage < 0) return null
+  return { selectedCharID, chatPage, characterId: owner.character.chaId, chatId }
 }
 
 function snapshotJson(value: unknown): string | null {
@@ -142,31 +261,36 @@ function snapshotJson(value: unknown): string | null {
 }
 
 function chatStateSnapshot(chatId: string): string | null {
-  for (const character of getDatabase().characters ?? []) {
-    const chat = character.chats?.find((candidate) => candidate.id === chatId)
-    if (!chat) continue
-    return snapshotJson({
-      message: chat.message ?? [],
-      hasHypaV3Data: Object.prototype.hasOwnProperty.call(chat, 'hypaV3Data'),
-      hypaV3Data: chat.hypaV3Data,
-    })
-  }
-  return 'missing-chat'
+  const chat = uniqueChatForHydration(chatId)?.chat
+  return chat
+    ? snapshotJson({
+        message: chat.message ?? [],
+        hasHypaV3Data: Object.prototype.hasOwnProperty.call(chat, 'hypaV3Data'),
+        hypaV3Data: chat.hypaV3Data,
+      })
+    : 'missing-chat'
 }
 
-function rerollStateSnapshot(): string | null {
-  return snapshotJson({ buffer: getRerollBuffer(), id: getRerollId() })
+function acknowledgeHydratedChatGenerationState(chatId: string, fallbackMessages: readonly Message[]): void {
+  acknowledgeHydratedGenerationPersistences(chatId, fallbackMessages)
+  const residentMessages = uniqueChatForHydration(chatId)?.chat.message
+  reconcileGenerationOperationTranscriptHydration(chatId, residentMessages ?? fallbackMessages)
+}
+
+function rerollStateSnapshot(chatId: string): string | null {
+  const target = rerollTargetForChatId(chatId)
+  return snapshotJson({ buffer: getRerollBuffer(target), id: getRerollId(target) })
 }
 
 function beginChatHydrationFreshness(
   chatId: string,
   options: { trackRerollState: boolean },
 ): ChatHydrationFreshnessToken {
-  const trackRerollState = options.trackRerollState && activeChatId() === chatId
+  const trackRerollState = options.trackRerollState
   const token: ChatHydrationFreshnessToken = {
     projectionEpoch: chatProjectionEpochs.get(chatId) ?? 0,
     expectedChatState: chatStateSnapshot(chatId),
-    expectedRerollState: trackRerollState ? rerollStateSnapshot() : null,
+    expectedRerollState: trackRerollState ? rerollStateSnapshot(chatId) : null,
     trackRerollState,
   }
   const pending = pendingChatHydrationFreshness.get(chatId) ?? new Set<ChatHydrationFreshnessToken>()
@@ -190,10 +314,10 @@ function chatHydrationStaleReason(chatId: string, token: ChatHydrationFreshnessT
   if (token.expectedChatState === null || currentChatState === null || currentChatState !== token.expectedChatState) {
     return 'chat-state-changed'
   }
-  // Reroll candidates are process-local rather than part of database resources. Protect
-  // them separately only while this response would actually seed the open chat.
-  if (token.trackRerollState && activeChatId() === chatId) {
-    const currentRerollState = rerollStateSnapshot()
+  // Reroll candidates are process-local rather than part of database resources.
+  // Protect the target chat's entry separately whenever this response can seed it.
+  if (token.trackRerollState) {
+    const currentRerollState = rerollStateSnapshot(chatId)
     if (
       token.expectedRerollState === null ||
       currentRerollState === null ||
@@ -209,12 +333,11 @@ function refreshPendingFreshnessAfterHydration(chatId: string, completedToken: C
   const pending = pendingChatHydrationFreshness.get(chatId)
   if (!pending || [...pending].every((token) => token === completedToken)) return
   const expectedChatState = chatStateSnapshot(chatId)
-  const isActive = activeChatId() === chatId
-  const expectedRerollState = isActive ? rerollStateSnapshot() : null
+  const expectedRerollState = rerollStateSnapshot(chatId)
   for (const token of pending) {
     if (token === completedToken) continue
     token.expectedChatState = expectedChatState
-    if (token.trackRerollState && isActive) {
+    if (token.trackRerollState) {
       token.expectedRerollState = expectedRerollState
     }
   }
@@ -258,11 +381,16 @@ interface ChatHydrationRequest {
   force?: boolean
   range?: ChatHydrationRangeRequest
   seedReroll?: boolean
+  signal?: AbortSignal | null
 }
 
 interface BulkHydrationOptions {
   strict?: boolean
   force?: boolean
+}
+
+interface ChatMessagesHydrationOptions extends BulkHydrationOptions {
+  signal?: AbortSignal | null
 }
 
 function chatHydrationRequestKey(chatId: string, request: ChatHydrationRequest): string {
@@ -306,11 +434,35 @@ function unloadedRangesForTail(
   return ranges
 }
 
-async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): Promise<void> {
-  if (!canUseServerResourceReads()) return
+function rangedHydrationOverlapsResidentMessages(
+  chatId: string,
+  range: { start: number; total: number },
+  returnedCount: number,
+): boolean {
+  // A newer disjoint range may have advanced the chat-level resource revision
+  // while this request was in flight. Filling its remaining placeholders is
+  // safe; replacing any resident row would let the older response win a race.
+  const messages = uniqueChatForHydration(chatId)?.chat.message
+  if (
+    !messages ||
+    messages.length !== range.total ||
+    !Number.isInteger(range.start) ||
+    range.start < 0 ||
+    range.start + returnedCount > range.total
+  ) {
+    return true
+  }
+  return messages
+    .slice(range.start, range.start + returnedCount)
+    .some((message) => !isServerChatMessagePlaceholder(message))
+}
+
+async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): Promise<boolean> {
+  if (!canUseServerResourceReads()) return false
+  if (charactersResourceState.status === 'ready' && !uniqueChatForHydration(chatId)) return false
   const force = request.force ?? false
   const wantsFullHydration = !request.range
-  if (!force && hydratedChatIds.has(chatId)) return
+  if (!force && hydratedChatIds.has(chatId)) return true
   const requestKey = chatHydrationRequestKey(chatId, request)
   const currentRequest = inFlight.get(requestKey)
   if (currentRequest) return currentRequest
@@ -327,72 +479,97 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
     trackRerollState: request.seedReroll !== false,
   })
   let shouldMarkAttempted = true
-  let requestPromise: Promise<void>
-  requestPromise = (async () => {
+  let requestPromise: Promise<boolean>
+  requestPromise = (async (): Promise<boolean> => {
     try {
       const endRequest = beginHydrationRequest('chat')
-      const result = await fetchServerChatMessages(chatId, request.range ?? {}).finally(endRequest)
+      const result = await fetchServerChatMessages(chatId, {
+        ...(request.range ?? {}),
+        ...(request.signal ? { signal: request.signal } : {}),
+      }).finally(endRequest)
+      if (request.signal?.aborted) {
+        shouldMarkAttempted = false
+        return false
+      }
       if (generation !== chatHydrationGeneration) {
         shouldMarkAttempted = false
         recordHydrationStaleDrop('chat', 'generation-reset')
-        return
+        return false
       }
       if (result.status !== 'ok') {
         failedChatIds.add(chatId)
         hydrationWarning(`chat ${chatId}`, resultError(result, 'server projection unavailable'))
-        return
+        return false
       }
       if (result.chatId !== chatId) {
         failedChatIds.add(chatId)
         hydrationWarning(`chat ${chatId}`, `response was for chat ${result.chatId}`)
-        return
+        return false
       }
       if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
         shouldMarkAttempted = false
         recordHydrationStaleDrop('chat', 'older-than-applied-revision')
-        return
+        return false
       }
       const staleReason = chatHydrationStaleReason(chatId, freshness)
       if (staleReason) {
         shouldMarkAttempted = false
         recordHydrationStaleDrop('chat', staleReason)
-        return
+        return false
       }
       if (request.range && !force && hydratedChatIds.has(chatId)) {
-        return
+        return true
       }
 
       const range =
         typeof result.messageStart === 'number' && typeof result.messageTotal === 'number'
           ? { start: result.messageStart, total: result.messageTotal }
           : undefined
-      const applied = hydrateServerChatMessages(chatId, result.message, result.hypaV3Data, range)
+      const hasNewerResourceRevision = hasNewerChatBodyResourceRevision(chatId, result.revision)
+      if (
+        hasNewerResourceRevision &&
+        (!range || rangedHydrationOverlapsResidentMessages(chatId, range, result.message.length))
+      ) {
+        shouldMarkAttempted = false
+        recordHydrationStaleDrop('chat', 'newer-overlapping-range')
+        return false
+      }
+      const applied = hydrateServerChatMessages(chatId, result.message, result.hypaV3Data, range, {
+        hypaV3DataIncluded: !hasNewerResourceRevision,
+      })
       if (!applied) {
         failedChatIds.add(chatId)
         hydrationWarning(`chat ${chatId}`, 'response could not be applied')
-        return
+        return false
       }
       markChatBodyResourceRevision(chatId, result.revision)
       markChatBodyProjectionApplied(chatId)
       reapplyRetainedChatBodyProjections(chatId)
-      acknowledgeHydratedGenerationPersistences(chatId, result.message as Message[])
+      syncChatMessageOwnerProjection(chatId)
+      acknowledgeHydratedChatGenerationState(chatId, result.message as Message[])
       if (wantsFullHydration || !range || isFullRange(range.start, range.total, result.message.length)) {
         hydratedChatIds.add(chatId)
       }
-      // Only the open chat's tail drives the swipe buffer; seed it from this
-      // chat's persisted reroll candidates so rerolls survive a reload.
-      if (request.seedReroll !== false && activeChatId() === chatId) {
-        seedRerollBufferFromAlternates(result.message, result.alternates)
+      // Tail/full hydration owns this chat's durable reroll candidates even if
+      // the user navigates before the response settles.
+      if (request.seedReroll !== false && !hasNewerResourceRevision) {
+        seedRerollBufferFromAlternates(result.message, result.alternates, rerollTargetForChatId(chatId))
       }
       refreshPendingFreshnessAfterHydration(chatId, freshness)
+      return true
     } catch (error) {
+      if (request.signal?.aborted) {
+        shouldMarkAttempted = false
+        return false
+      }
       if (generation !== chatHydrationGeneration) {
         shouldMarkAttempted = false
         recordHydrationStaleDrop('chat', 'generation-reset')
-        return
+        return false
       }
       failedChatIds.add(chatId)
       hydrationWarning(`chat ${chatId}`, error instanceof Error ? error.message : String(error))
+      return false
     } finally {
       // Failed requests settle the loading state, but stale responses do not:
       // after an optimistic edit rolls back, the still-stubbed chat must remain
@@ -412,63 +589,67 @@ async function hydrateChatsBulk(chatIds: readonly string[], options: BulkHydrati
   if (!canUseServerResourceReads() || chatIds.length === 0) return
 
   const generation = chatHydrationGeneration
-  const baselineRevision = peekCachedServerCommandRevision()
   const freshnessByChat = new Map(
-    chatIds.map((chatId) => [chatId, beginChatHydrationFreshness(chatId, { trackRerollState: false })]),
+    chatIds.map((chatId) => [chatId, beginChatHydrationFreshness(chatId, { trackRerollState: true })]),
   )
   try {
-    const endRequest = beginHydrationRequest('chat')
-    const result = await fetchServerBulkChatMessages(chatIds).finally(endRequest)
-    if (result.status !== 'ok') {
-      const message = resultError(result, 'server projection unavailable')
-      hydrationWarning('bulk chat', message)
-      if (options.strict) throw new Error(`Bulk chat hydration failed: ${message}`)
-      return
-    }
-    if (generation !== chatHydrationGeneration) {
-      recordHydrationStaleDrop('chat', 'generation-reset')
-      if (options.strict) throw new Error('Bulk chat hydration result was stale after a reset')
-      return
-    }
-    if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
-      recordHydrationStaleDrop('chat', 'older-than-applied-revision')
-      if (options.strict) throw new Error('Bulk chat hydration result was older than local state')
-      return
-    }
+    for (const batch of bulkHydrationBatches(chatIds)) {
+      const baselineRevision = peekCachedServerCommandRevision()
+      const endRequest = beginHydrationRequest('chat')
+      const result = await fetchServerBulkChatMessages(batch).finally(endRequest)
+      if (result.status !== 'ok') {
+        const message = resultError(result, 'server projection unavailable')
+        hydrationWarning('bulk chat', message)
+        if (options.strict) throw new Error(`Bulk chat hydration failed: ${message}`)
+        continue
+      }
+      if (generation !== chatHydrationGeneration) {
+        recordHydrationStaleDrop('chat', 'generation-reset')
+        if (options.strict) throw new Error('Bulk chat hydration result was stale after a reset')
+        return
+      }
+      if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
+        recordHydrationStaleDrop('chat', 'older-than-applied-revision')
+        if (options.strict) throw new Error('Bulk chat hydration result was older than local state')
+        continue
+      }
 
-    const missing = new Set(result.missing)
-    const missingIds: string[] = []
-    for (const chatId of chatIds) {
-      if (missing.has(chatId)) {
-        missingIds.push(chatId)
-        continue
+      const missing = new Set(result.missing)
+      const missingIds: string[] = []
+      for (const chatId of batch) {
+        if (missing.has(chatId)) {
+          missingIds.push(chatId)
+          continue
+        }
+        const hydration = result.chats.find((chat) => chat.chatId === chatId)
+        if (!hydration) {
+          missingIds.push(chatId)
+          continue
+        }
+        const freshness = freshnessByChat.get(chatId)
+        const staleReason = freshness ? chatHydrationStaleReason(chatId, freshness) : 'missing-freshness-token'
+        if (staleReason) {
+          recordHydrationStaleDrop('chat', staleReason)
+          missingIds.push(chatId)
+          continue
+        }
+        const applied = hydrateServerChatMessages(chatId, hydration.message, hydration.hypaV3Data)
+        if (!applied) {
+          missingIds.push(chatId)
+          continue
+        }
+        markChatBodyResourceRevision(chatId, result.revision)
+        markChatBodyProjectionApplied(chatId)
+        reapplyRetainedChatBodyProjections(chatId)
+        syncChatMessageOwnerProjection(chatId)
+        acknowledgeHydratedChatGenerationState(chatId, hydration.message as Message[])
+        hydratedChatIds.add(chatId)
+        seedRerollBufferFromAlternates(hydration.message, hydration.alternates, rerollTargetForChatId(chatId))
+        refreshPendingFreshnessAfterHydration(chatId, freshness)
       }
-      const hydration = result.chats.find((chat) => chat.chatId === chatId)
-      if (!hydration) {
-        missingIds.push(chatId)
-        continue
+      if (options.strict && missingIds.length > 0) {
+        throw new Error(`Bulk chat hydration did not return messages for: ${missingIds.join(', ')}`)
       }
-      const freshness = freshnessByChat.get(chatId)
-      const staleReason = freshness ? chatHydrationStaleReason(chatId, freshness) : 'missing-freshness-token'
-      if (staleReason) {
-        recordHydrationStaleDrop('chat', staleReason)
-        missingIds.push(chatId)
-        continue
-      }
-      const applied = hydrateServerChatMessages(chatId, hydration.message, hydration.hypaV3Data)
-      if (!applied) {
-        missingIds.push(chatId)
-        continue
-      }
-      markChatBodyResourceRevision(chatId, result.revision)
-      markChatBodyProjectionApplied(chatId)
-      reapplyRetainedChatBodyProjections(chatId)
-      acknowledgeHydratedGenerationPersistences(chatId, hydration.message as Message[])
-      hydratedChatIds.add(chatId)
-      refreshPendingFreshnessAfterHydration(chatId, freshness)
-    }
-    if (options.strict && missingIds.length > 0) {
-      throw new Error(`Bulk chat hydration did not return messages for: ${missingIds.join(', ')}`)
     }
   } finally {
     for (const [chatId, freshness] of freshnessByChat) {
@@ -486,13 +667,14 @@ function hydrationWarning(scope: string, message: string): void {
 }
 
 /** Hydrate the currently-open chat's messages (no-op if already hydrated). */
-export async function hydrateActiveChat(options: { force?: boolean; loadPages?: number } = {}): Promise<void> {
-  await hydrateActiveChatWindow(
-    options.loadPages ?? normalizeChatDisplayTailCount(getDatabase().chatDisplayTailCount),
-    {
-      force: options.force,
-    },
-  )
+export async function hydrateActiveChat(options: { force?: boolean; loadPages?: number } = {}): Promise<boolean> {
+  const displaySettings =
+    settingsResourceState.status !== 'error' && settingsResourceState.groupStatuses.display === 'ready'
+      ? settingsResourceState.value
+      : {}
+  return hydrateActiveChatWindow(options.loadPages ?? getInitialChatLoadPages(displaySettings), {
+    force: options.force,
+  })
 }
 
 /**
@@ -503,21 +685,31 @@ export async function hydrateActiveChat(options: { force?: boolean; loadPages?: 
 export async function hydrateActiveChatWindow(loadPages: number, options: { force?: boolean } = {}): Promise<boolean> {
   const chatId = activeChatId()
   if (!chatId) return false
+  const hydrated = await hydrateChatMessageWindow(chatId, loadPages, options)
+  return activeChatId() === chatId && hydrated
+}
+
+/** Ensure a specific route target's visible transcript window is resident before selection changes. */
+export async function hydrateChatMessageWindow(
+  chatId: string,
+  loadPages: number,
+  options: { force?: boolean } = {},
+): Promise<boolean> {
+  if (!chatId) return false
   if (!Number.isFinite(loadPages)) {
     await hydrateChat(chatId, { force: options.force, seedReroll: true })
-    return activeChatId() === chatId && hydratedChatIds.has(chatId)
+    return hydratedChatIds.has(chatId)
   }
 
-  const messages = activeChatMessageArray()
+  const messages = chatMessageArray(chatId)
   if (!messages || messages.length === 0 || options.force) {
     await hydrateChat(chatId, {
       force: options.force,
       range: { tail: requestedTailSize(loadPages) },
       seedReroll: true,
     })
-    const hydratedMessages = activeChatMessageArray()
+    const hydratedMessages = chatMessageArray(chatId)
     return (
-      activeChatId() === chatId &&
       !failedChatIds.has(chatId) &&
       Boolean(hydratedMessages) &&
       (hydratedChatIds.has(chatId) || unloadedRangesForTail(hydratedMessages!, loadPages).length === 0)
@@ -531,9 +723,8 @@ export async function hydrateActiveChatWindow(loadPages: number, options: { forc
       seedReroll: range.start + range.limit >= messages.length,
     })
   }
-  const hydratedMessages = activeChatMessageArray()
+  const hydratedMessages = chatMessageArray(chatId)
   return (
-    activeChatId() === chatId &&
     !failedChatIds.has(chatId) &&
     Boolean(hydratedMessages) &&
     unloadedRangesForTail(hydratedMessages!, loadPages).length === 0
@@ -547,10 +738,26 @@ export async function hydrateActiveChatFully(options: { force?: boolean } = {}):
 }
 
 /** Hydrate a specific chat's complete transcript by id. */
-export async function hydrateChatMessages(chatId: string, options: BulkHydrationOptions = {}): Promise<void> {
+export async function hydrateChatMessages(chatId: string, options: ChatMessagesHydrationOptions = {}): Promise<void> {
   if (!chatId || !canUseServerResourceReads()) return
-  await hydrateChat(chatId, { force: options.force, seedReroll: activeChatId() === chatId })
-  if (options.strict && !hydratedChatIds.has(chatId)) {
+  if (options.signal?.aborted) {
+    if (options.strict) throw new Error(`Chat hydration aborted for: ${chatId}`)
+    return
+  }
+  const hydration = await awaitUntilAborted(
+    hydrateChat(chatId, {
+      force: options.force,
+      seedReroll: activeChatId() === chatId,
+      signal: options.signal,
+    }),
+    options.signal,
+  )
+  if (hydration.status === 'aborted') {
+    if (options.strict) throw new Error(`Chat hydration aborted for: ${chatId}`)
+    return
+  }
+  const currentRequestApplied = hydration.value
+  if (options.strict && !currentRequestApplied) {
     throw new Error(`Chat hydration incomplete for: ${chatId}`)
   }
 }
@@ -567,27 +774,189 @@ export function applyServerChatMessagesResource(
   hypaV3Data: unknown,
   alternates: unknown[],
   range?: { start: number; total: number },
+  options: { hypaV3DataIncluded?: boolean } = {},
 ): boolean {
   if (!chatId) return false
+  if (charactersResourceState.status === 'ready' && !uniqueChatForHydration(chatId)) return false
   const applied = hydrateServerChatMessages(
     chatId,
     message,
     hypaV3Data,
     range ? { ...range, preserveExistingOnGrowth: true } : undefined,
+    options,
   )
   if (!applied) return false
   advanceChatProjectionEpoch(chatId)
   reapplyRetainedChatBodyProjections(chatId)
-  acknowledgeHydratedGenerationPersistences(chatId, message as Message[])
+  syncChatMessageOwnerProjection(chatId)
+  acknowledgeHydratedChatGenerationState(chatId, message as Message[])
   if (!range || isFullRange(range.start, range.total, message.length)) {
     hydratedChatIds.add(chatId)
   }
   attemptedChatIds.add(chatId)
   failedChatIds.delete(chatId)
-  if (activeChatId() === chatId) {
-    seedRerollBufferFromAlternates(message, alternates)
-  }
+  seedRerollBufferFromAlternates(message, alternates, rerollTargetForChatId(chatId))
   return true
+}
+
+export type AcceptedSendCompletionReconciliationResult =
+  | { status: 'reconciled'; source: 'applied' | 'newer_resident_projection' }
+  | {
+      status: 'not_reconciled'
+      reason:
+        | 'authority_unavailable'
+        | 'wrong_chat'
+        | 'invalid_range'
+        | 'reply_missing'
+        | 'older_revision'
+        | 'superseded'
+        | 'target_missing'
+        | 'apply_failed'
+        | 'post_apply_verification_failed'
+    }
+
+function residentChatMessagesForTarget(target: ActiveChatTarget): Message[] | null {
+  if (!target.characterId || !target.chatId) return null
+  const character = uniqueCharacterForHydration(target.characterId)
+  const owner = uniqueChatForHydration(target.chatId)
+  if (!character || !owner || owner.character !== character) return null
+  return owner.chat.message ?? []
+}
+
+function residentHasAcceptedSendReply(
+  target: ActiveChatTarget,
+  messageId: string,
+  exact: { operationId?: string; resultMessageId?: string } = {},
+): boolean {
+  const messages = residentChatMessagesForTarget(target)
+  return messages !== null && transcriptHasReplyForAcceptedSend(messages, messageId, exact)
+}
+
+async function awaitUntilAborted<T>(
+  promise: Promise<T>,
+  signal: AbortSignal | null | undefined,
+): Promise<{ status: 'settled'; value: T } | { status: 'aborted' }> {
+  if (!signal) return { status: 'settled', value: await promise }
+  if (signal.aborted) return { status: 'aborted' }
+
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      cleanup()
+      resolve({ status: 'aborted' })
+    }
+    const cleanup = () => signal.removeEventListener('abort', onAbort)
+    signal.addEventListener('abort', onAbort, { once: true })
+    void promise.then(
+      (value) => {
+        cleanup()
+        resolve({ status: 'settled', value })
+      },
+      (error) => {
+        cleanup()
+        reject(error)
+      },
+    )
+  })
+}
+
+/**
+ * Fetch and apply one accepted send's authoritative completion as a single
+ * guarded operation. A positive result means the resident transcript, not only
+ * the downloaded body, contains the accepted user row and its adjacent reply.
+ */
+export async function reconcileAcceptedSendCompletion(
+  target: ActiveChatTarget,
+  messageId: string,
+  options: { signal?: AbortSignal | null; operationId?: string; resultMessageId?: string } = {},
+): Promise<AcceptedSendCompletionReconciliationResult> {
+  const chatId = target.chatId
+  if (!target.characterId || !chatId || !messageId) {
+    return { status: 'not_reconciled', reason: 'target_missing' }
+  }
+
+  const baselineRevision = peekCachedServerCommandRevision()
+  const projectionEpoch = captureChatBodyProjectionEpoch(chatId)
+  const freshness = beginChatHydrationFreshness(chatId, { trackRerollState: true })
+  try {
+    const endRequest = beginHydrationRequest('chat')
+    let fetched: Awaited<ReturnType<typeof fetchServerGenerationChatMessages>>
+    try {
+      const settled = await awaitUntilAborted(
+        fetchServerGenerationChatMessages(chatId, messageId, { signal: options.signal }),
+        options.signal,
+      )
+      if (settled.status === 'aborted') {
+        return { status: 'not_reconciled', reason: 'authority_unavailable' }
+      }
+      fetched = settled.value
+    } finally {
+      endRequest()
+    }
+
+    if (fetched.status !== 'ok') {
+      return { status: 'not_reconciled', reason: 'authority_unavailable' }
+    }
+    if (fetched.chatId !== chatId) {
+      return { status: 'not_reconciled', reason: 'wrong_chat' }
+    }
+
+    const projectionChanged = hasChatBodyProjectionEpochChanged(chatId, projectionEpoch)
+    const staleReason = chatHydrationStaleReason(chatId, freshness)
+    const newerAuthoritativeProjection = hasNewerChatBodyResourceRevision(chatId, fetched.revision)
+    if (projectionChanged || staleReason || newerAuthoritativeProjection) {
+      recordHydrationStaleDrop('chat', staleReason ?? 'newer-targeted-chat-projection')
+      if (newerAuthoritativeProjection && residentHasAcceptedSendReply(target, messageId, options)) {
+        return { status: 'reconciled', source: 'newer_resident_projection' }
+      }
+      return { status: 'not_reconciled', reason: 'superseded' }
+    }
+    if (isOlderThanBaselineRevision(fetched.revision, baselineRevision)) {
+      recordHydrationStaleDrop('chat', 'older-than-applied-revision')
+      return { status: 'not_reconciled', reason: 'older_revision' }
+    }
+
+    const start = fetched.messageStart
+    const total = fetched.messageTotal
+    if (
+      !Number.isInteger(start) ||
+      (start as number) < 0 ||
+      !Number.isInteger(total) ||
+      (total as number) < 0 ||
+      (start as number) + fetched.message.length !== total
+    ) {
+      return { status: 'not_reconciled', reason: 'invalid_range' }
+    }
+    if (!transcriptHasReplyForAcceptedSend(fetched.message, messageId, options)) {
+      return { status: 'not_reconciled', reason: 'reply_missing' }
+    }
+    if (residentChatMessagesForTarget(target) === null) {
+      return { status: 'not_reconciled', reason: 'target_missing' }
+    }
+
+    const applied = applyServerChatMessagesResource(
+      chatId,
+      fetched.message,
+      fetched.hypaV3Data,
+      fetched.alternates,
+      {
+        start: start as number,
+        total: total as number,
+      },
+      { hypaV3DataIncluded: fetched.hypaV3DataIncluded },
+    )
+    if (!applied) {
+      return { status: 'not_reconciled', reason: 'apply_failed' }
+    }
+    markChatBodyResourceRevision(chatId, fetched.revision)
+    if (!residentHasAcceptedSendReply(target, messageId, options)) {
+      return { status: 'not_reconciled', reason: 'post_apply_verification_failed' }
+    }
+    return { status: 'reconciled', source: 'applied' }
+  } catch {
+    return { status: 'not_reconciled', reason: 'authority_unavailable' }
+  } finally {
+    endChatHydrationFreshness(chatId, freshness)
+  }
 }
 
 /**
@@ -598,22 +967,16 @@ export function applyServerChatMessagesResource(
 export function applyMessageTranslationLocalEffect(
   chatId: string,
   messageId: string,
-  translation: MessageTranslation,
+  translation: MessageTranslation | null,
 ): boolean {
   if (!chatId || !messageId) return false
-  let applied = false
-  withTrustedResourceWrite(() => {
-    const chat = getDatabase()
-      .characters?.flatMap((character) => character.chats ?? [])
-      .find((candidate) => candidate.id === chatId)
-    if (!chat) return
-    const matches = (chat.message ?? []).filter((message) => message.chatId === messageId)
-    if (matches.length !== 1) return
-    matches[0].translation = JSON.parse(JSON.stringify(translation)) as MessageTranslation
-    applied = true
-  })
-  if (!applied) return false
+  const chat = uniqueChatForHydration(chatId)?.chat
+  if (!chat) return false
+  const matches = (chat.message ?? []).filter((message) => message.chatId === messageId)
+  if (matches.length !== 1) return false
+  matches[0].translation = translation === null ? null : (JSON.parse(JSON.stringify(translation)) as MessageTranslation)
   advanceChatProjectionEpoch(chatId)
+  syncChatMessageOwnerProjection(chatId)
   return true
 }
 
@@ -625,11 +988,9 @@ export function applyMessageTranslationLocalEffect(
  */
 export function acknowledgeMessageMutationLocalEffect(chatId: string): boolean {
   if (!chatId) return false
-  const matches = getDatabase()
-    .characters?.flatMap((character) => character.chats ?? [])
-    .filter((candidate) => candidate.id === chatId)
-  if (matches?.length !== 1) return false
+  if (!uniqueChatForHydration(chatId)) return false
   advanceChatProjectionEpoch(chatId)
+  syncChatMessageOwnerProjection(chatId)
   return true
 }
 
@@ -641,10 +1002,8 @@ export function acknowledgeMessageMutationLocalEffect(chatId: string): boolean {
  */
 export function acknowledgeCreatedChatTranscriptLocalEffect(chatId: string): boolean {
   if (!chatId) return false
-  const matches = getDatabase()
-    .characters?.flatMap((character) => character.chats ?? [])
-    .filter((candidate) => candidate.id === chatId)
-  if (matches?.length !== 1 || !Array.isArray(matches[0].message)) return false
+  const chat = uniqueChatForHydration(chatId)?.chat
+  if (!chat || !Array.isArray(chat.message)) return false
 
   advanceChatProjectionEpoch(chatId)
   hydratedChatIds.add(chatId)
@@ -696,9 +1055,7 @@ export function hasChatMessageHydrationFailed(chatId: string | undefined, messag
 // Character globalLore hydration (only when stubs are on).
 
 function activeCharacterId(): string | undefined {
-  const selId = get(selectedCharID)
-  if (selId < 0) return undefined
-  return getDatabase().characters?.[selId]?.chaId
+  return activeCharacterForHydration()?.chaId
 }
 
 /** Reactive: is this character's stubbed global lorebook waiting for hydration? */
@@ -717,6 +1074,7 @@ export function hasCharacterLorebookHydrationFailed(characterId: string | undefi
 
 async function hydrateCharacterLorebook(characterId: string, force: boolean): Promise<void> {
   if (!canUseServerResourceReads()) return
+  if (charactersResourceState.status === 'ready' && !uniqueCharacterForHydration(characterId)) return
   // Readiness follows the projection that is actually resident. A setting
   // transition can leave an older stub in memory even after stub mode is off.
   if (!force && (hydratedCharLorebookIds.has(characterId) || isCharacterLorebookMutationReady(characterId))) return
@@ -755,6 +1113,7 @@ async function hydrateCharacterLorebook(characterId: string, force: boolean): Pr
 
       const applied = hydrateServerCharacterLorebook(characterId, result.globalLore)
       if (!applied) return
+      recordCanonicalCharacterLorebookScopes([{ chaId: characterId, globalLore: result.globalLore }])
       markCharacterLorebookBodyResourceRevision(characterId, result.revision)
       markCharacterLorebookProjectionApplied(characterId)
       // Mark hydrated so the lorebook watcher tracks (and persists) edits to it.
@@ -785,74 +1144,88 @@ async function hydrateCharacterLorebooksBulk(
   for (const characterId of characterIds) {
     beginCharacterLorebookHydrationState(characterId)
   }
-  const baselineRevision = peekCachedServerCommandRevision()
   const projectionEpochs = new Map(
     characterIds.map((characterId) => [characterId, captureCharacterLorebookBodyProjectionEpoch(characterId)]),
   )
-  const endRequest = beginHydrationRequest('characterLorebook')
-  const result = await fetchServerBulkCharacterLorebooks(characterIds).finally(endRequest)
-  if (result.status !== 'ok') {
-    const message = resultError(result, 'server projection unavailable')
-    hydrationWarning('bulk character lorebook', message)
-    for (const characterId of characterIds) {
-      finishCharacterLorebookHydrationState(characterId, generation)
+  for (const batch of bulkHydrationBatches(characterIds)) {
+    const baselineRevision = peekCachedServerCommandRevision()
+    const endRequest = beginHydrationRequest('characterLorebook')
+    const result = await fetchServerBulkCharacterLorebooks(batch).finally(endRequest)
+    if (result.status !== 'ok') {
+      const message = resultError(result, 'server projection unavailable')
+      hydrationWarning('bulk character lorebook', message)
+      for (const characterId of batch) {
+        finishCharacterLorebookHydrationState(characterId, generation)
+      }
+      if (options.strict) throw new Error(`Bulk character lorebook hydration failed: ${message}`)
+      continue
     }
-    if (options.strict) throw new Error(`Bulk character lorebook hydration failed: ${message}`)
-    return
-  }
-  if (generation !== charLorebookHydrationGeneration) {
-    recordHydrationStaleDrop('characterLorebook', 'generation-reset')
-    if (options.strict) {
-      throw new Error('Bulk character lorebook hydration result was stale after a reset')
+    if (generation !== charLorebookHydrationGeneration) {
+      recordHydrationStaleDrop('characterLorebook', 'generation-reset')
+      if (options.strict) {
+        throw new Error('Bulk character lorebook hydration result was stale after a reset')
+      }
+      return
     }
-    return
-  }
-  if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
-    recordHydrationStaleDrop('characterLorebook', 'older-than-applied-revision')
-    for (const characterId of characterIds) {
-      finishCharacterLorebookHydrationState(characterId, generation)
+    if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
+      recordHydrationStaleDrop('characterLorebook', 'older-than-applied-revision')
+      for (const characterId of batch) {
+        finishCharacterLorebookHydrationState(characterId, generation)
+      }
+      if (options.strict) {
+        throw new Error('Bulk character lorebook hydration result was older than local state')
+      }
+      continue
     }
-    if (options.strict) {
-      throw new Error('Bulk character lorebook hydration result was older than local state')
-    }
-    return
-  }
 
-  const missing = new Set(result.missing)
-  const missingIds: string[] = []
-  for (const characterId of characterIds) {
-    if (missing.has(characterId)) {
-      missingIds.push(characterId)
+    const missing = new Set(result.missing)
+    const missingIds: string[] = []
+    for (const characterId of batch) {
+      if (missing.has(characterId)) {
+        missingIds.push(characterId)
+        finishCharacterLorebookHydrationState(characterId, generation)
+        continue
+      }
+      const hydration = result.characters.find((character) => character.characterId === characterId)
+      if (!hydration) {
+        missingIds.push(characterId)
+        finishCharacterLorebookHydrationState(characterId, generation)
+        continue
+      }
+      const projectionEpoch = projectionEpochs.get(characterId)
+      if (
+        projectionEpoch === undefined ||
+        hasCharacterLorebookBodyProjectionEpochChanged(characterId, projectionEpoch)
+      ) {
+        recordHydrationStaleDrop('characterLorebook', 'newer-character-lorebook-body-projection')
+        finishCharacterLorebookHydrationState(characterId, generation)
+        continue
+      }
+      const applied = hydrateServerCharacterLorebook(characterId, hydration.globalLore)
+      if (!applied) {
+        missingIds.push(characterId)
+        finishCharacterLorebookHydrationState(characterId, generation)
+        continue
+      }
+      recordCanonicalCharacterLorebookScopes([{ chaId: characterId, globalLore: hydration.globalLore }])
+      markCharacterLorebookBodyResourceRevision(characterId, result.revision)
+      markCharacterLorebookProjectionApplied(characterId)
+      markCharacterLorebookHydrated(characterId)
+      hydratedCharLorebookIds.add(characterId)
       finishCharacterLorebookHydrationState(characterId, generation)
-      continue
     }
-    const hydration = result.characters.find((character) => character.characterId === characterId)
-    if (!hydration) {
-      missingIds.push(characterId)
-      finishCharacterLorebookHydrationState(characterId, generation)
-      continue
+    if (options.strict && missingIds.length > 0) {
+      throw new Error(`Bulk character lorebook hydration did not return data for: ${missingIds.join(', ')}`)
     }
-    const projectionEpoch = projectionEpochs.get(characterId)
-    if (projectionEpoch === undefined || hasCharacterLorebookBodyProjectionEpochChanged(characterId, projectionEpoch)) {
-      recordHydrationStaleDrop('characterLorebook', 'newer-character-lorebook-body-projection')
-      finishCharacterLorebookHydrationState(characterId, generation)
-      continue
-    }
-    const applied = hydrateServerCharacterLorebook(characterId, hydration.globalLore)
-    if (!applied) {
-      missingIds.push(characterId)
-      finishCharacterLorebookHydrationState(characterId, generation)
-      continue
-    }
-    markCharacterLorebookBodyResourceRevision(characterId, result.revision)
-    markCharacterLorebookProjectionApplied(characterId)
-    markCharacterLorebookHydrated(characterId)
-    hydratedCharLorebookIds.add(characterId)
-    finishCharacterLorebookHydrationState(characterId, generation)
   }
-  if (options.strict && missingIds.length > 0) {
-    throw new Error(`Bulk character lorebook hydration did not return data for: ${missingIds.join(', ')}`)
+}
+
+function bulkHydrationBatches(ids: readonly string[]): string[][] {
+  const batches: string[][] = []
+  for (let offset = 0; offset < ids.length; offset += BULK_HYDRATION_BATCH_SIZE) {
+    batches.push(ids.slice(offset, offset + BULK_HYDRATION_BATCH_SIZE))
   }
+  return batches
 }
 
 /** Hydrate the open character's `globalLore` when its resident projection is a stub. */
@@ -868,7 +1241,7 @@ export async function ensureCharacterLorebookHydrated(
 ): Promise<boolean> {
   if (!characterId) return false
   if (hydratedCharLorebookIds.has(characterId) || isCharacterLorebookMutationReady(characterId)) return true
-  // A resident projection is recorded in the authoritative bridge registry at
+  // A resident projection is recorded in the authoritative owner registry at
   // bootstrap/refresh. If it is not recorded, fail closed even when reads are
   // unavailable or the stub setting just changed; exporting `[]` would create a
   // plausible-looking but incomplete file.
@@ -885,7 +1258,8 @@ export async function ensureAllCharacterLorebooksHydrated(options: BulkHydration
   if (!canUseServerResourceReads()) return
   const ids: string[] = []
   const pendingRequests: Promise<void>[] = []
-  for (const character of getDatabase().characters ?? []) {
+  for (const character of characterRowsForHydration()) {
+    if (uniqueCharacterForHydration(character.chaId) !== character) continue
     if (
       typeof character.chaId !== 'string' ||
       !character.chaId ||
@@ -905,7 +1279,8 @@ export async function ensureAllCharacterLorebooksHydrated(options: BulkHydration
   await Promise.all([hydrateCharacterLorebooksBulk(ids, options), ...pendingRequests])
   if (options.strict) {
     const missing: string[] = []
-    for (const character of getDatabase().characters ?? []) {
+    for (const character of characterRowsForHydration()) {
+      if (uniqueCharacterForHydration(character.chaId) !== character) continue
       if (
         typeof character.chaId === 'string' &&
         character.chaId &&
@@ -932,6 +1307,7 @@ export function resetChatHydration(): void {
   chatHydrationGeneration += 1
   inFlight.clear()
   chatProjectionEpochs.clear()
+  chatMessageOwnerProjections.clear()
   pendingChatHydrationFreshness.clear()
   // A re-stub also re-stubs character globalLore; forget these marks so the open
   // character re-hydrates (the lorebook registry is reset in bootstrap.ts).
@@ -961,10 +1337,16 @@ function isOlderThanBaselineRevision(revision: number, baselineRevision: number 
 export async function ensureAllChatsHydrated(options: BulkHydrationOptions = {}): Promise<void> {
   if (!canUseServerResourceReads()) return
   const ids: string[] = []
-  const pendingRequests: Promise<void>[] = []
-  for (const character of getDatabase().characters ?? []) {
+  const pendingRequests: Promise<boolean>[] = []
+  for (const character of characterRowsForHydration()) {
+    if (uniqueCharacterForHydration(character.chaId) !== character) continue
     for (const chat of character.chats ?? []) {
-      if (typeof chat.id !== 'string' || !chat.id || hydratedChatIds.has(chat.id)) {
+      if (
+        typeof chat.id !== 'string' ||
+        !chat.id ||
+        uniqueChatForHydration(chat.id)?.chat !== chat ||
+        hydratedChatIds.has(chat.id)
+      ) {
         continue
       }
       const pending = inFlight.get(chatHydrationRequestKey(chat.id, {}))
@@ -979,9 +1361,15 @@ export async function ensureAllChatsHydrated(options: BulkHydrationOptions = {})
   await Promise.all([hydrateChatsBulk(ids, options), ...pendingRequests])
   if (options.strict) {
     const missing: string[] = []
-    for (const character of getDatabase().characters ?? []) {
+    for (const character of characterRowsForHydration()) {
+      if (uniqueCharacterForHydration(character.chaId) !== character) continue
       for (const chat of character.chats ?? []) {
-        if (typeof chat.id === 'string' && chat.id && !hydratedChatIds.has(chat.id)) {
+        if (
+          typeof chat.id === 'string' &&
+          chat.id &&
+          uniqueChatForHydration(chat.id)?.chat === chat &&
+          !hydratedChatIds.has(chat.id)
+        ) {
           missing.push(chat.id)
         }
       }
@@ -994,30 +1382,40 @@ export async function ensureAllChatsHydrated(options: BulkHydrationOptions = {})
 
 let wired = false
 let stopChatHydrationWiring: (() => void) | null = null
-// Reactive mirror of the selected character index. `selectedCharID` is a store
-// (not $state), so the hydration effect can't track it directly; this mirror is
-// updated by a store subscription and read inside the effect, so the effect
-// re-runs — and re-tracks the *new* character's chatPage — on a character switch.
-let selectedCharMirror = $state(-1)
+let activeChatReadinessRefreshHook: ((options?: { force?: boolean }) => void) | null = null
+
+/** Notify startup readiness when the reactive active-chat target changes. */
+export function setActiveChatReadinessRefreshHook(hook: ((options?: { force?: boolean }) => void) | null): void {
+  activeChatReadinessRefreshHook = hook
+}
+
+/** Re-evaluate generation readiness even when the selected target id is unchanged. */
+export function requestActiveChatReadinessRefresh(): void {
+  activeChatReadinessRefreshHook?.({ force: true })
+}
 
 /**
  * Wire the hydration trigger: a reactive effect on the active chat id. It re-runs
- * on a character switch (via the `selectedCharMirror` $state) and on a chat
- * switch within a character (via the resource database's chats/chatPage state). It reads the
+ * on a character switch (via the resource selection owner) and on a chat
+ * switch within a character (via the character owner's chats/chatPage state). It reads the
  * chat's id only — not `message` — so writing the hydrated messages does not
  * re-trigger it. Idempotent.
  */
 export function startChatMessageHydration(): void {
   if (wired || !canUseServerResourceReads()) return
   wired = true
-  const stopSelectedCharacterSubscription = selectedCharID.subscribe((value) => {
-    selectedCharMirror = value
-  })
   const stopHydrationEffect = $effect.root(() => {
     $effect(() => {
-      if (selectedCharMirror < 0) return
-      const character = getDatabase().characters?.[selectedCharMirror]
-      const chatId = character?.chats?.[character?.chatPage ?? 0]?.id
+      if (charactersResourceState.status !== 'ready' || charactersResourceState.currentChar < 0) return
+      const character = characterRowsForHydration()[charactersResourceState.currentChar]
+      if (character && uniqueCharacterForHydration(character.chaId) !== character) return
+      const chat = character?.chats?.[character?.chatPage ?? 0]
+      const chatId = chat?.id
+      // Startup generation readiness also owns the effective prompt-template
+      // dependency. Reading the chat override here makes a same-chat owner
+      // change revoke stale readiness before a new template finishes loading.
+      chat?.generationSettings?.promptPresetId
+      activeChatReadinessRefreshHook?.()
       if (chatId) void hydrateActiveChat()
       // Hydrate the open character's globalLore. This reads chaId only, so
       // writing the hydrated entries does not re-trigger the effect.
@@ -1025,7 +1423,6 @@ export function startChatMessageHydration(): void {
     })
   })
   stopChatHydrationWiring = () => {
-    stopSelectedCharacterSubscription()
     stopHydrationEffect()
   }
 }
@@ -1041,3 +1438,9 @@ export function stopChatMessageHydration(): void {
   charLorebookInFlight.clear()
   pendingChatHydrationFreshness.clear()
 }
+
+registerChatHydrationRuntime({
+  acknowledgeMessageMutationLocalEffect,
+  hydrateChatMessages,
+  stopChatMessageHydration,
+})

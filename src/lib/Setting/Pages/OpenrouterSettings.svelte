@@ -6,7 +6,8 @@
   import OpenrouterProviderList from 'src/lib/UI/OpenrouterProviderList.svelte'
   import { PlusIcon, TrashIcon } from '@lucide/svelte'
   import { getOpenRouterProviders } from 'src/ts/model/openrouter'
-  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsOwner.svelte'
+  import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
 
   type OpenrouterProviderSettings = {
     order: string[]
@@ -38,6 +39,7 @@
   }
 
   function removeProviderEntry(key: keyof OpenrouterProviderSettings): void {
+    if (!confirmSettingsItemRemoval()) return
     openrouterProviderDraft.value = {
       ...openrouterProviderDraft.value,
       [key]: (openrouterProviderDraft.value[key] ?? []).slice(0, -1),
@@ -52,8 +54,9 @@
   <div class="flex items-center mb-4">
     <Check bind:check={openrouterMiddleOutDraft.value} name={language.openRouterMiddleOut} />
   </div>
-  <div class="flex items-center mb-4">
-    <Check bind:check={useInstructPromptDraft.value} name={language.useInstructPrompt} />
+  <div class="mb-4 flex flex-col gap-1">
+    <Check bind:check={useInstructPromptDraft.value} name={language.useInstructPrompt} disabled />
+    <span class="text-sm text-textcolor2">{language.openRouterInstructPromptUnsupported}</span>
   </div>
   {#await getOpenRouterProviders(providerCatalogContext)}
     <Accordion name={language.openRouterProviderOrder} help="openRouterProviderOrder" styled>

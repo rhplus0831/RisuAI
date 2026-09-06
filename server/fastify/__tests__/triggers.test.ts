@@ -1,7 +1,16 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import type { Chat, Database, character } from '../../../src/ts/storage/database.svelte'
-import type { RisuModule } from '../../../src/ts/process/modules'
-import type { triggerCondition, triggerscript } from '../../../src/ts/process/triggers'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+  FastifyMessage as Message,
+} from '../src/prompt/serverTypes.js'
+import { serverUnsupportedTriggerEffectTypes } from '../src/prompt/triggerCompatibility.js'
+import type { ServerModule as RisuModule } from '../src/prompt/moduleDescriptors.js'
+import type {
+  ServerTriggerCondition as triggerCondition,
+  ServerTriggerScript as triggerscript,
+} from '../src/prompt/triggerDescriptors.js'
 import { getModuleTriggers } from '../src/prompt/modules.js'
 import {
   collectTriggers,
@@ -20,6 +29,7 @@ import { createTriggerRunCache } from '../src/prompt/triggerRunCache.js'
 import { BOUNDED_REGEX_LIMITS } from '../src/prompt/boundedRegex.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import { getTriggerSource } from '../src/prompt/triggerSource.js'
+import { expandVariables } from '../src/prompt/variables.js'
 
 beforeAll(() => {
   bootPromptVariables()
@@ -96,7 +106,7 @@ function makeCtx(overrides: Partial<TriggerRunContext> = {}): TriggerRunContext 
 
 const ctx: TriggerRunContext = makeCtx()
 
-describe('Phase 7-9a getModuleTriggers', () => {
+describe('getModuleTriggers', () => {
   it('returns [] when no module declares triggers', () => {
     expect(getModuleTriggers([makeModule()])).toEqual([])
   })
@@ -145,7 +155,7 @@ describe('Phase 7-9a getModuleTriggers', () => {
   })
 })
 
-describe('Phase 7-9a collectTriggers', () => {
+describe('collectTriggers', () => {
   it('clones character triggers with inherited lowLevelAccess and leaves the source untouched', () => {
     const own = makeTrigger({ comment: 'own', type: 'output' })
     const char = makeChar({ triggerscript: [own], lowLevelAccess: true })
@@ -186,7 +196,7 @@ describe('Phase 7-9a collectTriggers', () => {
   })
 })
 
-describe('Phase 7-9a matchesTrigger', () => {
+describe('matchesTrigger', () => {
   it('matches on equal mode/type', () => {
     expect(matchesTrigger(makeTrigger({ type: 'output' }), 'output')).toBe(true)
   })
@@ -215,14 +225,8 @@ describe('Phase 7-9a matchesTrigger', () => {
   })
 })
 
-describe('Phase 7-9a runTrigger shell', () => {
-  it('returns null when there are no triggers at all', async () => {
-    const char = makeChar({ triggerscript: [] })
-    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
-    expect(result).toBeNull()
-  })
-
-  it('L7: no-trigger run returns null before structured cloning inputs', async () => {
+describe('runTrigger shell', () => {
+  it('no-trigger run returns null before structured cloning inputs', async () => {
     const cloneSpy = vi.spyOn(globalThis, 'structuredClone')
     try {
       const char = makeChar({ triggerscript: [] })
@@ -324,7 +328,7 @@ describe('Phase 7-9a runTrigger shell', () => {
   })
 })
 
-describe('Phase 7 L8 trigger clone narrowing', () => {
+describe('trigger clone narrowing', () => {
   const nonMutatingEffect = eff({
     type: 'v2GetMessageCount',
     outputVar: 'messageCount',
@@ -332,7 +336,7 @@ describe('Phase 7 L8 trigger clone narrowing', () => {
   })
 
   it.each(['input', 'start', 'output'] as const)(
-    'L8: %s triggers with no message-mutating effects do not clone the transcript',
+    '%s triggers with no message-mutating effects do not clone the transcript',
     async (mode: TriggerMode) => {
       const char = makeChar({
         triggerscript: [
@@ -360,7 +364,7 @@ describe('Phase 7 L8 trigger clone narrowing', () => {
     },
   )
 
-  it('L8: mutating output triggers get a private transcript clone', async () => {
+  it('mutating output triggers get a private transcript clone', async () => {
     const char = makeChar({
       triggerscript: [
         triggerWithEffects([
@@ -377,12 +381,12 @@ describe('Phase 7 L8 trigger clone narrowing', () => {
 
     expect(result?.chat).not.toBe(chat)
     expect(result?.chat.message).not.toBe(chat.message)
-    expect(result?.chat.message.map((message) => message.data)).toEqual(['edited', 'added'])
-    expect(chat.message.map((message) => message.data)).toEqual(['original'])
+    expect(result?.chat.message.map((message: Message) => message.data)).toEqual(['edited', 'added'])
+    expect(chat.message.map((message: Message) => message.data)).toEqual(['original'])
     expect(getTriggerCloneInstrumentation().fullTranscriptClones.output).toBe(1)
   })
 
-  it('L8: triggerlua uses a private transcript because host functions can mutate chat', async () => {
+  it('triggerlua uses a private transcript because host functions can mutate chat', async () => {
     const char = makeChar({
       triggerscript: [triggerWithEffects([eff({ type: 'triggerlua', code: 'mutate()' })])],
     })
@@ -437,7 +441,7 @@ describe('Phase 7 L8 trigger clone narrowing', () => {
     })
   })
 
-  it('L8: displayMode keeps the legacy caller-chat no-clone path', async () => {
+  it('displayMode keeps the legacy caller-chat no-clone path', async () => {
     const char = makeChar({
       triggerscript: [
         makeTrigger({
@@ -454,7 +458,7 @@ describe('Phase 7 L8 trigger clone narrowing', () => {
     })
 
     expect(result?.chat).toBe(chat)
-    expect(chat.message.map((message) => message.data)).toEqual(['shown'])
+    expect(chat.message.map((message: Message) => message.data)).toEqual(['shown'])
     expect(getTriggerCloneInstrumentation().fullTranscriptClones.display).toBe(0)
     expect(getTriggerCloneInstrumentation().messageSharingEnvelopeClones.display).toBe(0)
   })
@@ -496,7 +500,7 @@ function makeEngine(
   return Object.assign(engine, { workingChat, db })
 }
 
-describe('Phase 7-9b trigger var engine', () => {
+describe('trigger var engine', () => {
   it('falls back to default variables, then null', () => {
     const engine = makeEngine({ defaultVariables: [['greet', 'hi']] })
     expect(engine.getVar('greet')).toBe('hi')
@@ -510,20 +514,40 @@ describe('Phase 7-9b trigger var engine', () => {
 
   it('writes scriptstate, flips varChanged, and propagates to the db chat', () => {
     const engine = makeEngine()
-    engine.setVar('hp', '5')
+    expect(engine.setVar('hp', '5')).toBe(true)
     expect(engine.workingChat.scriptstate?.['$hp']).toBe('5')
     expect(engine.varChanged).toBe(true)
     // The persisted db chat now shares the working chat's scriptstate object.
     expect(engine.db.characters[0].chats[0].scriptstate).toBe(engine.workingChat.scriptstate)
   })
 
+  it('skips an identical persistent write without marking or propagating state', () => {
+    const engine = makeEngine({ scriptstate: { $hp: '5' } })
+    const persistedState = engine.db.characters[0].chats[0].scriptstate
+
+    expect(engine.setVar('hp', '5')).toBe(false)
+    expect(engine.varChanged).toBe(false)
+    expect(engine.db.characters[0].chats[0].scriptstate).toBe(persistedState)
+    expect(engine.db.characters[0].chats[0].scriptstate).not.toBe(engine.workingChat.scriptstate)
+  })
+
   it('local variables shadow scriptstate and stay local on write', () => {
     const engine = makeEngine({ scriptstate: { $x: 'global' } })
     engine.declareLocalVar('x', 'local', 0)
     expect(engine.getVar('x')).toBe('local')
-    engine.setVar('x', 'updated')
+    expect(engine.setVar('x', 'updated')).toBe(true)
     expect(engine.getVar('x')).toBe('updated')
     expect(engine.workingChat.scriptstate?.['$x']).toBe('global')
+    expect(engine.varChanged).toBe(false)
+  })
+
+  it('reports identical local writes as unchanged', () => {
+    const engine = makeEngine({ scriptstate: { $x: 'global' } })
+    engine.declareLocalVar('x', 'local', 0)
+
+    expect(engine.setVar('x', 'local')).toBe(false)
+    expect(engine.setLocalVar('x', 'local', 0)).toBe(false)
+    expect(engine.getVar('x')).toBe('local')
     expect(engine.varChanged).toBe(false)
   })
 
@@ -541,7 +565,8 @@ describe('Phase 7-9b trigger var engine', () => {
   it('displayMode keeps writes in tempVars and leaves scriptstate untouched', () => {
     const tempVars: Record<string, string> = {}
     const engine = makeEngine({ displayMode: true, tempVars })
-    engine.setVar('x', '5')
+    expect(engine.setVar('x', '5')).toBe(true)
+    expect(engine.setVar('x', '5')).toBe(false)
     expect(tempVars.x).toBe('5')
     expect(engine.getVar('x')).toBe('5')
     expect(engine.workingChat.scriptstate?.['$x']).toBeUndefined()
@@ -549,7 +574,7 @@ describe('Phase 7-9b trigger var engine', () => {
   })
 })
 
-describe('Phase 7-9b evaluateConditions', () => {
+describe('evaluateConditions', () => {
   it('passes a matching var condition and fails a mismatch', () => {
     const engine = makeEngine({ scriptstate: { $hp: '10' } })
     const chat = makeChat()
@@ -667,7 +692,28 @@ async function countRegexCompiles<T>(fn: () => Promise<T>): Promise<{ result: T;
   }
 }
 
-describe('Phase 7-9c deterministic V1 effects', () => {
+describe('deterministic V1 effects', () => {
+  it('agrees with prompt CBS on a character-over-template default-backed variable', async () => {
+    const chat = makeChat()
+    const char = makeChar({
+      chats: [chat],
+      defaultVariables: 'mood=happy',
+      triggerscript: [
+        triggerWithEffects([eff({ type: 'setvar', operator: '=', var: 'matched', value: 'yes' })], {
+          conditions: [cond({ type: 'var', var: 'mood', value: 'happy', operator: '=' })],
+        }),
+      ],
+    })
+    const database = makeDb({
+      characters: [char],
+      templateDefaultVariables: 'mood=template',
+    })
+
+    expect(expandVariables('{{getvar::mood}}', { database }).text).toBe('happy')
+    const result = await runTrigger(makeCtx({ database }), char, 'output', { chat })
+    expect(result?.chat.scriptstate?.['$matched']).toBe('yes')
+  })
+
   it('setvar assigns and flips varChanged', async () => {
     const char = makeChar({
       triggerscript: [triggerWithEffects([eff({ type: 'setvar', operator: '=', var: 'hp', value: '5' })])],
@@ -765,7 +811,7 @@ describe('Phase 7-9c deterministic V1 effects', () => {
   })
 })
 
-describe('Phase 7-9d-i V2 control flow', () => {
+describe('control flow', () => {
   it('runs the if body when the condition passes and skips it when it fails', async () => {
     const effects = [
       eff({
@@ -840,6 +886,41 @@ describe('Phase 7-9d-i V2 control flow', () => {
       chat: makeChat({ scriptstate: { $x: '0' } }),
     })
     expect(elseResult?.chat.scriptstate?.['$branch']).toBe('else')
+  })
+
+  it.each([
+    { target: '["a"]', expected: 'yes', label: 'source is absent from the target array' },
+    { target: '["z"]', expected: undefined, label: 'source is present in the target array' },
+    { target: 'not-json', expected: 'yes', label: 'target JSON is invalid' },
+  ])('supports v2IfAdvanced ∉ when $label', async ({ target, expected }) => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([
+          eff({
+            type: 'v2IfAdvanced',
+            condition: '∉',
+            sourceType: 'value',
+            source: 'z',
+            targetType: 'value',
+            target,
+            indent: 0,
+          }),
+          eff({
+            type: 'v2SetVar',
+            operator: '=',
+            var: 'hit',
+            valueType: 'value',
+            value: 'yes',
+            indent: 1,
+          }),
+          eff({ type: 'v2EndIndent', indent: 1 }),
+        ]),
+      ],
+    })
+
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+
+    expect(result?.chat.scriptstate?.['$hit']).toBe(expected)
   })
 
   it('runs a counted loop N times', async () => {
@@ -995,7 +1076,7 @@ describe('Phase 7-9d-i V2 control flow', () => {
   })
 })
 
-describe('A-16 sendAIprompt trigger parity', () => {
+describe('sendAIprompt trigger parity', () => {
   it.each([
     ['sendAIprompt', eff({ type: 'sendAIprompt' })],
     ['v2SendAIprompt', eff({ type: 'v2SendAIprompt', indent: 0 })],
@@ -1045,8 +1126,8 @@ describe('A-16 sendAIprompt trigger parity', () => {
   })
 })
 
-describe('H1 trigger budget and abort', () => {
-  it('H1: stops a never-breaking v2Loop at the shared loop-back ceiling', async () => {
+describe('trigger budget and abort', () => {
+  it('stops a never-breaking v2Loop at the shared loop-back ceiling', async () => {
     const debug = vi.spyOn(console, 'debug').mockImplementation(() => {})
     try {
       const budget = createTriggerExecutionBudget({
@@ -1083,7 +1164,7 @@ describe('H1 trigger budget and abort', () => {
     }
   })
 
-  it('H1: stops a huge v2LoopNTimes at the shared loop-back ceiling', async () => {
+  it('stops a huge v2LoopNTimes at the shared loop-back ceiling', async () => {
     const debug = vi.spyOn(console, 'debug').mockImplementation(() => {})
     try {
       const budget = createTriggerExecutionBudget({
@@ -1120,7 +1201,7 @@ describe('H1 trigger budget and abort', () => {
     }
   })
 
-  it('H1: low-level self-recursive v2RunTrigger cannot bypass the hard depth cap', async () => {
+  it('low-level self-recursive v2RunTrigger cannot bypass the hard depth cap', async () => {
     const budget = createTriggerExecutionBudget({
       wallClockMs: 60_000,
       maxEffectSteps: 1_000,
@@ -1144,7 +1225,7 @@ describe('H1 trigger budget and abort', () => {
     expect(budget.effectSteps).toBeLessThanOrEqual(4)
   })
 
-  it('H1: aborts a running trigger pass through AbortSignal', async () => {
+  it('aborts a running trigger pass through AbortSignal', async () => {
     const debug = vi.spyOn(console, 'debug').mockImplementation(() => {})
     try {
       const controller = new AbortController()
@@ -1184,8 +1265,8 @@ describe('H1 trigger budget and abort', () => {
   })
 })
 
-describe('Phase 3 L6 trigger transcript and regex cache', () => {
-  it('L6: reuses transcript windows across exists conditions and quick-search effects', () => {
+describe('trigger transcript and regex cache', () => {
+  it('reuses transcript windows across exists conditions and quick-search effects', () => {
     const cache = createTriggerRunCache()
     const engine = makeEngine()
     const char = makeChar()
@@ -1238,7 +1319,7 @@ describe('Phase 3 L6 trigger transcript and regex cache', () => {
     expect(sliceSpy).toHaveBeenCalledTimes(1)
   })
 
-  it('L6: invalidates transcript cache after trigger message mutations', async () => {
+  it('invalidates transcript cache after trigger message mutations', async () => {
     const char = makeChar({
       triggerscript: [
         triggerWithEffects([
@@ -1288,7 +1369,7 @@ describe('Phase 3 L6 trigger transcript and regex cache', () => {
     expect(result?.chat.scriptstate?.['$afterNew']).toBe('1')
   })
 
-  it('L6: reuses compiled regexes across trigger conditions and V2 effects', async () => {
+  it('reuses compiled regexes across trigger conditions and V2 effects', async () => {
     const char = makeChar({
       triggerscript: [
         makeTrigger({
@@ -1382,7 +1463,7 @@ describe('Phase 3 L6 trigger transcript and regex cache', () => {
     expect(compiles.get('[,;]/g')).toBe(1)
   })
 
-  it('L6: keeps malformed V2 regex fallback behavior with the cache enabled', async () => {
+  it('keeps malformed V2 regex fallback behavior with the cache enabled', async () => {
     const char = makeChar({
       triggerscript: [
         triggerWithEffects([
@@ -1429,7 +1510,7 @@ describe('Phase 3 L6 trigger transcript and regex cache', () => {
     expect(result?.chat.scriptstate?.['$split']).toBe('["a[b"]')
   })
 
-  it('L9: preserves valid trigger regex behavior under bounds', async () => {
+  it('preserves valid trigger regex behavior under bounds', async () => {
     const char = makeChar({
       triggerscript: [
         makeTrigger({
@@ -1498,9 +1579,18 @@ describe('Phase 3 L6 trigger transcript and regex cache', () => {
     })
   })
 
-  it('L9: rejects unsafe trigger regexes before synchronous execution', async () => {
+  it('rejects unsafe trigger regexes before synchronous execution', async () => {
     const unsafeTrigger = (effect: triggerscript['effect'][number]) =>
       makeChar({ triggerscript: [triggerWithEffects([effect])] })
+    const limitedCtx = {
+      ...ctx,
+      database: {
+        ...ctx.database,
+        complexRegexCompatibilityMode: 'worker' as const,
+        complexRegexOutputTimeoutMs: 15_000,
+        regexOutputSizeLimitMiB: 1,
+      },
+    }
 
     await expect(
       runTrigger(
@@ -1524,7 +1614,7 @@ describe('Phase 3 L6 trigger transcript and regex cache', () => {
 
     await expect(
       runTrigger(
-        ctx,
+        limitedCtx,
         unsafeTrigger(
           eff({
             type: 'v2RegexTest',
@@ -1564,7 +1654,7 @@ describe('Phase 3 L6 trigger transcript and regex cache', () => {
 
     await expect(
       runTrigger(
-        ctx,
+        limitedCtx,
         unsafeTrigger(
           eff({
             type: 'v2ReplaceString',
@@ -1575,7 +1665,7 @@ describe('Phase 3 L6 trigger transcript and regex cache', () => {
             resultType: 'value',
             result: '$0',
             replacementType: 'value',
-            replacement: 'r'.repeat(BOUNDED_REGEX_LIMITS.replacement + 1),
+            replacement: 'r'.repeat(1024 * 1024 + 1),
             flagsType: 'value',
             flags: '',
             outputVar: 'out',
@@ -1587,7 +1677,7 @@ describe('Phase 3 L6 trigger transcript and regex cache', () => {
     ).rejects.toThrow(/replacement length/)
   })
 
-  it('L9: rejects unsafe trigger condition regex before execution', async () => {
+  it('rejects unsafe trigger condition regex before execution', async () => {
     const char = makeChar({
       triggerscript: [
         makeTrigger({
@@ -1607,7 +1697,7 @@ describe('Phase 3 L6 trigger transcript and regex cache', () => {
   })
 })
 
-describe('Phase 7-9d-ii V2 safe data helpers', () => {
+describe('safe data helpers', () => {
   it('concatenates strings into an output var', async () => {
     const char = makeChar({
       triggerscript: [
@@ -1751,6 +1841,82 @@ describe('Phase 7-9d-ii V2 safe data helpers', () => {
     expect(result?.chat.scriptstate?.['$miss']).toBe('0')
   })
 
+  it('extracts the first regex match and expands $n, $&, and $$ without low-level access', async () => {
+    const char = makeChar({
+      lowLevelAccess: false,
+      triggerscript: [
+        triggerWithEffects([
+          eff({
+            type: 'v2ExtractRegex',
+            valueType: 'value',
+            value: 'ID=42; ID=99',
+            regexType: 'value',
+            regex: 'ID=(\\d+)',
+            flagsType: 'value',
+            flags: 'g',
+            resultType: 'value',
+            result: '$1|$&|$$|$9',
+            outputVar: 'extracted',
+          }),
+        ]),
+      ],
+    })
+
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+
+    expect(result?.chat.scriptstate?.['$extracted']).toBe('42|ID=42|$|')
+  })
+
+  it('writes the capture-stripped result template when v2ExtractRegex has no match', async () => {
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([
+          eff({
+            type: 'v2ExtractRegex',
+            valueType: 'value',
+            value: 'no id here',
+            regexType: 'value',
+            regex: 'ID=(\\d+)',
+            flagsType: 'value',
+            flags: '',
+            resultType: 'value',
+            result: '[$1][$&][$$]',
+            outputVar: 'extracted',
+          }),
+        ]),
+      ],
+    })
+
+    const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
+
+    expect(result?.chat.scriptstate?.['$extracted']).toBe('[][][$]')
+  })
+
+  it('rejects an invalid v2ExtractRegex pattern before changing the output variable', async () => {
+    const chat = makeChat({ scriptstate: { $extracted: 'kept' } })
+    const char = makeChar({
+      triggerscript: [
+        triggerWithEffects([
+          eff({
+            type: 'v2ExtractRegex',
+            valueType: 'value',
+            value: 'ID=42',
+            regexType: 'value',
+            regex: '[',
+            flagsType: 'value',
+            flags: '',
+            resultType: 'value',
+            result: '$1',
+            outputVar: 'extracted',
+          }),
+        ]),
+      ],
+    })
+
+    await expect(runTrigger(ctx, char, 'output', { chat })).rejects.toThrow(SyntaxError)
+    expect(chat.scriptstate?.['$extracted']).toBe('kept')
+  })
+
   it('quick-searches the recent chat', async () => {
     const char = makeChar({
       triggerscript: [
@@ -1786,11 +1952,30 @@ describe('Phase 7-9d-ii V2 safe data helpers', () => {
     expect(result?.chat.scriptstate?.['$last']).toBe('second')
   })
 
-  it('does not abort the run when a make-var name is malformed', async () => {
+  it.each([
+    { type: 'v2MakeArrayVar', var: '[]' },
+    { type: 'v2MakeDictVar', var: '{}' },
+    { type: 'v2ClearDict', var: '{}' },
+    { type: 'v2GetDisplayState' },
+    { type: 'v2SetDisplayState' },
+    { type: 'v2GetRequestState' },
+    { type: 'v2SetRequestState' },
+    { type: 'v2GetRequestStateRole' },
+    { type: 'v2SetRequestStateRole' },
+    { type: 'v2GetRequestStateLength' },
+  ])('retains the whole-trigger guard for $type before later effects', async (badEffect) => {
     const char = makeChar({
       triggerscript: [
         triggerWithEffects([
-          eff({ type: 'v2MakeArrayVar', var: '[]' }),
+          eff({
+            type: 'v2SetVar',
+            operator: '=',
+            var: 'beforeAbort',
+            valueType: 'value',
+            value: 'kept',
+            indent: 0,
+          }),
+          eff(badEffect),
           eff({
             type: 'v2SetVar',
             operator: '=',
@@ -1803,12 +1988,36 @@ describe('Phase 7-9d-ii V2 safe data helpers', () => {
       ],
     })
     const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
-    expect(result).not.toBeNull()
-    expect(result?.chat.scriptstate?.['$after']).toBe('ok')
+    expect(result).toMatchObject({ aborted: true, varChanged: true })
+    expect(result?.chat.scriptstate?.['$beforeAbort']).toBe('kept')
+    expect(result?.chat.scriptstate?.['$after']).toBeUndefined()
   })
 })
 
-describe('Phase 7-9e request/display state adapters', () => {
+describe('unsupported trigger effects', () => {
+  it.each([...serverUnsupportedTriggerEffectTypes].filter((type) => type !== '@@emo'))(
+    'keeps %s as a diagnosed no-op without partially mutating trigger state',
+    async (type) => {
+      const chat = makeChat({ scriptstate: { $before: 'kept' } })
+      const char = makeChar({
+        chats: [chat],
+        triggerscript: [triggerWithEffects([eff({ type })])],
+      })
+      const database = makeDb({ characters: [char] })
+      const unsupportedEffectTypes = new Set<string>()
+      const before = structuredClone({ char, chat })
+
+      const result = await runTrigger(makeCtx({ database, unsupportedEffectTypes }), char, 'output', { chat })
+
+      expect(result?.chat.scriptstate).toEqual({ $before: 'kept' })
+      expect(char).toEqual(before.char)
+      expect(chat).toEqual(before.chat)
+      expect(unsupportedEffectTypes).toEqual(new Set([type]))
+    },
+  )
+})
+
+describe('request/display state adapters', () => {
   it('round-trips display text through set then get', async () => {
     const char = makeChar({
       triggerscript: [

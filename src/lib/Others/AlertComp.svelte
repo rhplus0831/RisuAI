@@ -10,7 +10,7 @@
     type alertData,
   } from '../../ts/alert'
 
-  import { getCharImage } from '../../ts/characters'
+  import { getCharImage } from '../../ts/characterImage'
   import { ParseMarkdown } from '../../ts/parser/parser.svelte'
   import BarIcon from '../SideBars/BarIcon.svelte'
   import { ChevronRightIcon, User } from '@lucide/svelte'
@@ -25,18 +25,32 @@
   import OptionInput from '../UI/GUI/OptionInput.svelte'
   import { language } from 'src/lang'
   import { getFetchData } from 'src/ts/globalApi.svelte'
-  import { alertStore, selectedCharID } from 'src/ts/stores.svelte'
+  import { alertStore } from 'src/ts/stores.svelte'
   import { tokenize } from 'src/ts/tokenizer'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import ModuleChatMenu from '../Setting/Pages/Module/ModuleChatMenu.svelte'
   import { ColorSchemeTypeStore } from 'src/ts/gui/colorscheme'
   import Help from './Help.svelte'
   import { getChatBranches } from 'src/ts/gui/branches'
-  import { getCurrentCharacter, getDatabase, type Message } from 'src/ts/storage/database.svelte'
+  import {
+    botPresetHasHydratedSettings,
+    ensureBotPresetHydratedById,
+    type botPreset,
+    type Database,
+    type Message,
+  } from 'src/ts/storage/database.svelte'
+  import { getChatMessageOwnerState } from 'src/ts/server/chatMessageHydration.svelte'
+  import {
+    charactersResourceState,
+    collectionsResourceState,
+    getCharacterResourceOwner,
+    settingsResourceState,
+  } from 'src/ts/server/resourceState.svelte'
   import { translateStackTrace } from '../../ts/sourcemap'
   import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel } from 'src/ts/platform'
   import versionData from '../../../version.json'
   import { normalizeMessagePromptInfo } from './alertPromptInfo'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { isTrustedLoginMessageOrigin } from 'src/ts/gui/loginMessageOrigin'
 
@@ -73,30 +87,108 @@
   function resolveGenerationMessage(
     info: AlertGenerationInfoStoreData,
   ): { message: Message; index: number } | undefined {
-    const characters = getDatabase().characters ?? []
+    if (charactersResourceState.status !== 'ready') return undefined
+    const characters = canonicalCharacterOwners()
+    if (!characters) return undefined
+
     const character = info.characterId
-      ? characters.find((candidate) => candidate.chaId === info.characterId)
-      : characters[$selectedCharID]
+      ? getCharacterResourceOwner(info.characterId)
+      : characters[charactersResourceState.currentChar]
+    if (!character) return undefined
+
     const chat = info.chatId
-      ? character?.chats?.find((candidate) => candidate.id === info.chatId)
-      : character?.chats?.[character.chatPage]
-    const messages = chat?.message ?? []
+      ? uniqueChatOwner(character, info.chatId)
+      : (() => {
+          const candidate = character.chats?.[character.chatPage]
+          return candidate?.id ? uniqueChatOwner(character, candidate.id) : undefined
+        })()
+    if (!chat?.id) return undefined
+
+    const messages = getChatMessageOwnerState(chat.id)?.messages
+    if (!messages) return undefined
     if (info.messageId) {
-      const index = messages.findIndex((message) => message.chatId === info.messageId)
-      if (index >= 0) return { message: messages[index], index }
+      const matches = messages
+        .map((message, index) => ({ message, index }))
+        .filter(({ message }) => message.chatId === info.messageId)
+      return matches.length === 1 ? matches[0] : undefined
     }
     const generationId = info.genInfo.generationId
     if (generationId) {
-      const index = messages.findIndex(
-        (message) => message.generationInfo?.generationId === generationId || message.chatId === generationId,
-      )
-      if (index >= 0) return { message: messages[index], index }
+      const matches = messages
+        .map((message, index) => ({ message, index }))
+        .filter(
+          ({ message }) => message.generationInfo?.generationId === generationId || message.chatId === generationId,
+        )
+      return matches.length === 1 ? matches[0] : undefined
     }
     if (!info.messageId && !generationId && messages[info.idx]) {
       return { message: messages[info.idx], index: info.idx }
     }
     return undefined
   }
+
+  function canonicalCharacterOwners(): Database['characters'] | null {
+    const owners = charactersResourceState.characters.map((candidate) => {
+      const characterId = candidate?.chaId
+      if (typeof characterId !== 'string' || characterId.trim().length === 0) return undefined
+      return getCharacterResourceOwner(characterId)
+    })
+    return owners.every((owner): owner is Database['characters'][number] => !!owner)
+      ? (owners as Database['characters'])
+      : null
+  }
+
+  function uniqueChatOwner(character: Database['characters'][number], chatId: string) {
+    const matches = (character.chats ?? []).filter((candidate) => candidate.id === chatId)
+    return matches.length === 1 ? matches[0] : undefined
+  }
+
+  function canonicalLegacyPresetOwners(): botPreset[] | null {
+    if (
+      collectionsResourceState.statuses.botPresets !== 'ready' ||
+      collectionsResourceState.errors.botPresets !== undefined
+    ) {
+      return null
+    }
+    const rows = collectionsResourceState.values.botPresets
+    if (!Array.isArray(rows)) return null
+
+    const ids = new Set<string>()
+    for (const row of rows) {
+      const id = row?.id
+      if (typeof id !== 'string' || id.trim().length === 0 || ids.has(id)) return null
+      ids.add(id)
+    }
+    return rows
+  }
+
+  function selectedLegacyPresetOwner(): botPreset | undefined {
+    if (
+      settingsResourceState.status !== 'ready' ||
+      settingsResourceState.error !== null ||
+      !Object.prototype.hasOwnProperty.call(settingsResourceState.value, 'botPresetsId')
+    ) {
+      return undefined
+    }
+    const selectedIndex = settingsResourceState.value.botPresetsId
+    if (!Number.isInteger(selectedIndex) || (selectedIndex as number) < 0) return undefined
+    const owners = canonicalLegacyPresetOwners()
+    const presetId = owners?.[selectedIndex as number]?.id
+    if (!presetId) return undefined
+    const matches = owners?.filter((candidate) => candidate.id === presetId) ?? []
+    return matches.length === 1 ? matches[0] : undefined
+  }
+
+  const characterPickerRows = $derived.by(() => {
+    return charactersResourceState.status === 'ready' ? (canonicalCharacterOwners() ?? []) : []
+  })
+  const selectedCharacterDisplay = $derived(characterPickerRows[charactersResourceState.currentChar])
+  let selectedPresetHydrationVersion = $state(0)
+  const selectedPresetHasUnsupportedExportAssets = $derived.by(() => {
+    selectedPresetHydrationVersion
+    const owner = selectedLegacyPresetOwner()
+    return botPresetHasHydratedSettings(owner) && (!!owner.image || (owner.regex?.length ?? 0) > 0)
+  })
   const generationMessageTarget = $derived.by(() => {
     const info = $alertGenerationInfoStore
     if (!info) return undefined
@@ -117,7 +209,7 @@
     if ($alertStore.type === 'select') return language.select
     if ($alertStore.type === 'selectChar') return language.select
     if ($alertStore.type === 'input') return language.input
-    if ($alertStore.type === 'tos') return language.termsOfService
+    if ($alertStore.type === 'realmTerms') return language.realm.termsTitle
     return $alertStore.msg || 'Risuai'
   })
 
@@ -137,7 +229,7 @@
   let branchFocusedDetails: BranchDetails | null = $state(null)
   let branchPointerFocusPending = false
   const branchGraph = $derived.by(() => {
-    if ($alertStore.type !== 'branches' || $selectedCharID < 0) return []
+    if ($alertStore.type !== 'branches' || charactersResourceState.currentChar < 0) return []
     return getChatBranches()
   })
   let expandedLogs: Set<number> = $state(new Set())
@@ -188,7 +280,8 @@
   }
 
   function getBranchDetails(obj: BranchNode, index: number): BranchDetails {
-    const char = getCurrentCharacter()
+    const candidate = charactersResourceState.characters[charactersResourceState.currentChar]
+    const char = candidate?.chaId ? getCharacterResourceOwner(candidate.chaId) : undefined
     const chat = char?.chats?.[obj.chatId]
     const content =
       obj.y === 0
@@ -236,6 +329,20 @@
       alertInputElement.focus()
       alertInputElement.select()
     }
+  })
+
+  $effect(() => {
+    if ($alertStore.type !== 'cardexport' || $alertStore.submsg !== 'preset') return
+    const owner = selectedLegacyPresetOwner()
+    if (!owner?.id) return
+    const presetId = owner.id
+    if (botPresetHasHydratedSettings(owner)) return
+    void ensureBotPresetHydratedById(presetId).then((hydrated) => {
+      if (!hydrated || $alertStore.type !== 'cardexport' || $alertStore.submsg !== 'preset') return
+      const currentOwner = selectedLegacyPresetOwner()
+      if (currentOwner?.id !== presetId || !botPresetHasHydratedSettings(currentOwner)) return
+      selectedPresetHydrationVersion += 1
+    })
   })
 
   $effect(() => {
@@ -302,7 +409,7 @@
 
   function readProgressLabel(data: alertData, percent: number) {
     if (data.progress === null) {
-      return 'Working'
+      return language.characterImportProgress.working
     }
 
     const rounded = Math.round(percent * 100) / 100
@@ -338,10 +445,6 @@
     resolveAlertSelection($alertStore.dialogOwner, null)
   }
 
-  function handleAlertBackdropClick(event: MouseEvent) {
-    if (event.target === event.currentTarget) cancelSelectAlert()
-  }
-
   function handleAlertKeydown(event: KeyboardEvent) {
     if ($alertStore.type !== 'select' || event.key !== 'Escape') return
     event.preventDefault()
@@ -362,10 +465,10 @@
 {#if $alertStore.type !== 'none' && $alertStore.type !== 'toast' && $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs'}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
+    use:modalBackdropDismiss={cancelSelectAlert}
     data-modal-root
     class="fixed inset-0 z-[100] bg-black/50 flex justify-center items-center"
     class:vis={$alertStore.type === 'wait2'}
-    onclick={handleAlertBackdropClick}
     onkeydown={handleAlertKeydown}>
     <div
       use:modalFocusTrap
@@ -396,41 +499,34 @@
             {/await}
           </span>
         </div>
-      {:else if $alertStore.type === 'tos'}
+      {:else if $alertStore.type === 'realmTerms'}
         <div class="text-textcolor">
-          You should accept
-          <a
-            href="https://account.sionyw.com/terms"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer"
-            onclick={(event) => {
-              event.preventDefault()
-              openURL('https://account.sionyw.com/terms')
-            }}>Terms of Service</a>
-
-          and
-
-          <a
-            href="https://account.sionyw.com/privacy"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer"
-            onclick={(event) => {
-              event.preventDefault()
-              openURL('https://account.sionyw.com/privacy')
-            }}>Privacy Policy</a>
-
-          to continue
+          <p>{language.realm.termsPrompt}</p>
+          <ul class="mt-2 list-disc pl-6">
+            <li>
+              <a
+                href="https://account.sionyw.com/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer"
+                onclick={(event) => {
+                  event.preventDefault()
+                  openURL('https://account.sionyw.com/terms')
+                }}>{language.realm.termsLink}</a>
+            </li>
+            <li>
+              <a
+                href="https://account.sionyw.com/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer"
+                onclick={(event) => {
+                  event.preventDefault()
+                  openURL('https://account.sionyw.com/privacy')
+                }}>{language.realm.privacyLink}</a>
+            </li>
+          </ul>
         </div>
-
-        {#if localStorage.getItem('tos2') && Date.now() - new Date('2026-05-15').getTime() < 0}
-          <div class="text-gray-500 mt-4 text-sm">
-            You can still continue using Risuai using original terms until {new Date(
-              '2026-05-15',
-            ).toLocaleDateString()}.
-          </div>
-        {/if}
       {:else if $alertStore.type === 'pluginconfirm'}
         {@const parts = $alertStore.msg.split('\n\n')}
         {@const mainPart = parts[0]}
@@ -501,7 +597,8 @@
           </div>
         </div>
         <div class="w-full flex justify-center mt-6">
-          <span class="text-gray-500 text-sm">{progressLabel}</span>
+          <span class="text-gray-500 text-sm" role="status" aria-live="polite"
+            ><span class="sr-only">{$alertStore.msg}: </span>{progressLabel}</span>
         </div>
         {#if progressDetail}
           <div class="w-full mt-2 text-center text-gray-500 text-sm whitespace-pre-wrap">
@@ -523,20 +620,20 @@
               resolveAlertConfirmation($alertStore.dialogOwner, false)
             }}>NO</Button>
         </div>
-      {:else if $alertStore.type === 'tos' && import.meta.env.VITE_RISU_LEGAL_CONFIGURED}
-        {@const tosOwner = $alertStore.dialogOwner}
+      {:else if $alertStore.type === 'realmTerms'}
+        {@const realmTermsOwner = $alertStore.dialogOwner}
         <div class="flex gap-2 w-full">
           <Button
             className="mt-4 grow"
             onclick={() => {
-              resolveAlertWorkflow(tosOwner, 'yes')
-            }}>Accept</Button>
+              resolveAlertWorkflow(realmTermsOwner, 'yes')
+            }}>{language.realm.acceptTerms}</Button>
           <Button
             styled={'outlined'}
             className="mt-4 grow"
             onclick={() => {
-              resolveAlertWorkflow(tosOwner, 'no')
-            }}>Do not Accept</Button>
+              resolveAlertWorkflow(realmTermsOwner, 'no')
+            }}>{language.realm.declineTerms}</Button>
         </div>
       {:else if $alertStore.type === 'select'}
         {@const hasDisplay = $alertStore.msg.startsWith('__DISPLAY__')}
@@ -612,7 +709,7 @@
       {:else if $alertStore.type === 'selectChar'}
         {@const selectCharacterOwner = $alertStore.dialogOwner}
         <div class="flex w-full items-start flex-wrap gap-2 justify-start">
-          {#each getDatabase().characters as char}
+          {#each characterPickerRows as char}
             {#if char.image}
               {#await getCharImage(char.image, 'css')}
                 <BarIcon
@@ -936,9 +1033,9 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
+    use:modalBackdropDismiss={() => cancelCardExport(cardExportOwner)}
     data-modal-root
-    class="fixed top-0 left-0 h-full w-full bg-black/50 flex flex-col z-[100] items-center justify-center"
-    onclick={() => cancelCardExport(cardExportOwner)}>
+    class="fixed top-0 left-0 h-full w-full bg-black/50 flex flex-col z-[100] items-center justify-center">
     <div
       use:modalFocusTrap
       class="bg-darkbg rounded-md p-4 max-w-full flex flex-col w-2xl"
@@ -969,12 +1066,12 @@
           <span class="text-textcolor2 text-sm">{language.risuMDesc}</span>
         {:else if $alertStore.submsg === 'preset'}
           <span class="text-textcolor2 text-sm">{language.risupresetDesc}</span>
-          {#if cardExportType2 === 'preset' && (getDatabase().botPresets[getDatabase().botPresetsId].image || getDatabase().botPresets[getDatabase().botPresetsId].regex?.length > 0)}
+          {#if cardExportType2 === 'preset' && selectedPresetHasUnsupportedExportAssets}
             <span class="text-red-500 text-sm">Preset with image or regexes cannot be exported for now.</span>
           {/if}
         {:else}
           <span class="text-textcolor2 text-sm">{language.ccv3Desc}</span>
-          {#if cardExportType2 !== 'charx' && cardExportType2 !== 'charxJpeg' && isCharacterHasAssets(getDatabase().characters[$selectedCharID])}
+          {#if cardExportType2 !== 'charx' && cardExportType2 !== 'charxJpeg' && selectedCharacterDisplay && isCharacterHasAssets(selectedCharacterDisplay)}
             <span class="text-red-500 text-sm">{language.notCharxWarn}</span>
           {/if}
         {/if}

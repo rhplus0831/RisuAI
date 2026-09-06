@@ -6,15 +6,17 @@
   import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
   import SegmentedControl from 'src/lib/UI/GUI/SegmentedControl.svelte'
   import ModelList from 'src/lib/UI/ModelList.svelte'
-  import type { ServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import type { ServerBackedSettingDraft } from 'src/ts/server/settingsOwner.svelte'
   import type { SeparateParameters } from 'src/ts/storage/database.svelte'
   import type {
     LegacyFallbackModelKey,
     LegacyFallbackModelMap,
     ModelRole,
     NormalizedModelRoleOverrides,
-  } from 'src/ts/model/modelRoles'
+  } from '@risuai/shared-core/model-roles'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
+  import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
 
   type OptionalModelRole = Exclude<ModelRole, 'chatMain' | 'chatAux'>
   type RoleModelMode = 'inherit' | 'override'
@@ -101,7 +103,7 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div data-modal-root class="fixed inset-0 z-50 flex justify-end bg-black/50" onclick={closeEditor}>
+<div use:modalBackdropDismiss={closeEditor} data-modal-root class="fixed inset-0 z-50 flex justify-end bg-black/50">
   <div
     use:modalFocusTrap
     class="flex h-full w-full max-w-2xl flex-col border-l border-darkborderc bg-bgcolor text-textcolor shadow-xl"
@@ -234,6 +236,7 @@
                   class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-red-500 text-white hover:bg-red-600"
                   aria-label={language.remove}
                   onclick={() => {
+                    if (!confirmSettingsItemRemoval()) return
                     removeFallbackModel(fallbackKey, index)
                   }}>
                   <TrashIcon size={18} />

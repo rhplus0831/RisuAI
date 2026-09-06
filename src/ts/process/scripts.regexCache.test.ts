@@ -9,7 +9,7 @@ import {
   resetScriptCache,
 } from './scripts'
 
-describe('compiled regex memoization (Phase 7)', () => {
+describe('compiled regex memoization', () => {
   beforeEach(() => {
     resetScriptCache()
   })
@@ -52,7 +52,26 @@ describe('compiled regex memoization (Phase 7)', () => {
     expect(getCompiledRegex('z', 'g')).not.toBe(before)
   })
 
-  it('L32: bestMatchCache is capped and evicts the least recently used match', () => {
+  it('rejects nested and prefix-overlapping unbounded patterns before main-thread execution', () => {
+    for (const source of [
+      '(a+)+$',
+      '(a|aa)+$',
+      '(a|a?)+',
+      '(?<name>a|aa)+$',
+      '([ab]|[ab][ab])+$',
+      '((?:ab)|(?:ab)c)+$',
+      '(a{1}|a{1,2})+$',
+    ]) {
+      expect(() => getCompiledRegex(source, '')).toThrow(/client regex rejected/)
+    }
+    expect(getCompiledRegex('(ab|ac)+$', '')).toBeInstanceOf(RegExp)
+  })
+
+  it('rejects patterns above the client compile cap', () => {
+    expect(() => getCompiledRegex('a'.repeat(4_097), '')).toThrow(/pattern length 4097 exceeds cap 4096/)
+  })
+
+  it('bestMatchCache is capped and evicts the least recently used match', () => {
     for (let i = 0; i < 1000; i += 1) {
       cacheBestMatchForTesting(`asset-${i}`, `match-${i}`)
     }
@@ -67,7 +86,7 @@ describe('compiled regex memoization (Phase 7)', () => {
     expect(getBestMatchForTesting('asset-1000')).toBe('match-1000')
   })
 
-  it('L32: resetScriptCache clears bestMatchCache with the script caches', () => {
+  it('resetScriptCache clears bestMatchCache with the script caches', () => {
     cacheBestMatchForTesting('asset-reset', 'match-reset')
     expect(getBestMatchCacheSizeForTesting()).toBe(1)
 

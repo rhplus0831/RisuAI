@@ -1,5 +1,8 @@
+import { applyAdditionalParameters } from './additionalParams.js'
 import type { CompletionResult } from './frames.js'
 import { readBoundedBodyJson, readBoundedBodyText } from './body.js'
+import { extractApiResponseMetadata, mergeApiResponseMetadata } from './apiMetadata.js'
+import { formatUpstreamHttpError } from './upstreamError.js'
 
 /**
  * Stable Horde text dispatcher. Mirrors the local SPA's `requestHorde` path:
@@ -35,6 +38,7 @@ export interface HordeRequest {
   temperature?: number
   topK?: number
   topP?: number
+  additionalParams?: Array<[string, string]>
   /** Override poll interval for deterministic tests. Defaults to 2 s. */
   pollIntervalMs?: number
   /** Override wall-clock timeout. Defaults to 5 min. */
@@ -51,6 +55,7 @@ interface HordeResolveInput {
   temperature?: unknown
   topK?: unknown
   topP?: unknown
+  additionalParams?: Array<[string, string]>
   pollIntervalMs?: unknown
   timeoutMs?: unknown
   signal: AbortSignal
@@ -90,6 +95,7 @@ export function resolveHordeRequest(input: HordeResolveInput): HordeRequest | nu
     temperature,
     topK,
     topP,
+    additionalParams: input.additionalParams,
     pollIntervalMs,
     timeoutMs,
     signal: input.signal,
@@ -118,6 +124,15 @@ function buildAsyncPayload(req: HordeRequest): Record<string, unknown> {
     payload.models = [req.model, req.model.trim(), ' ' + req.model, req.model + ' ']
   }
   return payload
+}
+
+function buildAsyncRequestInit(req: HordeRequest): { body: string; headers: Record<string, string> } {
+  const body = buildAsyncPayload(req)
+  const headers: Record<string, string> = { 'content-type': 'application/json', apikey: req.apiKey }
+  if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
+    applyAdditionalParameters(body, headers, req.additionalParams)
+  }
+  return { body: JSON.stringify(body), headers }
 }
 
 interface AsyncResponse {
@@ -203,10 +218,11 @@ export async function runHorde(req: HordeRequest): Promise<CompletionResult> {
   // Step 1: submit the async job.
   let asyncResp: Response
   try {
+    const init = buildAsyncRequestInit(req)
     asyncResp = await fetch(`${HORDE_BASE_URL}/generate/text/async`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', apikey: req.apiKey },
-      body: JSON.stringify(buildAsyncPayload(req)),
+      headers: init.headers,
+      body: init.body,
       signal: req.signal,
     })
   } catch (err) {
@@ -238,6 +254,7 @@ export async function runHorde(req: HordeRequest): Promise<CompletionResult> {
     return { type: 'fail', result: 'horde async response missing job id' }
   }
   const jobId = asyncBody.id
+  const submissionMetadata = extractApiResponseMetadata(asyncBody, ['id', 'message'])
 
   // Wire up abort → DELETE.
   let abortHandled = false
@@ -268,8 +285,9 @@ export async function runHorde(req: HordeRequest): Promise<CompletionResult> {
       }
 
       let statusResp: Response
+      const statusUrl = `${HORDE_BASE_URL}/generate/text/status/${encodeURIComponent(jobId)}`
       try {
-        statusResp = await fetch(`${HORDE_BASE_URL}/generate/text/status/${encodeURIComponent(jobId)}`, {
+        statusResp = await fetch(statusUrl, {
           method: 'GET',
           headers: { apikey: req.apiKey },
           signal: req.signal,
@@ -282,6 +300,18 @@ export async function runHorde(req: HordeRequest): Promise<CompletionResult> {
         return { type: 'fail', result: `horde status poll failed: ${msg}` }
       }
 
+      if (!statusResp.ok) {
+        let message: string | undefined
+        try {
+          const raw = await readBoundedBodyText(statusResp)
+          if (raw.length > 0) message = raw
+        } catch {
+          // Keep the bounded HTTP status fallback.
+        }
+        fireDeleteJob(jobId, req.apiKey)
+        return { type: 'fail', result: formatUpstreamHttpError(statusResp, statusUrl, { message }) }
+      }
+
       let body: StatusResponse
       try {
         body = (await readBoundedBodyJson(statusResp)) as StatusResponse
@@ -292,7 +322,7 @@ export async function runHorde(req: HordeRequest): Promise<CompletionResult> {
 
       if (body.is_possible === false) {
         fireDeleteJob(jobId, req.apiKey)
-        return { type: 'fail', result: 'horde reports the job is not possible' }
+        return { type: 'fail', result: 'horde reports the job is not possible', nonRetryable: true }
       }
       if (body.faulted === true) {
         fireDeleteJob(jobId, req.apiKey)
@@ -303,9 +333,14 @@ export async function runHorde(req: HordeRequest): Promise<CompletionResult> {
         const gens = Array.isArray(body.generations) ? body.generations : []
         const text = typeof gens[0]?.text === 'string' ? gens[0].text : ''
         if (text.length === 0) {
-          return { type: 'fail', result: 'horde finished with no generations' }
+          return { type: 'fail', result: 'horde finished with no generations', nonRetryable: true }
         }
-        return { type: 'success', result: text }
+        const apiMetadata = mergeApiResponseMetadata(
+          { jobId },
+          submissionMetadata,
+          extractApiResponseMetadata(body, ['generations', 'message', 'done']),
+        )
+        return { type: 'success', result: text, ...(apiMetadata ? { apiMetadata } : {}) }
       }
     }
   } finally {

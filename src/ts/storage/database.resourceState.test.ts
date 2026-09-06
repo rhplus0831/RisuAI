@@ -8,20 +8,13 @@ vi.mock('../process/modules', async (importActual) => {
 import {
   collectionsResourceState,
   charactersResourceState,
-  getResourceDatabase,
-  getResourceDatabaseFacadeEpoch,
   resetServerResourceState,
   replaceResourceDatabase,
   settingsResourceState,
 } from '../server/resourceState.svelte'
-import { getServerResourceApplyEpoch, setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
-import {
-  applyServerResourceDatabase,
-  getDatabase,
-  setDatabase,
-  setDatabaseLite,
-  type Database,
-} from './database.svelte'
+
+import { applyServerResourceDatabase, setDatabase, setDatabaseLite, type Database } from './database.svelte'
+import { getDatabase, getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 function databaseFixture(name = 'Ada'): Database {
   return {
@@ -48,17 +41,15 @@ function databaseFixture(name = 'Ada'): Database {
 }
 
 beforeEach(() => {
-  setResourceWriteGuardEnabled(false)
   resetServerResourceState()
 })
 
 afterEach(() => {
-  setResourceWriteGuardEnabled(false)
   resetServerResourceState()
 })
 
-describe('database compatibility accessors over resource state', () => {
-  it('routes getDatabase through resource slices', () => {
+describe('test database adapter over resource state', () => {
+  it('routes the test adapter through resource slices', () => {
     replaceResourceDatabase(databaseFixture())
 
     expect(getDatabase()).toBe(getResourceDatabase())
@@ -84,18 +75,13 @@ describe('database compatibility accessors over resource state', () => {
     expect(charactersResourceState.characters[0]?.name).toBe('Lite')
   })
 
-  it('seeds resource revisions and apply epochs on an authoritative replacement', () => {
-    const beforeFacadeEpoch = getResourceDatabaseFacadeEpoch()
-    const beforeApplyEpoch = getServerResourceApplyEpoch()
-
+  it('seeds resource revisions on an authoritative replacement', () => {
     applyServerResourceDatabase(databaseFixture('Projected'), 17)
 
     expect(getDatabase().characters[0]?.name).toBe('Projected')
     expect(settingsResourceState.revision).toBe(17)
     expect(collectionsResourceState.fullRevision).toBe(17)
     expect(charactersResourceState.listRevision).toBe(17)
-    expect(getResourceDatabaseFacadeEpoch()).toBeGreaterThan(beforeFacadeEpoch)
-    expect(getServerResourceApplyEpoch()).toBeGreaterThan(beforeApplyEpoch)
   })
 
   it('backfills chat screen width when an authoritative database predates the setting', () => {

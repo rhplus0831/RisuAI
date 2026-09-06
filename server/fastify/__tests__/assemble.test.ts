@@ -1,10 +1,18 @@
+import { adaptServerCbsDatabase } from '../src/prompt/cbsAdapter.js'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import type { Chat, Database, Message, character, loreBook } from '../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
-import type { AgentPresetStepRecord } from '../../../src/ts/agentPresetRecords'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as PromptDatabase,
+  ServerPromptPreset,
+  FastifyLoreBook as loreBook,
+  FastifyMessage as Message,
+} from '../src/prompt/serverTypes.js'
+import type { PromptMessage } from '../src/prompt/promptMessage.js'
+import type { AgentPresetStepRecord } from '@risuai/shared-core/agent-preset-records'
 import { openDatabase } from '../src/db.js'
 import {
   createMemoryChunk,
@@ -13,11 +21,13 @@ import {
   listMemoryChunks,
   listMemoryJobs,
   listMemorySummaries,
+  type MemoryJob,
 } from '../src/memoryRepository.js'
 import { LEGACY_HYPA_V3_SUMMARY_MODEL } from '../src/memorySummaryCompatibility.js'
 import { EntityNotFoundError } from '../src/repository.js'
 import {
   assemblePrompt,
+  applyRequestTrigger,
   applyCurrentChatRunVars,
   beginAssembly,
   createEmptyUnformatedSlots,
@@ -58,7 +68,9 @@ import {
 import { getPromptAssetTableInstrumentation, resetPromptAssetTableInstrumentation } from '../src/prompt/promptAssets.js'
 import { promptSummaryMetricFields, summarizePromptRows } from '../src/prompt/promptSummary.js'
 import { getTriggerCloneInstrumentation, resetTriggerCloneInstrumentation } from '../src/prompt/triggers.js'
-import { LLMFlags } from '../../../src/ts/model/types'
+import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer } from '@risuai/shared-core/model-types'
+import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS } from '@risuai/protocol'
+import { createBardWikiDocument } from '../src/bardWikiRepository.js'
 
 beforeAll(() => {
   bootPromptVariables()
@@ -80,6 +92,17 @@ afterEach(() => {
     rmSync(dataDir, { recursive: true, force: true })
   }
 })
+
+/** Legacy test import fields remain local to this compatibility fixture. */
+type Database = PromptDatabase & {
+  botPresets?: ServerPromptPreset[]
+  botPresetsId?: number
+  apiType?: string
+  agentContextEnabled?: boolean
+  agentContextPrompt?: string
+  agentContextMaxOutput?: number
+  agentContextMaxToolRounds?: number
+}
 
 function makeChat(overrides: Partial<Chat> = {}): Chat {
   return {
@@ -168,7 +191,7 @@ function makeDatabase(overrides: Partial<Database> = {}): Database {
     ] as unknown as Database['modelPresets']
   }
   if (!overrides.promptPresets) {
-    database.promptPresets = (database.botPresets ?? []).map((preset) =>
+    database.promptPresets = (database.botPresets ?? []).map((preset: Record<string, unknown>) =>
       structuredClone(preset),
     ) as unknown as Database['promptPresets']
   }
@@ -179,9 +202,9 @@ function makeDatabase(overrides: Partial<Database> = {}): Database {
       if (Object.prototype.hasOwnProperty.call(chat, 'generationSettings')) continue
       chat.generationSettings = {
         configured: true,
-        personaId: database.personas[0]?.id ?? 'persona-default',
-        modelPresetId: database.modelPresets[0]?.id ?? 'model-preset-default',
-        promptPresetId: database.promptPresets[0]?.id ?? 'preset-default',
+        personaId: database.personas?.[0]?.id ?? 'persona-default',
+        modelPresetId: database.modelPresets?.[0]?.id ?? 'model-preset-default',
+        promptPresetId: database.promptPresets?.[0]?.id ?? 'preset-default',
         jailbreakToggle: database.jailbreakToggle === true,
         sidebarToggles: {},
       }
@@ -256,7 +279,7 @@ function expectIncompleteAssembly(
 
 describe('prompt summary hashes', () => {
   it('produces a stable metadata-only summary without raw prompt strings', () => {
-    const rows: OpenAIChat[] = [
+    const rows: PromptMessage[] = [
       {
         role: 'system',
         content: 'slice-2-secret-content',
@@ -304,7 +327,7 @@ describe('prompt summary hashes', () => {
   })
 
   it('changes the hash for content, name, memo, cachePoint, and multimodal metadata changes', () => {
-    const base: OpenAIChat[] = [
+    const base: PromptMessage[] = [
       {
         role: 'user',
         content: 'base prompt',
@@ -315,7 +338,7 @@ describe('prompt summary hashes', () => {
       },
     ]
     const baseHash = summarizePromptRows(base).promptHash
-    const cases: Array<[string, OpenAIChat[]]> = [
+    const cases: Array<[string, PromptMessage[]]> = [
       ['content', [{ ...base[0], content: 'changed prompt' }]],
       ['name', [{ ...base[0], name: 'changed-name' }]],
       ['memo', [{ ...base[0], memo: 'changed-memo' }]],
@@ -411,6 +434,55 @@ describe('prompt summary hashes', () => {
     expect(result.stopSending).toBe(false)
     if (result.stopSending) return
     expect(result.formated?.map((row) => row.content).join('\n')).toContain('source-backed agent context')
+  })
+
+  it('preflights required inputs for every Agent phase before executing any step', async () => {
+    const db = makeDatabase({
+      agentPresets: [
+        {
+          id: 'ap_required_input',
+          name: 'Required Input Agent',
+          enabled: true,
+          version: 1,
+          steps: [
+            agentPresetStep(),
+            agentPresetStep({
+              id: 'aps_after',
+              name: 'After Main',
+              phase: 'afterMain',
+              instruction: 'Reference:\n{{agentInput::reference}}',
+              lorebookInputs: [{ key: 'reference', displayName: 'Reference Notes', required: true }],
+              outputKey: 'after',
+              destination: 'intermediate',
+            }),
+          ],
+        },
+      ],
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-default',
+                agentPresetId: 'ap_required_input',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
+    })
+    const executeAgentPresetStep = vi.fn()
+
+    await expect(assemblePrompt(baseInput(), depsFor(db, { executeAgentPresetStep }))).rejects.toThrow(
+      'Required Agent lorebook input was not found: Reference Notes',
+    )
+    expect(executeAgentPresetStep).not.toHaveBeenCalled()
   })
 
   it('runs the global default Agent Preset when the chat has no explicit selection', async () => {
@@ -544,6 +616,84 @@ describe('prompt summary hashes', () => {
       source: 'agent_preset',
     })
     expect(db.characters[0].chats[0].message?.at(-1)?.data).toBe('older assistant turn')
+  })
+
+  it('keeps the regenerate target in the authoritative submit snapshot after an Agent Preset input rewrite', async () => {
+    const db = makeDatabase({
+      maxContext: 100_000,
+      maxResponse: 50,
+      mainPrompt: 'MAIN',
+      formatingOrder: ['main', 'description', 'chats', 'lastChat'],
+      agentPresets: [
+        {
+          id: 'ap_input',
+          name: 'Input Agent',
+          enabled: true,
+          version: 1,
+          steps: [agentPresetStep({ id: 'aps_input', outputKey: 'input', destination: 'userInput' })],
+        },
+      ],
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              message: [
+                { role: 'user', data: 'raw latest user turn', chatId: 'latest-user' },
+                { role: 'char', data: 'old assistant target', chatId: 'assistant-target', saying: 'char-1' },
+              ] as Message[],
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-default',
+                agentPresetId: 'ap_input',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
+    })
+    const executeAgentPresetStep = vi.fn(async () => ({
+      status: 'success' as const,
+      stepId: 'aps_input',
+      stepName: 'Rewrite Input',
+      outputKey: 'input',
+      outputText: 'rewritten latest user turn',
+      outputTruncated: false,
+      diagnostics: {
+        phase: 'beforeMain' as const,
+        outputFormat: 'text' as const,
+        destination: 'userInput' as const,
+        failurePolicy: 'required' as const,
+        inputChars: 20,
+        outputChars: 26,
+        startedAt: 1,
+        endedAt: 2,
+        durationMs: 1,
+        preparedInputSections: [],
+        preparedInputDiagnostics: [],
+        parseStatus: 'not_applicable' as const,
+      },
+    }))
+
+    const result = await assemblePrompt(
+      baseInput({
+        mode: 'regenerate',
+        userMessage: undefined,
+        regenerateMessageId: 'assistant-target',
+      }),
+      depsFor(db, { executeAgentPresetStep }),
+    )
+
+    expect(result.submitTranscriptChanged).toBe(true)
+    expect(result.submitMessages).toEqual([
+      expect.objectContaining({ chatId: 'latest-user', data: 'rewritten latest user turn' }),
+      expect.objectContaining({ chatId: 'assistant-target', data: 'old assistant target' }),
+    ])
+    expect(result.state?.currentChat.message.some((message) => message.chatId === 'assistant-target')).toBe(false)
   })
 
   it('blocks assembly on required before-main Agent Preset failure', async () => {
@@ -859,6 +1009,108 @@ describe('prompt summary hashes', () => {
     })
   })
 
+  it('composes the final response from mainOutput and multiple named Agent outputs through CBS', async () => {
+    const contextStep = agentPresetStep({
+      id: 'aps_context',
+      name: 'Context',
+      outputKey: 'context',
+      destination: 'intermediate',
+    })
+    const statusStep = agentPresetStep({
+      id: 'aps_status',
+      name: 'Status',
+      phase: 'afterMain',
+      outputKey: 'status',
+      destination: 'intermediate',
+      inputScopes: ['mainDraft'],
+    })
+    const db = makeDatabase({
+      maxContext: 100_000,
+      maxResponse: 50,
+      mainPrompt: 'MAIN',
+      agentPresets: [
+        {
+          id: 'ap_composed',
+          name: 'Composed Agent',
+          enabled: true,
+          version: 1,
+          finalOutputTemplate: 'Main:\n{{slot::mainOutput}}\nContext: {{agent::context}}\nStatus: {{agent::status}}',
+          steps: [contextStep, statusStep],
+        },
+      ],
+      characters: [
+        makeCharacter({
+          customscript: [
+            { in: 'assistant reply', out: 'edited reply', type: 'editoutput', flag: '', ableFlag: false },
+          ] as never,
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-default',
+                agentPresetId: 'ap_composed',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
+    })
+    const executeAgentPresetStep = vi.fn(async (input) => {
+      const outputText = input.step.id === 'aps_context' ? 'source-backed context' : 'ready'
+      return {
+        status: 'success' as const,
+        stepId: input.step.id,
+        stepName: input.step.name,
+        outputKey: input.step.outputKey,
+        outputText,
+        outputTruncated: false,
+        diagnostics: {
+          phase: input.step.phase,
+          outputFormat: 'text' as const,
+          destination: input.step.destination,
+          failurePolicy: 'required' as const,
+          inputChars: 0,
+          outputChars: outputText.length,
+          startedAt: 1,
+          endedAt: 2,
+          durationMs: 1,
+          preparedInputSections: [],
+          preparedInputDiagnostics: [],
+          parseStatus: 'not_applicable' as const,
+        },
+      }
+    })
+
+    const assembled = await assemblePrompt(
+      baseInput({ userMessage: 'latest user turn' }),
+      depsFor(db, { executeAgentPresetStep }),
+    )
+    expect(assembled.stopSending).toBe(false)
+    if (assembled.stopSending) return
+
+    const generationInfo: Record<string, unknown> = {}
+    const post = await runServerPostGeneration(assembled.state!, {
+      completionText: 'assistant reply',
+      generationId: 'generation-composed',
+      generationInfo,
+    })
+
+    expect(executeAgentPresetStep).toHaveBeenCalledTimes(2)
+    expect(post.finalText).toBe('Main:\nedited reply\nContext: source-backed context\nStatus: ready')
+    expect(generationInfo.agentPreset).toMatchObject({
+      status: 'ready',
+      presetId: 'ap_composed',
+      finalOutputComposed: true,
+      finalTextModified: true,
+      mainOutputPreview: 'edited reply',
+    })
+  })
+
   it('preserves the post-editoutput text when required after-main fails', async () => {
     const afterStep = agentPresetStep({
       id: 'aps_after',
@@ -981,8 +1233,8 @@ describe('prompt summary hashes', () => {
   })
 })
 
-describe('Phase 7 L1 async asset reads', () => {
-  it('L1: repeated asset prompt refs share one async stored-asset read during assembly', async () => {
+describe('async asset reads', () => {
+  it('repeated asset prompt refs share one async stored-asset read during assembly', async () => {
     const assetId = 'c'.repeat(64)
     const reads: string[] = []
     const resolveStoredAsset = createRequestScopedStoredAssetResolver(
@@ -1043,8 +1295,8 @@ describe('Phase 7 L1 async asset reads', () => {
   })
 })
 
-describe('Phase 7 L6 per-assembly asset table', () => {
-  it('L6: shares one char+module asset table across lookup and history without changing winners', async () => {
+describe('per-assembly asset table', () => {
+  it('shares one char+module asset table across lookup and history without changing winners', async () => {
     resetPromptAssetTableInstrumentation()
     const resolved: string[] = []
     const resolveStoredAsset = async (reference: string) => {
@@ -1114,8 +1366,8 @@ describe('Phase 7 L6 per-assembly asset table', () => {
   })
 })
 
-describe('Phase 7 L3/K3 dispatch and restoration clone narrowing', () => {
-  it('L3: returns default OpenAI-flag rows by reference without mutation or prompt clones', () => {
+describe('dispatch and restoration clone narrowing', () => {
+  it('returns default OpenAI-flag rows by reference without mutation or prompt clones', () => {
     resetChatDispatchReformatInstrumentation()
     const rows = freezeDeep([
       {
@@ -1124,7 +1376,7 @@ describe('Phase 7 L3/K3 dispatch and restoration clone narrowing', () => {
         multimodals: [{ type: 'image', base64: 'data:image/png;base64,AAAA' }],
       },
       { role: 'user', content: 'hello' },
-    ] satisfies OpenAIChat[]) as OpenAIChat[]
+    ] satisfies PromptMessage[]) as PromptMessage[]
     const before = JSON.stringify(rows)
 
     const result = reformatMessages(makeDatabase(), rows, [LLMFlags.hasFullSystemPrompt, LLMFlags.hasStreaming])
@@ -1142,11 +1394,18 @@ describe('Phase 7 L3/K3 dispatch and restoration clone narrowing', () => {
       rows: [
         { role: 'system', content: 'sys' },
         { role: 'user', content: 'hi' },
-      ] satisfies OpenAIChat[],
+      ] satisfies PromptMessage[],
       expected: [
         { role: 'user', content: 'system: sys' },
         { role: 'user', content: 'hi' },
       ],
+    },
+    {
+      name: 'empty system role replacement',
+      db: makeDatabase({ systemRoleReplacement: '' as never }),
+      flags: [],
+      rows: [{ role: 'system', content: 'sys' }] satisfies PromptMessage[],
+      expected: [{ role: 'user', content: 'system: sys' }],
     },
     {
       name: 'first system hoist',
@@ -1157,7 +1416,7 @@ describe('Phase 7 L3/K3 dispatch and restoration clone narrowing', () => {
         { role: 'system', content: 'sys two' },
         { role: 'user', content: 'hi' },
         { role: 'system', content: 'inner' },
-      ] satisfies OpenAIChat[],
+      ] satisfies PromptMessage[],
       expected: [
         { role: 'system', content: 'sys one\n\nsys two' },
         { role: 'user', content: 'hi' },
@@ -1182,7 +1441,7 @@ describe('Phase 7 L3/K3 dispatch and restoration clone narrowing', () => {
           thoughts: ['think'],
         },
         { role: 'assistant', content: 'reply' },
-      ] satisfies OpenAIChat[],
+      ] satisfies PromptMessage[],
       expected: [
         {
           role: 'user',
@@ -1201,15 +1460,15 @@ describe('Phase 7 L3/K3 dispatch and restoration clone narrowing', () => {
       name: 'must start with user',
       db: makeDatabase(),
       flags: [LLMFlags.hasFullSystemPrompt, LLMFlags.mustStartWithUserInput],
-      rows: [{ role: 'assistant', content: 'prefill' }] satisfies OpenAIChat[],
+      rows: [{ role: 'assistant', content: 'prefill' }] satisfies PromptMessage[],
       expected: [
         { role: 'user', content: ' ' },
         { role: 'assistant', content: 'prefill' },
       ],
     },
-  ])('L3: preserves byte-identical output and isolation for $name', ({ db, flags, rows, expected }) => {
+  ])('preserves byte-identical output and isolation for $name', ({ db, flags, rows, expected }) => {
     resetChatDispatchReformatInstrumentation()
-    const sourceRows = rows as OpenAIChat[]
+    const sourceRows = rows as PromptMessage[]
     const originalRows = structuredClone(sourceRows)
 
     const result = reformatMessages(db, sourceRows, flags)
@@ -1221,7 +1480,7 @@ describe('Phase 7 L3/K3 dispatch and restoration clone narrowing', () => {
     expect(getChatDispatchReformatInstrumentation().fullPromptClones).toBe(1)
   })
 
-  it('K3: returns immutable initial restoration messages by reference and clones scriptstate', () => {
+  it('returns immutable initial restoration messages by reference and clones scriptstate', () => {
     const initialMessages = freezeDeep([
       { role: 'user', data: 'before', chatId: 'msg-1' },
     ] satisfies Message[]) as Message[]
@@ -1258,6 +1517,7 @@ function memoryEnabledDatabase(overrides: Partial<Database> = {}): Database {
     hypaModel: 'embedding-model' as never,
     hypaV3Presets: [
       {
+        id: 'test-memory',
         name: 'Test',
         settings: {
           summarizationModel: 'summary-model',
@@ -1267,6 +1527,7 @@ function memoryEnabledDatabase(overrides: Partial<Database> = {}): Database {
         },
       },
     ] as never,
+    selectedHypaV3PresetId: 'test-memory',
     hypaV3PresetId: 0,
     characters: [
       makeCharacter({
@@ -1279,7 +1540,7 @@ function memoryEnabledDatabase(overrides: Partial<Database> = {}): Database {
   } as Partial<Database>)
 }
 
-describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
+describe('resolveScope (via beginAssembly)', () => {
   it('throws EntityNotFoundError when the database is missing', () => {
     expect(() => beginAssembly(baseInput(), depsFor(null))).toThrow(EntityNotFoundError)
   })
@@ -1387,24 +1648,6 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
     const rendered = (result.formated ?? []).map((row) => row.content).join('\n')
     expect(rendered).toContain('last=target chat latest')
     expect(rendered).not.toContain('wrong active chat')
-  })
-
-  it('throws a structured incomplete-chat error before assembly work', () => {
-    const db = makeDatabase({
-      characters: [
-        makeCharacter({
-          chats: [
-            makeChat({
-              id: 'chat-1',
-              generationSettings: undefined,
-            }),
-          ],
-        }),
-      ],
-    } as unknown as Partial<Database>)
-
-    expect(() => beginAssembly(baseInput(), depsFor(db))).toThrow(ChatGenerationSettingsIncompleteAssemblyError)
-    expectIncompleteAssembly(db, ['settings_missing'])
   })
 
   it('returns the stable incomplete error for an imported chat with absent settings', () => {
@@ -1564,7 +1807,7 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
     const state = beginAssembly(baseInput(), depsFor(explicitOffDb))
     fillStaticSlots(state)
 
-    expect(state.database.globalChatVariables.toggle_mode).toBe('0')
+    expect(state.database.globalChatVariables!.toggle_mode).toBe('0')
     expect(state.unformated.main.map((row) => row.content)).toEqual(['OFF'])
   })
 
@@ -1634,6 +1877,7 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
     expect(state.database.mainPrompt).toBe('CHAT MAIN {{toggle::mode::Mode}}')
     expect(state.database.jailbreak).toBe('CHAT JB')
     expect(state.database.globalNote).toBe('CHAT GLOBAL NOTE')
+    expect(state.database.selectedPersonaId).toBe('persona-chat')
     expect(state.database.selectedPersona).toBe(1)
     expect(state.database.username).toBe('Chat User')
     expect(state.database.userIcon).toBe('chat-icon')
@@ -1652,7 +1896,13 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
   it('uses selected preset module integration when resolving required sidebar toggles', () => {
     const db = makeDatabase({
       modules: [
-        { id: 'module-a', namespace: 'ns-a', customModuleToggle: 'moduleMode=Module Mode' },
+        {
+          id: 'module-a',
+          name: 'Module A',
+          description: '',
+          namespace: 'ns-a',
+          customModuleToggle: 'moduleMode=Module Mode',
+        },
       ] as Database['modules'],
       enabledModules: [],
       moduleIntergration: '',
@@ -1684,6 +1934,98 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
     } as unknown as Partial<Database>)
 
     expect(() => beginAssembly(baseInput(), depsFor(db))).toThrow(ChatGenerationSettingsIncompleteAssemblyError)
+  })
+
+  it('fails closed when the chat-selected prompt owner is duplicated', () => {
+    const db = makeDatabase({
+      promptPresets: [
+        { id: 'prompt-duplicate', name: 'Prompt A' },
+        { id: 'prompt-duplicate', name: 'Prompt B' },
+      ],
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'prompt-duplicate',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
+    } as unknown as Partial<Database>)
+
+    expect(() => beginAssembly(baseInput(), depsFor(db))).toThrow(ChatGenerationSettingsIncompleteAssemblyError)
+  })
+
+  it('adds effective Agent Preset module integration to the selected Prompt Preset', () => {
+    const db = makeDatabase({
+      modules: [
+        {
+          id: 'module-prompt',
+          name: 'Prompt Module',
+          description: '',
+          namespace: 'prompt-space',
+          customModuleToggle: 'promptMode=Prompt Mode',
+        },
+        {
+          id: 'module-agent',
+          name: 'Agent Module',
+          description: '',
+          namespace: 'agent-space',
+          customModuleToggle: 'agentMode=Agent Mode',
+        },
+      ] as Database['modules'],
+      enabledModules: [],
+      moduleIntergration: '',
+      botPresets: [
+        {
+          id: 'preset-chat',
+          name: 'Chat',
+          moduleIntergration: 'prompt-space',
+        },
+      ],
+      agentPresets: [
+        {
+          id: 'ap_modules',
+          name: 'Module Agent Preset',
+          enabled: true,
+          version: 1,
+          moduleIntergration: 'agent-space',
+          steps: [],
+        },
+      ],
+      characters: [
+        makeCharacter({
+          modules: [],
+          chats: [
+            makeChat({
+              modules: [],
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-chat',
+                agentPresetId: 'ap_modules',
+                jailbreakToggle: false,
+                sidebarToggles: { promptMode: '1', agentMode: '1' },
+              },
+            }),
+          ],
+        }),
+      ],
+    } as unknown as Partial<Database>)
+
+    const state = beginAssembly(baseInput(), depsFor(db))
+
+    expect(state.database.moduleIntergration).toBe('prompt-space, agent-space')
+    expect(state.database.globalChatVariables).toMatchObject({ toggle_promptMode: '1', toggle_agentMode: '1' })
+    expect(db.moduleIntergration).toBe('')
   })
 
   it('clears stale global module integration when the chat selected prompt has none', () => {
@@ -1799,6 +2141,73 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
     expect(db.globalChatVariables).toEqual({ toggle_mode: 'global' })
   })
 
+  it.each([
+    { legacy: true, modern: true, expected: 'modern' },
+    { legacy: false, modern: true, expected: 'modern' },
+    { legacy: true, modern: false, expected: 'legacy' },
+    { legacy: false, modern: false, expected: undefined },
+  ])('preserves selected preset regex precedence (legacy=$legacy, modern=$modern)', ({ legacy, modern, expected }) => {
+    const legacyRegex = legacy ? [{ comment: 'legacy', in: 'value', out: 'legacy', type: 'editinput' }] : []
+    const modernRegex = modern ? [{ comment: 'modern', in: 'value', out: 'modern', type: 'editinput' }] : []
+    const db = freezeDeep(
+      makeDatabase({
+        promptPresets: [{ id: 'preset-default', name: 'Selected', regex: legacyRegex, presetRegex: modernRegex }],
+      }),
+    )
+    const state = beginAssembly(baseInput(), depsFor(db))
+    expect(state.database.presetRegex?.map((script) => script.out)).toEqual(expected ? [expected] : [])
+    if (expected) expect(state.database.presetRegex).not.toBe(expected === 'modern' ? modernRegex : legacyRegex)
+    expect(legacyRegex.map((script) => script.out)).toEqual(legacy ? ['legacy'] : [])
+    expect(modernRegex.map((script) => script.out)).toEqual(modern ? ['modern'] : [])
+  })
+
+  it('shares readonly configuration while isolating each selected working state', () => {
+    const chat = makeChat({
+      message: [{ role: 'user', data: 'original' }],
+      scriptstate: { $owned: 'source' },
+      localLore: [],
+    })
+    const untouchedSibling = makeChat({ id: 'sibling-chat', message: [{ role: 'char', data: 'sibling body' }] })
+    const original = makeCharacter({ chats: [chat, untouchedSibling], globalLore: [] })
+    const db = freezeDeep(
+      makeDatabase({
+        characters: [original],
+        modules: [{ id: 'module', name: 'Module', description: 'configuration', regex: [] }],
+        globalChatVariables: { owned: 'source' },
+      }),
+    )
+    const before = JSON.stringify(db)
+    const first = beginAssembly(baseInput(), depsFor(db))
+    const second = beginAssembly(baseInput(), depsFor(db))
+    expect(first.database.modules).toBe(db.modules)
+    expect(first.database.personas).toBe(db.personas)
+    expect(first.database.modelPresets).toBe(db.modelPresets)
+    expect(first.currentChar).not.toBe(original)
+    expect(first.currentChar.chats[1]).toBe(untouchedSibling)
+    expect(first.currentChat).not.toBe(second.currentChat)
+    expect(first.currentChat.message).not.toBe(chat.message)
+    expect(first.currentChat.message).not.toBe(first.authoritativeMessages)
+    first.currentChar.name = 'working name'
+    first.currentChat.message[0].data = 'working text'
+    first.currentChat.scriptstate!.$owned = 'working variable'
+    first.database.globalChatVariables!.owned = 'working global variable'
+    first.currentChat.localLore.push({
+      key: '',
+      secondkey: '',
+      insertorder: 0,
+      comment: 'working',
+      content: 'working lore',
+      mode: 'normal',
+      alwaysActive: true,
+      selective: false,
+    })
+    expect(JSON.stringify(db)).toBe(before)
+    expect(second.currentChat.message[0].data).toBe('original')
+    expect(second.currentChat.scriptstate!.$owned).toBe('source')
+    expect(second.database.globalChatVariables!.owned).toBe('source')
+    expect(second.currentChat.localLore).toEqual([])
+  })
+
   it('does not mutate a frozen input database while building the effective config', () => {
     const db = freezeDeep(
       makeDatabase({
@@ -1824,25 +2233,6 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
     expect(state.database.personaPrompt).toBe('CHAT PERSONA')
     expect(db.mainPrompt).toBe('GLOBAL MAIN')
     expect(db.personaPrompt).toBe('GLOBAL PERSONA')
-  })
-
-  it('resolves an active character / chat (default-active consistency)', () => {
-    const db = makeDatabase({
-      currentChar: 1,
-      characters: [
-        makeCharacter({ chaId: 'char-a', chats: [makeChat({ id: 'a0' })] }),
-        makeCharacter({
-          chaId: 'char-b',
-          chatPage: 1,
-          chats: [makeChat({ id: 'b0' }), makeChat({ id: 'b1' })],
-        }),
-      ],
-    } as Partial<Database>)
-
-    const state = beginAssembly(baseInput({ characterId: 'char-b', chatId: 'b1' }), depsFor(db))
-    // The resolved indices match the active pointers.
-    expect(state.selectedCharID).toBe((db as any).currentChar)
-    expect(state.chatPage).toBe(state.currentChar.chatPage)
   })
 })
 
@@ -1884,7 +2274,7 @@ function seedPromptMemory(
   })
 }
 
-function chunkPlanningHistory(): OpenAIChat[] {
+function chunkPlanningHistory(): PromptMessage[] {
   return [
     {
       role: 'user',
@@ -1904,7 +2294,7 @@ function chunkPlanningHistory(): OpenAIChat[] {
   ]
 }
 
-describe('Phase 7-11a createEmptyUnformatedSlots', () => {
+describe('createEmptyUnformatedSlots', () => {
   it('returns all ten slot keys as empty arrays', () => {
     const slots = createEmptyUnformatedSlots()
     expect(Object.keys(slots).sort()).toEqual(
@@ -1927,7 +2317,7 @@ describe('Phase 7-11a createEmptyUnformatedSlots', () => {
   })
 })
 
-describe('Phase 7-11a beginAssembly context + template normalization', () => {
+describe('beginAssembly context + template normalization', () => {
   it('builds the ExpandContext and empty slots', () => {
     const db = makeDatabase()
     const state = beginAssembly(baseInput(), depsFor(db))
@@ -1965,16 +2355,85 @@ describe('Phase 7-11a beginAssembly context + template normalization', () => {
     const state = beginAssembly(baseInput(), depsFor(db))
     expect(state.formatOrder).toEqual(['main', 'description', 'chats', 'postEverything'])
   })
+
+  it('injects effective profile/request model metadata into CBS', () => {
+    const profile = {
+      id: 'prompt-metadata-profile',
+      name: 'Prompt Metadata',
+      providerId: 'debug-echo',
+      modelId: 'debug-echo',
+      providerOptions: {
+        baseUrl: 'debug://prompt-metadata',
+        requestModel: 'profile-request-model',
+      },
+      runtimeOptions: {
+        maxContext: 12345,
+      },
+    }
+    const auxiliaryProfile = {
+      id: 'prompt-metadata-aux-profile',
+      name: 'Prompt Metadata Aux',
+      modelId: 'gpt-5-mini',
+    }
+    const roleBindings = {
+      chatMain: { mode: 'profile' as const, profileId: 'prompt-metadata-profile' },
+      chatAux: { mode: 'profile' as const, profileId: 'prompt-metadata-aux-profile' },
+    }
+    const db = makeDatabase({
+      aiModel: 'echo_model',
+      modelProfiles: [profile, auxiliaryProfile],
+      modelRoleProfiles: roleBindings,
+      modelPresets: [
+        {
+          id: 'model-preset-default',
+          name: 'Default Model',
+          modelProfiles: [profile, auxiliaryProfile],
+          modelProfileOrder: ['prompt-metadata-profile', 'prompt-metadata-aux-profile'],
+          modelRoleProfiles: roleBindings,
+        },
+      ],
+    } as unknown as Partial<Database>)
+    const state = beginAssembly(baseInput(), depsFor(db))
+
+    const metadata = promptVariables.expandVariables(
+      [
+        '{{model}}',
+        '{{axmodel}}',
+        '{{maxcontext}}',
+        '{{metadata::modelshortname}}',
+        '{{metadata::modelname}}',
+        '{{metadata::modelinternalid}}',
+        '{{metadata::modelformat}}',
+        '{{metadata::modelprovider}}',
+        '{{metadata::modeltokenizer}}',
+      ].join('|'),
+      state.ctx,
+    ).text
+
+    expect(metadata).toBe(
+      [
+        'debug-echo',
+        'gpt-5-mini',
+        '12345',
+        'Debug Echo',
+        'Debug Echo',
+        'profile-request-model',
+        LLMFormat.Echo,
+        LLMProvider.Echo,
+        LLMTokenizer.Unknown,
+      ].join('|'),
+    )
+  })
 })
 
-describe('Phase 7-11a assemblePrompt', () => {
+describe('assemblePrompt', () => {
   it('surfaces bad-ID errors early', async () => {
     const db = makeDatabase()
     await expect(assemblePrompt(baseInput({ characterId: 'nope' }), depsFor(db))).rejects.toThrow(EntityNotFoundError)
   })
 })
 
-describe('Phase 7-11b fillStaticSlots', () => {
+describe('fillStaticSlots', () => {
   // A database whose static/plain leaves all produce content.
   const staticDb = (overrides: Partial<Database> = {}, charOverrides: Partial<character> = {}): Database =>
     makeDatabase({
@@ -2054,7 +2513,7 @@ describe('Phase 7-11b fillStaticSlots', () => {
   })
 })
 
-describe('Phase 7-11c fillLorebookSlots', () => {
+describe('fillLorebookSlots', () => {
   // An always-on (constant) lorebook entry — lands in the `lorebook` slot.
   const constLore = (content: string) =>
     ({
@@ -2113,7 +2572,7 @@ describe('Phase 7-11c fillLorebookSlots', () => {
   })
 })
 
-describe('Phase 7-11d fillHistoryAndBias', () => {
+describe('fillHistoryAndBias', () => {
   // A `start` trigger whose first effect aborts the send.
   const stopTrigger = [{ comment: '', type: 'start', conditions: [], effect: [{ type: 'stop' }] }] as never
 
@@ -2197,7 +2656,7 @@ describe('Phase 7-11d fillHistoryAndBias', () => {
   })
 })
 
-describe('Phase 7-11e fillMemoryAndPostHistory', () => {
+describe('fillMemoryAndPostHistory', () => {
   const msg = (role: string, data: string, chatId: string) => ({ role, data, chatId }) as never
 
   const historyChar = (overrides: Partial<character> = {}): character =>
@@ -2237,6 +2696,150 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
     expect(state.unformated.chats.every((r) => r.removable === true)).toBe(true)
     // This fixture has no server memory rows, so no memory cards are split out.
     expect(state.memories).toEqual([])
+  })
+
+  it('injects BardWiki through the same template memory card in preview and send assembly', async () => {
+    const memoryDb = openDatabase(makeDataDir())
+    try {
+      memoryDb.prepare('INSERT INTO characters (id, position, data_json) VALUES (?, 0, ?)').run('char-tess', '{}')
+      memoryDb
+        .prepare('INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, 0, ?)')
+        .run('chat-1', 'char-tess', '{}')
+      createBardWikiDocument(memoryDb, {
+        id: 'document-alice',
+        chatId: 'chat-1',
+        kind: 'character',
+        title: 'Alice',
+        logicalPath: 'Characters/Alice',
+        aliases: [],
+        contextPolicy: 'relevant',
+        reviewState: 'active',
+        markdown: '## Alice\n\nAlice is a ranger.',
+        commandRevision: 1,
+      })
+      const db = makeDatabase({
+        maxResponse: 10,
+        maxContext: 100_000,
+        bardWiki: {
+          ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+          enabledByDefault: true,
+          memoryMode: 'bardwiki',
+        },
+        promptTemplate: [
+          { type: 'memory', innerFormat: 'Memory card: {{slot}}' },
+          { type: 'chat', rangeStart: 0, rangeEnd: 'end' },
+        ],
+        characters: [historyChar()],
+      } as unknown as Partial<Database>)
+      const deps = depsFor(db, { loadMemoryDatabase: () => memoryDb })
+      const preview = await assemblePrompt(baseInput({ mode: 'preview_prompt', userMessage: 'Where is Alice?' }), deps)
+      const send = await assemblePrompt(baseInput({ mode: 'send', userMessage: 'Where is Alice?' }), deps)
+
+      expect(preview.stopSending).toBe(false)
+      expect(send.stopSending).toBe(false)
+      const previewRows = preview.formated?.filter(({ memo }) => memo === 'bardWiki') ?? []
+      const sendRows = send.formated?.filter(({ memo }) => memo === 'bardWiki') ?? []
+      expect(previewRows).toEqual(sendRows)
+      expect(previewRows).toEqual([
+        expect.objectContaining({ content: expect.stringContaining('Memory card: <bardwiki-reference') }),
+      ])
+      expect(preview.state?.bardWikiPromptDiagnostics).toMatchObject({
+        reason: 'selected',
+        selectedCount: 1,
+        consumedTokens: expect.any(Number),
+      })
+      expect(JSON.stringify(preview.state?.bardWikiPromptDiagnostics)).not.toContain('Alice is a ranger')
+      expect(preview.state?.promptMemoryRows).toEqual([])
+      expect(listMemoryJobs(memoryDb)).toEqual([])
+
+      const trimDb = structuredClone(db)
+      trimDb.maxContext = Math.max(1, (preview.inputTokens ?? 100) - 1)
+      if (trimDb.modelPresets?.[0])
+        trimDb.modelPresets = [
+          { ...trimDb.modelPresets[0], maxContext: trimDb.maxContext },
+          ...trimDb.modelPresets.slice(1),
+        ]
+      const trimmed = await assemblePrompt(
+        baseInput({ mode: 'preview_prompt', userMessage: 'Where is Alice?' }),
+        depsFor(trimDb, { loadMemoryDatabase: () => memoryDb }),
+      )
+      expect(trimmed.stopSending).toBe(false)
+      expect(trimmed.formated?.some(({ memo }) => memo === 'bardWiki')).toBe(false)
+      expect(trimmed.state?.bardWikiPromptDiagnostics).toMatchObject({
+        selectedCount: 1,
+        retainedCount: 0,
+        trimmedCount: 1,
+      })
+    } finally {
+      memoryDb.close()
+    }
+  })
+
+  it('keeps disabled BardWiki assembly byte-compatible and partitions Hybrid memory', async () => {
+    const memoryDb = openDatabase(makeDataDir())
+    try {
+      memoryDb.prepare('INSERT INTO characters (id, position, data_json) VALUES (?, 0, ?)').run('char-tess', '{}')
+      memoryDb
+        .prepare('INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, 0, ?)')
+        .run('chat-1', 'char-tess', '{}')
+      createBardWikiDocument(memoryDb, {
+        id: 'document-alice',
+        chatId: 'chat-1',
+        kind: 'character',
+        title: 'Alice',
+        logicalPath: 'Characters/Alice',
+        aliases: [],
+        contextPolicy: 'relevant',
+        reviewState: 'active',
+        markdown: 'Alice is a ranger.',
+        commandRevision: 1,
+      })
+      const disabledDb = makeDatabase({
+        maxResponse: 10,
+        maxContext: 100_000,
+        bardWiki: DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+        characters: [historyChar()],
+      } as Partial<Database>)
+      const withoutSqlite = await assemblePrompt(baseInput({ userMessage: 'Alice?' }), depsFor(disabledDb))
+      const withDisabledBardWiki = await assemblePrompt(
+        baseInput({ userMessage: 'Alice?' }),
+        depsFor(disabledDb, { loadMemoryDatabase: () => memoryDb }),
+      )
+      expect(withDisabledBardWiki.formated).toEqual(withoutSqlite.formated)
+
+      seedPromptMemory(memoryDb, { summaryId: 'summary-a', chunkId: 'chunk-a', text: 'selected summary' })
+      const hybridDb = memoryEnabledDatabase({
+        bardWiki: {
+          ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+          enabledByDefault: true,
+          memoryMode: 'hybrid',
+          totalTokenBudget: 1_000,
+          hybridHypaTokenBudget: 800,
+          hybridBardWikiTokenBudget: 800,
+        },
+      } as Partial<Database>)
+      const hybrid = beginAssembly(
+        baseInput({ userMessage: 'Alice?' }),
+        depsFor(hybridDb, {
+          loadMemoryDatabase: () => memoryDb,
+          loadPromptMemoryQueryVectors: () => [[1, 0]],
+        }),
+      )
+      fillStaticSlots(hybrid)
+      fillLorebookSlots(hybrid)
+      await fillHistoryAndBias(hybrid)
+      fillMemoryAndPostHistory(hybrid)
+
+      expect(hybrid.bardWikiPromptDiagnostics).toMatchObject({
+        memoryMode: 'hybrid',
+        hypaTokenBudget: 800,
+        bardWikiTokenBudget: 200,
+      })
+      expect(hybrid.unformated.chats.some(({ memo }) => memo === 'bardWiki')).toBe(true)
+      expect(hybrid.unformated.chats.some(({ memo }) => memo === 'hypaMemory')).toBe(true)
+    } finally {
+      memoryDb.close()
+    }
   })
 
   it('captures assembled Hypa memory rows into template memory cards', async () => {
@@ -2287,7 +2890,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
     }
   })
 
-  it('L20: selects retained memory from the shared post-cleanup summary snapshot', async () => {
+  it('selects retained memory from the shared post-cleanup summary snapshot', async () => {
     const memoryDb = openDatabase(makeDataDir())
     try {
       createMemoryChunk(memoryDb, {
@@ -2451,6 +3054,42 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
     }
   })
 
+  it('does not use numeric or stale flat Hypa settings when the stable selection is invalid', async () => {
+    const memoryDb = openDatabase(makeDataDir())
+    try {
+      seedPromptMemory(memoryDb, {
+        summaryId: 'summary-stale-flat',
+        chunkId: 'chunk-stale-flat',
+        text: 'stale flat summary',
+      })
+      const db = memoryEnabledDatabase({
+        selectedHypaV3PresetId: 'missing-memory-preset',
+        hypaV3PresetId: 0,
+        hypaV3Settings: {
+          summarizationModel: 'summary-model',
+          recentMemoryRatio: 1,
+          similarMemoryRatio: 0,
+        },
+      } as Partial<Database>)
+
+      const state = beginAssembly(
+        baseInput(),
+        depsFor(db, {
+          loadMemoryDatabase: () => memoryDb,
+          loadPromptMemoryQueryVectors: () => [[1, 0]],
+        }),
+      )
+      fillStaticSlots(state)
+      fillLorebookSlots(state)
+      await fillHistoryAndBias(state)
+      fillMemoryAndPostHistory(state)
+
+      expect(state.promptMemoryRows).toEqual([])
+    } finally {
+      memoryDb.close()
+    }
+  })
+
   it('plans missing Hypa chunks and summarize jobs before prompt memory selection', async () => {
     const memoryDb = openDatabase(makeDataDir())
     try {
@@ -2459,6 +3098,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         maxResponse: 0,
         hypaV3Presets: [
           {
+            id: 'test-memory',
             name: 'Test',
             settings: {
               summarizationModel: 'memory',
@@ -2472,12 +3112,14 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         ] as never,
       })
       const history = chunkPlanningHistory()
+      const visiblePendingJobs: MemoryJob[] = []
 
       const first = beginAssembly(
         baseInput(),
         depsFor(db, {
           loadMemoryDatabase: () => memoryDb,
           loadPromptMemoryQueryVectors: () => [],
+          onPromptMemoryJobEnqueued: (job) => visiblePendingJobs.push(job),
         }),
       )
       first.historyMessages = structuredClone(history)
@@ -2507,6 +3149,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
 
       const jobs = listMemoryJobs(memoryDb, { chatId: 'chat-1', kind: 'summarize' })
       expect(jobs).toHaveLength(1)
+      expect(visiblePendingJobs).toMatchObject([{ id: jobs[0].id, instanceId: jobs[0].instanceId, status: 'pending' }])
       expect(jobs[0]).toMatchObject({
         chatId: 'chat-1',
         kind: 'summarize',
@@ -2546,7 +3189,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
     }
   })
 
-  it('uses imported legacy summaries for planning and selection without scheduling duplicate summarization', () => {
+  it('clips stored-summary history from the provider prompt and its running token budget', async () => {
     const memoryDb = openDatabase(makeDataDir())
     try {
       createMemoryChunk(memoryDb, {
@@ -2574,10 +3217,12 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         tokens: 0,
       })
       const db = memoryEnabledDatabase({
-        maxContext: 100,
+        maxContext: 1000,
         maxResponse: 0,
+        promptTemplate: [{ type: 'chat', rangeStart: 0, rangeEnd: 'end' }],
         hypaV3Presets: [
           {
+            id: 'test-memory',
             name: 'Test',
             settings: {
               summarizationModel: 'summary-model',
@@ -2598,12 +3243,25 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         }),
       )
       state.historyMessages = chunkPlanningHistory()
-      state.currentTokens = 99
+      state.currentTokens = 300
+      const tokensBeforeMemory = state.currentTokens
 
       fillMemoryAndPostHistory(state)
 
       expect(state.promptMemoryRows?.some((row) => row.content.includes('Imported tagged memory.'))).toBe(true)
+      expect(state.promptMemoryHistoryStartIndex).toBe(2)
+      expect(state.promptMemorySummarizedHistoryTokens).toBeGreaterThan(0)
+      expect(state.currentTokens).toBe(tokensBeforeMemory - (state.promptMemorySummarizedHistoryTokens ?? 0))
+      // Keep the full, already-scripted history available on state while only
+      // the unsummarized suffix is handed to the final memory/provider window.
+      expect(state.historyMessages?.map((row) => row.memo)).toEqual(['memo-a', 'memo-b', 'memo-c'])
+      const providerHistoryMemos = [...state.unformated.chats, ...state.unformated.lastChat].map((row) => row.memo)
+      expect(providerHistoryMemos).toContain('memo-c')
+      expect(providerHistoryMemos).not.toContain('memo-a')
+      expect(providerHistoryMemos).not.toContain('memo-b')
       expect(state.promptMemoryChunkPlanningDiagnostics).toMatchObject({
+        summarizedPrefixStartIndex: 2,
+        summarizedPrefixTokens: state.promptMemorySummarizedHistoryTokens,
         chunksCreated: 0,
         jobsCreated: 0,
         plannedWindows: 0,
@@ -2621,12 +3279,18 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
           },
         },
       ])
+
+      await renderAndBudget(state)
+      expect(state.formated?.some((row) => row.content.includes('Imported tagged memory.'))).toBe(true)
+      expect(state.formated?.some((row) => row.content.includes('charlie charlie'))).toBe(true)
+      expect(state.formated?.some((row) => row.content.includes('alpha alpha'))).toBe(false)
+      expect(state.formated?.some((row) => row.content.includes('bravo bravo'))).toBe(false)
     } finally {
       memoryDb.close()
     }
   })
 
-  it('L15: memoizes unchanged summarized-prefix token counts across assembly planning passes', () => {
+  it('memoizes unchanged summarized-prefix token counts across assembly planning passes', () => {
     const memoryDb = openDatabase(makeDataDir())
     try {
       createMemoryChunk(memoryDb, {
@@ -2651,6 +3315,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         maxResponse: 0,
         hypaV3Presets: [
           {
+            id: 'test-memory',
             name: 'Test',
             settings: {
               summarizationModel: 'summary-model',
@@ -2699,7 +3364,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
     }
   })
 
-  it('M2: budgets tokens:0 prompt summaries with memory and category ratios', async () => {
+  it('budgets tokens:0 prompt summaries with memory and category ratios', async () => {
     const memoryDb = openDatabase(makeDataDir())
     try {
       const texts = ['one', 'two', 'three', 'four'].map((label) => `${label} memory `.repeat(8))
@@ -2720,6 +3385,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
           promptTemplate: [{ type: 'memory', innerFormat: 'Mem: {{slot}}' }],
           hypaV3Presets: [
             {
+              id: 'test-memory',
               name: 'Test',
               settings: {
                 summarizationModel: 'summary-model',
@@ -2786,7 +3452,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
     }
   })
 
-  it('M2: caps tokens:0 Hypa memory before final budgeting so old summaries do not overflow', async () => {
+  it('caps tokens:0 Hypa memory before final budgeting so old summaries do not overflow', async () => {
     const memoryDb = openDatabase(makeDataDir())
     try {
       const labels = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight']
@@ -2805,6 +3471,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         maxResponse: 0,
         hypaV3Presets: [
           {
+            id: 'test-memory',
             name: 'Test',
             settings: {
               summarizationModel: 'summary-model',
@@ -2839,7 +3506,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
       expect(state.stopSending).toBe(false)
       expect(state.abortReason).toBeUndefined()
       expect(state.formated?.filter((row) => row.memo === 'hypaMemory')).toHaveLength(1)
-      expect(state.inputTokens).toBeLessThanOrEqual(db.maxContext)
+      expect(state.inputTokens).toBeLessThanOrEqual(db.maxContext!)
     } finally {
       memoryDb.close()
     }
@@ -2853,6 +3520,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         maxResponse: 0,
         hypaV3Presets: [
           {
+            id: 'test-memory',
             name: 'Invalid',
             settings: {
               summarizationModel: 'summary-model',
@@ -3006,12 +3674,14 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         status: 'pending',
       })
       const db = memoryEnabledDatabase()
+      const visiblePendingJobs: MemoryJob[] = []
 
       const first = beginAssembly(
         baseInput(),
         depsFor(db, {
           loadMemoryDatabase: () => memoryDb,
           loadPromptMemoryQueryVectors: () => [[1, 0]],
+          onPromptMemoryJobEnqueued: (job) => visiblePendingJobs.push(job),
         }),
       )
       fillStaticSlots(first)
@@ -3041,12 +3711,15 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
           .map((job) => job.kind)
           .sort(),
       ).toEqual(['embed', 'summarize', 'summarize'])
+      expect(visiblePendingJobs).toHaveLength(3)
+      expect(visiblePendingJobs.every((job) => job.status === 'pending' && job.instanceId.length > 0)).toBe(true)
 
       const second = beginAssembly(
         baseInput(),
         depsFor(db, {
           loadMemoryDatabase: () => memoryDb,
           loadPromptMemoryQueryVectors: () => [[1, 0]],
+          onPromptMemoryJobEnqueued: (job) => visiblePendingJobs.push(job),
         }),
       )
       fillStaticSlots(second)
@@ -3061,6 +3734,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         errors: [],
       })
       expect(listMemoryJobs(memoryDb, { chatId: 'chat-1' })).toHaveLength(3)
+      expect(visiblePendingJobs).toHaveLength(3)
     } finally {
       memoryDb.close()
     }
@@ -3220,7 +3894,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
   })
 })
 
-describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
+describe('renderAndBudget + assemblePrompt', () => {
   const msg = (role: string, data: string, chatId: string) => ({ role, data, chatId }) as never
 
   const fullDb = (overrides: Partial<Database> = {}): Database =>
@@ -3254,8 +3928,51 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
     expect(result.formated?.length).toBeGreaterThan(0)
     expect(result.biases).toEqual([])
     expect(result.prompt?.biases).toEqual([])
+    expect(result.prompt?.promptInfo).toMatchObject({
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+    })
     // The lorebook activation report rides along on the prompt event.
     expect(result.prompt?.lorebookActivation).toBeDefined()
+  })
+
+  it('does not persist inactive Agent Preset diagnostics', async () => {
+    const assembled = await assemblePrompt(baseInput(), depsFor(fullDb()))
+    expect(assembled.stopSending).toBe(false)
+    if (assembled.stopSending) return
+
+    const generationInfo: Record<string, unknown> = {}
+    await runServerPostGeneration(assembled.state!, {
+      completionText: 'assistant reply',
+      generationId: 'generation-without-agent-preset',
+      generationInfo,
+      promptInfo: assembled.prompt?.promptInfo,
+    })
+
+    expect(generationInfo).not.toHaveProperty('agentPreset')
+    expect(assembled.state?.currentChat.message?.at(-1)?.promptInfo).toEqual({})
+  })
+
+  it('uses format order and produces prompt rows when promptTemplate is null', async () => {
+    const db = fullDb({ promptTemplate: null } as unknown as Partial<Database>)
+    const state = beginAssembly(baseInput(), depsFor(db))
+    expect(state.usingPromptTemplate).toBe(false)
+    expect(state.promptTemplate).toBeNull()
+
+    const result = await assemblePrompt(baseInput(), depsFor(db))
+    expect(result.prompt?.messages?.length).toBeGreaterThan(0)
+    expect(result.inputTokens).toBeGreaterThan(0)
+  })
+
+  it('keeps an empty promptTemplate array active, matching browser assembly', async () => {
+    const db = fullDb({ promptTemplate: [] })
+    const state = beginAssembly(baseInput(), depsFor(db))
+    expect(state.usingPromptTemplate).toBe(true)
+    expect(state.promptTemplate).toEqual([{ type: 'postEverything' }])
+
+    const result = await assemblePrompt(baseInput(), depsFor(db))
+    expect(result.prompt?.messages).toEqual([])
+    expect(result.inputTokens).toBe(0)
   })
 
   it('captures template-path prompt-info (promptText) when the capture flags are on', async () => {
@@ -3353,7 +4070,7 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
     } as unknown as Partial<Database>)
 
     const result = await assemblePrompt(baseInput(), depsFor(db))
-    const promptText = result.prompt?.promptInfo?.promptText as OpenAIChat[] | undefined
+    const promptText = result.prompt?.promptInfo?.promptText as PromptMessage[] | undefined
 
     expect(result.prompt?.promptInfo).toMatchObject({
       promptName: 'Chat',
@@ -3446,7 +4163,7 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
     ).rejects.toThrow(/latest assistant message/)
   })
 
-  it('accepts an already-truncated regenerate transcript from the browser command race', async () => {
+  it('rejects an already-truncated regenerate transcript with no authoritative target', async () => {
     const db = fullDb({
       characters: [
         makeCharacter({
@@ -3461,18 +4178,16 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
       ],
     } as Partial<Database>)
 
-    const result = await assemblePrompt(
-      baseInput({
-        mode: 'regenerate',
-        userMessage: undefined,
-        regenerateMessageId: 'msg-char-1',
-      }),
-      depsFor(db),
-    )
-
-    expect(result.stopSending).toBe(false)
-    expect(result.mutations?.messageMutations).toEqual([])
-    expect(result.formated?.some((row) => row.content === 'old reply')).toBe(false)
+    await expect(
+      assemblePrompt(
+        baseInput({
+          mode: 'regenerate',
+          userMessage: undefined,
+          regenerateMessageId: 'msg-char-1',
+        }),
+        depsFor(db),
+      ),
+    ).rejects.toThrow(/regenerate message not found/)
   })
 
   it('returns stopSending without a prompt when a start trigger aborts', async () => {
@@ -3494,6 +4209,39 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
       source: 'user_message',
       message: { role: 'user', data: 'hi' },
     })
+  })
+
+  it('discards request-state output when a legacy whole-trigger guard aborts', async () => {
+    const db = fullDb({
+      characters: [
+        makeCharacter({
+          chaId: 'char-tess',
+          triggerscript: [
+            {
+              comment: '',
+              type: 'request',
+              conditions: [],
+              effect: [
+                {
+                  type: 'v2SetRequestState',
+                  indexType: 'value',
+                  index: '0',
+                  valueType: 'value',
+                  value: 'mutated request row',
+                  indent: 0,
+                },
+                { type: 'v2MakeArrayVar', var: '[]', indent: 0 },
+              ],
+            },
+          ] as never,
+          chats: [makeChat({ id: 'chat-1' })],
+        } as Partial<character>),
+      ],
+    } as Partial<Database>)
+    const state = beginAssembly(baseInput(), depsFor(db))
+    const rows: PromptMessage[] = [{ role: 'user', content: 'original request row' }]
+
+    await expect(applyRequestTrigger(state, rows)).resolves.toEqual(rows)
   })
 
   it('renderAndBudget aborts with overflow when pinned rows exceed maxContext', async () => {
@@ -3518,7 +4266,7 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
   })
 })
 
-describe('Phase 7-12d-i assemble mutation contract', () => {
+describe('assemble mutation contract', () => {
   const msg = (role: string, data: string, chatId: string) => ({ role, data, chatId }) as never
 
   const mutationDb = (overrides: Partial<Database> = {}): Database =>
@@ -3663,7 +4411,7 @@ describe('Phase 7-12d-i assemble mutation contract', () => {
   })
 })
 
-describe('Phase 3 M1 assembly message capture dirty flags', () => {
+describe('assembly message capture dirty flags', () => {
   const msg = (role: string, data: string, chatId: string) => ({ role, data, chatId }) as never
 
   const m1Db = (
@@ -3753,6 +4501,66 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
     expectNoFullTranscriptStringify()
   })
 
+  it('captures only @@inject history rewrites by row identity and keeps stripped text prompt-local', async () => {
+    const result = await assemblePrompt(
+      baseInput({ mode: 'preview', userMessage: undefined }),
+      depsFor(
+        m1Db(
+          [
+            { role: 'user', data: 'disabled SECRET', chatId: 'disabled-row', disabled: true } as never,
+            msg('user', 'hello {{char}} SECRET', 'inject-row'),
+          ],
+          {
+            db: { formatingOrder: ['main', 'description', 'chats', 'lastChat'] },
+            char: {
+              customscript: [
+                { in: 'SECRET', out: '@@inject', type: 'editprocess', flag: '', ableFlag: false },
+              ] as never,
+            },
+          },
+        ),
+      ),
+    )
+
+    expect(result.stopSending).toBe(false)
+    expect(result.formated?.find((row) => row.memo === 'inject-row')?.content).toBe('hello Tess')
+    expect(result.submitTranscriptChanged).toBe(true)
+    expect(result.submitMessages).toBeUndefined()
+    expect(result.state?.currentChat.message.find((message) => message.chatId === 'inject-row')?.data).toBe(
+      'hello Tess SECRET',
+    )
+    expect(result.state?.currentChat.message.find((message) => message.chatId === 'disabled-row')?.data).toBe(
+      'disabled SECRET',
+    )
+    expect(result.mutations?.messageMutations).toContainEqual({
+      type: 'replace_by_id',
+      source: 'history_inject',
+      messageId: 'inject-row',
+      before: expect.objectContaining({ chatId: 'inject-row', data: 'hello {{char}} SECRET' }),
+      message: expect.objectContaining({ chatId: 'inject-row', data: 'hello Tess SECRET' }),
+    })
+  })
+
+  it('keeps plain editprocess regex history transforms prompt-local', async () => {
+    const result = await assemblePrompt(
+      baseInput({ mode: 'preview', userMessage: undefined }),
+      depsFor(
+        m1Db([msg('user', 'plain SECRET', 'plain-row')], {
+          db: { formatingOrder: ['main', 'description', 'chats', 'lastChat'] },
+          char: {
+            customscript: [{ in: 'SECRET', out: 'VISIBLE', type: 'editprocess', flag: '', ableFlag: false }] as never,
+          },
+        }),
+      ),
+    )
+
+    expect(result.formated?.find((row) => row.memo === 'plain-row')?.content).toBe('plain VISIBLE')
+    expect(result.submitTranscriptChanged).toBe(false)
+    expect(result.submitMessages).toBeUndefined()
+    expect(result.mutations?.messageMutations).toEqual([])
+    expect(result.state?.currentChat.message[0].data).toBe('plain SECRET')
+  })
+
   it('persists chat-var-only dirty state without forcing a message replacement capture', async () => {
     resetAssemblyMessageCaptureInstrumentation()
 
@@ -3776,7 +4584,7 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
     expectNoFullTranscriptStringify()
   })
 
-  it('L8: input, start, and output chat-var triggers avoid full trigger transcript clones', async () => {
+  it('input, start, and output chat-var triggers avoid full trigger transcript clones', async () => {
     resetTriggerCloneInstrumentation()
     const db = m1Db([msg('user', 'before triggers', 'msg-1')], {
       char: {
@@ -3859,6 +4667,121 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
     expectNoFullTranscriptStringify()
   })
 
+  it('emits input-trigger local lore writes without marking the transcript rewritten', async () => {
+    const result = await assemblePrompt(
+      baseInput({ userMessage: 'new user' }),
+      depsFor(
+        m1Db([], {
+          char: {
+            triggerscript: [
+              {
+                comment: '',
+                type: 'input',
+                conditions: [],
+                effect: [
+                  {
+                    type: 'triggerlua',
+                    code: `
+                      function onInput(triggerId)
+                        upsertLocalLoreBook(triggerId, 'input-lore', 'INPUT LORE', { key = 'input-key' })
+                      end
+                    `,
+                  },
+                ],
+              },
+            ] as never,
+          },
+        }),
+      ),
+    )
+
+    expect(result.stopSending).toBe(false)
+    expect(result.submitTranscriptChanged).toBe(false)
+    expect(result.mutations?.messageMutations.map((mutation) => mutation.source)).toEqual(['user_message'])
+    expect(result.mutations?.localLoreMutation).toEqual({
+      before: [],
+      after: [
+        expect.objectContaining({
+          id: expect.any(String),
+          comment: 'input-lore',
+          content: 'INPUT LORE',
+          key: 'input-key',
+        }),
+      ],
+    })
+  })
+
+  it('bypasses input trigger and editinput only for the synthetic say-nothing send', async () => {
+    const database = () =>
+      m1Db([], {
+        char: {
+          triggerscript: [
+            {
+              comment: '',
+              type: 'input',
+              conditions: [],
+              effect: [{ type: 'setvar', operator: '=', var: 'inputSeen', value: '1' }],
+            },
+          ] as never,
+          customscript: [{ in: '.+', out: 'EDITED', type: 'editinput', flag: '', ableFlag: false }] as never,
+        },
+      })
+
+    const synthetic = await assemblePrompt(
+      baseInput({ userMessage: '*says nothing*', syntheticSayNothing: true }),
+      depsFor(database()),
+    )
+    const normal = await assemblePrompt(baseInput({ userMessage: 'ordinary send' }), depsFor(database()))
+
+    expect(synthetic.stopSending).toBe(false)
+    expect(synthetic.state?.currentChat.message.at(-1)?.data).toBe('*says nothing*')
+    expect(synthetic.mutations?.chatVarMutations).toEqual([])
+    expect(synthetic.mutations?.messageMutations.map((mutation) => mutation.source)).toEqual(['user_message'])
+
+    expect(normal.stopSending).toBe(false)
+    expect(normal.state?.currentChat.message.at(-1)?.data).toBe('EDITED')
+    expect(normal.mutations?.chatVarMutations).toEqual([{ key: '$inputSeen', before: null, after: '1' }])
+    expect(normal.mutations?.messageMutations.map((mutation) => mutation.source)).toEqual(['user_message', 'editinput'])
+  })
+
+  it('dispatches an empty send from an assistant tail without input hooks or a user row', async () => {
+    const database = m1Db([msg('user', 'first turn', 'msg-user-1'), msg('char', 'first reply', 'msg-char-1')], {
+      char: {
+        triggerscript: [
+          {
+            comment: '',
+            type: 'input',
+            conditions: [],
+            effect: [{ type: 'setvar', operator: '=', var: 'inputSeen', value: '1' }],
+          },
+        ] as never,
+        customscript: [{ in: '.+', out: 'EDITED', type: 'editinput', flag: '', ableFlag: false }] as never,
+      },
+    })
+
+    const assembled = await assemblePrompt(baseInput({ userMessage: undefined, emptySend: true }), depsFor(database))
+
+    expect(assembled.stopSending).toBe(false)
+    expect(assembled.mutations?.chatVarMutations).toEqual([])
+    expect(assembled.mutations?.messageMutations).toEqual([])
+    expect(assembled.state?.currentChat.message.map(({ role, data }) => ({ role, data }))).toEqual([
+      { role: 'user', data: 'first turn' },
+      { role: 'char', data: 'first reply' },
+    ])
+
+    const post = await runServerPostGeneration(assembled.state!, {
+      completionText: 'second reply',
+      generationId: 'generation-empty-send',
+    })
+
+    expect(post.finalText).toBe('second reply')
+    expect(assembled.state?.currentChat.message.map(({ role, data }) => ({ role, data }))).toEqual([
+      { role: 'user', data: 'first turn' },
+      { role: 'char', data: 'first reply' },
+      { role: 'char', data: 'second reply' },
+    ])
+  })
+
   it('captures editinput rewrites once after the appended user checkpoint', async () => {
     resetAssemblyMessageCaptureInstrumentation()
 
@@ -3885,7 +4808,37 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
     expectNoFullTranscriptStringify()
   })
 
-  it('L9/v4-L7: valid customscript script.in output remains unchanged under bounds', async () => {
+  it('runs editinput CBS with the appended user row as the current message', async () => {
+    const currentMessageOnly =
+      '{{#if {{equal::{{chat_index}}::{{lastmessageid}}}}}}CURRENT{{/if}}' +
+      '{{#if {{not_equal::{{chat_index}}::{{lastmessageid}}}}}}STALE{{/if}}'
+    const result = await assemblePrompt(
+      baseInput({ userMessage: 'current request' }),
+      depsFor(
+        m1Db([msg('char', 'previous response', 'msg-1')], {
+          char: {
+            customscript: [
+              {
+                in: '^current request$',
+                out: currentMessageOnly,
+                type: 'editinput',
+                flag: '',
+                ableFlag: false,
+              },
+            ] as never,
+          },
+        }),
+      ),
+    )
+
+    expect(result.stopSending).toBe(false)
+    expect(result.submitMessages?.map((message) => ({ role: message.role, data: message.data }))).toEqual([
+      { role: 'char', data: 'previous response' },
+      { role: 'user', data: 'CURRENT' },
+    ])
+  })
+
+  it('valid customscript script.in output remains unchanged under bounds', async () => {
     const result = await assemblePrompt(
       baseInput({ userMessage: 'hi' }),
       depsFor(
@@ -3903,7 +4856,7 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
     ])
   })
 
-  it('L9/v4-L7: customscript script.in rejects unsafe imported regex during assembly', async () => {
+  it('customscript script.in rejects unsafe imported regex during assembly', async () => {
     await expect(
       assemblePrompt(
         baseInput({ userMessage: 'a'.repeat(32) + '!' }),
@@ -4019,11 +4972,11 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
   })
 })
 
-describe('Phase 2 L2 run-var fixed-point skip', () => {
+describe('run-var fixed-point skip', () => {
   const msg = (role: string, data: string, chatId: string) => ({ role, data, chatId }) as never
 
   it('only skips bodies risuChatParser provably returns unchanged (ground truth)', async () => {
-    const { risuChatParser } = await import('../../../src/ts/parser/risuChatParser')
+    const { risuChatParser } = await import('@risuai/shared-core/risuchat-parser')
     const db = makeDatabase({ maxContext: 100_000, maxResponse: 50 } as Partial<Database>)
 
     // Marker-free prose — including bare `}` / `#}` / `<` text the parser
@@ -4037,7 +4990,7 @@ describe('Phase 2 L2 run-var fixed-point skip', () => {
     ]
     for (const text of fixedPoints) {
       expect(isRunVarParserFixedPoint(text), `should skip: ${JSON.stringify(text)}`).toBe(true)
-      expect(risuChatParser(text, { db, runVar: true })).toBe(text)
+      expect(risuChatParser(text, { db: adaptServerCbsDatabase(db), runVar: true })).toBe(text)
     }
 
     // Anything the parser can rewrite must NOT be skipped.
@@ -4088,9 +5041,37 @@ describe('Phase 2 L2 run-var fixed-point skip', () => {
     expect(rows[1].data).toBe('I am Tess. ')
     expect(result.mutations!.chatVarMutations).toEqual([{ key: '$mood', before: null, after: 'bright' }])
   })
+
+  it('resolves the baseline run-var plus history second-pass indirection chain', async () => {
+    const db = makeDatabase({
+      username: 'Alex',
+      maxContext: 100_000,
+      maxResponse: 50,
+      characters: [
+        makeCharacter({
+          chaId: 'char-tess',
+          firstMessage: '',
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              scriptstate: {
+                $outer: '{{getvar::inner}}',
+                $inner: '{{user}}',
+              },
+              message: [msg('user', '{{getvar::outer}}', 'nested-cbs')],
+            }),
+          ],
+        }),
+      ],
+    } as Partial<Database>)
+
+    const result = await assemblePrompt(baseInput({ userMessage: 'latest user' }), depsFor(db))
+
+    expect(result.formated?.find((row) => row.memo === 'nested-cbs')?.content).toBe('Alex')
+  })
 })
 
-describe('Phase 3 M2/L8/L9 history expansion cost', () => {
+describe('history expansion cost', () => {
   const msg = (role: Message['role'], data: string, chatId: string): Message => ({ role, data, chatId }) as Message
 
   const active = (overrides: Partial<LoreEntryActive> = {}): LoreEntryActive => ({
@@ -4212,7 +5193,7 @@ describe('Phase 3 M2/L8/L9 history expansion cost', () => {
     expect(spy.mock.calls.filter(([input]) => input === 'depth says {{user}}')).toHaveLength(1)
     expect(spy.mock.calls.filter(([input]) => input === 'tail says {{user}}')).toHaveLength(1)
 
-    const messages: OpenAIChat[] = [
+    const messages: PromptMessage[] = [
       { role: 'system', content: 'NewChat' },
       { role: 'user', content: 'first' },
       { role: 'assistant', content: 'reply' },
@@ -4225,7 +5206,7 @@ describe('Phase 3 M2/L8/L9 history expansion cost', () => {
   })
 })
 
-describe('Phase 3 M3 stable card cache', () => {
+describe('stable card cache', () => {
   it('persists stable-card setvar once through assembly mutations', async () => {
     const db = makeDatabase({
       aiModel: 'gpt4',
@@ -4261,9 +5242,123 @@ describe('Phase 3 M3 stable card cache', () => {
       ),
     ).toHaveLength(1)
   })
+
+  it('re-expands stable cards after a start-trigger write without double-applying run-var CBS', async () => {
+    const card = 'Mood={{getvar::mood}} {{addvar::count::1}}Count={{getvar::count}}'
+    const db = makeDatabase({
+      aiModel: 'gpt4',
+      maxContext: 100_000,
+      maxResponse: 50,
+      promptTemplate: [{ type: 'plain', type2: 'main', text: card, role: 'system' }],
+      characters: [
+        makeCharacter({
+          firstMessage: '',
+          triggerscript: [startTrigger([{ type: 'setvar', operator: '=', var: 'mood', value: 'after' }])] as never,
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              message: [],
+              scriptstate: { $mood: 'before', $count: '0' },
+            }),
+          ],
+        }),
+      ],
+    } as Partial<Database>)
+    const spy = vi.spyOn(promptVariables, 'expandVariables')
+
+    const result = await assemblePrompt(baseInput({ userMessage: 'new user' }), depsFor(db))
+
+    expect(result.stopSending).toBe(false)
+    expect(result.formated?.map((row) => row.content)).toContain('Mood=after Count=1')
+    expect(result.mutations?.chatVarMutations).toEqual([
+      { key: '$count', before: '0', after: '1' },
+      { key: '$mood', before: 'before', after: 'after' },
+    ])
+    // Preflight executes speculatively and rolls back. The invalidated final
+    // render executes against post-trigger state, so addvar persists only once.
+    expect(
+      spy.mock.calls.filter(
+        ([input, expandCtx]) => input === card && (expandCtx as { runVar?: boolean } | undefined)?.runVar === true,
+      ),
+    ).toHaveLength(2)
+  })
 })
 
-describe('Phase 3 L4 lorebook sticky chat-var persistence', () => {
+describe('Fastify lorebook template injection', () => {
+  it('keeps before_desc lore system-authored when description role2 changes the base row', async () => {
+    const beforeDescription = {
+      key: '',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'Before description',
+      content: '@@position before_desc\nLORE BEFORE',
+      mode: 'normal',
+      alwaysActive: true,
+      selective: false,
+    } as loreBook
+    const db = makeDatabase({
+      aiModel: 'gpt4',
+      maxContext: 100_000,
+      maxResponse: 50,
+      promptTemplate: [{ type: 'description', role2: 'user' }],
+      characters: [
+        makeCharacter({
+          desc: 'BASE DESCRIPTION',
+          globalLore: [beforeDescription],
+          chats: [makeChat({ id: 'chat-1', message: [] })],
+        }),
+      ],
+    } as Partial<Database>)
+
+    const result = await assemblePrompt(baseInput(), depsFor(db))
+
+    expect(result.stopSending).toBe(false)
+    expect(result.formated).toEqual([
+      { role: 'system', content: 'LORE BEFORE' },
+      { role: 'user', content: 'BASE DESCRIPTION' },
+    ])
+  })
+
+  it('applies @@inject_at globalNote once through async activation, preflight, cache, and final render', async () => {
+    const injector = {
+      key: '',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'Global Note injection',
+      content: '@@inject_at globalNote\nINJECTED',
+      mode: 'normal',
+      alwaysActive: true,
+      selective: false,
+    } as loreBook
+    const db = makeDatabase({
+      aiModel: 'gpt4',
+      maxContext: 100_000,
+      maxResponse: 50,
+      promptTemplate: [{ type: 'plain', type2: 'globalNote', text: 'BASE', role: 'system' }],
+      characters: [
+        makeCharacter({
+          replaceGlobalNote: '[[{{original}}]]',
+          globalLore: [injector],
+          chats: [makeChat({ id: 'chat-1', message: [] })],
+        }),
+      ],
+    } as Partial<Database>)
+
+    const result = await assemblePrompt(baseInput(), depsFor(db))
+
+    expect(result.stopSending).toBe(false)
+    expect(result.formated).toEqual([{ role: 'system', content: '[[BASE]] INJECTED' }])
+    expect(result.state?.report?.actives).toEqual([
+      expect.objectContaining({
+        source: 'Global Note injection',
+        prompt: 'INJECTED',
+        inject: { operation: 'append', location: 'globalNote', param: '', lore: false },
+      }),
+    ])
+  })
+})
+
+describe('lorebook sticky chat-var persistence', () => {
   const stickyLore = (content: string): loreBook =>
     ({
       id: 'lore-dont',
@@ -4321,7 +5416,7 @@ describe('Phase 3 L4 lorebook sticky chat-var persistence', () => {
   })
 })
 
-describe('Phase 3 M4 CBS callback memo', () => {
+describe('CBS callback memo', () => {
   const msg = (role: Message['role'], data: string, chatId: string): Message => ({ role, data, chatId }) as Message
 
   const lore = (overrides: Partial<loreBook> = {}): loreBook =>
@@ -4485,7 +5580,7 @@ describe('Phase 3 M4 CBS callback memo', () => {
     expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.lorebook).toBe(2)
   })
 
-  it('L10: sticky-lorebook chat-var writes invalidate cached history output', () => {
+  it('sticky-lorebook chat-var writes invalidate cached history output', () => {
     resetAssemblyCbsCallbackMemoInstrumentation()
     const db = makeDatabase({
       username: 'Alex',
@@ -4526,7 +5621,7 @@ describe('Phase 3 M4 CBS callback memo', () => {
     expect(db.characters[0].chats[0].scriptstate).toBeUndefined()
   })
 
-  it('L10: run-var chat-var-only writes invalidate cached history output', () => {
+  it('run-var chat-var-only writes invalidate cached history output', () => {
     resetAssemblyCbsCallbackMemoInstrumentation()
     const db = makeDatabase({
       username: 'Alex',
@@ -4568,7 +5663,7 @@ describe('Phase 3 M4 CBS callback memo', () => {
     expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.userhistory).toBe(2)
   })
 
-  it('L10: Lua editRequest chat-var writes invalidate cached history output', async () => {
+  it('Lua editRequest chat-var writes invalidate cached history output', async () => {
     resetAssemblyCbsCallbackMemoInstrumentation()
     const db = makeDatabase({
       username: 'Alex',
@@ -4620,7 +5715,7 @@ describe('Phase 3 M4 CBS callback memo', () => {
     expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.userhistory).toBe(2)
   })
 
-  it('L10: unchanged history references still hit the memo', () => {
+  it('unchanged history references still hit the memo', () => {
     resetAssemblyCbsCallbackMemoInstrumentation()
     const db = makeDatabase({
       username: 'Alex',

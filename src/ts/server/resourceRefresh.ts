@@ -10,8 +10,8 @@ import {
   mergePendingPluginStorageResource,
 } from '../pluginCommands'
 import { reapplyPendingPresetProjections } from '../storage/database.svelte'
-import { reapplyPendingPromptTemplateStructuralProjections } from './promptTemplateBridge.svelte'
-import { setActiveGenerationJobs, triggerOpenChatGenerationReattach } from '../process/reattach'
+import { reapplyPendingPromptTemplateStructuralProjections } from './promptTemplateMutations.svelte'
+import { triggerOpenChatGenerationReattach } from '../process/reattach'
 import { applyServerChatMessagesResource, hydrateActiveChat, resetChatHydration } from './chatMessageHydration.svelte'
 import {
   clearAppliedServerResourceRevision,
@@ -24,17 +24,26 @@ import {
 import {
   applyServerCharacterLorebookResource,
   markCharacterLorebookHydrated,
+  recordCanonicalCharacterLorebookScopes,
+  recordCanonicalLorebookCollections,
   recordHydratedCharacterLorebooks,
   resetLorebookHydration,
-} from './lorebookBridge.svelte'
+} from './lorebookOwner.svelte'
 import {
-  getResourceDatabase as getDatabase,
+  charactersResourceState,
   resetServerResourceRevisionFencesForDatabaseReplacement,
 } from './resourceState.svelte'
 import { clearActiveMessageTranslation, setActiveMessageTranslations } from './messageTranslationJobs'
+import {
+  clearGreetingTranslationProjection,
+  refreshGreetingTranslationProjection,
+  setActiveGreetingTranslations,
+} from './greetingTranslations.svelte'
 import { fetchServerBootstrapReadOnly } from './bootstrap'
+import { applyGenerationOperationBootstrap } from './generationOperations'
 import { recordFullResourceRefresh } from './protocolDiagnostics'
 import { ensurePromptTemplateHydrated } from './promptTemplateHydration'
+import { hydrateSelectedCharacterShell } from './characterShellHydration.svelte'
 import {
   refreshAllServerResources,
   refreshInvalidatedServerResources,
@@ -54,6 +63,7 @@ export type ServerResourceRefreshResult =
 let serverResourceRefreshPromise: Promise<ServerResourceRefreshResult> | null = null
 let serverResourceRefreshPending = false
 let serverDatabaseReplacementRefreshPending = false
+let serverDatabaseReplacementDiscardPromise: Promise<void> | null = null
 
 export const serverResourceInvalidationHooks: ServerResourceInvalidationHooks = {
   reapplyPendingPresetProjections,
@@ -67,8 +77,18 @@ export const serverResourceInvalidationHooks: ServerResourceInvalidationHooks = 
   applyChatMessages: applyServerChatMessagesResource,
   applyCharacterLorebook: applyServerCharacterLorebookResource,
   markCharacterLorebookHydrated,
+  recordCanonicalCharacterLorebookScopes,
+  recordCanonicalLorebookCollections,
   triggerOpenChatGenerationReattach,
   clearActiveMessageTranslation,
+  refreshGreetingTranslations: async (characterId, minimumRevision) => {
+    clearGreetingTranslationProjection(characterId)
+    const character = readyCharacterOwners().find((candidate) => candidate.chaId === characterId)
+    const chatId = character?.chats?.[character.chatPage]?.id
+    if (!chatId) return true
+    const result = await refreshGreetingTranslationProjection(characterId, chatId, { minimumRevision })
+    return result.status === 'ok'
+  },
 }
 
 /**
@@ -99,6 +119,9 @@ export function forceServerDatabaseReplacementRefresh(
   options: { resource?: string } = {},
 ): Promise<ServerResourceRefreshResult> {
   serverDatabaseReplacementRefreshPending = true
+  serverDatabaseReplacementDiscardPromise ??= import('../observerProjectionLifecycle').then(
+    ({ discardObserverProjectionState }) => discardObserverProjectionState('database-replacement'),
+  )
   clearCachedServerCommandRevision()
   clearAppliedServerResourceRevision()
   return forceServerResourceRefresh(reason, options)
@@ -146,10 +169,11 @@ export async function refreshServerRealmImportResources(input: {
     if (result.scope === 'targeted') {
       // Preserve existing hydration identities. Only mark characters whose
       // character-list payload actually carried a resident lorebook.
-      recordHydratedCharacterLorebooks(getDatabase().characters)
+      recordHydratedCharacterLorebooks(readyCharacterOwners())
     }
     setCachedServerCommandRevision(result.revision)
     setAppliedServerResourceRevision(result.revision)
+    void hydrateSelectedCharacterShell({ supersede: true })
     return { status: 'ok', revision: result.revision }
   } finally {
     selectionTracker.stop()
@@ -163,6 +187,16 @@ async function runServerResourceRefresh(): Promise<ServerResourceRefreshResult> 
     serverResourceRefreshPending = false
     if (serverDatabaseReplacementRefreshPending) {
       serverDatabaseReplacementRefreshPending = false
+      const discardPromise = serverDatabaseReplacementDiscardPromise
+      if (discardPromise) {
+        try {
+          await discardPromise
+        } finally {
+          if (serverDatabaseReplacementDiscardPromise === discardPromise) {
+            serverDatabaseReplacementDiscardPromise = null
+          }
+        }
+      }
       // A replacement request can join an older full refresh that was already
       // reading the previous database. Reset again after that iteration drains
       // so its higher revision cannot fence out the replacement snapshot.
@@ -199,7 +233,8 @@ async function completeFullServerResourceRefresh(
   // replaced by a backup restore.
   resetChatHydration()
   resetLorebookHydration()
-  recordHydratedCharacterLorebooks(getDatabase().characters)
+  clearGreetingTranslationProjection()
+  recordHydratedCharacterLorebooks(readyCharacterOwners())
   void hydrateActiveChat({ force: true })
 
   if (!(await ensurePromptTemplateHydrated({ force: true, minimumRevision: revision }))) {
@@ -209,6 +244,7 @@ async function completeFullServerResourceRefresh(
   reapplyPendingPromptTemplateStructuralProjections()
   setCachedServerCommandRevision(revision)
   setAppliedServerResourceRevision(revision)
+  void hydrateSelectedCharacterShell({ supersede: true })
   await refreshRuntimeJobs()
   triggerOpenChatGenerationReattach()
   return { status: 'ok', revision }
@@ -237,6 +273,11 @@ function syncSelectedCharacterAfterRefresh(selection: SelectedCharacterRefreshSn
 async function refreshRuntimeJobs(): Promise<void> {
   const runtime = await fetchServerBootstrapReadOnly(null, { cacheRevision: false })
   if (runtime.status !== 'ok') return
-  setActiveGenerationJobs(runtime.bootstrap.activeGenerationJobs ?? [])
+  applyGenerationOperationBootstrap(runtime.bootstrap, 'full_resource_refresh')
   setActiveMessageTranslations(runtime.bootstrap.activeMessageTranslations ?? [])
+  setActiveGreetingTranslations(runtime.bootstrap.activeGreetingTranslations ?? [])
+}
+
+function readyCharacterOwners() {
+  return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
 }

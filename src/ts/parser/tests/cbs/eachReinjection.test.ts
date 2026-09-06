@@ -16,7 +16,7 @@ vi.mock(
       getCurrentCharacter: () => ({}),
       getDatabase: () => testDatabaseState.db,
       reapplyPendingPresetProjections: () => {},
-    }) as typeof import('../../../storage/database.svelte'),
+    }) as unknown as typeof import('../../../storage/database.svelte'),
 )
 
 vi.mock(import('../../../globalApi.svelte'), () => ({
@@ -36,9 +36,17 @@ vi.mock(import('../../../stores.svelte'), () => {
 beforeEach(() => {
   vi.resetAllMocks()
   testDatabaseState.db = {
-    characters: [{ chatPage: 0, chats: [{ scriptstate: {} }], defaultVariables: '' }],
+    characters: [
+      {
+        chaId: 'each-character',
+        chatPage: 0,
+        chats: [{ id: 'each-chat', message: [], scriptstate: {} }],
+        defaultVariables: '',
+      },
+    ],
     globalChatVariables: {},
     templateDefaultVariables: '',
+    currentChar: 0,
   }
   resetChatVariables()
 })
@@ -46,7 +54,7 @@ beforeEach(() => {
 // These lock the {{#each}} re-injection rewrite, which now drops the already
 // consumed source prefix and resets the pointer instead of rebuilding the whole
 // source. The risk is that surrounding text or sibling/nested blocks regress.
-describe('#each re-injection (Phase 7 prefix-drop rewrite)', () => {
+describe('#each re-injection', () => {
   test('preserves text before and after the block', () => {
     expect(risuChatParser('PRE {{#each [1, 2, 3] as n}}{{slot::n}}{{/}} POST')).toBe('PRE 123 POST')
   })
@@ -88,15 +96,15 @@ describe('#each re-injection (Phase 7 prefix-drop rewrite)', () => {
   })
 })
 
-describe('#each budget (Phase 3 L10)', () => {
-  test('L10: keeps normal and nested #each output byte-identical below the cap', () => {
+describe('#each budget', () => {
+  test('keeps normal and nested #each output byte-identical below the cap', () => {
     expect(risuChatParser('A{{#each [1, 2] as n}}({{slot::n}}){{/}}Z')).toBe('A(1)(2)Z')
     expect(
       risuChatParser('{{#each::keep [1, 2] as x}}{{#each::keep ["a", "b"] as y}}{{slot::x}}:{{slot::y}};{{/}}{{/}}'),
     ).toBe('1:a;1:b;2:a;2:b;')
   })
 
-  test('L10: throws parser budget error when #each element count exceeds cap', () => {
+  test('throws parser budget error when #each element count exceeds cap', () => {
     const arr = Array.from({ length: RISU_EACH_EXPANSION_BUDGET.maxElements + 1 }, (_unused, i) => i)
 
     expect(() => risuChatParser(`{{#each::keep ${JSON.stringify(arr)} as n}}{{slot::n}}{{/}}`)).toThrow(
@@ -104,7 +112,7 @@ describe('#each budget (Phase 3 L10)', () => {
     )
   })
 
-  test('L10: throws parser budget error when #each expanded output exceeds cap', () => {
+  test('throws parser budget error when #each expanded output exceeds cap', () => {
     const body = 'x'.repeat(Math.floor(RISU_EACH_EXPANSION_BUDGET.maxExpandedChars / 2) + 1)
 
     expect(() => risuChatParser(`{{#each::keep [1, 2] as n}}${body}{{/}}`)).toThrow(/expanded output budget exceeded/)

@@ -19,16 +19,21 @@ import {
   validateAgentPresetRecord,
   validateAgentPresetStepRecord,
   type AgentPresetRecord,
+  type AgentPresetUseRecord,
   type AgentPresetStepRecord,
+  type AgentRecord,
 } from '../agentPresetRecords'
 import type { MessageTranslation } from '../storage/database.svelte'
 import type { AlternateGreetingMutation, ChatGreetingIndex } from '../alternateGreetingMutation'
-import type { ModelRole } from '../model/modelRoles'
+import type { ModelRole } from '@risuai/shared-core/model-roles'
 import type {
+  ModelProfileOrderEntry,
   ModelProfileRecord,
   ModelProfileRecordRuntimeOptions,
   ModelRoleProfileBinding,
 } from '../model/modelProfileRecords'
+import type { ProviderCredentialRecord } from '../model/providerCredentialRecords'
+import type { ScriptModelOverrides } from '@risuai/shared-core/script-model-overrides'
 import {
   serializeScriptDefinitionCollectionDigestInput,
   type ScriptDefinitionCollectionMutation,
@@ -53,6 +58,23 @@ import {
 import type { DurableMutationRequest } from './pendingMutationOutbox'
 import type { ServerInlayCatalogEntry } from './inlayCatalog'
 import type { TranslatorPresetStep } from '../translator/presets'
+import { beginPersistenceActivity } from './persistenceActivity.svelte'
+import {
+  normalizeCacheRole,
+  normalizePromptRole,
+  normalizePromptTemplate,
+} from '../process/promptTemplateNormalization'
+import { canMutate } from '../startupReadiness'
+import type {
+  BardWikiChatSettings,
+  BardWikiContextPolicy,
+  BardWikiDocument,
+  BardWikiDocumentKind,
+  BardWikiJobSummary,
+  BardWikiReceiptSummary,
+  BardWikiReviewState,
+} from '@risuai/protocol'
+import type { ModuleFolder } from '@risuai/protocol/module-organization'
 
 export { notifyServerCommandLocalEffectApplied, subscribeServerCommandLocalEffectApplied }
 
@@ -63,6 +85,8 @@ export const SERVER_MUTATION_ID_HEADER = 'risu-mutation-id'
 export const SERVER_DATABASE_LINEAGE_HEADER = 'risu-database-lineage'
 const AGENT_PRESET_COLLECTION_ACKNOWLEDGEMENT_CERTIFICATE = 'agent-preset-collection-v1'
 const PRESET_REORDER_ACKNOWLEDGEMENT_CERTIFICATE = 'preset-reorder-v1'
+
+type ServerCommandAccess = 'ordinary' | 'bootstrap-initialize' | 'pending-replay'
 
 export {
   SERVER_SETTINGS_GROUP_BY_KEY,
@@ -79,6 +103,10 @@ export interface CommandEvent {
   resource: string
   id?: string
   parentId?: string
+  databaseLineage?: string
+  operationId?: string
+  sourceMessageId?: string
+  jobId?: string
   origin?: {
     writerSessionId: string
   }
@@ -171,6 +199,8 @@ export interface ModuleCollectionMutationLocalEffect {
   collectionProjectionEpoch?: number
 }
 
+export type ModuleFolderSnapshot = ModuleFolder
+
 export interface ModuleEnabledLocalEffect {
   kind: 'moduleEnabled'
   moduleId: string
@@ -224,6 +254,7 @@ export interface SplitPresetPatchLocalEffect {
   attemptedSettings: Record<string, unknown>
   settings: Record<string, unknown>
   selectedProjectionApplied: boolean
+  /** The canonical prompt-preset owner row was applied; this is not an aggregate mirror receipt. */
   ownerProjectionApplied: boolean
   collectionProjectionEpoch: number
   settingsProjectionEpoch: number
@@ -531,6 +562,131 @@ export interface UpsertServerInlayCatalogInput {
   width?: number
 }
 
+export type BardWikiChatSettingsPatch = Partial<
+  Pick<
+    BardWikiChatSettings,
+    | 'enabledOverride'
+    | 'memoryModeOverride'
+    | 'confirmationPolicyOverride'
+    | 'canonicalUpdatesOverride'
+    | 'totalTokenBudgetOverride'
+    | 'hybridHypaTokenBudgetOverride'
+    | 'hybridBardWikiTokenBudgetOverride'
+    | 'maxDocumentsOverride'
+    | 'maxLinkHopsOverride'
+    | 'recentMessageCountOverride'
+    | 'modelProfileIdOverride'
+    | 'modelProfileIdIsSet'
+    | 'promptPresetIdOverride'
+    | 'promptPresetIdIsSet'
+  >
+>
+
+export interface BardWikiDocumentCommandFields {
+  kind?: BardWikiDocumentKind
+  title?: string
+  logicalPath?: string
+  aliases?: string[]
+  contextPolicy?: BardWikiContextPolicy
+  reviewState?: BardWikiReviewState
+  markdown?: string
+}
+
+export interface PatchBardWikiChatSettingsCommandInput {
+  baseRevision: number
+  chatId: string
+  patch: BardWikiChatSettingsPatch
+}
+
+export interface CreateBardWikiDocumentCommandInput {
+  baseRevision: number
+  chatId: string
+  document: Required<Pick<BardWikiDocumentCommandFields, 'kind' | 'title' | 'logicalPath' | 'markdown'>> &
+    BardWikiDocumentCommandFields
+}
+
+export interface UpdateBardWikiDocumentCommandInput {
+  baseRevision: number
+  chatId: string
+  documentId: string
+  expectedVersion: number
+  expectedContentHash: string
+  patch: BardWikiDocumentCommandFields
+}
+
+export interface DeleteBardWikiDocumentCommandInput {
+  baseRevision: number
+  chatId: string
+  documentId: string
+  expectedVersion: number
+  expectedContentHash: string
+}
+
+export interface ConfirmBardWikiAssistantCommandInput {
+  baseRevision: number
+  chatId: string
+  userMessageId: string
+  userContentHash: string
+  assistantMessageId: string
+  assistantContentHash: string
+}
+
+export type BardWikiRebuildPolicy = 'missing' | 'full'
+
+export interface BardWikiRebuildPreview {
+  chatId: string
+  policy: BardWikiRebuildPolicy
+  sourceCount: number
+  replaceDerivedDocumentCount: number
+  preserveUserDocumentCount: number
+  activeJobId: string | null
+}
+
+export interface QueueBardWikiRebuildCommandInput {
+  baseRevision: number
+  chatId: string
+  policy: BardWikiRebuildPolicy
+  expectedSourceCount: number
+}
+
+export type BardWikiVaultConflictStrategy = 'skip' | 'rename' | 'replace'
+
+export interface BardWikiVaultExpectedTarget {
+  documentId: string
+  version: number
+  contentHash: string
+}
+
+export interface BardWikiVaultImportAction {
+  sourceDocumentId: string
+  targetDocumentId: string
+  action: 'create' | 'replace' | 'noop' | 'skip'
+  logicalPath: string
+  conflict: 'id' | 'path' | 'id_and_path' | 'ambiguous' | null
+}
+
+export interface BardWikiVaultImportPlan {
+  format: 'risu-bardwiki-vault'
+  version: 1
+  strategy: BardWikiVaultConflictStrategy
+  creates: number
+  replacements: number
+  noops: number
+  skips: number
+  renames: number
+  applicable: boolean
+  actions: BardWikiVaultImportAction[]
+}
+
+export interface BardWikiVaultImportCommandInput {
+  baseRevision?: number
+  chatId: string
+  dryRun: boolean
+  strategy: BardWikiVaultConflictStrategy
+  archiveBase64: string
+  expectedTargets?: BardWikiVaultExpectedTarget[]
+}
+
 export interface DeleteServerInlayCatalogInput {
   assetId: string
   baseRevision: number
@@ -597,6 +753,7 @@ export type PersonaSnapshot = Record<string, unknown> & {
   personaPrompt?: string
   note?: string
   largePortrait?: boolean
+  modules?: string[]
 }
 
 export type TranslatorPresetSnapshot = Record<string, unknown> & {
@@ -640,6 +797,7 @@ export type CharacterOrderEntry =
       name?: string
       color?: string
       data: string[]
+      askBeforeOpening?: boolean
       imgFile?: string | null
       img?: string
     })
@@ -653,6 +811,8 @@ export type ChatSnapshot = Record<string, unknown> & {
   generationSettings?: ChatGenerationSettings
   folderId?: string | null
   bindedPersona?: string
+  hypaContextTruncationAcknowledged?: boolean
+  translatorPresetId?: string | null
   autoTranslate?: boolean | null
   autoTranslateBotOnly?: boolean | null
   bilingualDisplay?: boolean | null
@@ -691,7 +851,9 @@ export type ModuleSnapshot = Record<string, unknown> & {
   name?: string
   description?: string
   namespace?: string
+  folderId?: string | null
   lowLevelAccess?: boolean
+  scriptModelOverrides?: ScriptModelOverrides
   hideIcon?: boolean
   backgroundEmbedding?: string
   customModuleToggle?: string
@@ -705,7 +867,7 @@ export type PluginSnapshot = Record<string, unknown> & {
   realArg?: Record<string, string | number>
   customLink?: Array<{ link: string; hoverText?: string }>
   argMeta?: Record<string, Record<string, string>>
-  version?: 1 | 2 | '2.1' | '3.0'
+  version?: '3.0'
   displayName?: string
   versionOfPlugin?: string
   updateURL?: string
@@ -804,6 +966,37 @@ export type ModelPresetSnapshot = Record<string, unknown>
 export type PromptPresetSnapshot = Record<string, unknown>
 export type AgentPresetSnapshot = Partial<AgentPresetRecord> & Record<string, unknown>
 export type AgentPresetStepSnapshot = Partial<AgentPresetStepRecord> & Record<string, unknown>
+export type AgentSnapshot = Partial<AgentRecord> & Record<string, unknown>
+export type AgentPresetUseSnapshot = Partial<AgentPresetUseRecord> & Record<string, unknown>
+
+function normalizePromptTemplateProperty<T extends Record<string, unknown>>(record: T): T {
+  const normalized = { ...record }
+  if (Object.prototype.hasOwnProperty.call(normalized, 'promptTemplate')) {
+    const target = normalized as Record<string, unknown>
+    target.promptTemplate = normalizePromptTemplate(target.promptTemplate)
+  }
+  return normalized
+}
+
+function normalizePromptItemSnapshot(item: PromptItemSnapshot): PromptItemSnapshot {
+  const normalized = normalizePromptTemplate([item])?.[0]
+  return normalized && typeof normalized === 'object' ? (normalized as PromptItemSnapshot) : { ...item }
+}
+
+function normalizePromptItemPatch(patch: PromptItemSnapshot): PromptItemSnapshot {
+  const normalized = { ...patch }
+  if (Object.prototype.hasOwnProperty.call(normalized, 'role2')) {
+    normalized.role2 = normalizePromptRole(normalized.role2) ?? 'system'
+  }
+  if (Object.prototype.hasOwnProperty.call(normalized, 'role')) {
+    if (normalized.type === 'cache') {
+      normalized.role = normalizeCacheRole(normalized.role)
+    } else if (normalized.type === 'plain' || normalized.type === 'jailbreak' || normalized.type === 'cot') {
+      normalized.role = normalizePromptRole(normalized.role) ?? 'system'
+    }
+  }
+  return normalized
+}
 
 export interface ModelPresetCommandInput {
   baseRevision: number
@@ -870,6 +1063,49 @@ export interface ReorderPromptPresetsCommandInput extends PromptPresetCommandInp
 
 export interface AgentPresetCommandInput {
   baseRevision: number
+}
+
+export interface CreateAgentCommandInput extends AgentPresetCommandInput {
+  agent: AgentSnapshot
+}
+
+export interface UpdateAgentCommandInput extends AgentPresetCommandInput {
+  agentId: string
+  patch: AgentSnapshot
+}
+
+export interface DuplicateAgentCommandInput extends AgentPresetCommandInput {
+  agentId: string
+  name?: string
+}
+
+export interface DeleteAgentCommandInput extends AgentPresetCommandInput {
+  agentId: string
+}
+
+export interface ReorderAgentsCommandInput extends AgentPresetCommandInput {
+  agentIds: string[]
+}
+
+export interface CreateAgentPresetUseCommandInput extends AgentPresetCommandInput {
+  presetId: string
+  use: AgentPresetUseSnapshot
+}
+
+export interface UpdateAgentPresetUseCommandInput extends AgentPresetCommandInput {
+  presetId: string
+  useId: string
+  patch: AgentPresetUseSnapshot
+}
+
+export interface DeleteAgentPresetUseCommandInput extends AgentPresetCommandInput {
+  presetId: string
+  useId: string
+}
+
+export interface ReorderAgentPresetUsesCommandInput extends AgentPresetCommandInput {
+  presetId: string
+  useIds: string[]
 }
 
 export interface CreateAgentPresetCommandInput extends AgentPresetCommandInput {
@@ -952,7 +1188,28 @@ export interface UpdateModelProfileCommandInput extends ModelProfileCommandInput
 export interface DuplicateModelProfileCommandInput extends ModelProfileCommandInput {
   profileId: string
   name?: string
-  includeSecrets?: boolean
+}
+
+export interface ReorderModelProfilesCommandInput extends ModelProfileCommandInput {
+  order: ModelProfileOrderEntry[]
+}
+
+export type ProviderCredentialSnapshot = Omit<ProviderCredentialRecord, 'id'> & {
+  id?: string
+}
+
+export interface CreateProviderCredentialCommandInput extends ModelProfileCommandInput {
+  credential: ProviderCredentialSnapshot
+}
+
+export interface UpdateProviderCredentialCommandInput extends ModelProfileCommandInput {
+  credentialId: string
+  credential: ProviderCredentialSnapshot
+  expectedCredential: ProviderCredentialSnapshot
+}
+
+export interface DeleteProviderCredentialCommandInput extends ModelProfileCommandInput {
+  credentialId: string
 }
 
 export interface DeleteModelProfileCommandInput extends ModelProfileCommandInput {
@@ -1149,6 +1406,13 @@ export interface MutateAlternateGreetingsCommandInput extends CharacterCommandIn
   chatGreetingIndices: ChatGreetingIndex[]
 }
 
+export interface TranslateGreetingCommandInput extends CharacterCommandInput {
+  characterId: string
+  chatId: string
+  greetingIndex: number
+  jobId: string
+}
+
 export interface RecoverColdStorageCharacterCommandInput extends CharacterCommandInput {
   characterId: string
   key: string
@@ -1178,6 +1442,11 @@ export interface CreateChatCommandInput extends ChatCommandInput {
   chat: ChatSnapshot
   select?: boolean
   acknowledgeOptimistic?: boolean
+}
+
+export interface ResetChatsCommandInput extends ChatCommandInput {
+  characterId: string
+  chat: ChatSnapshot
 }
 
 export interface UpdateChatCommandInput extends ChatCommandInput {
@@ -1497,6 +1766,24 @@ export interface EnableModuleCommandInput extends ModuleCommandInput {
 
 export interface ReorderModulesCommandInput extends ModuleCommandInput {
   moduleIds: string[]
+  folderByModuleId?: Record<string, string | null>
+}
+
+export interface CreateModuleFolderCommandInput extends ModuleCommandInput {
+  folder: ModuleFolderSnapshot
+}
+
+export interface UpdateModuleFolderCommandInput extends ModuleCommandInput {
+  folderId: string
+  patch: Pick<ModuleFolderSnapshot, 'name'>
+}
+
+export interface DeleteModuleFolderCommandInput extends ModuleCommandInput {
+  folderId: string
+}
+
+export interface ReorderModuleFoldersCommandInput extends ModuleCommandInput {
+  folderIds: string[]
 }
 
 export interface ReorderCharacterModulesCommandInput extends ModuleCommandInput {
@@ -1579,7 +1866,6 @@ export interface DeleteMessageCommandInput extends ChatCommandInput {
 export interface TruncateMessagesCommandInput extends ChatCommandInput {
   chatId: string
   afterMessageId?: string | null
-  preserveRemovedAsAlternates?: boolean
   optimisticChatBodyProjectionEpoch?: number
 }
 
@@ -1644,6 +1930,8 @@ export type ServerCommandExecutionWrapper = <T extends Record<string, unknown>>(
   execute: () => Promise<ServerCommandResult<T>>,
 ) => Promise<ServerCommandResult<T>>
 
+export type ExternalServerRevisionOperationResult<T> = { status: 'executed'; value: T } | { status: 'unavailable' }
+
 let cachedServerCommandRevision: number | null = null
 // The command/base-revision cursor may move ahead of the browser projection:
 // conflicts and server-owned mutations tell us the latest server revision
@@ -1674,9 +1962,9 @@ interface DirectServerCommandReconciliation {
 
 let serverCommandSuccessReconciler: ServerCommandSuccessReconciler | null = null
 let serverCommandConflictGapHandler: ServerCommandConflictGapHandler | null = null
-// Every command domain shares one server revision. Keep high-level mutations in
-// one client queue so two unrelated optimistic edits cannot both dispatch with
-// the same base revision and make the later edit roll back with a self-conflict.
+// Every command domain shares one server revision. Keep high-level mutations and
+// external operations that may advance that revision in one client queue so two
+// unrelated writes cannot dispatch with the same base revision and self-conflict.
 let serverCommandExecutionTail: Promise<void> = Promise.resolve()
 let queuedServerCommandExecutionCount = 0
 let activeServerCommandReconciliationBatch: ServerCommandReconciliationBatch | null = null
@@ -1687,6 +1975,25 @@ const directServerCommandReconciliations = new Set<DirectServerCommandReconcilia
 // local effect fails closed and triggers an authoritative reread.
 let activeQueuedCommandDestructiveRefreshEpoch: number | null = null
 let activeQueuedCommandMutation: { id: string; databaseLineage: string; requestIndex: number } | null = null
+
+/**
+ * Wait until command work enqueued before this call and its reconciliation has
+ * settled. Tests use this instead of timer guesses when production deliberately
+ * dispatches a mutation without exposing its promise to the caller.
+ */
+export async function drainServerCommandExecutionForTests(earlierWork?: PromiseLike<unknown>): Promise<void> {
+  await earlierWork
+
+  while (true) {
+    const observedTail = serverCommandExecutionTail
+    await observedTail
+    const observedBatch = activeServerCommandReconciliationBatch
+    if (observedBatch) await observedBatch.completion
+    await Promise.resolve()
+
+    if (observedTail === serverCommandExecutionTail && activeServerCommandReconciliationBatch === null) return
+  }
+}
 
 async function withQueuedCommandExecutionContext<T>(
   epoch: number,
@@ -1774,35 +2081,37 @@ export async function runServerCommandWithMutationReceipt<T>(
   }
 }
 
-function enqueueServerCommandExecution<T>(task: (batch: ServerCommandReconciliationBatch) => Promise<T>): Promise<T> {
-  const batch = getOrCreateServerCommandReconciliationBatch()
-  queuedServerCommandExecutionCount += 1
-
-  const execution = serverCommandExecutionTail.then(() => task(batch))
-  const settledExecution = execution.then(
-    (value) => {
-      finishServerCommandExecution(batch)
-      return value
-    },
-    (error) => {
-      finishServerCommandExecution(batch)
-      throw error
-    },
-  )
+function enqueueServerRevisionExecution<T>(task: () => Promise<T>, onSettled?: () => void): Promise<T> {
+  const execution = serverCommandExecutionTail.then(task)
+  const settledExecution = onSettled ? execution.finally(onSettled) : execution
   serverCommandExecutionTail = settledExecution.then(
     () => undefined,
     () => undefined,
   )
-  return settledExecution.then(
-    async (value) => {
-      await batch.completion
-      return value
-    },
-    async (error) => {
-      await batch.completion
-      throw error
-    },
+  return settledExecution
+}
+
+function enqueueServerCommandExecution<T>(task: (batch: ServerCommandReconciliationBatch) => Promise<T>): Promise<T> {
+  const finishPersistenceActivity = beginPersistenceActivity()
+  const batch = getOrCreateServerCommandReconciliationBatch()
+  queuedServerCommandExecutionCount += 1
+
+  const settledExecution = enqueueServerRevisionExecution(
+    () => task(batch),
+    () => finishServerCommandExecution(batch),
   )
+  return settledExecution
+    .then(
+      async (value) => {
+        await batch.completion
+        return value
+      },
+      async (error) => {
+        await batch.completion
+        throw error
+      },
+    )
+    .finally(finishPersistenceActivity)
 }
 
 function getOrCreateServerCommandReconciliationBatch(): ServerCommandReconciliationBatch {
@@ -1974,22 +2283,26 @@ async function releaseDirectServerCommandEvents(
  * Matching events that are not the confirmed response event are released back
  * through the normal reconciliation path. This keeps overlapping operations
  * and failed requests from swallowing unrelated own events.
+ * Callers with an already-applied optimistic projection may attach its typed
+ * local effect to the confirmed response event and avoid an authoritative read.
  */
 export async function withDirectServerCommandEventReconciliation<T>(
   matches: (event: CommandEvent) => boolean,
-  operation: (reconcileResponseEvent: (event: CommandEvent) => Promise<void>) => Promise<T>,
+  operation: (
+    reconcileResponseEvent: (event: CommandEvent, localEffect?: ServerCommandLocalEffect) => Promise<void>,
+  ) => Promise<T>,
 ): Promise<T> {
   const direct = beginDirectServerCommandReconciliation(matches)
   let confirmedEvent: CommandEvent | null = null
   try {
-    return await operation(async (event) => {
+    return await operation(async (event, localEffect) => {
       confirmedEvent = event
       // The Realm transport cannot know its new character id before parsing
       // the response, so its provisional matcher is intentionally broader.
       // Drain any unmatched earlier events first to preserve revision order.
       directServerCommandReconciliations.delete(direct)
       await releaseDirectServerCommandEvents(direct, confirmedEvent, true, true)
-      await notifyServerCommandSuccessReconciler(event, true)
+      await notifyServerCommandSuccessReconciler(event, true, localEffect)
     })
   } finally {
     await finishDirectServerCommandReconciliation(direct, confirmedEvent)
@@ -1997,7 +2310,28 @@ export async function withDirectServerCommandEventReconciliation<T>(
 }
 
 export function canUseServerCommands(): boolean {
-  return !isWriterAccessLost()
+  return canUseServerCommandAccess('ordinary')
+}
+
+function canUseServerCommandAccess(access: ServerCommandAccess): boolean {
+  return !isWriterAccessLost() && (access !== 'ordinary' || canMutate())
+}
+
+/**
+ * Serialize an external operation whose response carries no command event with
+ * the normal command revision lane. The operation must read its base revision
+ * and ingest any authoritative response revision before resolving. Do not call
+ * this from inside an already queued command operation, which would enqueue
+ * behind itself.
+ */
+export function runExternalServerRevisionOperation<T>(
+  operation: () => Promise<T>,
+): Promise<ExternalServerRevisionOperationResult<T>> {
+  if (!canUseServerCommands()) return Promise.resolve({ status: 'unavailable' })
+  return enqueueServerRevisionExecution(async () => {
+    if (!canUseServerCommands()) return { status: 'unavailable' }
+    return { status: 'executed', value: await operation() }
+  })
 }
 
 export function settingsGroupForKey(key: string): SettingsGroup | null {
@@ -2057,7 +2391,15 @@ export async function getServerCommandBaseRevision(
   signal?: AbortSignal | null,
   keepalive = false,
 ): Promise<number | null> {
-  if (!canUseServerCommands()) return null
+  return getServerCommandBaseRevisionForAccess('ordinary', signal, keepalive)
+}
+
+async function getServerCommandBaseRevisionForAccess(
+  access: ServerCommandAccess,
+  signal?: AbortSignal | null,
+  keepalive = false,
+): Promise<number | null> {
+  if (!canUseServerCommandAccess(access)) return null
   if (cachedServerCommandRevision !== null) return cachedServerCommandRevision
 
   const auth = await getNodeServerProxyAuth()
@@ -2076,7 +2418,7 @@ export async function getServerCommandBaseRevision(
     return null
   }
 
-  if (!response.ok) return null
+  if (!canUseServerCommandAccess(access) || !response.ok) return null
 
   try {
     const body = (await response.json()) as { revision?: unknown }
@@ -2160,17 +2502,22 @@ export async function patchSettingsObjectFieldsCommand(
  * idempotently — it only writes when no database exists yet, so calling it
  * against an already-initialized server is a harmless no-op (`initialized: false`).
  */
-export async function initializeServerDatabase(
+export async function initializeServerDatabaseForBootstrap(
   signal?: AbortSignal | null,
 ): Promise<ServerCommandResult<{ initialized: boolean }>> {
-  return requestCommandJson('/state/initialize', {
-    method: 'POST',
-    body: {},
-    signal,
-    // The idempotent already-initialized branch performs no mutation and is the
-    // only command route that intentionally returns a revision without an event.
-    allowEventlessSuccess: (body) => body.initialized === false && !Object.prototype.hasOwnProperty.call(body, 'event'),
-  })
+  return requestCommandJson(
+    '/state/initialize',
+    {
+      method: 'POST',
+      body: {},
+      signal,
+      // The idempotent already-initialized branch performs no mutation and is the
+      // only command route that intentionally returns a revision without an event.
+      allowEventlessSuccess: (body) =>
+        body.initialized === false && !Object.prototype.hasOwnProperty.call(body, 'event'),
+    },
+    'bootstrap-initialize',
+  )
 }
 
 /**
@@ -2206,9 +2553,16 @@ export async function patchServerBackedSettings(input: PatchServerBackedSettings
   const rollbackEpoch = captureDestructiveRefreshEpoch()
   return enqueueServerCommandExecution(() =>
     withQueuedCommandExecutionContext(rollbackEpoch, input.mutationId, input.databaseLineage, async () => {
+      if (!canUseServerCommands() && !input.executionWrapper) {
+        runRollbackUnlessDestructiveRefreshChanged(input.rollback, rollbackEpoch)
+        return { status: 'unavailable' }
+      }
       const deferredRollback = input.failureRollbackDisposition ? input.rollback : undefined
       const executionInput = input.failureRollbackDisposition ? { ...input, rollback: undefined } : input
-      const execute = () => executeServerBackedSettingsPatch(executionInput, grouped, rollbackEpoch)
+      const execute = () =>
+        canUseServerCommands()
+          ? executeServerBackedSettingsPatch(executionInput, grouped, rollbackEpoch)
+          : Promise.resolve({ status: 'unavailable' as const })
       let result: ServerCommandResult
       try {
         result = input.executionWrapper ? await input.executionWrapper(execute) : await execute()
@@ -2501,11 +2855,12 @@ export async function createPromptPresetCommand(
   input: CreatePromptPresetCommandInput,
   signal?: AbortSignal | null,
 ): Promise<ServerCommandResult<{ promptPresetId: string }>> {
+  const preset = normalizePromptTemplateProperty(input.preset)
   return requestCommandJson('/prompt-presets', {
     method: 'POST',
     body: {
       baseRevision: input.baseRevision,
-      preset: input.preset,
+      preset,
     },
     signal,
   })
@@ -2516,11 +2871,12 @@ export async function updatePromptPresetCommand(
   signal?: AbortSignal | null,
   keepalive = false,
 ): Promise<ServerCommandResult<{ promptPresetId: string }>> {
+  const patch = normalizePromptTemplateProperty(input.patch)
   return requestCommandJson(`/prompt-presets/${encodeURIComponent(input.promptPresetId)}`, {
     method: 'PATCH',
     body: {
       baseRevision: input.baseRevision,
-      patch: input.patch,
+      patch,
     },
     signal,
     keepalive,
@@ -2528,7 +2884,7 @@ export async function updatePromptPresetCommand(
       readSplitPresetPatchLocalEffect(body, event, {
         presetKind: 'prompt',
         presetId: input.promptPresetId,
-        attemptedPatch: input.patch,
+        attemptedPatch: patch,
         acknowledgement: input.optimisticAcknowledgement,
       }),
   })
@@ -2573,11 +2929,12 @@ export async function importPromptPresetCommand(
   input: ImportPromptPresetCommandInput,
   signal?: AbortSignal | null,
 ): Promise<ServerCommandResult<{ promptPresetId: string }>> {
+  const preset = normalizePromptTemplateProperty(input.preset)
   return requestCommandJson('/prompt-presets/import', {
     method: 'POST',
     body: {
       baseRevision: input.baseRevision,
-      preset: input.preset,
+      preset,
     },
     signal,
   })
@@ -2597,6 +2954,61 @@ export async function reorderPromptPresetsCommand(
   })
 }
 
+export async function createAgentCommand(
+  input: CreateAgentCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ agentId: string }>> {
+  return requestCommandJson('/agents', {
+    method: 'POST',
+    body: { baseRevision: input.baseRevision, agent: input.agent },
+    signal,
+  })
+}
+
+export async function updateAgentCommand(
+  input: UpdateAgentCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ agentId: string }>> {
+  return requestCommandJson(`/agents/${encodeURIComponent(input.agentId)}`, {
+    method: 'PATCH',
+    body: { baseRevision: input.baseRevision, patch: input.patch },
+    signal,
+  })
+}
+
+export async function duplicateAgentCommand(
+  input: DuplicateAgentCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ agentId: string; sourceAgentId: string }>> {
+  return requestCommandJson(`/agents/${encodeURIComponent(input.agentId)}/duplicate`, {
+    method: 'POST',
+    body: { baseRevision: input.baseRevision, name: input.name },
+    signal,
+  })
+}
+
+export async function deleteAgentCommand(
+  input: DeleteAgentCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ agentId: string }>> {
+  return requestCommandJson(`/agents/${encodeURIComponent(input.agentId)}`, {
+    method: 'DELETE',
+    body: { baseRevision: input.baseRevision },
+    signal,
+  })
+}
+
+export async function reorderAgentsCommand(
+  input: ReorderAgentsCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<Record<string, never>>> {
+  return requestCommandJson('/agents/reorder', {
+    method: 'POST',
+    body: { baseRevision: input.baseRevision, agentIds: input.agentIds },
+    signal,
+  })
+}
+
 export async function createAgentPresetCommand(
   input: CreateAgentPresetCommandInput,
   signal?: AbortSignal | null,
@@ -2607,6 +3019,56 @@ export async function createAgentPresetCommand(
       baseRevision: input.baseRevision,
       preset: input.preset,
     },
+    signal,
+  })
+}
+
+export async function createAgentPresetUseCommand(
+  input: CreateAgentPresetUseCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string; useId: string; agentId: string }>> {
+  return requestCommandJson(`/agent-presets/${encodeURIComponent(input.presetId)}/uses`, {
+    method: 'POST',
+    body: { baseRevision: input.baseRevision, use: input.use },
+    signal,
+  })
+}
+
+export async function updateAgentPresetUseCommand(
+  input: UpdateAgentPresetUseCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string; useId: string; agentId: string }>> {
+  return requestCommandJson(
+    `/agent-presets/${encodeURIComponent(input.presetId)}/uses/${encodeURIComponent(input.useId)}`,
+    {
+      method: 'PATCH',
+      body: { baseRevision: input.baseRevision, patch: input.patch },
+      signal,
+    },
+  )
+}
+
+export async function deleteAgentPresetUseCommand(
+  input: DeleteAgentPresetUseCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string; useId: string }>> {
+  return requestCommandJson(
+    `/agent-presets/${encodeURIComponent(input.presetId)}/uses/${encodeURIComponent(input.useId)}`,
+    {
+      method: 'DELETE',
+      body: { baseRevision: input.baseRevision },
+      signal,
+    },
+  )
+}
+
+export async function reorderAgentPresetUsesCommand(
+  input: ReorderAgentPresetUsesCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string }>> {
+  return requestCommandJson(`/agent-presets/${encodeURIComponent(input.presetId)}/uses/reorder`, {
+    method: 'POST',
+    body: { baseRevision: input.baseRevision, useIds: input.useIds },
     signal,
   })
 }
@@ -2838,7 +3300,62 @@ export async function duplicateModelProfileCommand(
     body: {
       baseRevision: input.baseRevision,
       name: input.name,
-      includeSecrets: input.includeSecrets,
+    },
+    signal,
+  })
+}
+
+export async function reorderModelProfilesCommand(
+  input: ReorderModelProfilesCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ profileIds: string[]; order: ModelProfileOrderEntry[] }>> {
+  return requestCommandJson('/model-profiles/reorder', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      order: input.order,
+    },
+    signal,
+  })
+}
+
+export async function createProviderCredentialCommand(
+  input: CreateProviderCredentialCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ credentialId: string }>> {
+  return requestCommandJson('/provider-credentials', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      credential: input.credential,
+    },
+    signal,
+  })
+}
+
+export async function updateProviderCredentialCommand(
+  input: UpdateProviderCredentialCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ credentialId: string }>> {
+  return requestCommandJson(`/provider-credentials/${encodeURIComponent(input.credentialId)}`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      credential: input.credential,
+      expectedCredential: input.expectedCredential,
+    },
+    signal,
+  })
+}
+
+export async function deleteProviderCredentialCommand(
+  input: DeleteProviderCredentialCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ credentialId: string }>> {
+  return requestCommandJson(`/provider-credentials/${encodeURIComponent(input.credentialId)}`, {
+    method: 'DELETE',
+    body: {
+      baseRevision: input.baseRevision,
     },
     signal,
   })
@@ -2958,20 +3475,21 @@ export async function createPromptItemCommand(
   input: CreatePromptItemCommandInput,
   signal?: AbortSignal | null,
 ): Promise<ServerCommandResult<{ itemId: string }>> {
+  const promptItem = normalizePromptItemSnapshot(input.promptItem)
   return requestCommandJson('/prompt-items', {
     method: 'POST',
     body: {
       baseRevision: input.baseRevision,
       ...(input.promptPresetId ? { promptPresetId: input.promptPresetId } : {}),
-      promptItem: input.promptItem,
+      promptItem,
     },
     signal,
     readLocalEffect: (body, event) =>
       readPromptItemMutationLocalEffect(body, event, {
         operation: 'create',
         promptPresetId: input.promptPresetId,
-        itemId: input.promptItem.id,
-        promptItem: input.promptItem,
+        itemId: promptItem.id,
+        promptItem,
         acknowledgement: input.optimisticAcknowledgement,
       }),
   })
@@ -2982,12 +3500,13 @@ export async function updatePromptItemCommand(
   signal?: AbortSignal | null,
   keepalive = false,
 ): Promise<ServerCommandResult<{ itemId: string }>> {
+  const patch = normalizePromptItemPatch(input.patch)
   return requestCommandJson(`/prompt-items/${encodeURIComponent(input.itemId)}`, {
     method: 'PATCH',
     body: {
       baseRevision: input.baseRevision,
       ...(input.promptPresetId ? { promptPresetId: input.promptPresetId } : {}),
-      patch: input.patch,
+      patch,
       ...(input.deleteKeys?.length ? { deleteKeys: input.deleteKeys } : {}),
     },
     signal,
@@ -2997,7 +3516,7 @@ export async function updatePromptItemCommand(
         operation: 'update',
         promptPresetId: input.promptPresetId,
         itemId: input.itemId,
-        patch: input.patch,
+        patch,
         deleteKeys: input.deleteKeys,
         acknowledgement: input.optimisticAcknowledgement,
       }),
@@ -3439,6 +3958,40 @@ export async function mutateAlternateGreetingsCommand(
   })
 }
 
+export async function translateGreetingCommand(
+  input: TranslateGreetingCommandInput,
+  signal?: AbortSignal | null,
+): Promise<
+  ServerCommandResult<{
+    characterId: string
+    chatId: string
+    greetingIndex: number
+    jobId: string
+    settingsHash: string
+    translation: MessageTranslation
+  }>
+> {
+  return requestCommandJson(
+    `/characters/${encodeURIComponent(input.characterId)}/greetings/${input.greetingIndex}/translate`,
+    {
+      method: 'POST',
+      body: {
+        baseRevision: input.baseRevision,
+        chatId: input.chatId,
+        jobId: input.jobId,
+      },
+      signal,
+      // Greeting translation is provider-bound and source-fenced, not staged
+      // in the durable mutation lane. Reconcile its revision/event immediately.
+      reconcileImmediately: true,
+      deferOwnEventUntilResponse: (event) =>
+        event.type === 'character.greetingTranslation.updated' &&
+        event.resource === 'greetingTranslation' &&
+        event.id === input.characterId,
+    },
+  )
+}
+
 export async function recoverColdStorageCharacterCommand(
   input: RecoverColdStorageCharacterCommandInput,
   signal?: AbortSignal | null,
@@ -3530,6 +4083,20 @@ export async function createChatCommand(
               expectedOptimisticRowEpoch: input.optimisticRowEpoch,
             })
         : undefined,
+  })
+}
+
+export async function resetChatsCommand(
+  input: ResetChatsCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ chatId: string; selectedChatId: string }>> {
+  return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/chats`, {
+    method: 'PUT',
+    body: {
+      baseRevision: input.baseRevision,
+      chat: input.chat,
+    },
+    signal,
   })
 }
 
@@ -4772,6 +5339,7 @@ export async function reorderModulesCommand(
     body: {
       baseRevision: input.baseRevision,
       moduleIds: input.moduleIds,
+      ...(input.folderByModuleId ? { folderByModuleId: input.folderByModuleId } : {}),
     },
     signal,
     readLocalEffect: acknowledgeOptimistic
@@ -4781,6 +5349,50 @@ export async function reorderModulesCommand(
             expectedModuleIds: input.moduleIds,
           })
       : undefined,
+  })
+}
+
+export async function createModuleFolderCommand(
+  input: CreateModuleFolderCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ folderId: string }>> {
+  return requestCommandJson('/module-folders', {
+    method: 'POST',
+    body: { baseRevision: input.baseRevision, folder: input.folder },
+    signal,
+  })
+}
+
+export async function updateModuleFolderCommand(
+  input: UpdateModuleFolderCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ folderId: string }>> {
+  return requestCommandJson(`/module-folders/${encodeURIComponent(input.folderId)}`, {
+    method: 'PATCH',
+    body: { baseRevision: input.baseRevision, patch: input.patch },
+    signal,
+  })
+}
+
+export async function deleteModuleFolderCommand(
+  input: DeleteModuleFolderCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ folderId: string }>> {
+  return requestCommandJson(`/module-folders/${encodeURIComponent(input.folderId)}`, {
+    method: 'DELETE',
+    body: { baseRevision: input.baseRevision },
+    signal,
+  })
+}
+
+export async function reorderModuleFoldersCommand(
+  input: ReorderModuleFoldersCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult> {
+  return requestCommandJson('/module-folders/reorder', {
+    method: 'POST',
+    body: { baseRevision: input.baseRevision, folderIds: input.folderIds },
+    signal,
   })
 }
 
@@ -5056,7 +5668,6 @@ export async function truncateMessagesCommand(
     body: {
       baseRevision: input.baseRevision,
       afterMessageId: input.afterMessageId ?? null,
-      ...(input.preserveRemovedAsAlternates ? { preserveRemovedAsAlternates: true } : {}),
     },
     signal,
     readLocalEffect: (body, event) =>
@@ -5127,6 +5738,238 @@ export async function persistGenerationResultCommand(
   })
 }
 
+export async function patchBardWikiChatSettingsCommand(
+  input: PatchBardWikiChatSettingsCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ settings: BardWikiChatSettings }>> {
+  return requestCommandJson(`/bardwiki/chats/${encodeURIComponent(input.chatId)}/settings`, {
+    method: 'PATCH',
+    body: { baseRevision: input.baseRevision, patch: input.patch },
+    signal,
+  })
+}
+
+export async function createBardWikiDocumentCommand(
+  input: CreateBardWikiDocumentCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ document: BardWikiDocument }>> {
+  return requestCommandJson(`/bardwiki/chats/${encodeURIComponent(input.chatId)}/documents`, {
+    method: 'POST',
+    body: { baseRevision: input.baseRevision, document: input.document },
+    signal,
+  })
+}
+
+export async function updateBardWikiDocumentCommand(
+  input: UpdateBardWikiDocumentCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ document: BardWikiDocument }>> {
+  return requestCommandJson(
+    `/bardwiki/chats/${encodeURIComponent(input.chatId)}/documents/${encodeURIComponent(input.documentId)}`,
+    {
+      method: 'PATCH',
+      body: {
+        baseRevision: input.baseRevision,
+        expectedVersion: input.expectedVersion,
+        expectedContentHash: input.expectedContentHash,
+        patch: input.patch,
+      },
+      signal,
+    },
+  )
+}
+
+export async function deleteBardWikiDocumentCommand(
+  input: DeleteBardWikiDocumentCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ document: BardWikiDocument }>> {
+  return requestCommandJson(
+    `/bardwiki/chats/${encodeURIComponent(input.chatId)}/documents/${encodeURIComponent(input.documentId)}`,
+    {
+      method: 'DELETE',
+      body: {
+        baseRevision: input.baseRevision,
+        expectedVersion: input.expectedVersion,
+        expectedContentHash: input.expectedContentHash,
+      },
+      signal,
+    },
+  )
+}
+
+export async function confirmBardWikiAssistantCommand(
+  input: ConfirmBardWikiAssistantCommandInput,
+  signal?: AbortSignal | null,
+): Promise<
+  ServerCommandResult<{
+    receipt: BardWikiReceiptSummary
+    job: BardWikiJobSummary
+    created: boolean
+  }>
+> {
+  return requestCommandJson(`/bardwiki/chats/${encodeURIComponent(input.chatId)}/confirmations`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      userMessageId: input.userMessageId,
+      userContentHash: input.userContentHash,
+      assistantMessageId: input.assistantMessageId,
+      assistantContentHash: input.assistantContentHash,
+    },
+    signal,
+  })
+}
+
+export async function previewBardWikiRebuildCommand(
+  chatId: string,
+  policy: BardWikiRebuildPolicy,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ preview: BardWikiRebuildPreview }>> {
+  return requestCommandJson(`/bardwiki/chats/${encodeURIComponent(chatId)}/rebuilds`, {
+    method: 'POST',
+    body: { preview: true, policy },
+    signal,
+    allowEventlessSuccess: (body) => isExactBardWikiRebuildPreviewReceipt(body, chatId, policy),
+  })
+}
+
+export async function queueBardWikiRebuildCommand(
+  input: QueueBardWikiRebuildCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ job: BardWikiJobSummary }>> {
+  return requestCommandJson(`/bardwiki/chats/${encodeURIComponent(input.chatId)}/rebuilds`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      preview: false,
+      confirm: true,
+      policy: input.policy,
+      expectedSourceCount: input.expectedSourceCount,
+    },
+    signal,
+  })
+}
+
+export async function importBardWikiVaultCommand(
+  input: BardWikiVaultImportCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ dryRun: boolean; plan: BardWikiVaultImportPlan }>> {
+  return requestCommandJson(`/bardwiki/chats/${encodeURIComponent(input.chatId)}/imports`, {
+    method: 'POST',
+    body: {
+      ...(input.baseRevision === undefined ? {} : { baseRevision: input.baseRevision }),
+      dryRun: input.dryRun,
+      strategy: input.strategy,
+      archiveBase64: input.archiveBase64,
+      expectedTargets: input.expectedTargets ?? [],
+    },
+    signal,
+    allowEventlessSuccess:
+      input.dryRun === true ? (body) => isExactBardWikiVaultDryRunReceipt(body, input.strategy) : undefined,
+  })
+}
+
+function isExactBardWikiRebuildPreviewReceipt(
+  body: Record<string, unknown>,
+  expectedChatId: string,
+  expectedPolicy: BardWikiRebuildPolicy,
+): boolean {
+  if (!isJsonValueEqual(Object.keys(body).sort(), ['preview', 'revision'])) return false
+  if (!isPlainJsonRecord(body.preview)) return false
+  const preview = body.preview
+  if (
+    !isJsonValueEqual(Object.keys(preview).sort(), [
+      'activeJobId',
+      'chatId',
+      'policy',
+      'preserveUserDocumentCount',
+      'replaceDerivedDocumentCount',
+      'sourceCount',
+    ]) ||
+    preview.chatId !== expectedChatId ||
+    preview.policy !== expectedPolicy ||
+    !isNonNegativeInteger(preview.sourceCount) ||
+    !isNonNegativeInteger(preview.replaceDerivedDocumentCount) ||
+    !isNonNegativeInteger(preview.preserveUserDocumentCount) ||
+    (preview.activeJobId !== null && !nonEmptyString(preview.activeJobId))
+  ) {
+    return false
+  }
+  return true
+}
+
+function isExactBardWikiVaultDryRunReceipt(
+  body: Record<string, unknown>,
+  expectedStrategy: BardWikiVaultConflictStrategy,
+): boolean {
+  if (!isJsonValueEqual(Object.keys(body).sort(), ['dryRun', 'plan', 'revision']) || body.dryRun !== true) return false
+  if (!isPlainJsonRecord(body.plan)) return false
+  const plan = body.plan
+  if (
+    !isJsonValueEqual(Object.keys(plan).sort(), [
+      'actions',
+      'applicable',
+      'creates',
+      'format',
+      'noops',
+      'renames',
+      'replacements',
+      'skips',
+      'strategy',
+      'version',
+    ]) ||
+    plan.format !== 'risu-bardwiki-vault' ||
+    plan.version !== 1 ||
+    plan.strategy !== expectedStrategy ||
+    !isNonNegativeInteger(plan.creates) ||
+    !isNonNegativeInteger(plan.replacements) ||
+    !isNonNegativeInteger(plan.noops) ||
+    !isNonNegativeInteger(plan.skips) ||
+    !isNonNegativeInteger(plan.renames) ||
+    typeof plan.applicable !== 'boolean' ||
+    !Array.isArray(plan.actions) ||
+    !plan.actions.every(isExactBardWikiVaultImportAction)
+  ) {
+    return false
+  }
+
+  const actionCounts = { create: 0, replace: 0, noop: 0, skip: 0 }
+  for (const action of plan.actions as BardWikiVaultImportAction[]) actionCounts[action.action] += 1
+  return (
+    plan.creates === actionCounts.create &&
+    plan.replacements === actionCounts.replace &&
+    plan.noops === actionCounts.noop &&
+    plan.skips === actionCounts.skip &&
+    (plan.renames as number) <= actionCounts.create
+  )
+}
+
+function isExactBardWikiVaultImportAction(value: unknown): value is BardWikiVaultImportAction {
+  if (!isPlainJsonRecord(value)) return false
+  return (
+    isJsonValueEqual(Object.keys(value).sort(), [
+      'action',
+      'conflict',
+      'logicalPath',
+      'sourceDocumentId',
+      'targetDocumentId',
+    ]) &&
+    nonEmptyString(value.sourceDocumentId) &&
+    nonEmptyString(value.targetDocumentId) &&
+    nonEmptyString(value.logicalPath) &&
+    (value.action === 'create' || value.action === 'replace' || value.action === 'noop' || value.action === 'skip') &&
+    (value.conflict === null ||
+      value.conflict === 'id' ||
+      value.conflict === 'path' ||
+      value.conflict === 'id_and_path' ||
+      value.conflict === 'ambiguous')
+  )
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0
+}
+
 export async function upsertServerInlayCatalogCommand(
   input: UpsertServerInlayCatalogInput,
   signal?: AbortSignal | null,
@@ -5169,10 +6012,15 @@ export async function runServerCommand<T extends Record<string, unknown> = {}>(
   const rollbackEpoch = captureDestructiveRefreshEpoch()
   return enqueueServerCommandExecution(() =>
     withQueuedCommandExecutionContext(rollbackEpoch, input.mutationId, input.databaseLineage, async () => {
+      if (!canUseServerCommands() && !input.executionWrapper) {
+        runRollbackUnlessDestructiveRefreshChanged(input.rollback, rollbackEpoch)
+        return { status: 'unavailable' }
+      }
       let executionStarted = false
       const deferredRollback = input.failureRollbackDisposition ? input.rollback : undefined
       const executionInput = input.failureRollbackDisposition ? { ...input, rollback: undefined } : input
       const execute = () => {
+        if (!canUseServerCommands()) return Promise.resolve({ status: 'unavailable' as const })
         executionStarted = true
         return executeServerCommand(executionInput, rollbackEpoch)
       }
@@ -5226,11 +6074,23 @@ export async function runServerCommandSequence(
 ): Promise<ServerCommandResult | null> {
   if (!canUseServerCommands() || commands.length === 0) return null
 
+  return runServerCommandSequenceWithAccess('ordinary', commands, rollback, options)
+}
+
+function runServerCommandSequenceWithAccess(
+  access: ServerCommandAccess,
+  commands: readonly ServerCommandSequenceEntry[],
+  rollback?: (isCurrent: () => boolean) => void | Promise<void>,
+  options: ServerCommandTransportOptions = {},
+): Promise<ServerCommandResult | null> {
+  if (!canUseServerCommandAccess(access) || commands.length === 0) return Promise.resolve(null)
+
   const rollbackEpoch = captureDestructiveRefreshEpoch()
   return enqueueServerCommandExecution((batch) =>
-    withQueuedCommandExecutionContext(rollbackEpoch, options.mutationId, options.databaseLineage, () =>
-      executeServerCommandSequence(commands, rollback, rollbackEpoch, batch),
-    ),
+    withQueuedCommandExecutionContext(rollbackEpoch, options.mutationId, options.databaseLineage, async () => {
+      if (!canUseServerCommandAccess(access)) return null
+      return executeServerCommandSequence(commands, rollback, rollbackEpoch, batch, access)
+    }),
   )
 }
 
@@ -5251,22 +6111,26 @@ export async function replayDurableMutationRequests(
   databaseLineage: string,
 ): Promise<DurableMutationReplayResult> {
   if (requests.length === 0) return { status: 'ok' }
-  if (!canUseServerCommands()) return { status: 'unavailable' }
+  if (!canUseServerCommandAccess('pending-replay')) return { status: 'unavailable' }
   const factories = requests.map(
     (request): ServerCommandFactory =>
       (baseRevision) =>
-        requestCommandJson(request.path, {
-          method: request.method,
-          body: { ...cloneJsonValue(request.body), baseRevision },
-        }),
+        requestCommandJson(
+          request.path,
+          {
+            method: request.method,
+            body: { ...cloneJsonValue(request.body), baseRevision },
+          },
+          'pending-replay',
+        ),
   )
   const options = { mutationId, databaseLineage }
-  let failed = await runServerCommandSequence(factories, undefined, options)
+  let failed = await runServerCommandSequenceWithAccess('pending-replay', factories, undefined, options)
   // A different live writer may have advanced the revision while this tab was
   // gone. The 409 response advances the cached cursor; replay the same stable
   // receipt ids once so already-accepted prefix requests dedupe transactionally.
   if (failed?.status === 'conflict') {
-    failed = await runServerCommandSequence(factories, undefined, options)
+    failed = await runServerCommandSequenceWithAccess('pending-replay', factories, undefined, options)
   }
   return failed ?? { status: 'ok' }
 }
@@ -5283,7 +6147,7 @@ export async function replayDurableMutationRequestsInline(
   databaseLineage: string,
 ): Promise<DurableMutationReplayResult> {
   if (requests.length === 0) return { status: 'ok' }
-  if (!canUseServerCommands()) return { status: 'unavailable' }
+  if (!canUseServerCommandAccess('pending-replay')) return { status: 'unavailable' }
   const reconciliationBatch = activeServerCommandReconciliationBatch
   const rollbackEpoch = activeQueuedCommandDestructiveRefreshEpoch
   if (!reconciliationBatch || rollbackEpoch === null) return { status: 'unavailable' }
@@ -5293,10 +6157,14 @@ export async function replayDurableMutationRequestsInline(
   const factories = requests.map(
     (request): ServerCommandFactory =>
       (baseRevision) =>
-        requestCommandJson(request.path, {
-          method: request.method,
-          body: { ...cloneJsonValue(request.body), baseRevision },
-        }),
+        requestCommandJson(
+          request.path,
+          {
+            method: request.method,
+            body: { ...cloneJsonValue(request.body), baseRevision },
+          },
+          'pending-replay',
+        ),
   )
   const executeAttempt = async (): Promise<ServerCommandResult | null> => {
     const previousMutation = activeQueuedCommandMutation
@@ -5306,7 +6174,13 @@ export async function replayDurableMutationRequestsInline(
       requestIndex: 0,
     }
     try {
-      return await executeServerCommandSequence(factories, undefined, rollbackEpoch, reconciliationBatch)
+      return await executeServerCommandSequence(
+        factories,
+        undefined,
+        rollbackEpoch,
+        reconciliationBatch,
+        'pending-replay',
+      )
     } finally {
       activeQueuedCommandMutation = previousMutation
     }
@@ -5354,14 +6228,16 @@ async function executeServerCommandSequence(
   rollback: ((isCurrent: () => boolean) => void | Promise<void>) | undefined,
   rollbackEpoch: number,
   reconciliationBatch: ServerCommandReconciliationBatch,
+  access: ServerCommandAccess = 'ordinary',
 ): Promise<ServerCommandResult | null> {
   const acceptedRevisions: number[] = []
   for (const entry of commands) {
+    if (!canUseServerCommandAccess(access)) return { status: 'unavailable' }
     // The sequence owns rollback so it runs exactly once for the first failed
     // step. executeServerCommand still normalizes thrown factories to an error
     // result and defers every accepted event into this sequence's active batch.
     const command = typeof entry === 'function' ? entry : entry.command
-    const execute = () => executeServerCommand({ command }, rollbackEpoch)
+    const execute = () => executeServerCommand({ command }, rollbackEpoch, access)
     let result: ServerCommandResult
     try {
       result =
@@ -5395,10 +6271,15 @@ async function executeServerCommandSequence(
 async function executeServerCommand<T extends Record<string, unknown>>(
   input: RunServerPresetCommandInput<T>,
   rollbackEpoch: number,
+  access: ServerCommandAccess = 'ordinary',
 ): Promise<ServerCommandResult<T>> {
+  if (!canUseServerCommandAccess(access)) {
+    runRollbackUnlessDestructiveRefreshChanged(input.rollback, rollbackEpoch)
+    return { status: 'unavailable' }
+  }
   let result: ServerCommandResult<T>
   try {
-    const baseRevision = await getServerCommandBaseRevision(input.signal, input.keepalive)
+    const baseRevision = await getServerCommandBaseRevisionForAccess(access, input.signal, input.keepalive)
     if (baseRevision === null) {
       runRollbackUnlessDestructiveRefreshChanged(input.rollback, rollbackEpoch)
       return { status: 'error', error: 'Unable to read server command revision' }
@@ -5452,11 +6333,13 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
     deferOwnEventUntilResponse?: (event: CommandEvent) => boolean
     allowEventlessSuccess?: (body: Record<string, unknown>) => boolean
   },
+  access: ServerCommandAccess = 'ordinary',
 ): Promise<ServerCommandResult<T>> {
   const destructiveRefreshEpoch = activeQueuedCommandDestructiveRefreshEpoch ?? captureDestructiveRefreshEpoch()
-  if (!canUseServerCommands()) return { status: 'unavailable' }
+  if (!canUseServerCommandAccess(access)) return { status: 'unavailable' }
 
   const auth = await getNodeServerProxyAuth()
+  if (!canUseServerCommandAccess(access)) return { status: 'unavailable' }
   const mutation = nextQueuedCommandMutationRequest()
   const directReconciliation = init.deferOwnEventUntilResponse
     ? beginDirectServerCommandReconciliation(init.deferOwnEventUntilResponse)
@@ -6070,7 +6953,7 @@ function readLegacyPresetPatchLocalEffect(
     attemptedFields[key] = parsedState
   }
   const expectedAttemptedFieldKeys = [
-    ...new Set([...attemptedKeys.filter((key) => key !== 'id'), 'agentPresets', 'agentPresetDefaultId']),
+    ...new Set([...attemptedKeys.filter((key) => key !== 'id'), 'agents', 'agentPresets', 'agentPresetDefaultId']),
   ].sort()
   if (!isJsonValueEqual(Object.keys(attemptedFields).sort(), expectedAttemptedFieldKeys)) {
     return undefined
@@ -6201,7 +7084,7 @@ async function preparePersonaMutationAcknowledgement(
       ) {
         return undefined
       }
-      expectedSelectedPersonaId = input.mirrorLegacyProfile ? input.targetPersonaId : beforeSelectedPersonaId
+      expectedSelectedPersonaId = input.targetPersonaId
       expectedCollectionWritten = true
       expectedLegacyProfileProjection = input.mirrorLegacyProfile
       if (
@@ -6272,11 +7155,7 @@ async function preparePersonaMutationAcknowledgement(
     }
   }
 
-  const beforeSelectedIndex = beforeSelectedPersonaId === null ? -1 : beforePersonaIds.indexOf(beforeSelectedPersonaId)
-  const attemptedSelectedIndex =
-    expectedSelectedPersonaId === null ? -1 : attemptedPersonaIds.indexOf(expectedSelectedPersonaId)
-  const expectedSettingsWritten =
-    expectedLegacyProfileProjection || (input.operation !== 'create' && attemptedSelectedIndex !== beforeSelectedIndex)
+  const expectedSettingsWritten = true
   const expectedLegacyProfile = expectedLegacyProfileProjection
   if (
     acknowledgement.attemptedSelectedPersonaId !== expectedSelectedPersonaId ||
@@ -6508,7 +7387,6 @@ function readTranslatorPresetPatchLocalEffect(
   if (
     !isUniqueStringArray(acknowledgedKeys) ||
     attemptedKeys.length === 0 ||
-    !isJsonValueEqual(attemptedKeys, [...acknowledgedKeys].sort()) ||
     attemptedKeys.some((key) => !allowedKeys.has(key) || !isJsonValue(input.attemptedPatch[key]))
   ) {
     return undefined
@@ -6520,6 +7398,26 @@ function readTranslatorPresetPatchLocalEffect(
     attemptedPreset.id !== input.presetId ||
     attemptedKeys.some((key) => !isJsonValueEqual(attemptedPreset[key], input.attemptedPatch[key]))
   ) {
+    return undefined
+  }
+
+  const attemptedKeySet = new Set(attemptedKeys)
+  const acknowledgedKeySet = new Set(acknowledgedKeys)
+  const extraAcknowledgedKeys = acknowledgedKeys.filter((key) => !attemptedKeySet.has(key))
+  const firstAttemptedStep = attemptedPreset.steps?.[0]
+  // The server canonicalizes a steps patch by adding its first-step legacy
+  // mirrors before issuing the key certificate. No other certificate expansion
+  // is implied by the attempted patch.
+  const hasOnlyImpliedStepMirrorKeys =
+    extraAcknowledgedKeys.length === 0 ||
+    (attemptedKeySet.has('steps') &&
+      firstAttemptedStep !== undefined &&
+      extraAcknowledgedKeys.every((key) => {
+        if (key === 'prompt') return attemptedPreset.prompt === firstAttemptedStep.prompt
+        if (key === 'maxResponse') return attemptedPreset.maxResponse === firstAttemptedStep.maxResponse
+        return false
+      }))
+  if (attemptedKeys.some((key) => !acknowledgedKeySet.has(key)) || !hasOnlyImpliedStepMirrorKeys) {
     return undefined
   }
 
@@ -6622,7 +7520,7 @@ function readAgentPresetPatchLocalEffect(
 
   const allowedKeys =
     input.kind === 'preset'
-      ? new Set(['name', 'description', 'enabled', 'maxConcurrency'])
+      ? new Set(['name', 'description', 'moduleIntergration', 'finalOutputTemplate', 'enabled', 'maxConcurrency'])
       : new Set([
           'name',
           'enabled',
@@ -6678,7 +7576,13 @@ function readAgentPresetPatchLocalEffect(
       (key) => !allowedKeys.has(key) || canonicalDeletedKeySet.has(key) || !isJsonValue(canonicalValues[key]),
     ) ||
     canonicalDeletedKeys.some(
-      (key) => !allowedKeys.has(key) || (input.kind === 'preset' && key !== 'description' && key !== 'maxConcurrency'),
+      (key) =>
+        !allowedKeys.has(key) ||
+        (input.kind === 'preset' &&
+          key !== 'description' &&
+          key !== 'moduleIntergration' &&
+          key !== 'finalOutputTemplate' &&
+          key !== 'maxConcurrency'),
     ) ||
     (input.kind === 'step' && canonicalDeletedKeys.length > 0)
   ) {
@@ -8371,6 +9275,10 @@ function readCommandEvent(body: unknown): CommandEvent | null {
   if (typeof record.type !== 'string') return null
   if (!Number.isInteger(record.revision) || (record.revision as number) < 0) return null
   if (typeof record.resource !== 'string') return null
+  for (const key of ['id', 'parentId', 'databaseLineage', 'operationId', 'sourceMessageId', 'jobId'] as const) {
+    if (record[key] !== undefined && typeof record[key] !== 'string') return null
+  }
+  if (record.origin !== undefined && !isCommandEventOrigin(record.origin)) return null
   const parsed: CommandEvent = {
     type: record.type,
     revision: record.revision as number,
@@ -8378,13 +9286,18 @@ function readCommandEvent(body: unknown): CommandEvent | null {
   }
   if (typeof record.id === 'string') parsed.id = record.id
   if (typeof record.parentId === 'string') parsed.parentId = record.parentId
-  if (record.origin && typeof record.origin === 'object') {
-    const writerSessionId = (record.origin as { writerSessionId?: unknown }).writerSessionId
-    if (typeof writerSessionId === 'string') {
-      parsed.origin = { writerSessionId }
-    }
-  }
+  if (typeof record.databaseLineage === 'string') parsed.databaseLineage = record.databaseLineage
+  if (typeof record.operationId === 'string') parsed.operationId = record.operationId
+  if (typeof record.sourceMessageId === 'string') parsed.sourceMessageId = record.sourceMessageId
+  if (typeof record.jobId === 'string') parsed.jobId = record.jobId
+  if (isCommandEventOrigin(record.origin)) parsed.origin = record.origin
   return parsed
+}
+
+function isCommandEventOrigin(value: unknown): value is { writerSessionId: string } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const writerSessionId = (value as { writerSessionId?: unknown }).writerSessionId
+  return typeof writerSessionId === 'string' && writerSessionId.trim() !== ''
 }
 
 function readCommandSuccessReceipt(

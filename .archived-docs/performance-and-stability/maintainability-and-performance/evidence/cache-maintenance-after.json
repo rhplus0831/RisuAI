@@ -1,0 +1,220 @@
+{
+  "finding": "F04",
+  "evidenceKind": "structural-work-counters",
+  "node": "v24.19.0",
+  "samples": [
+    {
+      "name": "small",
+      "unrelatedManifests": 0,
+      "unrelatedValueTextBytes": 256,
+      "fixedResponseBytes": 311,
+      "reads": {
+        "cold": 1,
+        "warm": 1,
+        "burst": 8
+      },
+      "atColdCompletion": {
+        "manifestKeys": 0,
+        "manifestValues": 0,
+        "entryKeys": 0,
+        "returnedRows": 0
+      },
+      "atWarmCompletion": {
+        "manifestKeys": 2,
+        "manifestValues": 2,
+        "entryKeys": 2,
+        "returnedRows": 3
+      },
+      "atBurstCompletion": {
+        "manifestKeys": 3,
+        "manifestValues": 3,
+        "entryKeys": 3,
+        "returnedRows": 6
+      },
+      "burstMaintenance": {
+        "manifestKeys": 1,
+        "manifestValues": 1,
+        "entryKeys": 1,
+        "returnedRows": 3
+      },
+      "ownershipCapture": {
+        "count": 10,
+        "bytes": 3110
+      },
+      "afterCacheVisible": {
+        "manifestKeys": 4,
+        "manifestValues": 4,
+        "entryKeys": 4,
+        "returnedRows": 9
+      },
+      "retained": {
+        "manifests": 1,
+        "entries": 1
+      },
+      "events": [
+        "resource:cold:complete",
+        "enumerate:manifests:keys",
+        "enumerate:manifests:values",
+        "enumerate:entries:keys",
+        "enumerate:manifests:keys",
+        "enumerate:manifests:values",
+        "enumerate:entries:keys",
+        "resource:warm:complete",
+        "enumerate:manifests:keys",
+        "enumerate:manifests:values",
+        "enumerate:entries:keys",
+        "resource:burst-0:complete",
+        "resource:burst-1:complete",
+        "resource:burst-2:complete",
+        "resource:burst-3:complete",
+        "resource:burst-4:complete",
+        "resource:burst-5:complete",
+        "resource:burst-6:complete",
+        "resource:burst-7:complete",
+        "enumerate:manifests:keys",
+        "enumerate:manifests:values",
+        "enumerate:entries:keys"
+      ]
+    },
+    {
+      "name": "intermediate",
+      "unrelatedManifests": 64,
+      "unrelatedValueTextBytes": 256,
+      "fixedResponseBytes": 311,
+      "reads": {
+        "cold": 1,
+        "warm": 1,
+        "burst": 8
+      },
+      "atColdCompletion": {
+        "manifestKeys": 0,
+        "manifestValues": 0,
+        "entryKeys": 0,
+        "returnedRows": 0
+      },
+      "atWarmCompletion": {
+        "manifestKeys": 1,
+        "manifestValues": 1,
+        "entryKeys": 1,
+        "returnedRows": 195
+      },
+      "atBurstCompletion": {
+        "manifestKeys": 2,
+        "manifestValues": 2,
+        "entryKeys": 2,
+        "returnedRows": 390
+      },
+      "burstMaintenance": {
+        "manifestKeys": 1,
+        "manifestValues": 1,
+        "entryKeys": 1,
+        "returnedRows": 195
+      },
+      "ownershipCapture": {
+        "count": 10,
+        "bytes": 3110
+      },
+      "afterCacheVisible": {
+        "manifestKeys": 3,
+        "manifestValues": 3,
+        "entryKeys": 3,
+        "returnedRows": 585
+      },
+      "retained": {
+        "manifests": 65,
+        "entries": 65
+      },
+      "events": [
+        "resource:cold:complete",
+        "enumerate:manifests:keys",
+        "enumerate:manifests:values",
+        "enumerate:entries:keys",
+        "resource:warm:complete",
+        "enumerate:manifests:keys",
+        "enumerate:manifests:values",
+        "enumerate:entries:keys",
+        "resource:burst-0:complete",
+        "resource:burst-1:complete",
+        "resource:burst-2:complete",
+        "resource:burst-3:complete",
+        "resource:burst-4:complete",
+        "resource:burst-5:complete",
+        "resource:burst-6:complete",
+        "resource:burst-7:complete",
+        "enumerate:manifests:keys",
+        "enumerate:manifests:values",
+        "enumerate:entries:keys"
+      ]
+    },
+    {
+      "name": "large-at-manifest-budget",
+      "unrelatedManifests": 512,
+      "unrelatedValueTextBytes": 256,
+      "fixedResponseBytes": 311,
+      "reads": {
+        "cold": 1,
+        "warm": 1,
+        "burst": 8
+      },
+      "atColdCompletion": {
+        "manifestKeys": 0,
+        "manifestValues": 0,
+        "entryKeys": 0,
+        "returnedRows": 0
+      },
+      "atWarmCompletion": {
+        "manifestKeys": 1,
+        "manifestValues": 1,
+        "entryKeys": 1,
+        "returnedRows": 1539
+      },
+      "atBurstCompletion": {
+        "manifestKeys": 2,
+        "manifestValues": 2,
+        "entryKeys": 2,
+        "returnedRows": 3075
+      },
+      "burstMaintenance": {
+        "manifestKeys": 1,
+        "manifestValues": 1,
+        "entryKeys": 1,
+        "returnedRows": 1536
+      },
+      "ownershipCapture": {
+        "count": 10,
+        "bytes": 3110
+      },
+      "afterCacheVisible": {
+        "manifestKeys": 3,
+        "manifestValues": 3,
+        "entryKeys": 3,
+        "returnedRows": 4611
+      },
+      "retained": {
+        "manifests": 512,
+        "entries": 512
+      },
+      "events": [
+        "resource:cold:complete",
+        "enumerate:manifests:keys",
+        "enumerate:manifests:values",
+        "enumerate:entries:keys",
+        "resource:warm:complete",
+        "enumerate:manifests:keys",
+        "enumerate:manifests:values",
+        "enumerate:entries:keys",
+        "resource:burst-0:complete",
+        "resource:burst-1:complete",
+        "resource:burst-2:complete",
+        "resource:burst-3:complete",
+        "resource:burst-4:complete",
+        "resource:burst-5:complete",
+        "resource:burst-6:complete",
+        "resource:burst-7:complete",
+        "enumerate:manifests:keys",
+        "enumerate:manifests:values",
+        "enumerate:entries:keys"
+      ]
+    }
+  ]
+}

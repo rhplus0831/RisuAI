@@ -10,12 +10,15 @@ import {
 } from '../../model/modelProfileResolver'
 import { LLMFlags, LLMFormat, type LLMModel } from '../../model/modellist'
 import { risuChatParser, risuEscape, risuUnescape } from '../../parser/parser.svelte'
-import { pluginProcess, pluginV2 } from '../../plugins/plugins.svelte'
-import { getCurrentCharacter, getCurrentChat, getDatabase, type character } from '../../storage/database.svelte'
+import { isPluginRuntimeReady, pluginProcess, pluginV2 } from '../../plugins/plugins.svelte'
+import { settingsResourceState } from '../../server/resourceState.svelte'
+import { SETTINGS_GROUPS } from '../../server/settingsGroups'
+import { type character, type Database } from '../../storage/database.svelte'
 import { getNodeServerProxyAuth } from '../../storage/fastifyStorage'
 import { tokenizeNum } from '../../tokenizer'
 import { simplifySchema, sleep } from '../../util'
 import type { OpenAIChat } from '../index.svelte'
+import type { GenerationDisplayProjectionRef } from '../generationDisplayProjection.svelte'
 import { callTool, decodeToolCall, encodeToolCall, getTools } from '../mcp/mcp'
 import type { MCPTool } from '../mcp/mcplib'
 import { NovelAIBadWordIds, stringlizeNAIChat } from '../models/nai'
@@ -28,8 +31,14 @@ import { requestClaude } from './anthropic'
 import { requestGoogleCloudVertex } from './google'
 import { requestOpenAI, requestOpenAILegacyInstruct, requestOpenAIResponseAPI } from './openAI/requests'
 import { resolveServerCompletionRoute, requestServerCompletion } from './serverCompletion'
-import type { ServerToolCall, ServerToolRound } from './serverToolProtocol'
-import { applyAdditionalParameters, applyParameters, type ModelModeExtended } from './shared'
+import type { ServerToolCall, ServerToolRound } from '@risuai/protocol/server-tool'
+import {
+  applyAdditionalParameters,
+  applyParameters,
+  getAdditionalParameters,
+  getRequestAdditionalParameters,
+  type ModelModeExtended,
+} from './shared'
 
 export type ToolCall = {
   name: string
@@ -37,6 +46,8 @@ export type ToolCall = {
 }
 
 interface requestDataArgument {
+  /** Request-scoped settings/model snapshot. Normal chat dispatch must provide this owner explicitly. */
+  database?: Database
   formated: OpenAIChat[]
   bias: { [key: number]: number }
   biasString?: [string, number][]
@@ -59,6 +70,7 @@ interface requestDataArgument {
   staticModel?: string
   fallbackProfileId?: string
   profileIdOverride?: string
+  strictProfileIdOverride?: boolean
   escape?: boolean
   tools?: MCPTool[]
   toolRounds?: ServerToolRound[]
@@ -66,7 +78,20 @@ interface requestDataArgument {
   blockPlugins?: boolean
 }
 
+function requestSettingsOwner(explicit?: Database): Database | null {
+  if (explicit) return explicit
+  if (settingsResourceState.status !== 'ready') return null
+  if (SETTINGS_GROUPS.some((group) => settingsResourceState.groupStatuses[group] !== 'ready')) return null
+  return settingsResourceState.value as unknown as Database
+}
+
+function requestCurrentChat(arg: Pick<requestDataArgument, 'currentChar'>) {
+  const currentChar = arg.currentChar
+  return currentChar?.chats?.[currentChar.chatPage]
+}
+
 export interface RequestDataArgumentExtended extends requestDataArgument {
+  database: Database
   aiModel?: string
   multiGen?: boolean
   abortSignal?: AbortSignal
@@ -98,6 +123,20 @@ export type requestDataResponse =
   | {
       type: 'streaming'
       result: ReadableStream<StreamResponseChunk>
+      /** Buffer visible text until the stream completes while reporting throughput. */
+      halfStreaming?: boolean
+      /** The server-chat adapter already owns throughput updates for this stream. */
+      halfStreamingProgressManaged?: boolean
+      /** Durable replay discarded at least one semantic frame before this projection. */
+      replayGapTruncated?: boolean
+      /** A gap was observed and the canonical terminal snapshot has not arrived yet. */
+      replayGapPending?: boolean
+      /** Server-selected row behavior for Continue. */
+      continueDisposition?: 'append' | 'extend'
+      /** Immutable pre-generation assistant text for extend-Continue replay rendering. */
+      continueBase?: string
+      /** In-place transient row target for a negotiated regenerate stream. */
+      generationDisplayProjection?: GenerationDisplayProjectionRef
       special?: {
         emotion?: string
       }
@@ -114,6 +153,27 @@ export type requestDataResponse =
 
 export interface StreamResponseChunk {
   [key: string]: string
+}
+
+async function withHalfStreamingMode(
+  response: Promise<requestDataResponse>,
+  halfStreaming: boolean,
+): Promise<requestDataResponse> {
+  const resolved = await response
+  if (resolved.type !== 'streaming' || !halfStreaming) return resolved
+  return { ...resolved, halfStreaming: true }
+}
+
+function additionalParamsForRequest(arg: RequestDataArgumentExtended): [string, string][] {
+  const providerOptions = arg.resolvedProfile?.providerOptions
+  return arg.resolvedProfile
+    ? getRequestAdditionalParameters(
+        arg.database,
+        arg.aiModel,
+        providerOptions?.additionalParams ?? [],
+        providerOptions?.extraHeaders,
+      )
+    : getAdditionalParameters(arg.database, arg.aiModel)
 }
 
 type OllamaThinkMode = boolean | 'low' | 'medium' | 'high'
@@ -193,6 +253,16 @@ function ollamaCloudToolProxyUrl(arg: RequestDataArgumentExtended, protocol: Oll
   } else {
     url.searchParams.set('staticModel', arg.staticModel?.trim() || arg.resolvedProfile?.modelId || 'ollama-cloud')
   }
+  if (arg.chatId) {
+    url.searchParams.set('chatId', arg.chatId)
+    const currentChat = requestCurrentChat(arg)
+    const toggles = currentChat?.id === arg.chatId ? currentChat.generationSettings?.sidebarToggles : undefined
+    if (toggles) {
+      const encodedToggles = JSON.stringify(toggles)
+      if (encodedToggles.length <= 4096) url.searchParams.set('toggles', encodedToggles)
+    }
+  }
+  if (arg.currentChar?.chaId) url.searchParams.set('characterId', arg.currentChar.chaId)
   return url.toString()
 }
 
@@ -582,11 +652,23 @@ export async function requestChatData(
   model: ModelModeExtended,
   abortSignal: AbortSignal = null,
 ): Promise<requestDataResponse> {
-  const db = getDatabase()
+  const db = requestSettingsOwner(arg.database)
+  if (!db) {
+    return {
+      type: 'fail',
+      result: 'Request settings are not ready.',
+    }
+  }
   const resolvedProfile = resolveModelProfile({ database: db, role: model })
   const overrideProfile = arg.profileIdOverride
     ? resolveModelProfileByProfileId({ database: db, role: model, profileId: arg.profileIdOverride })
     : null
+  if (arg.profileIdOverride && arg.strictProfileIdOverride && !overrideProfile) {
+    return {
+      type: 'fail',
+      result: `Model profile not found or unavailable: ${arg.profileIdOverride}`,
+    }
+  }
   const fallbackAttempts: RequestFallbackAttempt[] = overrideProfile
     ? [{ staticModel: '', fallbackProfileId: arg.profileIdOverride, modelId: overrideProfile.modelId }]
     : [...resolveRequestFallbackAttempts(db, model, resolvedProfile.fallbacks), { staticModel: '' }]
@@ -619,18 +701,18 @@ export async function requestChatData(
         }
       }
 
-      if (pluginV2.replacerbeforeRequest.size > 0) {
+      if (isPluginRuntimeReady() && pluginV2.replacerbeforeRequest.size > 0) {
         for (const replacer of pluginV2.replacerbeforeRequest) {
           arg.formated = await replacer(arg.formated, model)
         }
       }
 
       try {
-        const currentChar = getCurrentCharacter()
+        const currentChar = arg.currentChar
         if (currentChar) {
           const perf = performance.now()
           const d = await runTrigger(currentChar, 'request', {
-            chat: getCurrentChat(),
+            chat: requestCurrentChat(arg),
             displayMode: true,
             displayData: JSON.stringify(arg.formated),
           })
@@ -649,6 +731,7 @@ export async function requestChatData(
       da = await requestChatDataMain(
         {
           ...arg,
+          database: db,
           staticModel: attempt.staticModel,
           fallbackProfileId: attempt.fallbackProfileId,
         },
@@ -667,7 +750,7 @@ export async function requestChatData(
         da.result = risuEscape(da.result)
       }
 
-      if (da.type === 'success' && pluginV2.replacerafterRequest.size > 0) {
+      if (da.type === 'success' && isPluginRuntimeReady() && pluginV2.replacerafterRequest.size > 0) {
         for (const replacer of pluginV2.replacerafterRequest) {
           da.result = await replacer(da.result, model)
         }
@@ -715,7 +798,8 @@ export async function requestChatData(
 
       trys += 1
       if (trys > db.requestRetrys) {
-        if (fallbackIndex === fallbackAttempts.length - 1 || da.model === 'custom') {
+        const isPluginModel = da.model === 'custom' || da.model?.startsWith('pluginmodel:::')
+        if (fallbackIndex === fallbackAttempts.length - 1 || isPluginModel) {
           return da
         }
         break
@@ -732,7 +816,7 @@ export async function requestChatData(
 }
 
 function resolveRequestFallbackAttempts(
-  database: ReturnType<typeof getDatabase>,
+  database: Database,
   model: ModelModeExtended,
   fallbacks: ModelProfileFallbackRef[],
 ): RequestFallbackAttempt[] {
@@ -750,10 +834,8 @@ function resolveRequestFallbackAttempts(
   })
 }
 
-export function reformater(formated: OpenAIChat[], modelInfo: LLMModel | LLMFlags[]) {
+export function reformater(formated: OpenAIChat[], modelInfo: LLMModel | LLMFlags[], db: Database) {
   const flags = Array.isArray(modelInfo) ? modelInfo : modelInfo.flags
-
-  const db = getDatabase()
   let systemPrompt: OpenAIChat | null = null
 
   if (!flags.includes(LLMFlags.hasFullSystemPrompt)) {
@@ -773,7 +855,7 @@ export function reformater(formated: OpenAIChat[], modelInfo: LLMModel | LLMFlag
         formated[i].content = db.systemContentReplacement
           ? db.systemContentReplacement.replace('{{slot}}', formated[i].content)
           : `system: ${formated[i].content}`
-        formated[i].role = db.systemRoleReplacement
+        formated[i].role = db.systemRoleReplacement || 'user'
       }
     }
   }
@@ -839,8 +921,14 @@ export async function requestChatDataMain(
   model: ModelModeExtended,
   abortSignal: AbortSignal = null,
 ): Promise<requestDataResponse> {
-  const db = getDatabase()
-  const targ: RequestDataArgumentExtended = arg
+  const db = requestSettingsOwner(arg.database)
+  if (!db) {
+    return {
+      type: 'fail',
+      result: 'Request settings are not ready.',
+    }
+  }
+  const targ: RequestDataArgumentExtended = { ...arg, database: db }
   const resolvedProfile = arg.fallbackProfileId
     ? resolveModelProfileByProfileId({
         database: db,
@@ -863,6 +951,7 @@ export async function requestChatDataMain(
   }
   const runtimeOptions = resolvedProfile.runtimeOptions
   const providerOptions = resolvedProfile.providerOptions
+  const halfStreaming = runtimeOptions.halfStreaming ?? db.halfStreaming
 
   targ.aiModel = resolvedProfile.modelId
   targ.modelInfo = resolvedProfile.modelInfo
@@ -880,7 +969,9 @@ export async function requestChatDataMain(
   targ.temperature = arg.temperature ?? runtimeOptions.temperature ?? db.temperature / 100
   targ.bias = arg.bias
   targ.currentChar = arg.currentChar
-  targ.useStreaming = arg.forceStreaming ? true : (runtimeOptions.useStreaming ?? db.useStreaming) && arg.useStreaming
+  targ.useStreaming = arg.forceStreaming
+    ? true
+    : ((runtimeOptions.useStreaming ?? db.useStreaming) || halfStreaming) && arg.useStreaming
   targ.continue = arg.continue ?? false
   targ.biasString = arg.biasString ?? []
   targ.multiGen =
@@ -908,7 +999,7 @@ export async function requestChatDataMain(
 
   const serverRoute = forceLocalOllamaToolDispatch ? ({ type: 'local' } as const) : resolveServerCompletionRoute(targ)
   if (serverRoute.type === 'server') {
-    return requestServerCompletion(targ, abortSignal)
+    return withHalfStreamingMode(requestServerCompletion(targ, abortSignal), halfStreaming)
   }
   if (serverRoute.type === 'unsupported') {
     return {
@@ -922,56 +1013,56 @@ export async function requestChatDataMain(
 
   const format = targ.modelInfo.format
 
-  targ.formated = reformater(targ.formated, targ.modelInfo)
+  targ.formated = reformater(targ.formated, targ.modelInfo, db)
 
   if (forceLocalOllamaToolDispatch) {
-    return requestOllama(targ)
+    return withHalfStreamingMode(requestOllama(targ), halfStreaming)
   }
 
   switch (format) {
     case LLMFormat.OpenAICompatible:
     case LLMFormat.Mistral:
     case LLMFormat.NanoGPT:
-      return requestOpenAI(targ)
+      return withHalfStreamingMode(requestOpenAI(targ), halfStreaming)
     case LLMFormat.NanoGPTResponses:
-      return requestOpenAIResponseAPI(targ)
+      return withHalfStreamingMode(requestOpenAIResponseAPI(targ), halfStreaming)
     case LLMFormat.NanoGPTMessages:
-      return requestClaude(targ)
+      return withHalfStreamingMode(requestClaude(targ), halfStreaming)
     case LLMFormat.NanoGPTLegacy:
-      return requestOpenAILegacyInstruct(targ)
+      return withHalfStreamingMode(requestOpenAILegacyInstruct(targ), halfStreaming)
     case LLMFormat.OpenAILegacyInstruct:
-      return requestOpenAILegacyInstruct(targ)
+      return withHalfStreamingMode(requestOpenAILegacyInstruct(targ), halfStreaming)
     case LLMFormat.NovelAI:
-      return requestNovelAI(targ)
+      return withHalfStreamingMode(requestNovelAI(targ), halfStreaming)
     case LLMFormat.OobaLegacy:
-      return requestOobaLegacy(targ)
+      return withHalfStreamingMode(requestOobaLegacy(targ), halfStreaming)
     case LLMFormat.Plugin:
-      return requestPlugin(targ)
+      return withHalfStreamingMode(requestPlugin(targ), halfStreaming)
     case LLMFormat.Ooba:
-      return requestOoba(targ)
+      return withHalfStreamingMode(requestOoba(targ), halfStreaming)
     case LLMFormat.VertexAIGemini:
     case LLMFormat.GoogleCloud:
-      return requestGoogleCloudVertex(targ)
+      return withHalfStreamingMode(requestGoogleCloudVertex(targ), halfStreaming)
     case LLMFormat.Kobold:
-      return requestKobold(targ)
+      return withHalfStreamingMode(requestKobold(targ), halfStreaming)
     case LLMFormat.NovelList:
-      return requestNovelList(targ)
+      return withHalfStreamingMode(requestNovelList(targ), halfStreaming)
     case LLMFormat.Ollama:
-      return requestOllama(targ)
+      return withHalfStreamingMode(requestOllama(targ), halfStreaming)
     case LLMFormat.Cohere:
-      return requestCohere(targ)
+      return withHalfStreamingMode(requestCohere(targ), halfStreaming)
     case LLMFormat.Anthropic:
     case LLMFormat.AnthropicLegacy:
     case LLMFormat.AWSBedrockClaude:
-      return requestClaude(targ)
+      return withHalfStreamingMode(requestClaude(targ), halfStreaming)
     case LLMFormat.Horde:
-      return requestHorde(targ)
+      return withHalfStreamingMode(requestHorde(targ), halfStreaming)
     case LLMFormat.WebLLM:
-      return requestWebLLM(targ)
+      return withHalfStreamingMode(requestWebLLM(targ), halfStreaming)
     case LLMFormat.OpenAIResponseAPI:
-      return requestOpenAIResponseAPI(targ)
+      return withHalfStreamingMode(requestOpenAIResponseAPI(targ), halfStreaming)
     case LLMFormat.Echo:
-      return requestEcho(targ)
+      return withHalfStreamingMode(requestEcho(targ), halfStreaming)
   }
 
   return {
@@ -982,12 +1073,12 @@ export async function requestChatDataMain(
 
 async function requestNovelAI(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const aiModel = arg.aiModel
   const temperature = arg.temperature
   const maxTokens = arg.maxTokens
   const biasString = arg.biasString
-  const currentChar = getCurrentCharacter()
+  const currentChar = arg.currentChar
   const prompt = stringlizeNAIChat(formated, currentChar?.name ?? '', arg.continue)
   const abortSignal = arg.abortSignal
   let logit_bias_exp: {
@@ -1008,7 +1099,7 @@ async function requestNovelAI(arg: RequestDataArgumentExtended): Promise<request
 
   for (let i = 0; i < biasString.length; i++) {
     const bia = biasString[i]
-    const tokens = await tokenizeNum(bia[0])
+    const tokens = await tokenizeNum(bia[0], db)
 
     const tokensInNumberArray: number[] = []
 
@@ -1065,19 +1156,21 @@ async function requestNovelAI(arg: RequestDataArgumentExtended): Promise<request
     cfg_uc: '',
   }
 
-  const body = {
+  let body: Record<string, any> = {
     input: prompt,
     model: aiModel === 'novelai_kayra' ? 'kayra-v1' : 'clio-v1',
     parameters: payload,
   }
+  const headers: Record<string, string> = {
+    Authorization: 'Bearer ' + (arg.key ?? db.novelai.token),
+  }
+  body = applyAdditionalParameters(body, headers, additionalParamsForRequest(arg))
 
   const da = await globalFetch(
     aiModel === 'novelai_kayra' ? 'https://text.novelai.net/ai/generate' : 'https://api.novelai.net/ai/generate',
     {
       body: body,
-      headers: {
-        Authorization: 'Bearer ' + (arg.key ?? db.novelai.token),
-      },
+      headers,
       abortSignal,
       chatId: arg.chatId,
     },
@@ -1097,13 +1190,13 @@ async function requestNovelAI(arg: RequestDataArgumentExtended): Promise<request
 
 async function requestOobaLegacy(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const aiModel = arg.aiModel
   const maxTokens = arg.maxTokens
   const providerOptions = arg.resolvedProfile?.providerOptions
   const runtimeOptions = arg.resolvedProfile?.runtimeOptions
   const hasResolvedProfile = arg.resolvedProfile !== undefined
-  const currentChar = getCurrentCharacter()
+  const currentChar = arg.currentChar
   const useStreaming = arg.useStreaming
   const abortSignal = arg.abortSignal
   const profileBaseUrl = providerOptions?.baseUrl?.trim() ?? ''
@@ -1158,7 +1251,7 @@ async function requestOobaLegacy(arg: RequestDataArgumentExtended): Promise<requ
   }
 
   const profileApiKey = providerOptions?.apiKey?.trim()
-  const headers = hasResolvedProfile
+  const headers: Record<string, string> = hasResolvedProfile
     ? profileApiKey
       ? {
           'X-API-KEY': profileApiKey,
@@ -1169,6 +1262,9 @@ async function requestOobaLegacy(arg: RequestDataArgumentExtended): Promise<requ
       : {
           'X-API-KEY': db.mancerHeader,
         }
+
+  if (hasResolvedProfile) Object.assign(headers, providerOptions?.extraHeaders ?? {})
+  bodyTemplate = applyAdditionalParameters(bodyTemplate, headers, additionalParamsForRequest(arg))
 
   if (arg.previewBody) {
     return {
@@ -1351,7 +1447,7 @@ async function requestOobaLegacy(arg: RequestDataArgumentExtended): Promise<requ
 
 async function requestOoba(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const aiModel = arg.aiModel
   const maxTokens = arg.maxTokens
   const temperature = arg.temperature
@@ -1387,19 +1483,23 @@ async function requestOoba(arg: RequestDataArgumentExtended): Promise<requestDat
     }
   }
 
+  const headers: Record<string, string> = {}
+  bodyTemplate = applyAdditionalParameters(bodyTemplate, headers, additionalParamsForRequest(arg))
+
   if (arg.previewBody) {
     return {
       type: 'success',
       result: JSON.stringify({
         url: urlStr,
         body: bodyTemplate,
-        headers: {},
+        headers,
       }),
     }
   }
 
   const response = await globalFetch(urlStr, {
     body: bodyTemplate,
+    headers,
     chatId: arg.chatId,
     abortSignal: arg.abortSignal,
   })
@@ -1418,15 +1518,15 @@ async function requestOoba(arg: RequestDataArgumentExtended): Promise<requestDat
 }
 
 async function requestPlugin(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
-  const db = getDatabase()
+  const db = arg.database
+  const isV3Model = arg.aiModel.startsWith('pluginmodel:::')
+  const responseModel = isV3Model ? arg.aiModel : 'custom'
   try {
     const formated = arg.formated
     const maxTokens = arg.maxTokens
     const bias = arg.biasString
-    const model = arg.aiModel.startsWith('pluginmodel:::')
-      ? arg.aiModel.replace('pluginmodel:::', '')
-      : db.currentPluginProvider
-    const v2Function = pluginV2.providers.get(model)
+    const model = isV3Model ? arg.aiModel.replace('pluginmodel:::', '') : db.currentPluginProvider
+    const v2Function = isPluginRuntimeReady() ? pluginV2.providers.get(model) : undefined
 
     if (arg.previewBody) {
       return {
@@ -1450,7 +1550,9 @@ async function requestPlugin(arg: RequestDataArgumentExtended): Promise<requestD
             {},
             arg.mode,
             {
+              database: db,
               modelId: arg.aiModel,
+              runtimeOptions: arg.resolvedProfile?.runtimeOptions,
             },
           ) as any,
           arg.abortSignal,
@@ -1458,23 +1560,27 @@ async function requestPlugin(arg: RequestDataArgumentExtended): Promise<requestD
       : await pluginProcess({
           bias: bias,
           prompt_chat: formated,
-          temperature: db.temperature / 100,
+          temperature: arg.resolvedProfile ? arg.resolvedProfile.runtimeOptions.temperature! : db.temperature / 100,
           max_tokens: maxTokens,
-          presence_penalty: db.PresensePenalty / 100,
-          frequency_penalty: db.frequencyPenalty / 100,
+          presence_penalty: arg.resolvedProfile
+            ? arg.resolvedProfile.runtimeOptions.presencePenalty!
+            : db.PresensePenalty / 100,
+          frequency_penalty: arg.resolvedProfile
+            ? arg.resolvedProfile.runtimeOptions.frequencyPenalty!
+            : db.frequencyPenalty / 100,
         })
 
     if (!d) {
       return {
         type: 'fail',
         result: language.errors.unknownModel,
-        model: 'custom',
+        model: responseModel,
       }
     } else if (!d.success) {
       return {
         type: 'fail',
         result: d.content instanceof ReadableStream ? await new Response(d.content).text() : d.content,
-        model: 'custom',
+        model: responseModel,
       }
     } else if (d.content instanceof ReadableStream) {
       let fullText = ''
@@ -1490,13 +1596,13 @@ async function requestPlugin(arg: RequestDataArgumentExtended): Promise<requestD
       return {
         type: 'streaming',
         result: d.content.pipeThrough(piper),
-        model: 'custom',
+        model: responseModel,
       }
     } else {
       return {
         type: 'success',
         result: d.content ?? '',
-        model: 'custom',
+        model: responseModel,
       }
     }
   } catch (error) {
@@ -1504,18 +1610,27 @@ async function requestPlugin(arg: RequestDataArgumentExtended): Promise<requestD
     return {
       type: 'fail',
       result: `Plugin Error from ${db.currentPluginProvider}: ` + JSON.stringify(error),
-      model: 'custom',
+      model: responseModel,
     }
   }
 }
 
 async function requestEcho(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
-  const db = getDatabase()
-  const delay = db.echoDelay ?? 0
-  const message = db.echoMessage ?? 'Echo Message'
+  const db = arg.database
+  const body = applyAdditionalParameters(
+    {
+      delayMs: (db.echoDelay ?? 0) * 1000,
+      message: db.echoMessage ?? 'Echo Message',
+    },
+    {},
+    additionalParamsForRequest(arg),
+  )
+  const delayMs =
+    typeof body.delayMs === 'number' && Number.isFinite(body.delayMs) && body.delayMs > 0 ? body.delayMs : 0
+  const message = typeof body.message === 'string' ? body.message : (db.echoMessage ?? 'Echo Message')
 
-  if (delay > 0) {
-    await sleep(delay * 1000)
+  if (delayMs > 0) {
+    await sleep(delayMs)
   }
 
   return {
@@ -1526,7 +1641,7 @@ async function requestEcho(arg: RequestDataArgumentExtended): Promise<requestDat
 
 async function requestKobold(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const maxTokens = arg.maxTokens
   const abortSignal = arg.abortSignal
   const hasResolvedProfile = !!arg.resolvedProfile
@@ -1548,7 +1663,7 @@ async function requestKobold(arg: RequestDataArgumentExtended): Promise<requestD
     url.pathname = 'api/v1/generate'
   }
 
-  const body = applyParameters(
+  let body = applyParameters(
     {
       prompt: prompt,
       max_length: maxTokens,
@@ -1561,9 +1676,15 @@ async function requestKobold(arg: RequestDataArgumentExtended): Promise<requestD
     },
     arg.mode,
     {
+      database: db,
       modelId: arg.aiModel,
+      runtimeOptions: arg.resolvedProfile?.runtimeOptions,
     },
   ) as KoboldGenerationInputSchema
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+  }
+  body = applyAdditionalParameters(body, headers, additionalParamsForRequest(arg)) as KoboldGenerationInputSchema
 
   if (arg.previewBody) {
     return {
@@ -1571,7 +1692,7 @@ async function requestKobold(arg: RequestDataArgumentExtended): Promise<requestD
       result: JSON.stringify({
         url: url.toString(),
         body: body,
-        headers: {},
+        headers,
       }),
     }
   }
@@ -1579,9 +1700,7 @@ async function requestKobold(arg: RequestDataArgumentExtended): Promise<requestD
   const da = await globalFetch(url.toString(), {
     method: 'POST',
     body: body,
-    headers: {
-      'content-type': 'application/json',
-    },
+    headers,
     abortSignal,
     chatId: arg.chatId,
   })
@@ -1603,11 +1722,11 @@ async function requestKobold(arg: RequestDataArgumentExtended): Promise<requestD
 
 async function requestNovelList(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const maxTokens = arg.maxTokens
   const temperature = arg.temperature
   const biasString = arg.biasString
-  const currentChar = getCurrentCharacter()
+  const currentChar = arg.currentChar
   const aiModel = arg.aiModel
   const auth_key = db.novellistAPI
   const api_server_url = 'https://api.tringpt.com/'
@@ -1618,12 +1737,12 @@ async function requestNovelList(arg: RequestDataArgumentExtended): Promise<reque
     logit_bias.push(bia[0])
     logit_bias_values.push(bia[1].toString())
   }
-  const headers = {
+  const headers: Record<string, string> = {
     Authorization: `Bearer ${auth_key}`,
     'Content-Type': 'application/json',
   }
 
-  const send_body = {
+  let send_body: Record<string, any> = {
     text: stringlizeAINChat(formated, currentChar?.name ?? '', arg.continue),
     length: maxTokens,
     temperature: temperature,
@@ -1640,6 +1759,7 @@ async function requestNovelList(arg: RequestDataArgumentExtended): Promise<reque
     logit_bias: logit_bias.length > 0 ? logit_bias.join('<<|>>') : undefined,
     logit_bias_values: logit_bias_values.length > 0 ? logit_bias_values.join('|') : undefined,
   }
+  send_body = applyAdditionalParameters(send_body, headers, additionalParamsForRequest(arg))
 
   if (arg.previewBody) {
     return {
@@ -1683,7 +1803,7 @@ async function requestNovelList(arg: RequestDataArgumentExtended): Promise<reque
 
 async function requestOllama(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const providerOptions = arg.resolvedProfile?.providerOptions
   const ollamaOptions = providerOptions?.ollama
   const hasResolvedProfile = arg.resolvedProfile !== undefined
@@ -1754,13 +1874,29 @@ async function requestOllama(arg: RequestDataArgumentExtended): Promise<requestD
   const messages = await buildOllamaMessages(formated)
   const tools = createOllamaToolDefinitions(arg.tools)
   const hasTools = tools.length > 0
-  const requestBody = {
+  let requestBody: {
+    model: string
+    messages: OllamaMessage[]
+    stream: boolean
+    think?: OllamaThinkMode
+    tools?: OllamaToolDefinition[]
+    [key: string]: any
+  } = {
     model: ollamaModel,
     messages,
     stream: arg.useStreaming,
     think: ollamaThinkMode,
     ...(hasTools ? { tools } : {}),
   }
+  const customHeaders: Record<string, string> = {
+    ...(isCloud && !cloudToolProtocol && ollamaApiKey ? { Authorization: 'Bearer ' + ollamaApiKey } : {}),
+    ...(!cloudToolProtocol ? (providerOptions?.extraHeaders ?? {}) : {}),
+  }
+  requestBody = applyAdditionalParameters(
+    requestBody,
+    cloudToolProtocol ? {} : customHeaders,
+    additionalParamsForRequest(arg),
+  )
 
   if (arg.previewBody) {
     return {
@@ -1771,7 +1907,7 @@ async function requestOllama(arg: RequestDataArgumentExtended): Promise<requestD
         source: ollamaModelSource,
         stream: arg.useStreaming,
         think: ollamaThinkMode,
-        headers: isCloud ? { Authorization: 'Bearer ' + ollamaApiKey } : {},
+        headers: customHeaders,
         body: requestBody,
       }),
     }
@@ -1779,7 +1915,7 @@ async function requestOllama(arg: RequestDataArgumentExtended): Promise<requestD
 
   const ollama = new Ollama({
     host: isCloud ? 'https://ollama.com' : localBaseUrl,
-    headers: isCloud && !cloudToolProtocol && ollamaApiKey ? { Authorization: 'Bearer ' + ollamaApiKey } : undefined,
+    headers: Object.keys(customHeaders).length > 0 ? customHeaders : undefined,
     fetch: isCloud && cloudToolProtocol ? createOllamaCloudFetch(cloudToolEndpoint, cloudToolAuth) : undefined,
   })
 
@@ -1878,7 +2014,7 @@ async function requestOllama(arg: RequestDataArgumentExtended): Promise<requestD
 
 async function requestCohere(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const aiModel = arg.aiModel
   const providerOptions = arg.resolvedProfile?.providerOptions
   const hasResolvedProfile = arg.resolvedProfile !== undefined
@@ -1952,7 +2088,9 @@ async function requestCohere(arg: RequestDataArgumentExtended): Promise<requestD
     },
     arg.mode,
     {
+      database: db,
       modelId: arg.aiModel,
+      runtimeOptions: arg.resolvedProfile?.runtimeOptions,
     },
   )
 
@@ -1980,10 +2118,8 @@ async function requestCohere(arg: RequestDataArgumentExtended): Promise<requestD
     'Content-Type': 'application/json',
   }
 
-  if (hasResolvedProfile) {
-    Object.assign(headers, providerOptions?.extraHeaders ?? {})
-    body = applyAdditionalParameters(body, headers, providerOptions?.additionalParams ?? [])
-  }
+  if (hasResolvedProfile) Object.assign(headers, providerOptions?.extraHeaders ?? {})
+  body = applyAdditionalParameters(body, headers, additionalParamsForRequest(arg))
 
   const url = requestURL ?? arg.customURL ?? 'https://api.cohere.com/v1/chat'
 
@@ -2028,12 +2164,12 @@ async function requestCohere(arg: RequestDataArgumentExtended): Promise<requestD
 
 async function requestHorde(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const aiModel = arg.aiModel
   const providerOptions = arg.resolvedProfile?.providerOptions
   const runtimeOptions = arg.resolvedProfile?.runtimeOptions
   const hasResolvedProfile = arg.resolvedProfile !== undefined
-  const currentChar = getCurrentCharacter()
+  const currentChar = arg.currentChar
   const abortSignal = arg.abortSignal
 
   if (arg.previewBody) {
@@ -2061,7 +2197,7 @@ async function requestHorde(arg: RequestDataArgumentExtended): Promise<requestDa
   const topK = hasResolvedProfile ? (runtimeOptions?.topK ?? db.top_k) : db.top_k
   const topP = hasResolvedProfile ? (runtimeOptions?.topP ?? db.top_p) : db.top_p
 
-  const argument = {
+  let argument: Record<string, any> = {
     prompt: prompt,
     params: {
       n: 1,
@@ -2092,14 +2228,16 @@ async function requestHorde(arg: RequestDataArgumentExtended): Promise<requestDa
   } else if (db.hordeConfig.apiKey.length > 2) {
     apiKey = db.hordeConfig.apiKey
   }
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    apikey: apiKey,
+  }
+  argument = applyAdditionalParameters(argument, headers, additionalParamsForRequest(arg))
 
   const da = await fetch('https://stablehorde.net/api/v2/generate/text/async', {
     body: JSON.stringify(argument),
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      apikey: apiKey,
-    },
+    headers,
     signal: abortSignal,
   })
 
@@ -2153,9 +2291,9 @@ async function requestHorde(arg: RequestDataArgumentExtended): Promise<requestDa
 
 async function requestWebLLM(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const aiModel = arg.aiModel
-  const currentChar = getCurrentCharacter()
+  const currentChar = arg.currentChar
   const maxTokens = arg.maxTokens
   const temperature = arg.temperature
   const realModel = aiModel.split(':::')[1]

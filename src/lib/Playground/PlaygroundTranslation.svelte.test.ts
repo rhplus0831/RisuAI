@@ -219,6 +219,7 @@ describe('PlaygroundTranslation run ownership and failures', () => {
     await waitForIdle()
 
     expect(translationMocks.runTranslator).toHaveBeenCalledWith('hello', false, 'en', expect.any(String), {
+      translatorPresetId: null,
       translatorNote: '',
     })
     expect(JSON.parse(textareas()[1]?.value ?? '')).toEqual({ text: 'translated hello', metadata: 'kept' })
@@ -236,6 +237,7 @@ describe('PlaygroundTranslation run ownership and failures', () => {
     await waitForIdle()
 
     expect(translationMocks.runTranslator).toHaveBeenCalledWith(source, false, 'en', expect.any(String), {
+      translatorPresetId: null,
       translatorNote: '',
     })
     expect(textareas()[1]?.value).toBe('translated document')
@@ -278,6 +280,7 @@ describe('PlaygroundTranslation run ownership and failures', () => {
     translateButton().click()
     await vi.waitFor(() => expect(translationMocks.runTranslator).toHaveBeenCalledOnce())
     expect(translationMocks.runTranslator).toHaveBeenCalledWith('first', false, 'en', 'ko', {
+      translatorPresetId: null,
       translatorNote: '',
     })
 
@@ -346,6 +349,7 @@ describe('PlaygroundTranslation run ownership and failures', () => {
       'en',
       'ko',
       {
+        translatorPresetId: null,
         translatorNote: expect.stringContaining('<Original>first</Original><Translated>first translated</Translated>'),
       },
     ])

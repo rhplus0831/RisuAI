@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import fs, { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -14,15 +14,25 @@ import {
   assetsDir,
   insertAssetMetadataBatch,
   getAssetMetadataById,
+  cleanupCopiedStagedAssetFiles,
   listBackups,
   loadPersistedWithMessages,
 } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
-import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
+import { injectComposedResourceDatabase } from './helpers/resourceDatabase.js'
 import { encodeLegacyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
 import { encodeRisuSaveBlockEnvelope, RisuSaveBlockType } from '../src/risuSave/blockCodec.js'
 import { RISUSAVE_EMPTY_DATABASE_ERROR, RISUSAVE_INCOMPLETE_BLOCKS_ERROR } from '../src/risuSave/importSnapshot.js'
+import { decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
+import { RISU_SERVER_DATA_KEY } from '../src/risuSave/portableMetadata.js'
+import {
+  decodeLocalBackup,
+  LOCAL_BACKUP_LEGACY_MAX_NAME_BYTES,
+  LOCAL_BACKUP_ZIP_MAX_ENTRIES,
+  LOCAL_BACKUP_ZIP_MAX_NAME_BYTES,
+} from '../src/risuSave/localBackupImport.js'
+import { createInitialDatabase } from '../src/databaseDefaults.js'
 
 interface Harness {
   app: FastifyInstance
@@ -32,6 +42,8 @@ interface Harness {
 
 const ASSET_BYTES = Buffer.from('bundle-import-png-bytes')
 const ASSET_ID = createHash('sha256').update(ASSET_BYTES).digest('hex')
+const SECOND_ASSET_BYTES = Buffer.from('bundle-import-second-png-bytes')
+const SECOND_ASSET_ID = createHash('sha256').update(SECOND_ASSET_BYTES).digest('hex')
 
 async function startHarness(): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
@@ -50,7 +62,6 @@ async function startHarness(): Promise<Harness> {
     memoryWorker: false,
     commandEvents,
   })
-  installResourceDatabaseBootstrapAdapter(app)
   return { app, dataDir, commandEvents }
 }
 
@@ -72,11 +83,14 @@ function persistDatabaseWithAsset(dataDir: string, imageReference = ASSET_ID): v
       database: {
         version: 1,
         selectedCharID: 0,
+        currentChar: 0,
         characters: [
           {
             chaId: 'bundle-import-char',
             name: 'Bundle Import Character',
             image: imageReference,
+            chatFolders: [],
+            chatPage: 0,
             chats: [
               {
                 id: 'bundle-import-chat',
@@ -97,12 +111,20 @@ function persistDatabaseWithAsset(dataDir: string, imageReference = ASSET_ID): v
           },
         ],
         characterOrder: ['bundle-import-char'],
-        personas: [{ id: 'persona-a', name: 'Persona A' }],
+        personas: [{ id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', note: '' }],
+        selectedPersona: 0,
+        selectedPersonaId: 'persona-a',
+        username: 'Persona A',
+        userIcon: '',
+        personaPrompt: '',
+        userNote: '',
+        modelPresetsId: 0,
         modelPresets: [{ id: 'model-a', name: 'Model A' }],
+        promptPresetsId: 0,
         promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }],
         modules: [{ id: 'module-a', name: 'Module A' }],
         loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
-        plugins: [{ id: 'plugin-a', name: 'Plugin A' }],
+        plugins: [{ id: 'plugin-a', name: 'Plugin A', version: '3.0' }],
         pluginCustomStorage: {},
       },
       assets: [],
@@ -162,9 +184,11 @@ function persistLiveDatabase(dataDir: string): void {
     writePersistedWithMessages(db, dataDir, {
       _version: 1,
       database: {
+        ...createInitialDatabase(),
         version: 1,
         tag: 'preserve-live-bundle-data',
-        characters: [{ chaId: 'live-char', name: 'Live Character', chats: [] }],
+        currentChar: 0,
+        characters: [{ chaId: 'live-char', name: 'Live Character', chats: [], chatFolders: [], chatPage: -1 }],
         characterOrder: ['live-char'],
         botPresets: [],
         modules: [{ id: 'live-module', name: 'Live Module' }],
@@ -193,12 +217,82 @@ function buildLegacyBin(records: { name: string; data: Uint8Array }[]): Buffer {
   return Buffer.concat(parts)
 }
 
+function readLegacyBinRecord(bytes: Uint8Array, targetName: string): Uint8Array {
+  const buffer = Buffer.from(bytes)
+  let offset = 0
+  while (offset < buffer.length) {
+    const nameLength = buffer.readUInt32LE(offset)
+    offset += 4
+    const name = buffer.subarray(offset, offset + nameLength).toString('utf8')
+    offset += nameLength
+    const dataLength = buffer.readUInt32LE(offset)
+    offset += 4
+    const data = buffer.subarray(offset, offset + dataLength)
+    offset += dataLength
+    if (name === targetName) return data
+  }
+  throw new Error(`Missing legacy backup record: ${targetName}`)
+}
+
 function buildBundleZip(databaseBytes: Uint8Array): Uint8Array {
   return fflate.zipSync({
     'database.risu': databaseBytes,
     'manifest.json': new TextEncoder().encode(JSON.stringify({ version: 1 })),
     [`assets/${ASSET_ID}.png`]: ASSET_BYTES,
   })
+}
+
+function buildBundleZipEntries(entries: ReadonlyArray<{ name: string; data?: Uint8Array }>): Uint8Array {
+  const chunks: Uint8Array[] = []
+  const zip = new fflate.Zip((error, chunk) => {
+    if (error) throw error
+    chunks.push(chunk)
+  })
+  for (const { name, data = new Uint8Array() } of entries) {
+    const entry = new fflate.ZipPassThrough(name)
+    zip.add(entry)
+    entry.push(data, true)
+  }
+  zip.end()
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)))
+}
+
+function localAssetStageDirectories(parent: string): string[] {
+  return fs
+    .readdirSync(parent, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith('assets-stage-'))
+    .map((entry) => path.join(parent, entry.name))
+}
+
+function trackExplicitBufferMaterialization(): {
+  maxBytes(): number
+  restore(): void
+} {
+  const alloc = vi.spyOn(Buffer, 'alloc')
+  const allocUnsafe = vi.spyOn(Buffer, 'allocUnsafe')
+  const from = vi.spyOn(Buffer, 'from')
+  const concat = vi.spyOn(Buffer, 'concat')
+  return {
+    maxBytes: () => {
+      const allocationSizes = [...alloc.mock.calls, ...allocUnsafe.mock.calls].map(([size]) => size)
+      const copySizes = from.mock.calls.map(([value]) => {
+        if (ArrayBuffer.isView(value)) return value.byteLength
+        if (value instanceof ArrayBuffer) return value.byteLength
+        return 0
+      })
+      const concatSizes = concat.mock.calls.map(([chunks, totalLength]) => {
+        if (totalLength !== undefined) return totalLength
+        return chunks.reduce((total, chunk) => total + chunk.byteLength, 0)
+      })
+      return Math.max(0, ...allocationSizes, ...copySizes, ...concatSizes)
+    },
+    restore: () => {
+      concat.mockRestore()
+      from.mockRestore()
+      allocUnsafe.mockRestore()
+      alloc.mockRestore()
+    },
+  }
 }
 
 function multipartBundle(bytes: Uint8Array, filename = 'database.risu.zip') {
@@ -228,6 +322,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   await stopHarness(harness)
 })
 
@@ -237,6 +332,14 @@ function authedInject(opts: Record<string, unknown>) {
     ...opts,
     headers: { 'risu-auth': assertion, ...headers },
   })
+}
+
+function authedComposedResourceDatabase(opts: Record<string, unknown>) {
+  const headers = (opts.headers ?? {}) as Record<string, string>
+  return injectComposedResourceDatabase(harness.app, {
+    ...opts,
+    headers: { 'risu-auth': assertion, ...headers },
+  } as never)
 }
 
 async function exportBundleZip(): Promise<Buffer> {
@@ -277,7 +380,412 @@ function readBackupDatabase(dataDir: string, id: string): Record<string, unknown
   }
 }
 
+function failCommandEventPersistence(dataDir: string): void {
+  const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  try {
+    db.exec(`
+      CREATE TRIGGER fail_command_event_insert
+      BEFORE INSERT ON command_events
+      BEGIN
+        SELECT RAISE(FAIL, 'injected command event failure');
+      END;
+    `)
+  } finally {
+    db.close()
+  }
+}
+
 describe('repository .risu bundle import route', () => {
+  it('stops local-backup decoding before staging when the request is already aborted', async () => {
+    const bundlePath = path.join(harness.dataDir, 'aborted-before-decode.risu.zip')
+    writeFileSync(bundlePath, buildBundleZip(encodeLegacyRisuSaveEnvelope({ characters: [] })))
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(
+      decodeLocalBackup(bundlePath, { maxExpandedBytes: Infinity, signal: controller.signal }),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('streams a multi-megabyte ZIP asset to its stage file without explicitly materializing or concatenating it', async () => {
+    const assetBytes = Buffer.alloc(3 * 1024 * 1024, 0x5a)
+    const assetId = createHash('sha256').update(assetBytes).digest('hex')
+    const databaseBytes = encodeLegacyRisuSaveEnvelope({ characters: [] })
+    const bundlePath = path.join(harness.dataDir, 'streamed-zip-asset.risu.zip')
+    writeFileSync(
+      bundlePath,
+      buildBundleZipEntries([
+        { name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify({ version: 1 })) },
+        { name: `assets/${assetId}.png`, data: assetBytes },
+        { name: 'database.risu', data: databaseBytes },
+      ]),
+    )
+
+    const buffers = trackExplicitBufferMaterialization()
+    let decoded: Awaited<ReturnType<typeof decodeLocalBackup>>
+    try {
+      decoded = await decodeLocalBackup(bundlePath, {
+        maxExpandedBytes: Infinity,
+        maxDatabaseBytes: Infinity,
+      })
+      expect(buffers.maxBytes()).toBeLessThan(assetBytes.length)
+    } finally {
+      buffers.restore()
+    }
+
+    expect(decoded.stagedAssets).toHaveLength(1)
+    expect(decoded.stagedAssets[0]).toMatchObject({ id: assetId, size: assetBytes.length })
+    expect(fs.readFileSync(decoded.stagedAssets[0].filePath)).toEqual(assetBytes)
+  })
+
+  it('reads legacy media in bounded chunks and skips an unrelated multi-megabyte record without allocating it', async () => {
+    const unrelatedBytes = Buffer.alloc(4 * 1024 * 1024, 0x3c)
+    const assetBytes = Buffer.alloc(3 * 1024 * 1024, 0xa5)
+    const assetId = createHash('sha256').update(assetBytes).digest('hex')
+    const databaseBytes = encodeLegacyRisuSaveEnvelope({ characters: [] })
+    const bundlePath = path.join(harness.dataDir, 'streamed-legacy-asset.bin')
+    writeFileSync(
+      bundlePath,
+      buildLegacyBin([
+        { name: 'cold-storage.json', data: unrelatedBytes },
+        { name: `${assetId}.png`, data: assetBytes },
+        { name: 'database.risudat', data: databaseBytes },
+      ]),
+    )
+
+    const buffers = trackExplicitBufferMaterialization()
+    let decoded: Awaited<ReturnType<typeof decodeLocalBackup>>
+    try {
+      decoded = await decodeLocalBackup(bundlePath, {
+        maxExpandedBytes: Infinity,
+        maxDatabaseBytes: Infinity,
+      })
+      expect(buffers.maxBytes()).toBeLessThan(assetBytes.length)
+    } finally {
+      buffers.restore()
+    }
+
+    expect(decoded.stagedAssets).toHaveLength(1)
+    expect(decoded.stagedAssets[0]).toMatchObject({ id: assetId, size: assetBytes.length })
+    expect(fs.readFileSync(decoded.stagedAssets[0].filePath)).toEqual(assetBytes)
+  })
+
+  it('rejects an oversized legacy record name before allocating it and cleans earlier staged assets', async () => {
+    const databaseBytes = encodeLegacyRisuSaveEnvelope({ characters: [] })
+    const oversizedName = Buffer.alloc(LOCAL_BACKUP_LEGACY_MAX_NAME_BYTES + 1, 0x78)
+    const oversizedNameLength = Buffer.alloc(4)
+    oversizedNameLength.writeUInt32LE(oversizedName.byteLength, 0)
+    const emptyDataLength = Buffer.alloc(4)
+    const bundlePath = path.join(harness.dataDir, 'oversized-legacy-record-name.bin')
+    writeFileSync(
+      bundlePath,
+      Buffer.concat([
+        buildLegacyBin([{ name: `${ASSET_ID}.png`, data: ASSET_BYTES }]),
+        oversizedNameLength,
+        oversizedName,
+        emptyDataLength,
+        buildLegacyBin([{ name: 'database.risudat', data: databaseBytes }]),
+      ]),
+    )
+
+    const buffers = trackExplicitBufferMaterialization()
+    try {
+      await expect(
+        decodeLocalBackup(bundlePath, { maxExpandedBytes: Infinity, maxDatabaseBytes: Infinity }),
+      ).rejects.toThrow(`Legacy backup record name exceeds ${LOCAL_BACKUP_LEGACY_MAX_NAME_BYTES} bytes`)
+      expect(buffers.maxBytes()).toBeLessThan(oversizedName.byteLength)
+    } finally {
+      buffers.restore()
+    }
+    expect(localAssetStageDirectories(harness.dataDir)).toEqual([])
+  })
+
+  it('rejects duplicate legacy database records and cleans earlier staged assets', async () => {
+    const databaseBytes = encodeLegacyRisuSaveEnvelope({ characters: [] })
+    const bundlePath = path.join(harness.dataDir, 'duplicate-legacy-database.bin')
+    writeFileSync(
+      bundlePath,
+      buildLegacyBin([
+        { name: 'database.risudat', data: databaseBytes },
+        { name: `${ASSET_ID}.png`, data: ASSET_BYTES },
+        { name: 'database.risudat', data: databaseBytes },
+      ]),
+    )
+
+    await expect(
+      decodeLocalBackup(bundlePath, { maxExpandedBytes: Infinity, maxDatabaseBytes: Infinity }),
+    ).rejects.toThrow('Legacy backup contains a duplicate database.risudat record')
+    expect(localAssetStageDirectories(harness.dataDir)).toEqual([])
+  })
+
+  it.each(['risu-bundle-zip', 'legacy-local-backup'] as const)(
+    'enforces maxDatabaseBytes before buffering a %s database and cleans earlier staged assets',
+    async (format) => {
+      const databaseBytes = Buffer.alloc(2 * 1024 * 1024, 0x7d)
+      const bundlePath = path.join(
+        harness.dataDir,
+        format === 'risu-bundle-zip' ? 'database-cap.zip' : 'database-cap.bin',
+      )
+      const bytes =
+        format === 'risu-bundle-zip'
+          ? buildBundleZipEntries([
+              { name: `assets/${ASSET_ID}.png`, data: ASSET_BYTES },
+              { name: 'database.risu', data: databaseBytes },
+              { name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify({ version: 1 })) },
+            ])
+          : buildLegacyBin([
+              { name: `${ASSET_ID}.png`, data: ASSET_BYTES },
+              { name: 'database.risudat', data: databaseBytes },
+            ])
+      writeFileSync(bundlePath, bytes)
+
+      await expect(
+        decodeLocalBackup(bundlePath, {
+          maxExpandedBytes: Infinity,
+          maxDatabaseBytes: 128 * 1024,
+        }),
+      ).rejects.toThrow('Local backup database exceeds size limit')
+      expect(localAssetStageDirectories(harness.dataDir)).toEqual([])
+    },
+  )
+
+  it.each(['risu-bundle-zip', 'legacy-local-backup'] as const)(
+    'rejects a %s asset hash mismatch and removes every staged file',
+    async (format) => {
+      const databaseBytes = encodeLegacyRisuSaveEnvelope({ characters: [] })
+      const bundlePath = path.join(
+        harness.dataDir,
+        format === 'risu-bundle-zip' ? 'hash-mismatch.zip' : 'hash-mismatch.bin',
+      )
+      const bytes =
+        format === 'risu-bundle-zip'
+          ? buildBundleZipEntries([
+              { name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify({ version: 1 })) },
+              { name: `assets/${ASSET_ID}.png`, data: SECOND_ASSET_BYTES },
+              { name: 'database.risu', data: databaseBytes },
+            ])
+          : buildLegacyBin([
+              { name: `${ASSET_ID}.png`, data: SECOND_ASSET_BYTES },
+              { name: 'database.risudat', data: databaseBytes },
+            ])
+      writeFileSync(bundlePath, bytes)
+
+      await expect(
+        decodeLocalBackup(bundlePath, { maxExpandedBytes: Infinity, maxDatabaseBytes: Infinity }),
+      ).rejects.toThrow('content hash check')
+      expect(localAssetStageDirectories(harness.dataDir)).toEqual([])
+    },
+  )
+
+  it.each(['risu-bundle-zip', 'legacy-local-backup'] as const)(
+    'closes and removes an in-progress %s stage file when decoding is aborted',
+    async (format) => {
+      const assetBytes = Buffer.alloc(3 * 1024 * 1024, 0x66)
+      const assetId = createHash('sha256').update(assetBytes).digest('hex')
+      const databaseBytes = encodeLegacyRisuSaveEnvelope({ characters: [] })
+      const bundlePath = path.join(
+        harness.dataDir,
+        format === 'risu-bundle-zip' ? 'aborted-stage.zip' : 'aborted-stage.bin',
+      )
+      const bytes =
+        format === 'risu-bundle-zip'
+          ? buildBundleZipEntries([
+              { name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify({ version: 1 })) },
+              { name: `assets/${assetId}.png`, data: assetBytes },
+              { name: 'database.risu', data: databaseBytes },
+            ])
+          : buildLegacyBin([
+              { name: `${assetId}.png`, data: assetBytes },
+              { name: 'database.risudat', data: databaseBytes },
+            ])
+      writeFileSync(bundlePath, bytes)
+      const controller = new AbortController()
+      const originalWriteSync = fs.writeSync
+      const writeSync = vi.spyOn(fs, 'writeSync').mockImplementation(((...args: Parameters<typeof fs.writeSync>) => {
+        const written = Reflect.apply(originalWriteSync, fs, args) as number
+        controller.abort()
+        return written
+      }) as typeof fs.writeSync)
+
+      try {
+        await expect(
+          decodeLocalBackup(bundlePath, {
+            maxExpandedBytes: Infinity,
+            maxDatabaseBytes: Infinity,
+            signal: controller.signal,
+          }),
+        ).rejects.toMatchObject({ name: 'AbortError' })
+      } finally {
+        writeSync.mockRestore()
+      }
+      expect(localAssetStageDirectories(harness.dataDir)).toEqual([])
+    },
+  )
+
+  it('forwards the route inner-database ceiling into local-backup decoding', async () => {
+    const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-database-cap-'))
+    const { app } = await buildApp({
+      config: {
+        host: '127.0.0.1',
+        port: 0,
+        dataDir,
+        bodyLimit: 1024,
+        importMaxBytes: Infinity,
+        trustProxy: false,
+        hubUrl: 'https://sv.risuai.xyz',
+      },
+      memoryWorker: false,
+      commandEvents: createCommandEventSink(),
+    })
+    try {
+      const { assertion: cappedAssertion } = await setupAuthedClient(app)
+      const upload = multipartBundle(
+        buildBundleZipEntries([
+          { name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify({ version: 1 })) },
+          { name: 'database.risu', data: Buffer.alloc(2048, 0x2a) },
+        ]),
+      )
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/import/bundle',
+        headers: { 'risu-auth': cappedAssertion, 'content-type': upload.contentType },
+        payload: upload.payload,
+      })
+
+      expect(response.statusCode).toBe(400)
+      expect(response.json()).toEqual({ error: 'Local backup database exceeds size limit' })
+    } finally {
+      await app.close()
+      rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+
+  it('isolates staged-asset cleanup failures and continues through every eligible file', () => {
+    const preExisting = path.join(harness.dataDir, 'pre-existing-asset')
+    const firstNew = path.join(harness.dataDir, 'first-new-asset')
+    const secondNew = path.join(harness.dataDir, 'second-new-asset')
+    const thirdNew = path.join(harness.dataDir, 'third-new-asset')
+    for (const file of [preExisting, firstNew, secondNew, thirdNew]) writeFileSync(file, 'bytes')
+
+    const failure = new Error('injected first cleanup failure')
+    const originalRmSync = fs.rmSync.bind(fs)
+    const rmSpy = vi.spyOn(fs, 'rmSync').mockImplementation((target, options) => {
+      if (String(target) === firstNew) throw failure
+      return originalRmSync(target, options)
+    })
+
+    const result = cleanupCopiedStagedAssetFiles([
+      { file: preExisting, existedBefore: true },
+      { file: firstNew, existedBefore: false },
+      { file: secondNew, existedBefore: false },
+      { file: thirdNew, existedBefore: false },
+    ])
+
+    expect(result).toEqual({
+      attempted: 3,
+      removed: 2,
+      failures: [{ file: firstNew, error: failure }],
+    })
+    expect(rmSpy.mock.calls.map(([file]) => String(file))).toEqual([firstNew, secondNew, thirdNew])
+    expect(existsSync(preExisting)).toBe(true)
+    expect(existsSync(firstNew)).toBe(true)
+    expect(existsSync(secondNew)).toBe(false)
+    expect(existsSync(thirdNew)).toBe(false)
+  })
+
+  it('logs one aggregate rollback warning without masking the import failure or skipping later assets', async () => {
+    const databaseBytes = encodeLegacyRisuSaveEnvelope(
+      { characters: [], tag: 'must-roll-back-after-staged-assets' },
+      'legacy-raw',
+    )
+    const bundle = fflate.zipSync({
+      'database.risu': databaseBytes,
+      'manifest.json': new TextEncoder().encode(JSON.stringify({ version: 1 })),
+      [`assets/${ASSET_ID}.png`]: ASSET_BYTES,
+      [`assets/${SECOND_ASSET_ID}.png`]: SECOND_ASSET_BYTES,
+    })
+    failCommandEventPersistence(harness.dataDir)
+
+    const firstLiveFile = path.join(assetsDir(harness.dataDir), `${ASSET_ID}.png`)
+    const secondLiveFile = path.join(assetsDir(harness.dataDir), `${SECOND_ASSET_ID}.png`)
+    const cleanupFailure = new Error('injected live-file cleanup failure')
+    const originalRmSync = fs.rmSync.bind(fs)
+    vi.spyOn(fs, 'rmSync').mockImplementation((target, options) => {
+      if (String(target) === firstLiveFile) throw cleanupFailure
+      return originalRmSync(target, options)
+    })
+    const warnSpy = vi.spyOn(harness.app.log, 'warn')
+
+    const upload = multipartBundle(bundle)
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/bundle',
+      headers: { 'content-type': upload.contentType },
+      payload: upload.payload,
+    })
+
+    expect(imported.statusCode).toBe(500)
+    expect(imported.json().message).toContain('injected command event failure')
+    expect(existsSync(firstLiveFile)).toBe(true)
+    expect(existsSync(secondLiveFile)).toBe(false)
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      expect(getAssetMetadataById(db, ASSET_ID)).toBeNull()
+      expect(getAssetMetadataById(db, SECOND_ASSET_ID)).toBeNull()
+      expect((loadPersistedWithMessages(db, harness.dataDir).database as Record<string, unknown>)?.tag).toBeUndefined()
+    } finally {
+      db.close()
+    }
+
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+    const [fields, message] = warnSpy.mock.calls[0] as [Record<string, unknown>, string]
+    expect(message).toBe('Bundle-import rollback could not remove some staged asset files')
+    expect(fields).toMatchObject({
+      failureCount: 1,
+      attempted: 2,
+      failedFiles: [firstLiveFile],
+    })
+    expect(fields.err).toBeInstanceOf(AggregateError)
+    expect((fields.err as AggregateError).message).toBe(
+      'Bundle-import rollback could not remove some staged asset files',
+    )
+    expect((fields.err as AggregateError).errors).toEqual([cleanupFailure])
+  })
+
+  it('emits no cleanup warning when rollback removes every staged asset', async () => {
+    const databaseBytes = encodeLegacyRisuSaveEnvelope(
+      { characters: [], tag: 'must-roll-back-with-clean-cleanup' },
+      'legacy-raw',
+    )
+    const bundle = fflate.zipSync({
+      'database.risu': databaseBytes,
+      'manifest.json': new TextEncoder().encode(JSON.stringify({ version: 1 })),
+      [`assets/${ASSET_ID}.png`]: ASSET_BYTES,
+      [`assets/${SECOND_ASSET_ID}.png`]: SECOND_ASSET_BYTES,
+    })
+    failCommandEventPersistence(harness.dataDir)
+    const warnSpy = vi.spyOn(harness.app.log, 'warn')
+
+    const upload = multipartBundle(bundle)
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/bundle',
+      headers: { 'content-type': upload.contentType },
+      payload: upload.payload,
+    })
+
+    expect(imported.statusCode).toBe(500)
+    expect(imported.json().message).toContain('injected command event failure')
+    expect(existsSync(path.join(assetsDir(harness.dataDir), `${ASSET_ID}.png`))).toBe(false)
+    expect(existsSync(path.join(assetsDir(harness.dataDir), `${SECOND_ASSET_ID}.png`))).toBe(false)
+    expect(
+      warnSpy.mock.calls.some(
+        ([, message]) => message === 'Bundle-import rollback could not remove some staged asset files',
+      ),
+    ).toBe(false)
+  })
+
   it('restores the database and bundled assets into a fresh instance', async () => {
     persistDatabaseWithAsset(harness.dataDir)
     const zip = await exportBundleZip()
@@ -287,6 +795,7 @@ describe('repository .risu bundle import route', () => {
     const fresh = await startHarness()
     try {
       const { assertion: freshAssertion } = await setupAuthedClient(fresh.app)
+      const warnSpy = vi.spyOn(fresh.app.log, 'warn')
       const upload = multipartBundle(zip)
       const imported = await fresh.app.inject({
         method: 'POST',
@@ -317,13 +826,13 @@ describe('repository .risu bundle import route', () => {
       expect(Buffer.from(asset.rawPayload).equals(ASSET_BYTES)).toBe(true)
 
       // The database is restored with imported chats requiring local confirmation.
-      const bootstrap = await fresh.app.inject({
+      const bootstrap = await injectComposedResourceDatabase(fresh.app, {
         method: 'GET',
         url: '/api/v1/bootstrap',
         headers: { 'risu-auth': freshAssertion },
       })
       expect(bootstrap.statusCode).toBe(200)
-      expect(bootstrap.json().database.characters[0].chats[0].generationSettings).toEqual({
+      expect(bootstrap.resourceDatabase.characters[0].chats[0].generationSettings).toEqual({
         configured: false,
         personaId: 'persona-a',
         modelPresetId: 'model-a',
@@ -344,7 +853,98 @@ describe('repository .risu bundle import route', () => {
       // are intentionally not emitted for staged backup assets.
       expect(fresh.commandEvents.list().some((event) => event.type === 'state.imported')).toBe(true)
       expect(fresh.commandEvents.list().some((event) => event.type === 'asset.created')).toBe(false)
+      expect(
+        warnSpy.mock.calls.some(
+          ([, message]) => message === 'Bundle-import rollback could not remove some staged asset files',
+        ),
+      ).toBe(false)
       expect(listBackups(fresh.dataDir)).toEqual([])
+    } finally {
+      await stopHarness(fresh)
+    }
+  })
+
+  it.each([
+    ['/api/v1/export/bundle', 'database.risu.zip'],
+    ['/api/v1/export/local-backup', 'database.bin'],
+  ] as const)('round-trips portable tombstones through %s without operational secrets', async (url, filename) => {
+    persistDatabaseWithAsset(harness.dataDir)
+    const sourceDb = openDatabase(harness.dataDir)
+    try {
+      sourceDb.exec(`
+        INSERT INTO memory_legacy_summary_tombstones (summary_id, chat_id, deleted_at)
+        VALUES ('bundle-summary', 'bundle-import-chat', '2026-07-23T00:00:00.000Z');
+        INSERT INTO generation_finalization_retries (
+          generation_id, chat_id, mode, message_json, alternate_messages_json,
+          chat_var_mutations_json, status
+        ) VALUES (
+          'bundle-queue-secret', 'bundle-import-chat', 'send',
+          '{"role":"char","data":"bundle-queue-payload"}', '[]', '[]', 'terminal'
+        );
+        INSERT INTO push_subscriptions (endpoint, subscription_json)
+        VALUES (
+          'https://push.example/bundle-secret',
+          '{"endpoint":"https://push.example/bundle-secret","keys":{"auth":"bundle-push-auth"}}'
+        );
+      `)
+    } finally {
+      sourceDb.close()
+    }
+
+    const exported = await authedInject({ method: 'GET', url })
+    expect(exported.statusCode).toBe(200)
+    const databaseBytes = filename.endsWith('.zip')
+      ? fflate.unzipSync(new Uint8Array(exported.rawPayload))['database.risu']
+      : readLegacyBinRecord(exported.rawPayload, 'database.risudat')
+    const decoded = decodeRisuSaveImportSnapshot(databaseBytes)
+    expect(decoded.portableMetadata).toEqual({
+      version: 1,
+      memoryLegacySummaryTombstones: [
+        {
+          summaryId: 'bundle-summary',
+          chatId: 'bundle-import-chat',
+          deletedAt: '2026-07-23T00:00:00.000Z',
+        },
+      ],
+    })
+    const portablePayload = JSON.stringify(decoded)
+    expect(portablePayload).not.toContain('bundle-queue-secret')
+    expect(portablePayload).not.toContain('bundle-queue-payload')
+    expect(portablePayload).not.toContain('https://push.example/bundle-secret')
+    expect(portablePayload).not.toContain('bundle-push-auth')
+
+    const fresh = await startHarness()
+    try {
+      const { assertion: freshAssertion } = await setupAuthedClient(fresh.app)
+      const upload = multipartBundle(exported.rawPayload, filename)
+      const imported = await fresh.app.inject({
+        method: 'POST',
+        url: '/api/v1/import/bundle',
+        headers: { 'risu-auth': freshAssertion, 'content-type': upload.contentType },
+        payload: upload.payload,
+      })
+      expect(imported.statusCode).toBe(200)
+
+      const targetDb = openDatabase(fresh.dataDir)
+      try {
+        expect(
+          targetDb.prepare('SELECT summary_id, chat_id, deleted_at FROM memory_legacy_summary_tombstones').all(),
+        ).toEqual([
+          {
+            summary_id: 'bundle-summary',
+            chat_id: 'bundle-import-chat',
+            deleted_at: '2026-07-23T00:00:00.000Z',
+          },
+        ])
+      } finally {
+        targetDb.close()
+      }
+      const bootstrap = await injectComposedResourceDatabase(fresh.app, {
+        method: 'GET',
+        url: '/api/v1/bootstrap',
+        headers: { 'risu-auth': freshAssertion },
+      })
+      expect(bootstrap.resourceDatabase).not.toHaveProperty(RISU_SERVER_DATA_KEY)
     } finally {
       await stopHarness(fresh)
     }
@@ -457,7 +1057,7 @@ describe('repository .risu bundle import route', () => {
     const fresh = await startHarness()
     try {
       const { assertion: freshAssertion } = await setupAuthedClient(fresh.app)
-      const before = await fresh.app.inject({
+      const before = await injectComposedResourceDatabase(fresh.app, {
         method: 'GET',
         url: '/api/v1/bootstrap',
         headers: { 'risu-auth': freshAssertion },
@@ -485,7 +1085,7 @@ describe('repository .risu bundle import route', () => {
         })
       }
 
-      const after = await fresh.app.inject({
+      const after = await injectComposedResourceDatabase(fresh.app, {
         method: 'GET',
         url: '/api/v1/bootstrap',
         headers: { 'risu-auth': freshAssertion },
@@ -493,12 +1093,66 @@ describe('repository .risu bundle import route', () => {
       expect(after.json()).toMatchObject({
         revision: before.json().revision,
         databaseLineage: before.json().databaseLineage,
-        database: before.json().database,
       })
+      expect(after.resourceDatabase).toEqual(before.resourceDatabase)
       expect(fresh.commandEvents.list().some((event) => event.type === 'state.imported')).toBe(false)
     } finally {
       await stopHarness(fresh)
     }
+  })
+
+  it('salvages supported bundle blocks and reports skipped standalone CHAT blocks', async () => {
+    persistLiveDatabase(harness.dataDir)
+    const before = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
+    const databaseBytes = encodeRisuSaveBlockEnvelope([
+      {
+        name: 'root',
+        type: RisuSaveBlockType.ROOT,
+        data: JSON.stringify({
+          version: 2,
+          tag: 'salvaged-bundle',
+          __directory: ['supported-character', 'standalone-chat'],
+        }),
+      },
+      {
+        name: 'supported-character',
+        type: RisuSaveBlockType.CHARACTER_WITHOUT_CHAT,
+        data: JSON.stringify({ chaId: 'bundle-char', name: 'Bundle Character', chats: [] }),
+      },
+      {
+        name: 'standalone-chat',
+        type: RisuSaveBlockType.CHAT,
+        data: JSON.stringify({ id: 'standalone-chat', name: 'Unsupported Chat', message: [] }),
+      },
+    ])
+    const upload = multipartBundle(buildBundleZip(databaseBytes))
+
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/bundle',
+      headers: { 'content-type': upload.contentType },
+      payload: upload.payload,
+    })
+
+    expect(imported.statusCode).toBe(200)
+    expect(imported.json()).toMatchObject({
+      importReport: {
+        skippedBlocks: [{ name: 'standalone-chat', type: 'CHAT' }],
+      },
+      assetReport: { orphanedCount: 1 },
+      bundleReport: { includedAssetCount: 1, assetsCreated: true },
+    })
+
+    const after = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
+    expect(after.resourceDatabase).toMatchObject({
+      tag: 'salvaged-bundle',
+      characters: [expect.objectContaining({ chaId: 'bundle-char', name: 'Bundle Character' })],
+    })
+    expect(after.resourceDatabase.tag).not.toBe(before.resourceDatabase.tag)
+    expect(listBackups(harness.dataDir)).toHaveLength(1)
+    const importedAsset = await authedInject({ method: 'GET', url: `/api/v1/assets/${ASSET_ID}` })
+    expect(importedAsset.statusCode).toBe(200)
+    expect(harness.commandEvents.list().map((event) => event.type)).toContain('state.imported')
   })
 
   it('canonicalizes original-backup media references with non-sha256 record names', async () => {
@@ -707,7 +1361,7 @@ describe('repository .risu bundle import route', () => {
 
   it('rejects hollow bundle and legacy .bin databases before snapshots, assets, or live mutations', async () => {
     persistLiveDatabase(harness.dataDir)
-    const before = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const before = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
     const hollowDatabase = encodeLegacyRisuSaveEnvelope({}, 'legacy-compressed')
     const inputs = [
       { bytes: buildBundleZip(hollowDatabase), filename: 'hollow.risu.zip' },
@@ -732,19 +1386,19 @@ describe('repository .risu bundle import route', () => {
       expect(imported.json()).toEqual({ error: RISUSAVE_EMPTY_DATABASE_ERROR })
     }
 
-    const after = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const after = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(after.json()).toMatchObject({
       revision: before.json().revision,
       databaseLineage: before.json().databaseLineage,
-      database: before.json().database,
     })
+    expect(after.resourceDatabase).toEqual(before.resourceDatabase)
     expect(listBackups(harness.dataDir)).toEqual([])
     await expectNoImportedAssetSideEffects(harness)
   })
 
   it('rejects an exact-block-boundary truncated bundle before snapshots, assets, or live mutations', async () => {
     persistLiveDatabase(harness.dataDir)
-    const before = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const before = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
     const blocks = [
       {
         name: 'root',
@@ -779,12 +1433,12 @@ describe('repository .risu bundle import route', () => {
 
     expect(imported.statusCode).toBe(400)
     expect(imported.json()).toEqual({ error: RISUSAVE_INCOMPLETE_BLOCKS_ERROR })
-    const after = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
+    const after = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(after.json()).toMatchObject({
       revision: before.json().revision,
       databaseLineage: before.json().databaseLineage,
-      database: before.json().database,
     })
+    expect(after.resourceDatabase).toEqual(before.resourceDatabase)
     expect(listBackups(harness.dataDir)).toEqual([])
     await expectNoImportedAssetSideEffects(harness)
   })
@@ -915,7 +1569,7 @@ describe('repository .risu bundle import route', () => {
     expect(imported.statusCode).toBe(400)
   })
 
-  it('caps the expanded size of the embedded database.risu even when the bundle import is unlimited (M9)', async () => {
+  it('caps the expanded size of the embedded database.risu even when the bundle import is unlimited', async () => {
     // importMaxBytes is Infinity in this harness, so the inner `.risu` falls
     // back to the expanded-import cap (bodyLimit = 4 MiB). A tiny gzip that
     // expands past that must be rejected during inflate, not materialized.
@@ -956,6 +1610,63 @@ describe('repository .risu bundle import route', () => {
     expect((imported.json() as { error: string }).error).toContain('manifest version')
   })
 
+  it.each([
+    {
+      label: 'duplicate entry names',
+      entries: [
+        { name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify({ version: 1 })) },
+        { name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify({ version: 1 })) },
+      ],
+      expected: 'duplicate entry',
+    },
+    {
+      label: 'ambiguous database names',
+      entries: [
+        { name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify({ version: 1 })) },
+        { name: 'replacement.risu', data: encodeLegacyRisuSaveEnvelope({ version: 1 }, 'legacy-raw') },
+      ],
+      expected: 'must be named database.risu',
+    },
+    {
+      label: 'oversized entry names',
+      entries: [
+        { name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify({ version: 1 })) },
+        { name: 'x'.repeat(LOCAL_BACKUP_ZIP_MAX_NAME_BYTES + 1) },
+      ],
+      expected: `entry name exceeds ${LOCAL_BACKUP_ZIP_MAX_NAME_BYTES} bytes`,
+    },
+  ])('rejects structurally ambiguous bundles with $label', async ({ entries, expected }) => {
+    const upload = multipartBundle(buildBundleZipEntries(entries))
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/bundle',
+      payload: upload.payload,
+      headers: { 'content-type': upload.contentType },
+    })
+
+    expect(imported.statusCode).toBe(400)
+    expect((imported.json() as { error: string }).error).toContain(expected)
+  })
+
+  it('bounds zero-byte bundle entry cardinality independently of expanded bytes', async () => {
+    const entries = Array.from({ length: LOCAL_BACKUP_ZIP_MAX_ENTRIES + 1 }, (_, index) => ({
+      name: `empty/${index}`,
+    }))
+    const upload = multipartBundle(buildBundleZipEntries(entries))
+
+    const imported = await authedInject({
+      method: 'POST',
+      url: '/api/v1/import/bundle',
+      payload: upload.payload,
+      headers: { 'content-type': upload.contentType },
+    })
+
+    expect(imported.statusCode).toBe(400)
+    expect((imported.json() as { error: string }).error).toContain(
+      `.risu bundle exceeds ${LOCAL_BACKUP_ZIP_MAX_ENTRIES} entries`,
+    )
+  })
+
   it('rejects a bundle whose asset bytes do not match their content hash', async () => {
     persistDatabaseWithAsset(harness.dataDir)
     const files = fflate.unzipSync(new Uint8Array(await exportBundleZip()))
@@ -978,7 +1689,7 @@ describe('repository .risu bundle import route', () => {
     const zip = await exportBundleZip()
 
     // Latch session-a as the active writer via the writer-intent bootstrap.
-    const bootstrap = await authedInject({
+    const bootstrap = await authedComposedResourceDatabase({
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },

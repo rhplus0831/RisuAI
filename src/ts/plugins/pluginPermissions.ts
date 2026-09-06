@@ -2,12 +2,11 @@ import localforage from 'localforage'
 import { language } from 'src/lang'
 import { alertConfirm } from 'src/ts/alert'
 import { hasher } from 'src/ts/parser/parser.svelte'
-import { getDatabase } from 'src/ts/storage/database.svelte'
+import { currentPluginCollectionSnapshot } from '../pluginCommands'
 
 export type PluginPermission =
   | 'fetchLogs'
   | 'db'
-  | 'legacyRuntime'
   | 'mainDom'
   | 'network'
   | 'pluginUpdate'
@@ -52,8 +51,6 @@ function permissionPrompt(
       return language.getFullDatabaseConsent.replace('{}', pluginName)
     case 'mainDom':
       return language.mainDomAccessConsent.replace('{}', pluginName)
-    case 'legacyRuntime':
-      return language.legacyRuntimeConsent.replace('{}', pluginName)
     case 'network':
       return language.pluginNetworkConsent.replace('{}', pluginName)
     case 'pluginUpdate': {
@@ -85,12 +82,15 @@ export async function getPluginPermission(
   assertActive?: () => void,
   context?: PluginPermissionContext,
 ): Promise<boolean> {
-  const installedScript = getDatabase().plugins.find((plugin) => plugin.name === pluginName)?.script
+  const installedMatches = currentPluginCollectionSnapshot().filter((plugin) => plugin.name === pluginName)
+  const installedScript = installedMatches.length === 1 ? installedMatches[0].script : undefined
   const script = runtimeScript ?? installedScript
   if (typeof script !== 'string') return false
   const validateFreshRuntime = (): boolean => {
-    const installed = getDatabase().plugins.some((plugin) => plugin.name === pluginName && plugin.script === script)
-    if (!installed) return false
+    const installed = currentPluginCollectionSnapshot().filter(
+      (plugin) => plugin.name === pluginName && plugin.script === script,
+    )
+    if (installed.length !== 1) return false
     assertActive?.()
     return true
   }

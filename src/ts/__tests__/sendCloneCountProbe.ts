@@ -8,21 +8,11 @@ import {
   setServerChatPrompt,
 } from '../process/__fixtures__/mocks/serverChatFetch'
 import { clearCachedServerCommandRevision } from '../server/commands'
-import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
+import { testDatabaseState } from './resourceDatabaseState'
 import { setDatabase, type Database, type character } from '../storage/database.svelte'
 import { selectedCharID } from '../stores.svelte'
 import { appendCurrentChatUserMessageForSend } from '../chatCommands'
 import { seedCloneCostDb, withAsyncCloneInstrumentation, type CloneInstrumentation } from './cloneCostHarness'
-
-const testDatabaseState = {
-  get db() {
-    return getResourceDatabase()
-  },
-  set db(value: Database) {
-    replaceResourceDatabase(value)
-  },
-}
 
 export interface SendCloneCountProbeOptions {
   characterCount?: number
@@ -336,7 +326,6 @@ export async function runSendCloneCountProbe(
   doingChat.set(false)
   abortChat.set(false)
   chatProcessStage.set(0)
-  setResourceWriteGuardEnabled(false)
   const fixture = seedProbeDb(resolved)
   globalThis.fetch = createProbeFetch(commandCalls)
 
@@ -377,7 +366,6 @@ export async function runSendCloneCountProbe(
     }
   } finally {
     globalThis.fetch = originalFetch
-    setResourceWriteGuardEnabled(false)
     doingChat.set(false)
     abortChat.set(false)
     chatProcessStage.set(0)

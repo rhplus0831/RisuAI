@@ -1,10 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const pushNotificationMocks = vi.hoisted(() => ({
+  navigate: vi.fn(),
+}))
+
 vi.mock('../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: vi.fn(async () => 'push-auth-token'),
 }))
 
-import { disableChatCompletionPushNotifications, enableChatCompletionPushNotifications } from './pushNotifications'
+vi.mock('../router', () => ({
+  navigate: pushNotificationMocks.navigate,
+}))
+
+import {
+  disableChatCompletionPushNotifications,
+  dismissChatCompletionNotifications,
+  enableChatCompletionPushNotifications,
+  requestChatCompletionNotificationPermission,
+  installPushNotificationForegroundCleanup,
+  installPushNotificationNavigationListener,
+} from './pushNotifications'
 
 interface FetchCall {
   url: string
@@ -27,9 +42,14 @@ function setupNotification(permission: NotificationPermission, requestedPermissi
 }
 
 function setupServiceWorker(registration: Partial<ServiceWorkerRegistration>) {
+  const listeners: { message?: (event: MessageEvent<unknown>) => void } = {}
   const serviceWorker = {
+    addEventListener: vi.fn((type: string, listener: (event: MessageEvent<unknown>) => void) => {
+      if (type === 'message') listeners.message = listener
+    }),
     register: vi.fn(async () => registration),
     getRegistration: vi.fn(async () => registration),
+    listeners,
   }
   vi.stubGlobal('navigator', { serviceWorker })
   return serviceWorker
@@ -91,19 +111,23 @@ function setupPushFetch({ publicKey = 'AQIDBA', postStatus = 200, deleteStatus =
 
 describe('push notification browser helper', () => {
   let warnSpy: ReturnType<typeof vi.spyOn>
+  let removeForegroundCleanup: (() => void) | null
 
   beforeEach(() => {
+    pushNotificationMocks.navigate.mockReset()
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    removeForegroundCleanup = null
   })
 
   afterEach(() => {
-    warnSpy.mockRestore()
+    removeForegroundCleanup?.()
+    vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.clearAllMocks()
   })
 
-  it('requests permission, registers the service worker, subscribes, and posts the subscription with auth', async () => {
-    const NotificationMock = setupNotification('default', 'granted')
+  it('registers and subscribes with existing permission without prompting', async () => {
+    const NotificationMock = setupNotification('granted')
     const subscription = pushSubscription()
     const subscribe = vi.fn(async () => subscription)
     const getSubscription = vi.fn(async () => null)
@@ -120,7 +144,7 @@ describe('push notification browser helper', () => {
       endpoint: subscription.endpoint,
     })
 
-    expect(NotificationMock.requestPermission).toHaveBeenCalledTimes(1)
+    expect(NotificationMock.requestPermission).not.toHaveBeenCalled()
     expect(serviceWorker.register).toHaveBeenCalledWith('/service-worker.js')
     expect(getSubscription).toHaveBeenCalledTimes(1)
     expect(subscribe).toHaveBeenCalledWith({
@@ -155,6 +179,131 @@ describe('push notification browser helper', () => {
     ])
   })
 
+  it.each([
+    {
+      name: 'a character chat',
+      pathname: '/character/char-a/chat-a',
+    },
+    {
+      name: 'the home route',
+      pathname: '/',
+    },
+  ])('acknowledges and routes $name through the SPA router', ({ pathname }) => {
+    const serviceWorker = setupServiceWorker({})
+    const acknowledgementPort = { postMessage: vi.fn() }
+    installPushNotificationNavigationListener()
+
+    expect(serviceWorker.addEventListener).toHaveBeenCalledWith('message', expect.any(Function))
+    serviceWorker.listeners.message?.({
+      data: {
+        type: 'risuai:notification-route',
+        url: new URL(pathname, window.location.origin).href,
+      },
+      ports: [acknowledgementPort],
+    } as unknown as MessageEvent<unknown>)
+
+    expect(pushNotificationMocks.navigate).toHaveBeenCalledWith(pathname)
+    expect(acknowledgementPort.postMessage).toHaveBeenCalledWith({
+      type: 'risuai:notification-route-ack',
+    })
+  })
+
+  it.each([
+    null,
+    { type: 'other-message', url: new URL('/character/char-a/chat-a', window.location.origin).href },
+    { type: 'risuai:notification-route', url: 42 },
+    { type: 'risuai:notification-route', url: '/character/char-a/chat-a' },
+    { type: 'risuai:notification-route', url: 'https://other.example.test/character/char-a/chat-a' },
+  ])('ignores malformed or untrusted routing messages: %j', (data) => {
+    const serviceWorker = setupServiceWorker({})
+    const acknowledgementPort = { postMessage: vi.fn() }
+    installPushNotificationNavigationListener()
+
+    serviceWorker.listeners.message?.({
+      data,
+      ports: [acknowledgementPort],
+    } as unknown as MessageEvent<unknown>)
+
+    expect(pushNotificationMocks.navigate).not.toHaveBeenCalled()
+    expect(acknowledgementPort.postMessage).not.toHaveBeenCalled()
+  })
+
+  it('does not acknowledge when the SPA router rejects the target', () => {
+    const serviceWorker = setupServiceWorker({})
+    const acknowledgementPort = { postMessage: vi.fn() }
+    const routingError = new Error('routing failed')
+    pushNotificationMocks.navigate.mockImplementationOnce(() => {
+      throw routingError
+    })
+    installPushNotificationNavigationListener()
+
+    serviceWorker.listeners.message?.({
+      data: {
+        type: 'risuai:notification-route',
+        url: new URL('/character/char-a/chat-a', window.location.origin).href,
+      },
+      ports: [acknowledgementPort],
+    } as unknown as MessageEvent<unknown>)
+
+    expect(acknowledgementPort.postMessage).not.toHaveBeenCalled()
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[push notifications] Failed to apply a notification route in-app.',
+      routingError,
+    )
+  })
+
+  it('dismisses existing chat completion notifications when the app starts visible', async () => {
+    const notifications = [{ close: vi.fn() } as unknown as Notification, { close: vi.fn() } as unknown as Notification]
+    const getNotifications = vi.fn(async () => notifications)
+    const serviceWorker = setupServiceWorker({ getNotifications })
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+
+    removeForegroundCleanup = installPushNotificationForegroundCleanup()
+
+    await vi.waitFor(() => expect(getNotifications).toHaveBeenCalledOnce())
+    expect(serviceWorker.getRegistration).toHaveBeenCalledWith('/')
+    expect(getNotifications).toHaveBeenCalledWith({ tag: 'risuai-chat-completion' })
+    for (const notification of notifications) expect(notification.close).toHaveBeenCalledOnce()
+  })
+
+  it('waits until the app returns to the foreground before dismissing notifications', async () => {
+    let visibilityState: DocumentVisibilityState = 'hidden'
+    const notification = { close: vi.fn() } as unknown as Notification
+    const getNotifications = vi.fn(async () => [] as Notification[])
+    getNotifications.mockResolvedValueOnce([notification])
+    const serviceWorker = setupServiceWorker({ getNotifications })
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibilityState)
+    removeForegroundCleanup = installPushNotificationForegroundCleanup()
+
+    window.dispatchEvent(new Event('focus'))
+    window.dispatchEvent(new Event('pageshow'))
+    expect(serviceWorker.getRegistration).not.toHaveBeenCalled()
+
+    visibilityState = 'visible'
+    document.dispatchEvent(new Event('visibilitychange'))
+
+    await vi.waitFor(() => expect(notification.close).toHaveBeenCalledOnce())
+
+    window.dispatchEvent(new Event('focus'))
+    await vi.waitFor(() => expect(getNotifications).toHaveBeenCalledTimes(2))
+
+    window.dispatchEvent(new Event('pageshow'))
+    await vi.waitFor(() => expect(getNotifications).toHaveBeenCalledTimes(3))
+  })
+
+  it('reports notification cleanup failures without rejecting the foreground task', async () => {
+    const cleanupError = new Error('notification lookup failed')
+    const serviceWorker = setupServiceWorker({})
+    serviceWorker.getRegistration.mockRejectedValueOnce(cleanupError)
+
+    await expect(dismissChatCompletionNotifications()).resolves.toBeUndefined()
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[push notifications] Failed to dismiss local chat completion notifications.',
+      cleanupError,
+    )
+  })
+
   it('falls back without subscribing when the server has no VAPID public key', async () => {
     const NotificationMock = setupNotification('granted')
     const subscribe = vi.fn()
@@ -172,20 +321,44 @@ describe('push notification browser helper', () => {
       reason: 'vapid-unavailable',
     })
 
-    expect(NotificationMock.requestPermission).toHaveBeenCalledTimes(1)
+    expect(NotificationMock.requestPermission).not.toHaveBeenCalled()
     expect(getSubscription).not.toHaveBeenCalled()
     expect(subscribe).not.toHaveBeenCalled()
   })
 
   it('returns permission-denied without touching push transport when notification permission is denied', async () => {
-    const NotificationMock = setupNotification('default', 'denied')
+    const NotificationMock = setupNotification('denied')
     const serviceWorker = setupServiceWorker({})
     setupPushFetch()
 
     await expect(enableChatCompletionPushNotifications()).resolves.toEqual({ status: 'permission-denied' })
 
-    expect(NotificationMock.requestPermission).toHaveBeenCalledTimes(1)
+    expect(NotificationMock.requestPermission).not.toHaveBeenCalled()
     expect(serviceWorker.register).not.toHaveBeenCalled()
+  })
+
+  it('only prompts for permission on an explicit request', async () => {
+    const notification = setupNotification('default', 'granted')
+    await expect(enableChatCompletionPushNotifications()).resolves.toEqual({
+      status: 'fallback',
+      reason: 'permission-default',
+    })
+    expect(notification.requestPermission).not.toHaveBeenCalled()
+    const permission = requestChatCompletionNotificationPermission()
+    expect(notification.requestPermission).toHaveBeenCalledOnce()
+    await expect(permission).resolves.toBe('granted')
+    await requestChatCompletionNotificationPermission()
+    expect(notification.requestPermission).toHaveBeenCalledOnce()
+  })
+
+  it('reports a failed service worker start separately from missing browser support', async () => {
+    setupNotification('granted')
+    const serviceWorker = setupServiceWorker({})
+    serviceWorker.register.mockRejectedValueOnce(new Error('temporary start failure'))
+    await expect(enableChatCompletionPushNotifications()).resolves.toEqual({
+      status: 'fallback',
+      reason: 'service-worker-failed',
+    })
   })
 
   it('reports each browser setup prerequisite that can terminate enablement', async () => {
@@ -230,13 +403,13 @@ describe('push notification browser helper', () => {
     })
   })
 
-  it('unsubscribes locally when server registration fails', async () => {
+  it('preserves the subscription on registration failure and reuses it on recovery', async () => {
     setupNotification('granted')
     const subscription = pushSubscription('https://push.example.test/unregistered')
     setupServiceWorker({
       pushManager: {
-        getSubscription: vi.fn(async () => null),
-        subscribe: vi.fn(async () => subscription),
+        getSubscription: vi.fn(async () => subscription),
+        subscribe: vi.fn(),
       } as unknown as PushManager,
     })
     setupPushFetch({ postStatus: 503 })
@@ -245,9 +418,15 @@ describe('push notification browser helper', () => {
       status: 'fallback',
       reason: 'server-registration-failed',
       endpoint: subscription.endpoint,
-      localCleanup: 'succeeded',
     })
-    expect(subscription.unsubscribe).toHaveBeenCalledOnce()
+    expect(subscription.unsubscribe).not.toHaveBeenCalled()
+    const retryCalls = setupPushFetch()
+    await expect(enableChatCompletionPushNotifications()).resolves.toEqual({
+      status: 'enabled',
+      endpoint: subscription.endpoint,
+    })
+    expect(retryCalls.find((call) => call.method === 'POST')?.body).toEqual({ subscription: subscription.toJSON() })
+    expect(subscription.unsubscribe).not.toHaveBeenCalled()
   })
 
   it('unsubscribes the local subscription and deletes its endpoint from the server when disabling', async () => {

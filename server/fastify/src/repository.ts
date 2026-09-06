@@ -1,20 +1,42 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { backup as backupSqliteDatabase, DatabaseSync } from 'node:sqlite'
-import { createInitialDatabase } from './databaseDefaults.js'
-import { repairStoredChatGenerationSettings } from './chatGenerationSettingsStorage.js'
+import { backup as backupSqliteDatabase, DatabaseSync, type SQLInputValue, type StatementSync } from 'node:sqlite'
+import { SERVER_CHARACTER_SHELL_MARKER, type ServerCharacterSummary } from '@risuai/protocol/character-summary-resource'
+import {
+  createInitialDatabase,
+  migrateLegacyFlatModelConfiguration,
+  normalizeDatabaseDefaults,
+} from './databaseDefaults.js'
+import { rebuildAllBardWikiDerivedState } from './bardWikiRepository.js'
+import {
+  normalizeStoredChatGenerationSettings,
+  repairStoredChatGenerationSettings,
+} from './chatGenerationSettingsStorage.js'
 import { DEFAULT_AUTOMATIC_BACKUP_RETENTION } from './config.js'
+import { getMaintenanceCoordinator, MaintenanceBusyError, type MaintenanceLease } from './maintenanceCoordinator.js'
+import { BackupAssetError, copyBackupAssets, copyBackupDirectory } from './backupFiles.js'
+import { BackupCopyPool } from './backupCopyPool.js'
+import { scanAssetReferences, type AssetReferenceMarks } from './assetReferenceScan.js'
+import { setImmediate as yieldMaintenanceTurn } from 'node:timers/promises'
 import { getSchemaState } from './db.js'
 import { assessDatabaseInitialization, InitializeConflictError } from './databaseInitialization.js'
 import { COMMAND_EVENT_CATALOG, persistRevisionedCommandEvent, type CommandEvent } from './commands/events.js'
 import { getDatabaseLineage, getDatabaseWriterMetadata, rotateDatabaseLineage } from './databaseLineage.js'
 import { recordTableWrite } from './protocolMetrics.js'
+import { bumpGenerationOperationProjectionEpoch, createGenerationOperationTables } from './generationOperations.js'
+import {
+  GREETING_TRANSLATIONS_PORTABLE_FIELD,
+  listGreetingTranslationsForRewrite,
+  replaceGreetingTranslationsForImport,
+  type GreetingTranslationRow,
+} from './translation/greetingTranslationStore.js'
 import {
   applyChatMessageDiff,
   deleteChatHypaV3,
   deleteChatMessages,
   getAlternateMessagesGroupedByIds,
+  getAllChatAlternateMessagesGrouped,
   getAllChatHypaV3Grouped,
   getAllChatMessagesGrouped,
   getAlternateMessages,
@@ -24,11 +46,24 @@ import {
   getChatMessagesRange,
   getChatMessagesGroupedByIds,
   getActiveMessageLocationById,
+  insertAllChatAlternateMessages,
   replaceAllChatHypaV3,
   replaceAllChatMessages,
   setChatHypaV3,
   countChatMessages,
 } from './messageStore.js'
+import {
+  repairPersonaSelectionIdentity,
+  selectedPersonaIndexFromStableId,
+} from '@risuai/shared-core/persona-selection-identity'
+import {
+  hypaV3PresetIndexFromStableId,
+  repairHypaV3PresetSelectionIdentity,
+} from '@risuai/shared-core/hypa-v3-preset-selection-identity'
+import { normalizeAgentConfiguration, normalizeAgentPresetDefaultId } from '@risuai/shared-core/agent-preset-records'
+import { getCanonicalTranslatorPresets } from '@risuai/shared-core/translator-presets'
+import { parseModuleIntegration, resolveAgentPresetModuleIntegration } from '@risuai/shared-core/module-integration'
+import { resolveEffectiveAgentPresetId } from '@risuai/shared-core/agent-preset-resolver'
 
 const PLUGIN_CUSTOM_STORAGE_EMPTY_SENTINEL_KEY = '__risu_internal_plugin_custom_storage_empty__'
 
@@ -170,6 +205,8 @@ const COLLECTION_TABLE_MAP: Record<string, string> = {
   hypaV3Presets: 'hypa_v3_presets',
 }
 
+const MODEL_PROFILE_INLINE_SECRET_PRESET_TABLES = ['bot_presets', 'model_presets'] as const
+
 export function createCollectionTables(db: DatabaseSync): void {
   for (const tableName of Object.values(COLLECTION_TABLE_MAP)) {
     db.exec(`
@@ -179,6 +216,16 @@ export function createCollectionTables(db: DatabaseSync): void {
       )
     `)
   }
+  // These non-unique derived indexes preserve imported duplicate-ID semantics
+  // while keeping selected generation reads off unrelated collection JSON.
+  for (const tableName of ['modules', 'model_presets', 'prompt_presets', 'personas', 'hypa_v3_presets']) {
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_generation_${tableName}_id ON ${tableName} (json_extract(data_json, '$.id'))`,
+    )
+  }
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_generation_modules_namespace ON modules (json_extract(data_json, '$.namespace'))",
+  )
   db.exec(`
     CREATE TABLE IF NOT EXISTS plugin_custom_storage (
       key TEXT PRIMARY KEY,
@@ -256,6 +303,253 @@ export function repairPersistedGlobalLorebookIdsInSqlite(db: DatabaseSync): bool
   return changed
 }
 
+/** Explicit migration/import/recovery-boundary persona identity repair. */
+export function repairPersistedPersonaSelectionIdentity(database: unknown): boolean {
+  if (!isRecord(database)) return false
+  return repairPersonaSelectionIdentity(database).changed
+}
+
+/** Schema-migration and backup-recovery adapter for split settings/persona rows. */
+export function repairPersistedPersonaSelectionIdentityInSqlite(db: DatabaseSync): boolean {
+  const settingsRow = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as
+    | { data_json: string }
+    | undefined
+  if (!settingsRow) return false
+
+  const settings = JSON.parse(settingsRow.data_json) as unknown
+  if (!isRecord(settings)) return false
+  const rows = db.prepare('SELECT position, data_json FROM personas ORDER BY position').all() as Array<{
+    position: number
+    data_json: string
+  }>
+
+  if (rows.length === 0) {
+    const result = repairPersonaSelectionIdentity(settings)
+    if (result.changed) db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+    return result.changed
+  }
+
+  const personas = rows.map((row) => JSON.parse(row.data_json))
+  const projection: JsonRecord = { ...settings, personas }
+  const result = repairPersonaSelectionIdentity(projection)
+  if (!result.changed) return false
+
+  const updatePersona = db.prepare('UPDATE personas SET data_json = ? WHERE position = ?')
+  personas.forEach((persona, index) => {
+    const encoded = JSON.stringify(persona)
+    if (encoded !== rows[index]!.data_json) updatePersona.run(encoded, rows[index]!.position)
+  })
+  settings.selectedPersona = result.selectedPersona
+  settings.selectedPersonaId = result.selectedPersonaId
+  db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+  return true
+}
+
+/** Explicit migration/import/recovery-boundary Hypa V3 preset identity repair. */
+export function repairPersistedHypaV3PresetSelectionIdentity(database: unknown): boolean {
+  if (!isRecord(database)) return false
+  return repairHypaV3PresetSelectionIdentity(database).changed
+}
+
+/** Schema-migration and backup-recovery adapter for split settings/Hypa V3 preset rows. */
+export function repairPersistedHypaV3PresetSelectionIdentityInSqlite(db: DatabaseSync): boolean {
+  const settingsRow = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as
+    | { data_json: string }
+    | undefined
+  if (!settingsRow) return false
+
+  const settings = JSON.parse(settingsRow.data_json) as unknown
+  if (!isRecord(settings)) return false
+  const rows = db.prepare('SELECT position, data_json FROM hypa_v3_presets ORDER BY position').all() as Array<{
+    position: number
+    data_json: string
+  }>
+
+  if (rows.length === 0) {
+    const result = repairHypaV3PresetSelectionIdentity(settings)
+    if (result.changed) db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+    return result.changed
+  }
+
+  const hypaV3Presets = rows.map((row) => JSON.parse(row.data_json))
+  const projection: JsonRecord = { ...settings, hypaV3Presets }
+  const result = repairHypaV3PresetSelectionIdentity(projection)
+  if (!result.changed) return false
+
+  const updatePreset = db.prepare('UPDATE hypa_v3_presets SET data_json = ? WHERE position = ?')
+  hypaV3Presets.forEach((preset, index) => {
+    const encoded = JSON.stringify(preset)
+    if (encoded !== rows[index]!.data_json) updatePreset.run(encoded, rows[index]!.position)
+  })
+  settings.hypaV3PresetId = result.hypaV3PresetId
+  settings.selectedHypaV3PresetId = result.selectedHypaV3PresetId
+  db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+  return true
+}
+
+/** Schema-migration and backup-recovery repair of legacy numeric translator selections. */
+export function repairPersistedTranslatorPresetSelectionIdentityInSqlite(db: DatabaseSync): boolean {
+  const settingsRow = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as
+    | { data_json: string }
+    | undefined
+  if (!settingsRow) return false
+  const settings = JSON.parse(settingsRow.data_json) as unknown
+  if (!isRecord(settings)) return false
+
+  const rows = db.prepare('SELECT data_json FROM translator_presets ORDER BY position').all() as Array<{
+    data_json: string
+  }>
+  const presets = getCanonicalTranslatorPresets({
+    translatorPresets:
+      rows.length > 0
+        ? rows.map((row) => JSON.parse(row.data_json))
+        : Array.isArray(settings.translatorPresets)
+          ? settings.translatorPresets
+          : undefined,
+  })
+  // This migration only repairs the pointer into an existing canonical
+  // collection. It must not replace preset bodies or invent new preset IDs.
+  if (!presets) return false
+  const selection = settings.translatorPresetId
+  if (presets.some((preset) => preset.id === selection)) return false
+  const selected =
+    typeof selection === 'number' && Number.isInteger(selection) && selection >= 0 && selection < presets.length
+      ? presets[selection]!
+      : presets[0]!
+  settings.translatorPresetId = selected.id
+  settings.translatorPrompt = selected.prompt
+  settings.translatorMaxResponse = selected.maxResponse
+  db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+  return true
+}
+
+/**
+ * Model-profile credentials were historically persisted inline. Scrub those
+ * legacy fields before settings can reach a resource response or command
+ * baseline now that masking applies only to providerCredentials.
+ */
+export function repairPersistedModelProfileInlineSecrets(settings: unknown): boolean {
+  if (!isRecord(settings) || !Array.isArray(settings.modelProfiles)) return false
+
+  let changed = false
+  for (const rawProfile of settings.modelProfiles) {
+    if (!isRecord(rawProfile) || !isRecord(rawProfile.providerOptions)) continue
+    const providerOptions = rawProfile.providerOptions
+    if (Object.prototype.hasOwnProperty.call(providerOptions, 'apiKey')) {
+      delete providerOptions.apiKey
+      changed = true
+    }
+
+    if (!isRecord(providerOptions.vertex)) continue
+    if (Object.prototype.hasOwnProperty.call(providerOptions.vertex, 'clientEmail')) {
+      delete providerOptions.vertex.clientEmail
+      changed = true
+    }
+    if (Object.prototype.hasOwnProperty.call(providerOptions.vertex, 'privateKey')) {
+      delete providerOptions.vertex.privateKey
+      changed = true
+    }
+  }
+  return changed
+}
+
+function repairPersistedPresetModelProfileInlineSecrets(database: unknown): boolean {
+  if (!isRecord(database)) return false
+
+  let changed = false
+  for (const field of ['botPresets', 'modelPresets'] as const) {
+    const presets = database[field]
+    if (!Array.isArray(presets)) continue
+    for (const preset of presets) {
+      if (repairPersistedModelProfileInlineSecrets(preset)) changed = true
+    }
+  }
+  return changed
+}
+
+/** Starts its own transaction at boot, or joins the caller's restore transaction. */
+export function repairPersistedModelProfileInlineSecretsInSqlite(db: DatabaseSync): boolean {
+  const ownsTransaction = !db.isTransaction
+  if (ownsTransaction) db.exec('BEGIN IMMEDIATE')
+
+  let changed = false
+  try {
+    const settingsRow = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as
+      | { data_json: string }
+      | undefined
+    if (settingsRow) {
+      const settings = JSON.parse(settingsRow.data_json)
+      if (repairPersistedModelProfileInlineSecrets(settings)) {
+        db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+        changed = true
+      }
+    }
+
+    for (const tableName of MODEL_PROFILE_INLINE_SECRET_PRESET_TABLES) {
+      const rows = db.prepare(`SELECT position, data_json FROM ${tableName} ORDER BY position`).all() as Array<{
+        position: number
+        data_json: string
+      }>
+      const update = db.prepare(`UPDATE ${tableName} SET data_json = ? WHERE position = ?`)
+      for (const row of rows) {
+        const preset = JSON.parse(row.data_json)
+        if (!repairPersistedModelProfileInlineSecrets(preset)) continue
+        update.run(JSON.stringify(preset), row.position)
+        changed = true
+      }
+    }
+
+    if (ownsTransaction) db.exec('COMMIT')
+    return changed
+  } catch (error) {
+    if (ownsTransaction && db.isTransaction) db.exec('ROLLBACK')
+    throw error
+  }
+}
+
+/**
+ * Upgrade settings rows written before the standalone Agent collection existed.
+ *
+ * A missing `agents` key identifies the legacy shape. Once that owner exists,
+ * strict command reads deliberately reject malformed/non-canonical state rather
+ * than repairing ordinary mutations as a side effect.
+ */
+export function migrateLegacyAgentConfigurationInSqlite(db: DatabaseSync): boolean {
+  const ownsTransaction = !db.isTransaction
+  if (ownsTransaction) db.exec('BEGIN IMMEDIATE')
+
+  try {
+    const row = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string } | undefined
+    if (!row) {
+      if (ownsTransaction) db.exec('COMMIT')
+      return false
+    }
+
+    const settings = JSON.parse(row.data_json) as unknown
+    if (!isRecord(settings) || Object.prototype.hasOwnProperty.call(settings, 'agents')) {
+      if (ownsTransaction) db.exec('COMMIT')
+      return false
+    }
+
+    const normalized = normalizeAgentConfiguration(undefined, settings.agentPresets)
+    settings.agents = normalized.agents
+    settings.agentPresets = normalized.agentPresets
+    const defaultId = normalizeAgentPresetDefaultId(settings.agentPresetDefaultId, normalized.agentPresets)
+    if (defaultId) {
+      settings.agentPresetDefaultId = defaultId
+    } else {
+      delete settings.agentPresetDefaultId
+    }
+    db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+
+    if (ownsTransaction) db.exec('COMMIT')
+    return true
+  } catch (error) {
+    if (ownsTransaction && db.isTransaction) db.exec('ROLLBACK')
+    throw error
+  }
+}
+
 function loadCollectionsFromSqlite(db: DatabaseSync, database: Record<string, unknown>): Record<string, unknown> {
   const merged = { ...database }
   for (const [field, tableName] of Object.entries(COLLECTION_TABLE_MAP)) {
@@ -267,6 +561,7 @@ function loadCollectionsFromSqlite(db: DatabaseSync, database: Record<string, un
     }
     // SQLite empty → keep existing value ([] marker or absent); don't fabricate a field.
   }
+  projectSelectedPromptTemplate(merged, merged.promptPresetsId)
   const storageRows = db.prepare('SELECT key, value_json FROM plugin_custom_storage').all() as unknown as Array<{
     key: string
     value_json: string
@@ -283,8 +578,52 @@ function loadCollectionsFromSqlite(db: DatabaseSync, database: Record<string, un
   return merged
 }
 
+/**
+ * The extracted prompt-template table is only a compatibility projection. A
+ * selected modern preset owns its body, so a stale top-level row must never
+ * become the body seen by a normal repository consumer. Invalid selection
+ * state is deliberately left untouched: the shared prompt resolver can fail
+ * closed (and the legacy projection remains available to explicit recovery
+ * and import/export paths).
+ */
+function projectSelectedPromptTemplate(database: Record<string, unknown>, selectedIndex: unknown): void {
+  if (!Number.isInteger(selectedIndex) || (selectedIndex as number) < 0) return
+  const presets = Array.isArray(database.promptPresets) ? database.promptPresets : []
+  const selected = presets[selectedIndex as number]
+  if (!isRecord(selected)) return
+  const selectedId = stablePromptPresetId(selected.id)
+  if (!selectedId || !hasUniquePromptPresetId(presets, selectedId)) return
+
+  if (Object.prototype.hasOwnProperty.call(selected, 'promptTemplate')) {
+    database.promptTemplate = selected.promptTemplate
+    return
+  }
+
+  // The default scaffold intentionally retains the top-level projection as
+  // its supported missing-template fallback. Every other selected modern
+  // preset explicitly owns a disabled/null body when the field is absent.
+  if (!isDefaultPromptPreset(selected)) database.promptTemplate = null
+}
+
+function hasUniquePromptPresetId(presets: readonly unknown[], id: string): boolean {
+  let matches = 0
+  for (const candidate of presets) {
+    if (isRecord(candidate) && stablePromptPresetId(candidate.id) === id) matches += 1
+  }
+  return matches === 1
+}
+
+function stablePromptPresetId(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value : null
+}
+
+function isDefaultPromptPreset(preset: Record<string, unknown>): boolean {
+  return preset.id === 'default-prompt-preset' && preset.name === 'Default Prompt'
+}
+
 export function replaceAllCollectionsInTable(db: DatabaseSync, database: unknown): void {
   if (!isRecord(database)) return
+  repairPersistedPresetModelProfileInlineSecrets(database)
   for (const [field, tableName] of Object.entries(COLLECTION_TABLE_MAP)) {
     const arr = database[field]
     writeCollectionTableRows(db, tableName, Array.isArray(arr) ? arr : [])
@@ -316,9 +655,20 @@ export function createSettingsTable(db: DatabaseSync): void {
 
 export function loadSettingsFromSqlite(db: DatabaseSync): Record<string, unknown> | null {
   const row = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string } | undefined
+  return parseAndRepairSettingsRow(db, row)
+}
+
+function parseAndRepairSettingsRow(
+  db: DatabaseSync,
+  row: { data_json: string } | undefined,
+): Record<string, unknown> | null {
   if (!row) return null
   const parsed = JSON.parse(row.data_json)
-  return isRecord(parsed) ? parsed : null
+  if (!isRecord(parsed)) return null
+  if (repairPersistedModelProfileInlineSecrets(parsed)) {
+    db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(parsed))
+  }
+  return parsed
 }
 
 export function loadSettingsWithTranslatorPresetsFromSqlite(db: DatabaseSync): Record<string, unknown> | null {
@@ -356,6 +706,20 @@ export function replaceAllSettingsInTable(db: DatabaseSync, database: unknown): 
   recordTableWrite('settings')
   db.exec('DELETE FROM settings')
   db.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(JSON.stringify(settings))
+}
+
+/** Schema-migration adapter for the singleton settings owner. */
+export function migrateLegacyFlatModelConfigurationInSqlite(db: DatabaseSync): boolean {
+  const settingsTable = db
+    .prepare("SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = 'settings'")
+    .get()
+  if (!settingsTable) return false
+  const row = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string } | undefined
+  if (!row) return false
+  const settings = JSON.parse(row.data_json) as unknown
+  if (!isRecord(settings) || !migrateLegacyFlatModelConfiguration(settings)) return false
+  writeSettingsOnly(db, settings)
+  return true
 }
 
 export function stripSettings(next: Persisted): Persisted {
@@ -415,6 +779,26 @@ interface ChatRow {
   data_json: string
 }
 
+interface CharacterSummaryProjectionRow {
+  id: string
+  name: unknown
+  display_name: unknown
+  image: unknown
+  creator_notes: unknown
+  trash_time: unknown
+  creation_date: unknown
+  modification_date: unknown
+  last_interaction: unknown
+  chat_page: unknown
+}
+
+interface CharacterSummaryChatProjectionRow {
+  id: string
+  character_id: string
+  name: unknown
+  pinned: unknown
+}
+
 export interface CharacterSelectionRows {
   characterId: string
   position: number
@@ -427,6 +811,9 @@ export interface CharacterMutationTarget {
   /** Preserve the stored character payload without stamping its table id into
    * the JSON row. Used when every non-target field must remain exact. */
   exactCharacterRow?: boolean
+  /** Optional collection dependencies needed to validate the character-row
+   * mutation without falling back to a whole-corpus load. */
+  collectionFields?: readonly CollectionFieldKey[]
 }
 
 export interface CharacterSelectionProjection {
@@ -462,9 +849,17 @@ function loadCharactersFromSqlite(db: DatabaseSync, options: { exactChatRows?: b
 
 export function replaceAllCharactersInTable(db: DatabaseSync, database: unknown): void {
   const characters = isRecord(database) && Array.isArray(database.characters) ? database.characters : []
+  const greetingTranslationSnapshot = listGreetingTranslationsForRewrite(db)
+  const greetingTranslations = greetingTranslationSnapshot.rows
+  if (greetingTranslationSnapshot.droppedKeys.length > 0) {
+    console.warn('Dropped invalid greeting translation cache rows during broad character rewrite', {
+      droppedKeys: greetingTranslationSnapshot.droppedKeys,
+    })
+  }
 
   recordTableWrite('characters')
   recordTableWrite('chats')
+  recordTableWrite('greeting_translations')
   db.exec('DELETE FROM chats')
   db.exec('DELETE FROM characters')
 
@@ -481,6 +876,7 @@ export function replaceAllCharactersInTable(db: DatabaseSync, database: unknown)
 
     const chats = Array.isArray(char.chats) ? char.chats : []
     const { chats: _chats, ...charWithoutChats } = char
+    delete charWithoutChats[GREETING_TRANSLATIONS_PORTABLE_FIELD]
     insertChar.run(chaId, i, JSON.stringify(charWithoutChats))
 
     for (let j = 0; j < chats.length; j++) {
@@ -493,6 +889,16 @@ export function replaceAllCharactersInTable(db: DatabaseSync, database: unknown)
       insertChat.run(chatId, chaId, j, JSON.stringify(chatClean))
     }
   }
+
+  const characterIds = new Set(
+    characters.flatMap((character) =>
+      isRecord(character) && typeof character.chaId === 'string' ? [character.chaId] : [],
+    ),
+  )
+  replaceGreetingTranslationsForImport(
+    db,
+    greetingTranslations.filter((row) => characterIds.has(row.characterId)),
+  )
 }
 
 export function loadCharacterSelectionRows(db: DatabaseSync, characterId: string): CharacterSelectionRows {
@@ -570,12 +976,20 @@ export function writeSettingsOnly(db: DatabaseSync, settings: JsonRecord): void 
  *  match the storage contract (chats live in the `chats` table). */
 export function writeSingleCharacterRow(db: DatabaseSync, characterId: string, character: JsonRecord): void {
   const { chats: _chats, ...charWithoutChats } = character
+  delete charWithoutChats[GREETING_TRANSLATIONS_PORTABLE_FIELD]
   recordTableWrite('characters')
   db.prepare('UPDATE characters SET data_json = ? WHERE id = ?').run(JSON.stringify(charWithoutChats), characterId)
 }
 
 export function characterRowExists(db: DatabaseSync, characterId: string): boolean {
   const row = db.prepare('SELECT 1 AS found FROM characters WHERE id = ? LIMIT 1').get(characterId) as
+    | { found: number }
+    | undefined
+  return !!row
+}
+
+export function chatRowExists(db: DatabaseSync, chatId: string): boolean {
+  const row = db.prepare('SELECT 1 AS found FROM chats WHERE id = ? LIMIT 1').get(chatId) as
     | { found: number }
     | undefined
   return !!row
@@ -588,6 +1002,41 @@ export function nextCharacterRowPosition(db: DatabaseSync): number {
   return row.position
 }
 
+/** Identity/order projection for appending a character. Never materialize the
+ * unrelated character or chat bodies, collections, messages, or asset catalog.
+ * The caller validates the settings order and writes inside its transaction. */
+export function loadCharacterAppendState(db: DatabaseSync): {
+  settings: JsonRecord
+  characters: Array<{ chaId: string; trashTime?: number }>
+} {
+  const settings = loadSettingsFromSqlite(db)
+  if (settings === null) {
+    throw new ValidationError('database must be an object before character commands can run')
+  }
+  const rows = db
+    .prepare(
+      `SELECT id, json_extract(data_json, '$.chaId') AS stored_id,
+        json_extract(data_json, '$.trashTime') AS trash_time
+       FROM characters ORDER BY position`,
+    )
+    .all()
+  const characters = rows.map((row) => {
+    if (typeof row.id !== 'string' || row.stored_id !== row.id) {
+      throw new ValidationError('character.chaId must match its stored character id')
+    }
+    if (row.trash_time !== null && typeof row.trash_time !== 'number') {
+      throw new ValidationError('character.trashTime must be a number')
+    }
+    return { chaId: row.id, ...(typeof row.trash_time === 'number' ? { trashTime: row.trash_time } : {}) }
+  })
+  // Legacy embedded characters require the explicit import/recovery boundary;
+  // an append must never hide them behind the first normalized SQLite row.
+  if (characters.length === 0 && Array.isArray(settings.characters) && settings.characters.length > 0) {
+    throw new ValidationError('embedded characters must be imported before creating a character')
+  }
+  return { settings, characters }
+}
+
 /** INSERT one brand-new character row at the supplied position. `chats` is
  *  stripped to match the storage contract (chats live in the `chats` table). */
 export function insertCharacterRow(db: DatabaseSync, position: number, character: JsonRecord): void {
@@ -596,6 +1045,7 @@ export function insertCharacterRow(db: DatabaseSync, position: number, character
     throw new ValidationError('character.chaId must be a non-empty string')
   }
   const { chats: _chats, ...charWithoutChats } = character
+  delete charWithoutChats[GREETING_TRANSLATIONS_PORTABLE_FIELD]
   recordTableWrite('characters')
   db.prepare('INSERT INTO characters (id, position, data_json) VALUES (?, ?, ?)').run(
     characterId,
@@ -615,6 +1065,21 @@ export function writeSingleChatRow(db: DatabaseSync, chatId: string, chat: JsonR
  * split for messages and hypa data. */
 export function writeSingleChatRowExact(db: DatabaseSync, chatId: string, chat: JsonRecord): void {
   writeSingleChatRowData(db, chatId, chat, false)
+}
+
+export function clearChatTranslatorPresetBindings(db: DatabaseSync, presetId: string): string[] {
+  const rows = db
+    .prepare("SELECT id, data_json FROM chats WHERE json_extract(data_json, '$.translatorPresetId') = ? ORDER BY id")
+    .all(presetId) as unknown as Array<Pick<ChatRow, 'id' | 'data_json'>>
+  const clearedChatIds: string[] = []
+  for (const row of rows) {
+    const chat = JSON.parse(row.data_json)
+    if (!isRecord(chat) || chat.translatorPresetId !== presetId) continue
+    delete chat.translatorPresetId
+    writeSingleChatRowExact(db, row.id, chat)
+    clearedChatIds.push(row.id)
+  }
+  return clearedChatIds
 }
 
 function writeSingleChatRowData(
@@ -656,6 +1121,7 @@ export function deleteCharacterRow(db: DatabaseSync, characterId: string): void 
   // The FK cascade physically writes the chats table; record it so the
   // command-metric `writtenTables` budget stays truthful.
   recordTableWrite('chats')
+  recordTableWrite('greeting_translations')
   const row = db.prepare('SELECT position FROM characters WHERE id = ?').get(characterId) as
     | { position: number }
     | undefined
@@ -1045,7 +1511,7 @@ export interface ChatHydrationPayload {
   chatId: string
   message: unknown[]
   hypaV3Data: unknown
-  /** Present on single-chat hydration; omitted from bulk hydration. */
+  /** Persisted reroll candidates for this chat's current turn. */
   alternates?: unknown[]
 }
 
@@ -1201,12 +1667,17 @@ function importLegacyDatabaseSnapshot(db: DatabaseSync, filePath: string): void 
   const parsed = readLegacyDatabaseSnapshot(filePath)
   const database = parsed.database as JsonRecord
 
+  normalizeDatabaseDefaults(database)
+  repairLegacyCharacterCompatibilityShape(database)
+  migrateLegacyFlatModelConfiguration(database)
   repairPersistedGlobalLorebookIds(database)
+  repairPersistedPersonaSelectionIdentity(database)
+  repairPersistedHypaV3PresetSelectionIdentity(database)
+  repairChatIds(database)
   replaceAllSettingsInTable(db, database)
   replaceAllCharactersInTable(db, database)
   replaceAllCollectionsInTable(db, database)
 
-  repairChatIds(database)
   const chats: { chatId: string; messages: unknown[] }[] = []
   const hypa: { chatId: string; hypaV3Data: unknown }[] = []
   eachChat(database, (chat) => {
@@ -1219,6 +1690,25 @@ function importLegacyDatabaseSnapshot(db: DatabaseSync, filePath: string): void 
   if (hypa.length > 0) replaceAllChatHypaV3(db, hypa)
 
   if (parsed.assets.length > 0) insertAssetMetadataBatch(db, parsed.assets)
+}
+
+function repairLegacyCharacterCompatibilityShape(database: JsonRecord): void {
+  const characters = Array.isArray(database.characters) ? database.characters : []
+  for (const candidate of characters) {
+    if (!isRecord(candidate)) continue
+    if (!Array.isArray(candidate.chatFolders)) candidate.chatFolders = []
+    if (!Array.isArray(candidate.chats)) candidate.chats = []
+    const chats = candidate.chats as unknown[]
+    const selected = Number.isInteger(candidate.chatPage) ? (candidate.chatPage as number) : 0
+    candidate.chatPage = chats.length === 0 ? 0 : Math.min(Math.max(selected, 0), chats.length - 1)
+    for (const [index, chat] of chats.entries()) {
+      if (!isRecord(chat)) continue
+      if (typeof chat.name !== 'string') chat.name = `New Chat ${index + 1}`
+      if (typeof chat.note !== 'string') chat.note = ''
+      if (!Array.isArray(chat.localLore)) chat.localLore = []
+      if (!Array.isArray(chat.message)) chat.message = []
+    }
+  }
 }
 
 function nextLegacyDatabaseQuarantinePath(filePath: string): string {
@@ -1274,7 +1764,21 @@ function loadPersistedDatabase(
     rec.characters = sqliteChars
   }
   database = loadCollectionsFromSqlite(db, rec)
+  projectSelectedPersonaCompatibilityIndex(database as Record<string, unknown>)
+  projectSelectedHypaV3PresetCompatibilityIndex(database as Record<string, unknown>)
   return database
+}
+
+/** Normal reads derive the legacy numeric pointer without repairing or persisting rows. */
+function projectSelectedPersonaCompatibilityIndex(database: Record<string, unknown>): void {
+  if (!Array.isArray(database.personas)) return
+  database.selectedPersona = selectedPersonaIndexFromStableId(database)
+}
+
+/** Normal reads derive the legacy numeric pointer without repairing or persisting rows. */
+function projectSelectedHypaV3PresetCompatibilityIndex(database: Record<string, unknown>): void {
+  if (!Array.isArray(database.hypaV3Presets)) return
+  database.hypaV3PresetId = hypaV3PresetIndexFromStableId(database)
 }
 
 export function loadPersisted(db: DatabaseSync, dataDir: string): Persisted {
@@ -1345,7 +1849,11 @@ export function loadPersistedForCharacterMutation(
   dataDir: string,
   target: CharacterMutationTarget,
 ): Persisted {
-  const settings = loadSettingsFromSqlite(db)
+  const dependencyLoad =
+    target.collectionFields && target.collectionFields.length > 0
+      ? loadDatabaseFieldsFromSqlite(db, target.collectionFields)
+      : undefined
+  const settings = dependencyLoad?.settings ?? loadSettingsFromSqlite(db)
   if (settings === null) return loadPersisted(db, dataDir)
 
   const charRow = db
@@ -1357,9 +1865,11 @@ export function loadPersistedForCharacterMutation(
   if (!isRecord(character)) return loadPersisted(db, dataDir)
   if (!target.exactCharacterRow) character.chaId = target.characterId
 
+  const fields = dependencyLoad?.fields ?? {}
+
   return {
     _version: PERSISTED_VERSION,
-    database: { ...settings, characters: [character] },
+    database: { ...settings, ...fields, characters: [character] },
     assets: [],
   }
 }
@@ -1387,6 +1897,91 @@ export function loadCharacterRowsForRead(db: DatabaseSync, _dataDir: string): Js
   })
   if (settings?.enableLorebookStubs === true) stripCharacterGlobalLoreForRead(result)
   return result
+}
+
+/**
+ * Versioned list projection for startup and character pickers. SQLite extracts
+ * only the protocol-approved scalars; no raw character or chat JSON payload is
+ * returned to JavaScript.
+ */
+export function loadCharacterSummariesForRead(db: DatabaseSync): ServerCharacterSummary[] {
+  const characterRows = db
+    .prepare(
+      `
+      SELECT
+        id,
+        json_extract(data_json, '$.name') AS name,
+        json_extract(data_json, '$.displayName') AS display_name,
+        json_extract(data_json, '$.image') AS image,
+        json_extract(data_json, '$.creatorNotes') AS creator_notes,
+        json_extract(data_json, '$.trashTime') AS trash_time,
+        json_extract(data_json, '$.creation_date') AS creation_date,
+        json_extract(data_json, '$.modification_date') AS modification_date,
+        json_extract(data_json, '$.lastInteraction') AS last_interaction,
+        json_extract(data_json, '$.chatPage') AS chat_page
+      FROM characters
+      ORDER BY position
+    `,
+    )
+    .all() as unknown as CharacterSummaryProjectionRow[]
+
+  const chatRows = db
+    .prepare(
+      `
+      SELECT
+        id,
+        character_id,
+        json_extract(data_json, '$.name') AS name,
+        CASE WHEN json_extract(data_json, '$.pinned') = 1 THEN 1 ELSE 0 END AS pinned
+      FROM chats
+      ORDER BY character_id, position
+    `,
+    )
+    .all() as unknown as CharacterSummaryChatProjectionRow[]
+
+  const chatsByCharacterId = new Map<string, CharacterSummaryChatProjectionRow[]>()
+  for (const chat of chatRows) {
+    const chats = chatsByCharacterId.get(chat.character_id) ?? []
+    chats.push(chat)
+    chatsByCharacterId.set(chat.character_id, chats)
+  }
+
+  return characterRows.map((row) => {
+    const chats = chatsByCharacterId.get(row.id) ?? []
+    const chatIds = chats.map((chat) => chat.id)
+    const chatPage = integerOrNull(row.chat_page)
+    return {
+      [SERVER_CHARACTER_SHELL_MARKER]: true,
+      chaId: row.id,
+      type: 'character',
+      name: stringOrEmpty(row.name),
+      displayName: stringOrEmpty(row.display_name),
+      image: stringOrEmpty(row.image),
+      creatorNotes: stringOrEmpty(row.creator_notes),
+      trashTime: finiteNumberOrNull(row.trash_time),
+      creation_date: finiteNumberOrNull(row.creation_date),
+      modification_date: finiteNumberOrNull(row.modification_date),
+      lastInteraction: finiteNumberOrNull(row.last_interaction),
+      chatCount: chats.length,
+      activeChatId: chatPage !== null && chatPage >= 0 ? (chats[chatPage]?.id ?? null) : null,
+      chatIds,
+      pinnedChats: chats
+        .filter((chat) => chat.pinned === 1)
+        .map((chat) => ({ id: chat.id, name: stringOrEmpty(chat.name) })),
+    }
+  })
+}
+
+function stringOrEmpty(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function finiteNumberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function integerOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) ? value : null
 }
 
 export function loadPresetHydration(
@@ -1456,6 +2051,20 @@ function loadDatabaseFieldsFromSqlite(
     if (Object.prototype.hasOwnProperty.call(settings, key)) {
       fields[key] = settings[key]
     }
+  }
+
+  if (fieldKeys.includes('promptPresets') && fieldKeys.includes('promptTemplate')) {
+    projectSelectedPromptTemplate(fields, settings.promptPresetsId)
+  }
+  if (fieldKeys.includes('personas')) {
+    const projection = { ...settings, ...fields }
+    projectSelectedPersonaCompatibilityIndex(projection)
+    settings.selectedPersona = projection.selectedPersona
+  }
+  if (fieldKeys.includes('hypaV3Presets')) {
+    const projection = { ...settings, ...fields }
+    projectSelectedHypaV3PresetCompatibilityIndex(projection)
+    settings.hypaV3PresetId = projection.hypaV3PresetId
   }
 
   return { fields, settings }
@@ -1542,8 +2151,8 @@ function selectDatabaseFields(
 
 // `loadPersistedWithMessages` is the message-aware read boundary used by
 // full-corpus readers that need every chat hydrated (migration/backfill,
-// export/save, and explicit broad fallbacks). Prompt assembly uses the
-// scoped `loadPersistedForAssembly` path below. Messages live in the SQLite
+// export/save, and explicit broad fallbacks). Prompt assembly uses the selected
+// `loadPersistedForGenerationAssembly` path below. Messages live in the SQLite
 // `messages` table; `loadPersisted` returns message-free chats.
 
 type JsonRecord = Record<string, unknown>
@@ -1603,6 +2212,7 @@ function hasEmbeddedChatPayloadsOrBadIds(database: unknown): boolean {
 export function loadPersistedWithMessages(db: DatabaseSync, dataDir: string): Persisted {
   const persisted = loadPersisted(db, dataDir)
   const grouped = getAllChatMessagesGrouped(db)
+  const alternatesGrouped = getAllChatAlternateMessagesGrouped(db)
   const hypaGrouped = getAllChatHypaV3Grouped(db)
   eachChat(persisted.database, (chat) => {
     const chatId = chat.id
@@ -1623,6 +2233,10 @@ export function loadPersistedWithMessages(db: DatabaseSync, dataDir: string): Pe
     // table has a row; otherwise keep any embedded value.
     if (hypaGrouped.has(chatId)) {
       chat.hypaV3Data = hypaGrouped.get(chatId)
+    }
+    const alternates = alternatesGrouped.get(chatId)
+    if (alternates && alternates.length > 0) {
+      chat.alternates = alternates
     }
   })
   return persisted
@@ -1698,14 +2312,14 @@ export function loadPersistedForChatMutation(db: DatabaseSync, dataDir: string, 
 }
 
 /**
- * `loadPersisted` + join ONLY the target chat's messages/hypaV3.
- * Prompt assembly reads exactly one chat's transcript, so it must not pay the
- * whole-table `getAllChatMessagesGrouped` / `getAllChatHypaV3Grouped` parse.
+ * Legacy broad display-source fallback: `loadPersisted` plus ONLY the target
+ * chat's messages/hypaV3. Ordinary generation uses selected configuration and
+ * owners through `loadPersistedForGenerationAssembly` instead.
  * Every non-target chat gets `message = []` (downstream `eachChat`-style
  * iteration still sees an array); the target chat keeps
  * `loadPersistedWithMessages`'s exact semantics, including the embedded-array
- * fallback for a chat that is not extracted. The broad loader stays for the
- * genuine full-corpus consumers (assetGc / export / save / boot backfill).
+ * fallback for a chat that is not extracted. Display-source reads retain this
+ * path for pre-extraction or malformed storage.
  */
 export function loadPersistedForAssembly(db: DatabaseSync, dataDir: string, chatId: string): Persisted {
   const persisted = loadPersisted(db, dataDir)
@@ -1730,6 +2344,505 @@ export function loadPersistedForAssembly(db: DatabaseSync, dataDir: string, chat
   return persisted
 }
 
+export interface GenerationLoadTarget {
+  characterId: string
+  chatId: string
+}
+
+interface GenerationReadScope {
+  generationScope: 'selected' | 'legacy'
+  /** Only pre-extraction embedded characters need the broad compatibility read. */
+  generationLegacyReason?: 'embedded-characters'
+  /** Failure detail for the route's existing missing-entity errors. */
+  missingTarget?: 'database' | 'character' | 'chat'
+}
+
+export interface GenerationPreflightLoad extends GenerationReadScope {
+  preflightInputs: { database: unknown; currentChar: unknown; currentChat: unknown } | null
+}
+
+export interface GenerationPersisted extends Persisted, GenerationReadScope {
+  /** Captured referenced names, including explicit misses; never fake sibling characters. */
+  speakerNames?: Readonly<Record<string, string | undefined>>
+}
+
+type GenerationCollectionTable = 'model_presets' | 'prompt_presets' | 'personas' | 'modules' | 'hypa_v3_presets'
+
+// Cache fixed query programs, never configuration or query results. SQLite
+// keeps the last parameter bindings on a prepared statement, so large dynamic
+// selectors bypass this cache instead of retaining an unbounded request value.
+const GENERATION_STATEMENT_LIMIT = 16
+const GENERATION_STATEMENT_BINDING_BYTES = 4096
+const generationStatements = new WeakMap<DatabaseSync, Map<string, StatementSync>>()
+
+function prepareGenerationRead(
+  db: DatabaseSync,
+  sql: string,
+  parameters: readonly SQLInputValue[] = [],
+): StatementSync {
+  const parameterBytes = parameters.reduce<number>(
+    (size, value) =>
+      size + (typeof value === 'string' ? Buffer.byteLength(value) : ArrayBuffer.isView(value) ? value.byteLength : 8),
+    0,
+  )
+  if (parameterBytes > GENERATION_STATEMENT_BINDING_BYTES) return db.prepare(sql)
+  let statements = generationStatements.get(db)
+  if (!statements) generationStatements.set(db, (statements = new Map()))
+  const cached = statements.get(sql)
+  if (cached) return cached
+  const statement = db.prepare(sql)
+  if (statements.size < GENERATION_STATEMENT_LIMIT) statements.set(sql, statement)
+  return statement
+}
+
+interface GenerationTargetRow {
+  character_json: string
+  chat_json: string
+  model_presets_present: number
+  prompt_presets_present: number
+  personas_present: number
+  modules_present: number
+  hypa_v3_presets_present: number
+}
+
+interface GenerationSelectedRows {
+  database: JsonRecord
+  currentChar: JsonRecord
+  currentChat: JsonRecord
+  speakerNames?: Readonly<Record<string, string>>
+}
+
+interface GenerationSelectedLoad extends GenerationReadScope {
+  rows: GenerationSelectedRows | null
+  missingTarget?: GenerationPreflightLoad['missingTarget']
+}
+
+/**
+ * Readiness requires selected configuration and owner metadata, not transcripts,
+ * Hypa chat bodies, or character descriptions. Keep the raw records unknown at
+ * the public boundary so the prompt-owned decoder must validate them.
+ */
+export function loadPersistedForGenerationPreflight(
+  db: DatabaseSync,
+  dataDir: string,
+  target: GenerationLoadTarget,
+): GenerationPreflightLoad {
+  const loaded = loadGenerationSelectedRows(db, dataDir, target, false)
+  return {
+    generationScope: loaded.generationScope,
+    ...(loaded.generationLegacyReason ? { generationLegacyReason: loaded.generationLegacyReason } : {}),
+    preflightInputs: loaded.rows,
+    ...(loaded.missingTarget ? { missingTarget: loaded.missingTarget } : {}),
+  }
+}
+
+/**
+ * Ordinary generation loads one character/chat and selected collection owners.
+ * Asset bytes stay behind the existing request-scoped stored-asset resolver.
+ * The historical assembly loader remains available for explicit legacy callers.
+ */
+export function loadPersistedForGenerationAssembly(
+  db: DatabaseSync,
+  dataDir: string,
+  target: GenerationLoadTarget,
+): GenerationPersisted {
+  const loaded = loadGenerationSelectedRows(db, dataDir, target, true)
+  if (!loaded.rows)
+    return {
+      ...emptyPersisted(),
+      generationScope: loaded.generationScope,
+      ...(loaded.generationLegacyReason ? { generationLegacyReason: loaded.generationLegacyReason } : {}),
+      ...(loaded.missingTarget ? { missingTarget: loaded.missingTarget } : {}),
+    }
+  const { database, currentChar, currentChat } = loaded.rows
+  hydrateGenerationTargetChat(db, currentChat, target.chatId)
+  const speakerNames = captureGenerationSpeakerNames(db, currentChar, currentChat, loaded.rows.speakerNames)
+  currentChar.chatPage = 0
+  currentChar.chats = [currentChat]
+  database.currentChar = 0
+  database.characters = [currentChar]
+  return {
+    _version: PERSISTED_VERSION,
+    database,
+    assets: [],
+    generationScope: loaded.generationScope,
+    ...(loaded.generationLegacyReason ? { generationLegacyReason: loaded.generationLegacyReason } : {}),
+    ...(speakerNames ? { speakerNames } : {}),
+  }
+}
+
+function captureGenerationSpeakerNames(
+  db: DatabaseSync,
+  currentChar: JsonRecord,
+  currentChat: JsonRecord,
+  embeddedNames?: Readonly<Record<string, string>>,
+): Readonly<Record<string, string | undefined>> | undefined {
+  // Scripts can change a stored message's role while preserving its saying ID.
+  // Capture all existing references before any awaited script/provider work.
+  const ids = new Set(
+    generationRecords(currentChat.message).flatMap((message) =>
+      typeof message.saying === 'string' && message.saying !== '' ? [message.saying] : [],
+    ),
+  )
+  if (ids.size === 0) return undefined
+  const names: Record<string, string | undefined> = {}
+  const pending: string[] = []
+  for (const id of ids) {
+    const name =
+      id === currentChar.chaId
+        ? currentChar.name
+        : embeddedNames && Object.prototype.hasOwnProperty.call(embeddedNames, id)
+          ? embeddedNames[id]
+          : undefined
+    Object.defineProperty(names, id, {
+      value: typeof name === 'string' ? name : undefined,
+      enumerable: true,
+      writable: true,
+    })
+    // A legacy embedded snapshot is complete, including a missing ID. Do not
+    // replace that absence with a later SQL lookup against another snapshot.
+    if (id !== currentChar.chaId && !embeddedNames) pending.push(id)
+  }
+  if (pending.length > 0) {
+    const rows = db
+      .prepare(
+        `SELECT id, json_extract(data_json, '$.name') AS name FROM characters
+      WHERE id IN (SELECT value FROM json_each(?))`,
+      )
+      .all(JSON.stringify(pending))
+    for (const row of rows) {
+      if (typeof row.id === 'string' && typeof row.name === 'string') names[row.id] = row.name
+    }
+  }
+  return names
+}
+
+function loadGenerationSelectedRows(
+  db: DatabaseSync,
+  dataDir: string,
+  target: GenerationLoadTarget,
+  includeHistory: boolean,
+): GenerationSelectedLoad {
+  // Preserve the existing inline-secret repair boundary and its credential
+  // semantics. This one settings document remains configuration-scoped work.
+  const settings = parseAndRepairSettingsRow(
+    db,
+    prepareGenerationRead(db, 'SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string } | undefined,
+  )
+  if (!settings) return { generationScope: 'selected', rows: null, missingTarget: 'database' }
+  const characterProjection = includeHistory
+    ? 'character.data_json'
+    : `json_object('chaId', json_extract(character.data_json, '$.chaId'),
+        'modules', json(character.data_json -> '$.modules'),
+        'supaMemory', json(character.data_json -> '$.supaMemory'))`
+  const chatProjection = includeHistory
+    ? 'chat.data_json'
+    : `json_object('id', json_extract(chat.data_json, '$.id'),
+        'generationSettings', json(chat.data_json -> '$.generationSettings'),
+        'modules', json(chat.data_json -> '$.modules'),
+        'hypaContextTruncationAcknowledged', json(chat.data_json -> '$.hypaContextTruncationAcknowledged'))`
+  // Presence checks share the target result row. Empty extracted tables retain
+  // their embedded compatibility value; an ID miss in a nonempty table cannot.
+  const row = prepareGenerationRead(
+    db,
+    `SELECT ${characterProjection} AS character_json, ${chatProjection} AS chat_json,
+      EXISTS(SELECT 1 FROM model_presets) AS model_presets_present,
+      EXISTS(SELECT 1 FROM prompt_presets) AS prompt_presets_present,
+      EXISTS(SELECT 1 FROM personas) AS personas_present,
+      EXISTS(SELECT 1 FROM modules) AS modules_present,
+      EXISTS(SELECT 1 FROM hypa_v3_presets) AS hypa_v3_presets_present
+    FROM chats AS chat JOIN characters AS character ON character.id = chat.character_id
+    WHERE chat.id = ? AND character.id = ?`,
+    [target.chatId, target.characterId],
+  ).get(target.chatId, target.characterId) as unknown as GenerationTargetRow | undefined
+  if (!row) {
+    const embeddedCharacters = Array.isArray(settings.characters) ? settings.characters : []
+    if (embeddedCharacters.length > 0 && !db.prepare('SELECT 1 AS present FROM characters LIMIT 1').get()) {
+      return loadLegacyGenerationSelectedRows(db, dataDir, target, includeHistory)
+    }
+    const characterExists = db
+      .prepare("SELECT 1 AS present FROM characters WHERE id = ? AND json_extract(data_json, '$.chaId') = ?")
+      .get(target.characterId, target.characterId)
+    return { generationScope: 'selected', rows: null, missingTarget: characterExists ? 'chat' : 'character' }
+  }
+  const currentChar = JSON.parse(row.character_json) as unknown
+  const currentChat = parseStoredChatRow(row.chat_json)
+  if (!isRecord(currentChar) || currentChar.chaId !== target.characterId)
+    return { generationScope: 'selected', rows: null, missingTarget: 'character' }
+  if (!isRecord(currentChat) || currentChat.id !== target.chatId)
+    return { generationScope: 'selected', rows: null, missingTarget: 'chat' }
+  if (!includeHistory) {
+    removeNullGenerationMetadata(currentChar)
+    removeNullGenerationMetadata(currentChat)
+  }
+  const database = selectGenerationConfiguration(db, settings, row, currentChar, currentChat, includeHistory)
+  return { generationScope: 'selected', rows: { database, currentChar, currentChat } }
+}
+
+function removeNullGenerationMetadata(record: JsonRecord): void {
+  for (const key of Object.keys(record)) if (record[key] === null) delete record[key]
+}
+
+function selectGenerationConfiguration(
+  db: DatabaseSync,
+  settings: JsonRecord,
+  presence: GenerationTargetRow,
+  currentChar: JsonRecord,
+  currentChat: JsonRecord,
+  includeHistory: boolean,
+): JsonRecord {
+  const chatSettings = normalizeStoredChatGenerationSettings(currentChat.generationSettings)
+  const read = (table: GenerationCollectionTable, field: string, id: unknown, limit = 1) =>
+    readGenerationCollectionSelection(db, table, settings[field], presence[`${table}_present`], id, limit)
+  const modelPresets = read('model_presets', 'modelPresets', chatSettings?.modelPresetId)
+  const promptPresets = read('prompt_presets', 'promptPresets', chatSettings?.promptPresetId, 2)
+  const personas = read('personas', 'personas', chatSettings?.personaId)
+  const agentPresetId = resolveEffectiveAgentPresetId(
+    {
+      agentPresetDefaultId:
+        typeof settings.agentPresetDefaultId === 'string' ? settings.agentPresetDefaultId : undefined,
+    },
+    chatSettings,
+  )
+  const agentPresets = agentPresetId
+    ? generationRecords(settings.agentPresets)
+        .filter((preset) => preset.id === agentPresetId)
+        .slice(0, 1)
+    : []
+  const agentIds = new Set(generationRecords(agentPresets[0]?.agentUses).map((use) => use.agentId))
+  const agents = generationRecords(settings.agents).filter((agent) => agentIds.has(agent.id))
+  const promptPreset = promptPresets.length === 1 ? promptPresets[0] : undefined
+  const identifiers = [
+    ...new Set([
+      ...generationStringArray(settings.enabledModules),
+      ...generationStringArray(currentChar.modules),
+      ...generationStringArray(currentChat.modules),
+      ...generationStringArray(personas[0]?.modules),
+      ...parseModuleIntegration(promptPreset?.moduleIntergration),
+      ...parseModuleIntegration(resolveAgentPresetModuleIntegration(agentPresets, agentPresetId)),
+    ]),
+  ]
+  const modules = readGenerationModules(db, settings.modules, presence.modules_present, identifiers, includeHistory)
+  const database = { ...settings }
+  for (const field of COLLECTION_FIELDS) delete database[field]
+  delete database.characters
+  delete database.pluginCustomStorage
+  Object.assign(database, { modelPresets, promptPresets, personas, modules, agents, agentPresets })
+  database.modelPresetsId = modelPresets.length ? 0 : -1
+  database.promptPresetsId = promptPresets.length ? 0 : -1
+  if (
+    promptPreset &&
+    isDefaultPromptPreset(promptPreset) &&
+    !Object.prototype.hasOwnProperty.call(promptPreset, 'promptTemplate')
+  ) {
+    const rootTemplate = loadCollectionFieldFromSqlite(db, 'prompt_templates')
+    if (rootTemplate !== null) database.promptTemplate = rootTemplate
+    else if (Object.prototype.hasOwnProperty.call(settings, 'promptTemplate'))
+      database.promptTemplate = settings.promptTemplate
+  }
+  projectSelectedPromptTemplate(database, database.promptPresetsId)
+  database.selectedPersona = selectedPersonaIndexFromStableId(database)
+  if (includeHistory) {
+    database.hypaV3Presets = read('hypa_v3_presets', 'hypaV3Presets', settings.selectedHypaV3PresetId, 2)
+    projectSelectedHypaV3PresetCompatibilityIndex(database)
+  }
+  return database
+}
+
+function readGenerationCollectionSelection(
+  db: DatabaseSync,
+  table: GenerationCollectionTable,
+  embedded: unknown,
+  tablePresent: number,
+  id: unknown,
+  limit: number,
+): JsonRecord[] {
+  if (typeof id !== 'string' || id.trim() === '') return []
+  if (!tablePresent)
+    return generationRecords(embedded)
+      .filter((record) => record.id === id)
+      .slice(0, limit)
+  const rows = prepareGenerationRead(
+    db,
+    `SELECT data_json FROM ${table}
+    WHERE json_extract(data_json, '$.id') = ? ORDER BY position LIMIT ?`,
+    [id, limit],
+  ).all(id, limit)
+  return rows.flatMap((row) => {
+    const parsed: unknown = typeof row.data_json === 'string' ? JSON.parse(row.data_json) : undefined
+    return isRecord(parsed) && parsed.id === id ? [parsed] : []
+  })
+}
+
+function readGenerationModules(
+  db: DatabaseSync,
+  embedded: unknown,
+  tablePresent: number,
+  identifiers: readonly string[],
+  includeBodies: boolean,
+): JsonRecord[] {
+  if (identifiers.length === 0) return []
+  let records: JsonRecord[]
+  if (!tablePresent) {
+    const wanted = new Set(identifiers)
+    records = generationRecords(embedded).filter(
+      (module) =>
+        (typeof module.id === 'string' && wanted.has(module.id)) ||
+        (typeof module.namespace === 'string' && wanted.has(module.namespace)),
+    )
+  } else {
+    const projection = includeBodies
+      ? 'data_json'
+      : `json_object('id', json_extract(data_json, '$.id'),
+      'namespace', json_extract(data_json, '$.namespace'),
+      'customModuleToggle', json_extract(data_json, '$.customModuleToggle'))`
+    const selection = JSON.stringify(identifiers)
+    const rows = prepareGenerationRead(
+      db,
+      `SELECT ${projection} AS data_json FROM modules
+      WHERE json_extract(data_json, '$.id') IN (SELECT value FROM json_each(?))
+        OR json_extract(data_json, '$.namespace') IN (SELECT value FROM json_each(?))
+      ORDER BY position`,
+      [selection, selection],
+    ).all(selection, selection)
+    records = rows.flatMap((row) => {
+      const parsed: unknown = typeof row.data_json === 'string' ? JSON.parse(row.data_json) : undefined
+      return isRecord(parsed) ? [parsed] : []
+    })
+  }
+  // The shared activation resolver deduplicates only after a matching row and
+  // preserves collection order. Keep matching duplicate rows here so it remains
+  // the single owner of that policy.
+  return includeBodies
+    ? records
+    : records.map((module) => {
+        const metadata = { id: module.id, namespace: module.namespace, customModuleToggle: module.customModuleToggle }
+        removeNullGenerationMetadata(metadata)
+        return metadata
+      })
+}
+
+function generationRecords(value: unknown): JsonRecord[] {
+  return Array.isArray(value) ? value.filter(isRecord) : []
+}
+
+function generationStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
+function hydrateGenerationTargetChat(db: DatabaseSync, chat: JsonRecord, chatId: string): void {
+  const messages = prepareGenerationRead(
+    db,
+    'SELECT json FROM messages WHERE alternate = 0 AND chat_id = ? ORDER BY seq',
+    [chatId],
+  ).all(chatId) as { json: string }[]
+  if (messages.length > 0) chat.message = messages.map((row) => JSON.parse(row.json) as unknown)
+  else if (!Array.isArray(chat.message)) chat.message = []
+  const hypa = prepareGenerationRead(db, 'SELECT json FROM chat_hypa_v3 WHERE chat_id = ?', [chatId]).get(chatId) as
+    | { json: string }
+    | undefined
+  if (hypa) chat.hypaV3Data = JSON.parse(hypa.json) as unknown
+}
+
+function loadLegacyGenerationSelectedRows(
+  db: DatabaseSync,
+  dataDir: string,
+  target: GenerationLoadTarget,
+  includeHistory: boolean,
+): GenerationSelectedLoad {
+  // Pre-extraction settings already contain the embedded library JSON. Keep the
+  // old collection precedence/repair behavior but never scan asset metadata or
+  // hydrate transcripts during preflight.
+  const database = loadPersistedDatabase(db, dataDir)
+  const scope = { generationScope: 'legacy' as const, generationLegacyReason: 'embedded-characters' as const }
+  if (!isRecord(database)) return { ...scope, rows: null, missingTarget: 'database' }
+  const currentChar = generationRecords(database.characters).find((character) => character.chaId === target.characterId)
+  if (!currentChar) return { ...scope, rows: null, missingTarget: 'character' }
+  const currentChat = generationRecords(currentChar.chats).find((chat) => chat.id === target.chatId)
+  if (!currentChat) return { ...scope, rows: null, missingTarget: 'chat' }
+  const settings = { ...database }
+  delete settings.characters
+  if (includeHistory) {
+    const speakerNames: Record<string, string> = {}
+    for (const character of generationRecords(database.characters)) {
+      if (
+        typeof character.chaId === 'string' &&
+        typeof character.name === 'string' &&
+        !Object.prototype.hasOwnProperty.call(speakerNames, character.chaId)
+      ) {
+        Object.defineProperty(speakerNames, character.chaId, { value: character.name, enumerable: true })
+      }
+    }
+    return { ...scope, rows: { database: settings, currentChar, currentChat, speakerNames } }
+  }
+  const characterMetadata = {
+    chaId: currentChar.chaId,
+    modules: currentChar.modules,
+    supaMemory: currentChar.supaMemory,
+  }
+  const chatMetadata = {
+    id: currentChat.id,
+    generationSettings: currentChat.generationSettings,
+    modules: currentChat.modules,
+    hypaContextTruncationAcknowledged: currentChat.hypaContextTruncationAcknowledged,
+  }
+  repairStoredChatGenerationSettings(chatMetadata)
+  return { ...scope, rows: { database: settings, currentChar: characterMetadata, currentChat: chatMetadata } }
+}
+
+/**
+ * Display-projection-scoped database read. Unlike prompt assembly, display
+ * transforms only need the selected character/chat, its transcript, and the
+ * three collections used to resolve active modules and preset regex. Avoid
+ * parsing every character, chat, collection, and asset row each time a chat
+ * screen mounts.
+ *
+ * Pre-extraction or malformed states fall back to the broad assembly loader so
+ * legacy embedded collections and transcript arrays retain their historical
+ * behavior.
+ */
+export function loadPersistedForDisplaySource(db: DatabaseSync, dataDir: string, chatId: string): Persisted {
+  const { fields, settings } = loadDatabaseFieldsFromSqlite(db, ['modules', 'promptPresets', 'personas'])
+  const broadFallback = () => loadPersistedForAssembly(db, dataDir, chatId)
+  if (settings === null) return broadFallback()
+
+  const chatRow = db
+    .prepare('SELECT id, character_id, position, data_json FROM chats WHERE id = ?')
+    .get(chatId) as unknown as ChatRow | undefined
+  if (!chatRow) return broadFallback()
+
+  const charRow = db
+    .prepare('SELECT id, position, data_json FROM characters WHERE id = ?')
+    .get(chatRow.character_id) as unknown as CharacterRow | undefined
+  if (!charRow) return broadFallback()
+
+  const character = JSON.parse(charRow.data_json) as unknown
+  const chat = parseStoredChatRow(chatRow.data_json)
+  if (!isRecord(character) || !isRecord(chat)) return broadFallback()
+
+  const messageRows = getChatMessagesGroupedByIds(db, [chatId]).get(chatId)
+  if (messageRows && messageRows.length > 0) {
+    chat.message = messageRows
+  } else if (!Array.isArray(chat.message)) {
+    chat.message = []
+  }
+  const hypaRows = getChatHypaV3GroupedByIds(db, [chatId])
+  if (hypaRows.has(chatId)) chat.hypaV3Data = hypaRows.get(chatId)
+
+  character.chatPage = 0
+  character.chats = [chat]
+  return {
+    _version: PERSISTED_VERSION,
+    database: {
+      ...settings,
+      ...fields,
+      currentChar: 0,
+      characters: [character],
+    },
+    assets: [],
+  }
+}
+
 /**
  * Prompt assembly and post-generation module runtime need executable module
  * children (`trigger`, `regex`, `lorebook`, `assets`, ...), so keep generation
@@ -1743,21 +2856,23 @@ export function hydrateAssemblyModuleBodies(db: DatabaseSync, database: unknown)
 }
 
 /**
- * Memory-job-scoped database read. The embed/summarize batch
- * handlers read only settings-level fields (the hypa settings/presets/keys
- * and the summary-model routing fields) plus chat EXISTENCE
- * (`assertChatExists`), so they must not pay `loadPersisted`'s whole
+ * Memory-job-scoped database read. Both worker handlers read settings-level
+ * fields (the hypa settings/presets/keys and model-routing fields); summarize
+ * additionally requests the target chat's generation-settings references.
+ * Summaries resolve the memory role from the model/prompt presets bound to that
+ * chat, so load those two rows without hydrating either whole collection. The
+ * path still must not pay `loadPersisted`'s whole
  * characters+chats payload parse, its 9-collection-table parse, or the
  * assets metadata scan on every batch. Load the settings row, override
- * `hypaV3Presets` from its table (the only collection the memory paths
- * read), and stub `characters` to id-only chat rows.
+ * `hypaV3Presets` from its table, and keep every non-target chat as an id-only
+ * stub.
  *
  * States the scoped read cannot serve fall back to the broad loader so
  * behavior stays identical: an uninitialized settings table returns the same
  * `null`, and a pre-extraction database (no character rows but an embedded
  * `characters` array in the settings JSON) keeps its embedded fallback.
  */
-export function loadPersistedDatabaseForMemoryJob(db: DatabaseSync, dataDir: string): unknown {
+export function loadPersistedDatabaseForMemoryJob(db: DatabaseSync, dataDir: string, chatId?: string): unknown {
   const settings = loadSettingsFromSqlite(db)
   if (settings === null) return loadPersisted(db, dataDir).database
 
@@ -1771,10 +2886,20 @@ export function loadPersistedDatabaseForMemoryJob(db: DatabaseSync, dataDir: str
   const chatRows = db
     .prepare('SELECT id, character_id FROM chats ORDER BY character_id, position')
     .all() as unknown as Array<Pick<ChatRow, 'id' | 'character_id'>>
+  const targetChatRow = chatId
+    ? (db.prepare('SELECT id, character_id, data_json FROM chats WHERE id = ?').get(chatId) as unknown as
+        | Pick<ChatRow, 'id' | 'character_id' | 'data_json'>
+        | undefined)
+    : undefined
+  const parsedTargetChat = targetChatRow ? parseStoredChatRow(targetChatRow.data_json) : null
   const chatsByCharId = new Map<string, Array<{ id: string }>>()
   for (const row of chatRows) {
     const list = chatsByCharId.get(row.character_id) ?? []
-    list.push({ id: row.id })
+    list.push(
+      row.id === chatId && isRecord(parsedTargetChat)
+        ? ({ ...parsedTargetChat, id: row.id } as { id: string })
+        : { id: row.id },
+    )
     chatsByCharId.set(row.character_id, list)
   }
   settings.characters = charRows.map((row) => ({
@@ -1790,7 +2915,48 @@ export function loadPersistedDatabaseForMemoryJob(db: DatabaseSync, dataDir: str
   if (presetRows.length > 0) {
     settings.hypaV3Presets = presetRows.map((row) => JSON.parse(row.data_json))
   }
+  projectSelectedHypaV3PresetCompatibilityIndex(settings)
+
+  if (isRecord(parsedTargetChat) && isRecord(parsedTargetChat.generationSettings)) {
+    const modelPresetId = parsedTargetChat.generationSettings.modelPresetId
+    const promptPresetId = parsedTargetChat.generationSettings.promptPresetId
+    if (typeof modelPresetId === 'string' && modelPresetId.trim()) {
+      const modelPreset = loadMemoryJobBoundPreset(db, 'model_presets', modelPresetId)
+      if (modelPreset) settings.modelPresets = [modelPreset]
+    }
+    if (typeof promptPresetId === 'string' && promptPresetId.trim()) {
+      const promptPreset = loadMemoryJobBoundPreset(db, 'prompt_presets', promptPresetId)
+      if (promptPreset) settings.promptPresets = [promptPreset]
+    }
+  }
   return settings
+}
+
+function loadMemoryJobBoundPreset(
+  db: DatabaseSync,
+  tableName: 'model_presets' | 'prompt_presets',
+  presetId: string,
+): Record<string, unknown> | null {
+  if (tableName !== 'prompt_presets') {
+    const row = db
+      .prepare(`SELECT data_json FROM ${tableName} WHERE json_extract(data_json, '$.id') = ? LIMIT 1`)
+      .get(presetId) as { data_json: string } | undefined
+    if (!row) return null
+    const preset = JSON.parse(row.data_json) as unknown
+    return isRecord(preset) ? preset : null
+  }
+
+  const rows = db
+    .prepare(`SELECT data_json FROM ${tableName} WHERE json_extract(data_json, '$.id') = ? ORDER BY position`)
+    .all(presetId) as unknown as Array<{ data_json: string }>
+  let match: Record<string, unknown> | null = null
+  for (const row of rows) {
+    const preset = JSON.parse(row.data_json) as unknown
+    if (!isRecord(preset) || stablePromptPresetId(preset.id) !== presetId) continue
+    if (match) return null
+    match = preset
+  }
+  return match
 }
 
 /**
@@ -1804,16 +2970,21 @@ export function loadPersistedDatabaseForMemoryJob(db: DatabaseSync, dataDir: str
 export function splitChatMessagesIntoTable(db: DatabaseSync, next: Persisted): Persisted {
   repairChatIds(next.database)
   const chats: { chatId: string; messages: unknown[] }[] = []
+  const alternateChats: { chatId: string; alternates: unknown[] }[] = []
   const hypa: { chatId: string; hypaV3Data: unknown }[] = []
   eachChat(next.database, (chat) => {
     const messages = Array.isArray(chat.message) ? chat.message : []
+    const alternates = Array.isArray(chat.alternates) ? chat.alternates : []
     const chatId = chat.id as string
     chats.push({ chatId, messages })
+    alternateChats.push({ chatId, alternates })
     hypa.push({ chatId, hypaV3Data: chat.hypaV3Data })
     delete chat.message
+    delete chat.alternates
     delete chat.hypaV3Data
   })
   replaceAllChatMessages(db, chats)
+  insertAllChatAlternateMessages(db, alternateChats)
   replaceAllChatHypaV3(db, hypa)
   return next
 }
@@ -1823,6 +2994,7 @@ export function splitChatMessagesIntoTable(db: DatabaseSync, next: Persisted): P
  * SQLite tables and sync all table families.
  */
 export function writePersistedWithMessages(db: DatabaseSync, _dataDir: string, next: Persisted): void {
+  if (isRecord(next.database)) migrateLegacyFlatModelConfiguration(next.database)
   const messageFree = splitChatMessagesIntoTable(db, next)
   replaceAllCharactersInTable(db, messageFree.database)
   replaceAllCollectionsInTable(db, messageFree.database)
@@ -1953,7 +3125,7 @@ export interface ChatHydrationRangeInput {
 
 export interface ChatHydrationRangePayload {
   message: unknown[]
-  hypaV3Data: unknown
+  hypaV3Data?: unknown
   alternates: unknown[]
   messageStart: number
   messageTotal: number
@@ -1983,16 +3155,18 @@ export function loadChatHydrationRange(
   dataDir: string,
   chatId: string,
   range: ChatHydrationRangeInput,
+  options: { includeHypaV3Data?: boolean } = {},
 ): ChatHydrationRangePayload {
   const alternates = getAlternateMessages(db, chatId) as unknown[]
-  const hypaV3Data = getChatHypaV3(db, chatId)
+  const includeHypaV3Data = options.includeHypaV3Data !== false
+  const hypaV3Data = includeHypaV3Data ? getChatHypaV3(db, chatId) : undefined
   const rowCount = countChatMessages(db, chatId)
 
   if (rowCount > 0) {
     const { start, limit } = normalizedMessageRange(rowCount, range)
     return {
       message: getChatMessagesRange(db, chatId, start, limit) as unknown[],
-      hypaV3Data,
+      ...(includeHypaV3Data ? { hypaV3Data } : {}),
       alternates,
       messageStart: start,
       messageTotal: rowCount,
@@ -2006,7 +3180,7 @@ export function loadChatHydrationRange(
   const { start, limit } = normalizedMessageRange(full.message.length, range)
   return {
     message: full.message.slice(start, start + limit),
-    hypaV3Data: full.hypaV3Data,
+    ...(includeHypaV3Data ? { hypaV3Data: full.hypaV3Data } : {}),
     alternates,
     messageStart: start,
     messageTotal: full.message.length,
@@ -2023,9 +3197,15 @@ export function loadGenerationChatHydration(
 ): ChatHydrationRangePayload {
   const location = messageId ? getActiveMessageLocationById(db, messageId) : undefined
   if (location?.chatId === chatId) {
-    return loadChatHydrationRange(db, dataDir, chatId, { start: location.seq })
+    return loadChatHydrationRange(db, dataDir, chatId, { start: location.seq }, { includeHypaV3Data: false })
   }
-  return loadChatHydrationRange(db, dataDir, chatId, { tail: GENERATION_CHAT_FALLBACK_TAIL })
+  return loadChatHydrationRange(
+    db,
+    dataDir,
+    chatId,
+    { tail: GENERATION_CHAT_FALLBACK_TAIL },
+    { includeHypaV3Data: false },
+  )
 }
 
 export function loadChatHydrations(
@@ -2247,53 +3427,90 @@ export async function applyImport(
     beforeRevision?: (db: DatabaseSync) => void
     cloneBeforeMessageSplit?: boolean
     automaticBackupRetention?: number
+    greetingTranslations?: readonly GreetingTranslationRow[]
+    signal?: AbortSignal
+    maintenanceLease?: MaintenanceLease
   } = {},
 ): Promise<{ revision: number; event: CommandEvent; databaseLineage: string; writerEpoch: number }> {
   if (database === null || database === undefined) {
     throw new ValidationError('database payload missing')
   }
-  await createAutomaticSafetyBackup(db, dataDir, options.automaticBackupRetention)
-  // The imported payload carries embedded `message[]`; split them into the
-  // messages table and persist the message-free domain tables. By default we
-  // persist a *clone* so the caller's `database` object is left fully hydrated —
-  // downstream consumers (e.g. the legacy hypaV3 memory backfill in
-  // routes/save.ts) read chat.message after this returns, and splitting mutates
-  // its argument in place. SQLite writes commit atomically so table families
-  // never land ahead of the message rows.
-  const cloneBeforeMessageSplit = options.cloneBeforeMessageSplit ?? true
-  const current = loadPersisted(db, dataDir)
-  let transactionOpen = false
-  db.exec('BEGIN IMMEDIATE')
-  transactionOpen = true
+  const coordinator = getMaintenanceCoordinator(dataDir)
+  const lease = options.maintenanceLease ?? coordinator.beginExclusive('import', options.signal)
   try {
-    // A caller may pass an already-normalized throwaway object and opt out of
-    // the repository clone. In that path, run the pre-revision hook before the
-    // destructive message split so legacy memory backfill can still read
-    // `message[]` and `hypaV3Data` from the import object.
-    if (!cloneBeforeMessageSplit) {
-      options.beforeRevision?.(db)
+    coordinator.assertExclusive(lease)
+    throwIfImportAborted(lease.signal)
+    const safetyFence = captureMaintenanceWriteFence(db)
+    await createAutomaticSafetyBackup(db, dataDir, lease, options.automaticBackupRetention)
+    // Creating the safety snapshot can yield to the event loop. Do not begin the
+    // destructive transaction if the requesting client disconnected meanwhile.
+    throwIfImportAborted(lease.signal)
+    assertMaintenanceWriteFence(db, safetyFence)
+    // The imported payload carries embedded `message[]`; split them into the
+    // messages table and persist the message-free domain tables. By default we
+    // persist a *clone* so the caller's `database` object is left fully hydrated —
+    // downstream consumers (e.g. the legacy hypaV3 memory backfill in
+    // routes/save.ts) read chat.message after this returns, and splitting mutates
+    // its argument in place. SQLite writes commit atomically so table families
+    // never land ahead of the message rows.
+    const cloneBeforeMessageSplit = options.cloneBeforeMessageSplit ?? true
+    const current = loadPersisted(db, dataDir)
+    let transactionOpen = false
+    db.exec('BEGIN IMMEDIATE')
+    transactionOpen = true
+    try {
+      // A caller may pass an already-normalized throwaway object and opt out of
+      // the repository clone. In that path, run the pre-revision hook before the
+      // destructive message split so legacy memory backfill can still read
+      // `message[]` and `hypaV3Data` from the import object.
+      if (!cloneBeforeMessageSplit) {
+        options.beforeRevision?.(db)
+      }
+      const importedDatabase = cloneBeforeMessageSplit ? structuredClone(database) : database
+      if (isRecord(importedDatabase)) {
+        migrateLegacyFlatModelConfiguration(importedDatabase)
+        repairPersistedPersonaSelectionIdentity(importedDatabase)
+        repairPersistedHypaV3PresetSelectionIdentity(importedDatabase)
+      }
+      const messageFree = splitChatMessagesIntoTable(db, {
+        ...current,
+        database: importedDatabase,
+      })
+      replaceAllCharactersInTable(db, messageFree.database)
+      replaceGreetingTranslationsForImport(db, options.greetingTranslations ?? [])
+      replaceAllCollectionsInTable(db, messageFree.database)
+      replaceAllSettingsInTable(db, messageFree.database)
+      if (cloneBeforeMessageSplit) {
+        options.beforeRevision?.(db)
+      }
+      // Portable imports never own the live accepted-send ledger. Remove the
+      // replaced database lifetime's operations before rotating lineage; any
+      // historical assistant metadata remains ordinary transcript metadata.
+      db.exec('DELETE FROM generation_effects')
+      db.exec('DELETE FROM generation_operation_attempts')
+      db.exec('DELETE FROM generation_operations')
+      bumpGenerationOperationProjectionEpoch(db)
+      const databaseLineage = rotateDatabaseLineage(db)
+      const event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateImported)
+      db.exec('COMMIT')
+      transactionOpen = false
+      return { revision: event.revision, event, databaseLineage, writerEpoch: getDatabaseWriterMetadata(db).epoch }
+    } catch (err) {
+      if (transactionOpen) {
+        db.exec('ROLLBACK')
+      }
+      throw err
     }
-    const messageFree = splitChatMessagesIntoTable(db, {
-      ...current,
-      database: cloneBeforeMessageSplit ? structuredClone(database) : database,
-    })
-    replaceAllCharactersInTable(db, messageFree.database)
-    replaceAllCollectionsInTable(db, messageFree.database)
-    replaceAllSettingsInTable(db, messageFree.database)
-    if (cloneBeforeMessageSplit) {
-      options.beforeRevision?.(db)
-    }
-    const databaseLineage = rotateDatabaseLineage(db)
-    const event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateImported)
-    db.exec('COMMIT')
-    transactionOpen = false
-    return { revision: event.revision, event, databaseLineage, writerEpoch: getDatabaseWriterMetadata(db).epoch }
-  } catch (err) {
-    if (transactionOpen) {
-      db.exec('ROLLBACK')
-    }
-    throw err
+  } finally {
+    if (!options.maintenanceLease) lease.release()
   }
+}
+
+function throwIfImportAborted(signal: AbortSignal | undefined): void {
+  if (!signal?.aborted) return
+  const error = new Error('Database import aborted')
+  error.name = 'AbortError'
+  throw error
 }
 
 /**
@@ -2381,6 +3598,12 @@ export interface StagedAssetLiveFileCopy {
   existedBefore: boolean
 }
 
+export interface StagedAssetCleanupResult {
+  attempted: number
+  removed: number
+  failures: Array<{ file: string; error: unknown }>
+}
+
 export interface StagedAssetPersistResult {
   entry: PersistedAsset
   created: boolean
@@ -2398,6 +3621,9 @@ export function addAssets(db: DatabaseSync, dataDir: string, assets: readonly Ad
     const effectiveContentType = resolveEffectiveAssetContentType(asset)
     return effectiveContentType === asset.contentType ? asset : { ...asset, contentType: effectiveContentType }
   })
+  // Deduplicated uploads can refresh only file mtime, with no SQLite write.
+  // Fence any reference scan suspended before this upload-to-reference window.
+  if (normalizedAssets.length > 0) getMaintenanceCoordinator(dataDir).noteAssetActivity()
 
   const createdResults: AddAssetResult[] = []
   const results: AddAssetResult[] = []
@@ -2533,12 +3759,25 @@ export function persistStagedAssetsInTransaction(
   return results
 }
 
-export function cleanupCopiedStagedAssetFiles(copiedFiles: readonly StagedAssetLiveFileCopy[]): void {
+export function cleanupCopiedStagedAssetFiles(
+  copiedFiles: readonly StagedAssetLiveFileCopy[],
+): StagedAssetCleanupResult {
+  const result: StagedAssetCleanupResult = {
+    attempted: 0,
+    removed: 0,
+    failures: [],
+  }
   for (const { file, existedBefore } of copiedFiles) {
-    if (!existedBefore) {
+    if (existedBefore) continue
+    result.attempted += 1
+    try {
       fs.rmSync(file, { force: true })
+      result.removed += 1
+    } catch (error) {
+      result.failures.push({ file, error })
     }
   }
+  return result
 }
 
 export function missingAssetIds(db: DatabaseSync, ids: string[]): string[] {
@@ -2600,17 +3839,40 @@ function saveDir(dataDir: string): string {
   return path.join(dataDir, 'save')
 }
 
-// Tables that must survive a backup/restore round-trip. Kept in sync with every
-// SQLite table created by the server DDL; `createBackup` copies all of risu.db
-// through the online backup API, but `restoreBackup` swaps tables one-by-one via
-// ATTACH. A table
-// absent here would not be restored, leaving live rows desynced from the restored
-// SQLite snapshot.
-const SQLITE_BACKUP_TABLES = [
-  'schema_version',
+// Tables replaced by a point-in-time content/recovery restore. `createBackup`
+// copies all of risu.db through the online backup API, but `restoreBackup`
+// deliberately swaps only this ownership allowlist via ATTACH.
+//
+// Live operational exclusions:
+//   - push_subscriptions: origin/device registrations bound to the live VAPID
+//     identity, whose key file is outside the backup contract.
+//   - database_metadata: live lineage/writer ownership; restore rotates lineage.
+//   - command_mutation_receipts: lineage-scoped idempotency records that must not
+//     cross a replacement boundary.
+//   - request_history: device-local diagnostic telemetry; restore clears it when
+//     rotating lineage.
+//   - schema_version: live schema metadata; only the snapshot revision is copied.
+//   - bardwiki_document_search: derived lexical projection rebuilt from restored
+//     authoritative documents before the restore transaction commits.
+export const SQLITE_BACKUP_TABLES = [
+  'bardwiki_rebuild_staging',
+  'bardwiki_change_manifest',
+  'bardwiki_document_sources',
+  'bardwiki_links',
+  'bardwiki_document_versions',
+  'bardwiki_jobs',
+  'bardwiki_turn_receipts',
+  'bardwiki_documents',
+  'bardwiki_chat_settings',
   'command_events',
+  'generation_finalization_retries',
+  'generation_operation_projection_state',
+  'generation_operations',
+  'generation_operation_attempts',
+  'generation_effects',
   'memory_chunks',
   'memory_summaries',
+  'memory_legacy_summary_tombstones',
   'memory_embeddings',
   'memory_jobs',
   'messages',
@@ -2619,6 +3881,7 @@ const SQLITE_BACKUP_TABLES = [
   'inlay_catalog',
   'characters',
   'chats',
+  'greeting_translations',
   'modules',
   'plugins',
   'model_presets',
@@ -2634,10 +3897,16 @@ const SQLITE_BACKUP_TABLES = [
   'settings',
 ] as const
 
-const REQUIRED_SQLITE_BACKUP_TABLES = [
-  'schema_version',
-  'settings',
-] as const satisfies readonly (typeof SQLITE_BACKUP_TABLES)[number][]
+export const SQLITE_BACKUP_EXCLUDED_TABLES = {
+  bardwiki_document_search: 'Derived lexical projection rebuilt from authoritative BardWiki documents on restore.',
+  push_subscriptions: 'Origin/device registrations bound to the live VAPID identity.',
+  database_metadata: 'Live lineage and writer ownership; restore rotates lineage.',
+  command_mutation_receipts: 'Lineage-scoped idempotency records; restore clears them.',
+  request_history: 'Device-local diagnostic telemetry; restore clears it when rotating lineage.',
+  schema_version: 'Live schema metadata; restore copies only the snapshot revision.',
+} as const satisfies Readonly<Record<string, string>>
+
+const REQUIRED_SQLITE_BACKUP_TABLES = ['schema_version', 'settings'] as const
 
 type BackupDatabasePayloadStatus = 'missing' | 'invalid' | 'usable'
 
@@ -2747,40 +4016,135 @@ function checkpointWal(db: DatabaseSync): void {
   )
 }
 
+/** Ordinary requests remain responsive during a safety snapshot. Refuse a
+ * replacement if any accepted write could be absent from its captured DB.
+ * Capture before SQLite starts, since promise completion is not the snapshot's
+ * transaction boundary; include revision-free assets and other connections. */
+function captureMaintenanceWriteFence(db: DatabaseSync) {
+  return {
+    changes: (db.prepare('SELECT total_changes() AS value').get() as { value: number }).value,
+    dataVersion: (db.prepare('PRAGMA data_version').get() as { data_version: number }).data_version,
+    lineage: getDatabaseLineage(db),
+    revision: getSchemaState(db).revision,
+  }
+}
+
+function assertMaintenanceWriteFence(
+  db: DatabaseSync,
+  expected: ReturnType<typeof captureMaintenanceWriteFence>,
+): void {
+  const actual = captureMaintenanceWriteFence(db)
+  if (
+    actual.changes !== expected.changes ||
+    actual.dataVersion !== expected.dataVersion ||
+    actual.lineage !== expected.lineage ||
+    actual.revision !== expected.revision
+  ) {
+    throw new MaintenanceBusyError()
+  }
+}
+
 export const AUTOMATIC_BACKUP_LABEL = 'Automatic safety snapshot'
 
 export async function createBackup(
   db: DatabaseSync,
   dataDir: string,
   label: string | null = null,
-  options: { kind?: 'manual' | 'automatic' } = {},
+  options: { kind?: 'manual' | 'automatic'; signal?: AbortSignal } = {},
 ): Promise<BackupManifest> {
+  const lease = getMaintenanceCoordinator(dataDir).beginExclusive('backup', options.signal)
+  try {
+    return await createBackupUnderLease(db, dataDir, lease, label, options)
+  } finally {
+    lease.release()
+  }
+}
+
+async function createBackupUnderLease(
+  db: DatabaseSync,
+  dataDir: string,
+  lease: MaintenanceLease,
+  label: string | null,
+  options: { kind?: 'manual' | 'automatic'; restoreFallbackDir?: string } = {},
+): Promise<BackupManifest> {
+  getMaintenanceCoordinator(dataDir).assertExclusive(lease)
+  lease.signal.throwIfAborted()
   const id = generateBackupId()
   const dir = backupDir(dataDir, id)
   try {
     fs.mkdirSync(dir, { recursive: true })
-
-    // Fail before copying any payload when a reader prevents committed WAL
-    // frames from reaching the main database. Node's online backup API then
-    // produces a transactionally consistent SQLite destination even if another
-    // connection writes after this preflight checkpoint.
+    // The lease protects every asset before SQLite first yields, including
+    // uploads incorporated by the online snapshot while it is in progress.
     checkpointWal(db)
     const backupSqlite = path.join(dir, 'risu.db')
     await backupSqliteDatabase(db, backupSqlite)
-
-    copyDirectoryIfPresent(assetsDir(dataDir), path.join(dir, 'assets'))
-    copyDirectoryIfPresent(saveDir(dataDir), path.join(dir, 'save'))
+    lease.signal.throwIfAborted()
 
     let revision: number
-    let assetCount: number
+    let assetCount = 0
     const snapshotDb = new DatabaseSync(backupSqlite, { readOnly: true })
+    let references: AssetReferenceMarks | undefined
+    let copyPool: BackupCopyPool | undefined
     try {
       revision = getSchemaState(snapshotDb).revision
-      assetCount = getAssetMetadataCount(snapshotDb)
+      references = await scanAssetReferences(snapshotDb, {
+        scratchPath: path.join(dir, '.asset-references.sqlite'),
+        signal: lease.signal,
+      })
+      const hasMetadata = snapshotDb.prepare('SELECT 1 FROM assets WHERE id = ?')
+      for await (const ids of references.referencePages()) {
+        for (const assetId of ids)
+          if (!hasMetadata.get(assetId)) {
+            throw new BackupAssetError(`Required backup asset metadata is missing: ${assetId}`)
+          }
+      }
+      const firstPage = snapshotDb.prepare(
+        'SELECT CAST(rowid AS TEXT) AS cursor, id, ext, size, content_type AS contentType FROM assets ORDER BY rowid LIMIT 64',
+      )
+      const nextPage = snapshotDb.prepare(
+        'SELECT CAST(rowid AS TEXT) AS cursor, id, ext, size, content_type AS contentType FROM assets WHERE rowid > CAST(? AS INTEGER) ORDER BY rowid LIMIT 64',
+      )
+      async function* metadata(): AsyncGenerator<PersistedAsset> {
+        let cursor: string | undefined
+        while (true) {
+          lease.signal.throwIfAborted()
+          const rows = (cursor === undefined ? firstPage.all() : nextPage.all(cursor)) as unknown as Array<
+            PersistedAsset & { cursor: string }
+          >
+          if (!rows.length) return
+          cursor = rows[rows.length - 1].cursor
+          for (const asset of rows) {
+            assetCount++
+            yield asset
+          }
+          await yieldMaintenanceTurn()
+        }
+      }
+      copyPool = new BackupCopyPool(lease.signal)
+      await copyBackupAssets({
+        from: assetsDir(dataDir),
+        to: path.join(dir, 'assets'),
+        assets: metadata(),
+        requiredIds: references,
+        signal: lease.signal,
+        pool: copyPool,
+        restoreFallbackDir: options.restoreFallbackDir,
+      })
+      await copyBackupDirectory(saveDir(dataDir), path.join(dir, 'save'), lease.signal, copyPool)
     } finally {
-      snapshotDb.close()
+      try {
+        // Native copies cannot be interrupted mid-call. Every batch and both
+        // workers must finish before scratch cleanup, publication or release.
+        await copyPool?.close()
+      } finally {
+        try {
+          await references?.close()
+        } finally {
+          snapshotDb.close()
+        }
+      }
     }
-
+    copyPool?.throwIfFailed()
     const manifest: BackupManifest = {
       _version: BACKUP_MANIFEST_VERSION,
       id,
@@ -2790,15 +4154,17 @@ export async function createBackup(
       revision,
       assetCount,
     }
-    fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest))
+    const pendingManifest = path.join(dir, '.manifest.json')
+    await fs.promises.writeFile(pendingManifest, JSON.stringify(manifest), { signal: lease.signal })
+    lease.signal.throwIfAborted()
+    // Atomic publication has no await/cancellation window after the last check.
+    fs.renameSync(pendingManifest, path.join(dir, 'manifest.json'))
     return manifest
   } catch (err) {
-    // A manifest is written last, but remove partial payloads too so failed
-    // snapshots never accumulate as hidden, unusable backup directories.
     try {
-      fs.rmSync(dir, { recursive: true, force: true })
+      await fs.promises.rm(dir, { recursive: true, force: true })
     } catch {
-      // Preserve the creation failure; callers fail closed on that cause.
+      // Preserve the creation failure; a manifest was never published.
     }
     throw err
   }
@@ -2834,45 +4200,110 @@ function liveDatabaseIsInitialized(db: DatabaseSync): boolean {
   return db.prepare('SELECT 1 FROM settings WHERE id = 1').get() !== undefined
 }
 
-function pruneAutomaticBackups(dataDir: string, retention: number, protectedIds: ReadonlySet<string>): void {
+type AutomaticBackupCandidate = Pick<BackupManifest, 'id' | 'createdAt'>
+
+async function readAutomaticBackupCandidate(dataDir: string, id: string): Promise<AutomaticBackupCandidate | null> {
+  if (!isValidBackupId(id)) return null
+  try {
+    const manifest = JSON.parse(
+      await fs.promises.readFile(path.join(backupDir(dataDir, id), 'manifest.json'), 'utf8'),
+    ) as BackupManifest
+    if (
+      !manifest ||
+      typeof manifest !== 'object' ||
+      manifest.id !== id ||
+      typeof manifest.createdAt !== 'string' ||
+      manifest.kind !== 'automatic'
+    )
+      return null
+    return { id, createdAt: manifest.createdAt }
+  } catch {
+    // Match public listing: one missing, corrupt, or unreadable manifest is
+    // ignored, and must never make an ordinary/manual directory collectible.
+    return null
+  }
+}
+
+function compareAutomaticBackups(a: AutomaticBackupCandidate, b: AutomaticBackupCandidate): number {
+  return a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)
+}
+
+async function pruneAutomaticBackups(
+  dataDir: string,
+  lease: MaintenanceLease,
+  retention: number,
+  protectedIds: ReadonlySet<string>,
+): Promise<void> {
+  getMaintenanceCoordinator(dataDir).assertExclusive(lease)
   if (!Number.isInteger(retention) || retention <= 0) {
     throw new Error('automatic backup retention must be a positive integer')
   }
 
-  const automatic = listBackups(dataDir)
-    .filter((manifest) => manifest.kind === 'automatic')
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
-  let excess = automatic.length - retention
-  for (const manifest of automatic) {
-    if (excess <= 0) break
-    if (protectedIds.has(manifest.id)) continue
-    deleteBackup(dataDir, manifest.id)
-    excess -= 1
+  // Callers protect only the new safety snapshot and (during restore) its
+  // source. A protected manual backup must not consume automatic capacity.
+  let protectedAutomaticCount = 0
+  for (const id of protectedIds) {
+    lease.signal.throwIfAborted()
+    if (await readAutomaticBackupCandidate(dataDir, id)) protectedAutomaticCount++
+  }
+  const capacity = Math.max(0, retention - protectedAutomaticCount)
+  const selected: AutomaticBackupCandidate[] = []
+  let directory: fs.Dir
+  try {
+    directory = await fs.promises.opendir(backupsDir(dataDir), { bufferSize: 32 })
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return
+    throw error
+  }
+  // Retain at most `capacity` small candidates, plus the one being read and
+  // at most two protected IDs. Manual manifests are never accumulated. An
+  // evicted candidate cannot become necessary when more entries are seen.
+  for await (const entry of directory) {
+    lease.signal.throwIfAborted()
+    if (protectedIds.has(entry.name)) continue
+    const candidate = await readAutomaticBackupCandidate(dataDir, entry.name)
+    lease.signal.throwIfAborted()
+    if (!candidate) continue
+    if (capacity === 0 || (selected.length === capacity && compareAutomaticBackups(candidate, selected[0]) <= 0)) {
+      await deleteBackupUnderLease(dataDir, candidate.id, lease)
+      continue
+    }
+    if (selected.length === capacity) {
+      await deleteBackupUnderLease(dataDir, selected[0].id, lease)
+      selected.shift()
+    }
+    let lower = 0
+    let upper = selected.length
+    while (lower < upper) {
+      const middle = (lower + upper) >>> 1
+      if (compareAutomaticBackups(selected[middle], candidate) < 0) lower = middle + 1
+      else upper = middle
+    }
+    selected.splice(lower, 0, candidate)
   }
 }
 
-/**
- * Capture initialized live state before a whole-database replacement. The
- * online SQLite copy may yield, but mutations through the same DatabaseSync are
- * incorporated by node:sqlite; after it resolves, retention and the destructive
- * transaction continue in the same microtask. A restore target can be protected
- * from retention until its payload is no longer in use.
- */
+/** Capture safety state and retain its source under the caller's exclusive
+ * lease. Explicit nesting keeps import/restore ownership across every await. */
 async function createAutomaticSafetyBackup(
   db: DatabaseSync,
   dataDir: string,
+  lease: MaintenanceLease,
   retention = DEFAULT_AUTOMATIC_BACKUP_RETENTION,
   protectedBackupIds: readonly string[] = [],
+  restoreFallbackDir?: string,
 ): Promise<BackupManifest | null> {
-  // First-run imports intentionally do not snapshot the empty schema. The
-  // settings row is the same initialization authority used by loadPersisted.
+  getMaintenanceCoordinator(dataDir).assertExclusive(lease)
   if (!liveDatabaseIsInitialized(db)) return null
-
   try {
-    const manifest = await createBackup(db, dataDir, AUTOMATIC_BACKUP_LABEL, { kind: 'automatic' })
-    pruneAutomaticBackups(dataDir, retention, new Set([...protectedBackupIds, manifest.id]))
+    const manifest = await createBackupUnderLease(db, dataDir, lease, AUTOMATIC_BACKUP_LABEL, {
+      kind: 'automatic',
+      restoreFallbackDir,
+    })
+    await pruneAutomaticBackups(dataDir, lease, retention, new Set([...protectedBackupIds, manifest.id]))
     return manifest
   } catch (err) {
+    if (lease.signal.aborted) lease.signal.throwIfAborted()
     throw new AutomaticBackupError(err)
   }
 }
@@ -3190,6 +4621,140 @@ interface RestoreSqliteHooks {
   onPostCommitError?: (error: unknown) => void
 }
 
+function copyGenerationFinalizationRetriesFromBackup(db: DatabaseSync): void {
+  const backupColumns = new Set(
+    (
+      db.prepare("PRAGMA bak.table_info('generation_finalization_retries')").all() as Array<{
+        name: string
+      }>
+    ).map((column) => column.name),
+  )
+  const targetSnapshot = backupColumns.has('target_snapshot_json') ? 'target_snapshot_json' : 'NULL'
+  const alternateMessages = backupColumns.has('alternate_messages_json') ? 'alternate_messages_json' : "'[]'"
+  const databaseLineage = backupColumns.has('database_lineage') ? 'database_lineage' : 'NULL'
+  const operationId = backupColumns.has('operation_id') ? 'operation_id' : 'NULL'
+  const operationAttemptNo = backupColumns.has('operation_attempt_no') ? 'operation_attempt_no' : 'NULL'
+  const actorWriterSessionId = backupColumns.has('actor_writer_session_id') ? 'actor_writer_session_id' : 'NULL'
+  const actorWriterEpoch = backupColumns.has('actor_writer_epoch') ? 'actor_writer_epoch' : 'NULL'
+  const acceptedMessageId = backupColumns.has('accepted_message_id') ? 'accepted_message_id' : 'NULL'
+  const terminalOutcome = backupColumns.has('terminal_outcome') ? 'terminal_outcome' : 'NULL'
+
+  // Historical queue tables predate target snapshots (schema v18) and
+  // alternate messages (v20). Keep the current destination order explicit so
+  // both altered historical tables and fresh current tables restore safely.
+  db.exec(`
+    INSERT INTO main.generation_finalization_retries (
+      generation_id,
+      database_lineage,
+      operation_id,
+      operation_attempt_no,
+      actor_writer_session_id,
+      actor_writer_epoch,
+      accepted_message_id,
+      terminal_outcome,
+      chat_id,
+      mode,
+      target_message_id,
+      message_json,
+      alternate_messages_json,
+      chat_var_mutations_json,
+      target_snapshot_json,
+      failure_count,
+      last_error,
+      terminal_error,
+      status,
+      created_at,
+      updated_at
+    )
+    SELECT
+      generation_id,
+      ${databaseLineage},
+      ${operationId},
+      ${operationAttemptNo},
+      ${actorWriterSessionId},
+      ${actorWriterEpoch},
+      ${acceptedMessageId},
+      ${terminalOutcome},
+      chat_id,
+      mode,
+      target_message_id,
+      message_json,
+      ${alternateMessages},
+      chat_var_mutations_json,
+      ${targetSnapshot},
+      failure_count,
+      last_error,
+      terminal_error,
+      status,
+      created_at,
+      updated_at
+    FROM bak.generation_finalization_retries
+  `)
+}
+
+function copyCommandEventsFromBackup(db: DatabaseSync): void {
+  const backupColumns = new Set(
+    (
+      db.prepare("PRAGMA bak.table_info('command_events')").all() as Array<{
+        name: string
+      }>
+    ).map((column) => column.name),
+  )
+  const columnOrNull = (column: string): string => (backupColumns.has(column) ? column : 'NULL')
+  db.exec(`
+    INSERT INTO main.command_events (
+      revision, type, resource, id, parent_id, origin_writer_session_id,
+      database_lineage, operation_id, source_message_id, job_id, created_at
+    )
+    SELECT
+      revision, type, resource, id, parent_id, ${columnOrNull('origin_writer_session_id')},
+      ${columnOrNull('database_lineage')}, ${columnOrNull('operation_id')},
+      ${columnOrNull('source_message_id')}, ${columnOrNull('job_id')}, created_at
+    FROM bak.command_events
+  `)
+}
+
+function rewriteRestoredGenerationOperationLineage(db: DatabaseSync, databaseLineage: string): void {
+  createGenerationOperationTables(db)
+  const projectionEpoch = bumpGenerationOperationProjectionEpoch(db)
+  db.prepare(
+    `
+      UPDATE generation_operations
+      SET database_lineage = ?, projection_epoch = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    `,
+  ).run(databaseLineage, projectionEpoch)
+  db.prepare('UPDATE generation_operation_attempts SET database_lineage = ?').run(databaseLineage)
+  db.prepare('UPDATE generation_effects SET database_lineage = ?').run(databaseLineage)
+  db.prepare(
+    `
+      UPDATE generation_finalization_retries
+      SET database_lineage = ?
+      WHERE operation_id IS NOT NULL
+    `,
+  ).run(databaseLineage)
+  db.prepare(
+    `
+      UPDATE command_events
+      SET database_lineage = ?
+      WHERE operation_id IS NOT NULL
+    `,
+  ).run(databaseLineage)
+  db.prepare(
+    `
+      UPDATE messages
+      SET json = json_set(json, '$.generationInfo.databaseLineage', ?)
+      WHERE json_valid(json)
+        AND json_type(json, '$.generationInfo.operationId') = 'text'
+        AND EXISTS (
+          SELECT 1
+          FROM generation_operations
+          WHERE database_lineage = ?
+            AND operation_id = json_extract(messages.json, '$.generationInfo.operationId')
+        )
+    `,
+  ).run(databaseLineage, databaseLineage)
+}
+
 function restoreSqliteFromBackup(
   db: DatabaseSync,
   backupDbPath: string | null,
@@ -3204,15 +4769,20 @@ function restoreSqliteFromBackup(
     // any legacy db.json, so rows absent from the snapshot do not survive
     // restore.
     db.exec('BEGIN')
+    db.exec('PRAGMA defer_foreign_keys = ON')
     let databaseLineage: string
     let committed = false
     try {
       for (const table of SQLITE_BACKUP_TABLES) {
-        if (table === 'schema_version') continue
         db.exec(`DELETE FROM ${table}`)
       }
+      rebuildAllBardWikiDerivedState(db)
+      db.exec('DELETE FROM request_history')
       databaseLineage = rotateDatabaseLineage(db)
+      rewriteRestoredGenerationOperationLineage(db, databaseLineage)
       hooks.beforeCommit?.(databaseLineage)
+      migrateLegacyAgentConfigurationInSqlite(db)
+      repairPersistedModelProfileInlineSecretsInSqlite(db)
       db.exec('COMMIT')
       committed = true
     } catch (err) {
@@ -3242,35 +4812,49 @@ function restoreSqliteFromBackup(
   let operationError: unknown
   try {
     db.exec('BEGIN')
+    db.exec('PRAGMA defer_foreign_keys = ON')
     try {
+      // Keep the live schema version current; only the snapshot's revision is
+      // part of the restored durable state.
+      const schemaVersionExists = db
+        .prepare("SELECT name FROM bak.sqlite_master WHERE type = 'table' AND name = 'schema_version'")
+        .get()
+      if (schemaVersionExists) {
+        db.exec(
+          `UPDATE main.schema_version
+           SET revision = COALESCE(
+             (SELECT revision FROM bak.schema_version WHERE id = 1),
+             revision
+           )
+           WHERE id = 1`,
+        )
+      }
       for (const table of SQLITE_BACKUP_TABLES) {
         // Verify the table exists in the backup; older snapshots may predate
         // memory tables.
         const exists = db.prepare(`SELECT name FROM bak.sqlite_master WHERE type = 'table' AND name = ?`).get(table)
-        if (table === 'schema_version') {
-          // The live schema stays current because restore swaps table data, not
-          // table definitions. Restore only the backup revision; copying an old
-          // version would bypass migrations until the next process restart.
-          if (exists) {
-            db.exec(
-              `UPDATE main.schema_version
-               SET revision = COALESCE(
-                 (SELECT revision FROM bak.schema_version WHERE id = 1),
-                 revision
-               )
-               WHERE id = 1`,
-            )
-          }
-          continue
-        }
         db.exec(`DELETE FROM main.${table}`)
         if (exists) {
-          db.exec(`INSERT INTO main.${table} SELECT * FROM bak.${table}`)
+          if (table === 'generation_finalization_retries') {
+            copyGenerationFinalizationRetriesFromBackup(db)
+          } else if (table === 'command_events') {
+            copyCommandEventsFromBackup(db)
+          } else {
+            db.exec(`INSERT INTO main.${table} SELECT * FROM bak.${table}`)
+          }
         }
       }
+      rebuildAllBardWikiDerivedState(db)
+      db.exec('DELETE FROM request_history')
       repairPersistedGlobalLorebookIdsInSqlite(db)
+      repairPersistedPersonaSelectionIdentityInSqlite(db)
+      repairPersistedHypaV3PresetSelectionIdentityInSqlite(db)
+      repairPersistedTranslatorPresetSelectionIdentityInSqlite(db)
       databaseLineage = rotateDatabaseLineage(db)
+      rewriteRestoredGenerationOperationLineage(db, databaseLineage)
       hooks.beforeCommit?.(databaseLineage)
+      migrateLegacyAgentConfigurationInSqlite(db)
+      repairPersistedModelProfileInlineSecretsInSqlite(db)
       db.exec('COMMIT')
       committed = true
     } catch (err) {
@@ -3307,170 +4891,198 @@ function restoreSqliteFromBackup(
   return databaseLineage
 }
 
+export interface RestoreBackupResult {
+  revision: number
+  event: CommandEvent
+  databaseLineage: string
+  writerEpoch: number
+}
+
 export async function restoreBackup(
   db: DatabaseSync,
   dataDir: string,
   id: string,
-  options: { automaticBackupRetention?: number } = {},
-): Promise<{ revision: number; event: CommandEvent; databaseLineage: string; writerEpoch: number }> {
-  if (!isValidBackupId(id)) {
-    throw new EntityNotFoundError(`Backup not found: ${id}`)
-  }
-  const manifestPath = path.join(backupDir(dataDir, id), 'manifest.json')
-  const legacySnapshot = path.join(backupDir(dataDir, id), 'db.json')
-  if (!fs.existsSync(manifestPath) && !fs.existsSync(legacySnapshot)) {
-    throw new EntityNotFoundError(`Backup not found: ${id}`)
-  }
-
-  const backupSqlite = path.join(backupDir(dataDir, id), 'risu.db')
-  const usableDatabasePayloads = validateBackupDatabasePayloads(backupSqlite, legacySnapshot)
-
-  // A prior failed attempt is recovered before a safety snapshot or new
-  // staging work. Validation intentionally remains the first mutating guard.
-  recoverInterruptedRestoreSwaps(db, dataDir)
-  const journal = createRestoreSwapJournal(dataDir, id)
-  const journalFile = restoreJournalPath(dataDir, id)
-  assertRestoreScratchIsUnused(journal)
-
-  const automaticBackup = await createAutomaticSafetyBackup(
-    db,
-    dataDir,
-    options.automaticBackupRetention,
-    // Retention must not delete an automatic snapshot while it is the active
-    // restore source. The newly created snapshot is protected by the helper.
-    [id],
-  )
-
-  writeRestoreSwapJournal(journalFile, journal, true)
+  options: {
+    automaticBackupRetention?: number
+    signal?: AbortSignal
+    /** Synchronous route effects must precede post-commit retention awaits. */
+    onCommitted?: (result: RestoreBackupResult) => void
+  } = {},
+): Promise<RestoreBackupResult> {
+  const lease = getMaintenanceCoordinator(dataDir).beginExclusive('restore', options.signal)
   try {
-    stageRestoreSwapComponent(journal.assets)
-    stageRestoreSwapComponent(journal.save)
-  } catch (error) {
-    try {
-      completeRestoreSwapBackward(journalFile, journal)
-    } catch (recoveryError) {
-      throw new AggregateError([error, recoveryError], 'Restore staging failed and cleanup is incomplete')
+    if (!isValidBackupId(id)) {
+      throw new EntityNotFoundError(`Backup not found: ${id}`)
     }
-    throw error
-  }
+    const manifestPath = path.join(backupDir(dataDir, id), 'manifest.json')
+    const legacySnapshot = path.join(backupDir(dataDir, id), 'db.json')
+    if (!fs.existsSync(manifestPath) && !fs.existsSync(legacySnapshot)) {
+      throw new EntityNotFoundError(`Backup not found: ${id}`)
+    }
 
-  let event: CommandEvent | undefined
-  let databaseLineage: string | undefined
-  let sqliteCommitted = false
-  try {
-    if (journal.assets.hadLiveDirectory) fs.renameSync(journal.assets.livePath, journal.assets.oldPath)
-    updateRestoreSwapJournal(journalFile, journal, { phase: 'assets-parked' })
-    if (journal.save.hadLiveDirectory) fs.renameSync(journal.save.livePath, journal.save.oldPath)
-    updateRestoreSwapJournal(journalFile, journal, { phase: 'save-parked' })
+    const backupSqlite = path.join(backupDir(dataDir, id), 'risu.db')
+    const usableDatabasePayloads = validateBackupDatabasePayloads(backupSqlite, legacySnapshot)
 
-    databaseLineage = restoreSqliteFromBackup(db, usableDatabasePayloads.sqlite ? backupSqlite : null, {
-      beforeCommit: (nextDatabaseLineage) => {
-        // Retain the transaction's lineage in memory too, so an ambiguous COMMIT
-        // error that is resolved as committed can still return the correct
-        // replacement ownership after finishing forward.
-        databaseLineage = nextDatabaseLineage
-        // If the backup carries a legacy db.json, import it into SQLite inside
-        // the restore transaction so a failed re-import rolls everything back.
-        if (usableDatabasePayloads.legacyJson) importLegacyDatabaseSnapshot(db, legacySnapshot)
-        event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateRestored)
+    // A prior failed attempt is recovered before a safety snapshot or new
+    // staging work. Validation intentionally remains the first mutating guard.
+    recoverInterruptedRestoreSwaps(db, dataDir)
+    const journal = createRestoreSwapJournal(dataDir, id)
+    const journalFile = restoreJournalPath(dataDir, id)
+    assertRestoreScratchIsUnused(journal)
 
-        fs.renameSync(journal.assets.tmpPath, journal.assets.livePath)
-        updateRestoreSwapJournal(journalFile, journal, { phase: 'assets-installed' })
-        fs.renameSync(journal.save.tmpPath, journal.save.livePath)
-        updateRestoreSwapJournal(journalFile, journal, { phase: 'save-installed' })
-        // This lineage is transactionally visible iff COMMIT succeeds. Boot can
-        // therefore resolve a crash before the post-COMMIT phase write.
-        updateRestoreSwapJournal(journalFile, journal, {
-          phase: 'committing',
-          expectedDatabaseLineage: nextDatabaseLineage,
-        })
-      },
-      afterCommit: () => {
-        sqliteCommitted = true
-        updateRestoreSwapJournal(journalFile, journal, { phase: 'committed' })
-      },
-      onPostCommitError: (error) => {
-        sqliteCommitted = true
-        logRestoreRecovery(
-          undefined,
-          'error',
-          { err: error, restoreId: id },
-          'Backup restore committed; finishing the directory swap forward after a post-commit error',
-        )
-      },
-    })
-    sqliteCommitted = true
-    completeRestoreSwapForward(journalFile, journal)
-  } catch (err) {
-    const committed = sqliteCommitted || restoreJournalDatabaseCommitted(db, journal)
-    if (committed) {
-      logRestoreRecovery(
-        undefined,
-        'error',
-        { err, restoreId: id },
-        'Backup restore committed; completing the directory swap forward',
-      )
-      completeRestoreSwapForward(journalFile, journal)
-    } else {
+    const safetyFence = captureMaintenanceWriteFence(db)
+    const automaticBackup = await createAutomaticSafetyBackup(
+      db,
+      dataDir,
+      lease,
+      options.automaticBackupRetention,
+      // Retention must not delete an automatic snapshot while it is the active
+      // restore source. The newly created snapshot is protected by the helper.
+      [id],
+      path.join(backupDir(dataDir, id), 'assets'),
+    )
+    lease.signal.throwIfAborted()
+    assertMaintenanceWriteFence(db, safetyFence)
+
+    writeRestoreSwapJournal(journalFile, journal, true)
+    try {
+      stageRestoreSwapComponent(journal.assets)
+      stageRestoreSwapComponent(journal.save)
+    } catch (error) {
       try {
         completeRestoreSwapBackward(journalFile, journal)
       } catch (recoveryError) {
+        throw new AggregateError([error, recoveryError], 'Restore staging failed and cleanup is incomplete')
+      }
+      throw error
+    }
+
+    let event: CommandEvent | undefined
+    let databaseLineage: string | undefined
+    let sqliteCommitted = false
+    try {
+      if (journal.assets.hadLiveDirectory) fs.renameSync(journal.assets.livePath, journal.assets.oldPath)
+      updateRestoreSwapJournal(journalFile, journal, { phase: 'assets-parked' })
+      if (journal.save.hadLiveDirectory) fs.renameSync(journal.save.livePath, journal.save.oldPath)
+      updateRestoreSwapJournal(journalFile, journal, { phase: 'save-parked' })
+
+      databaseLineage = restoreSqliteFromBackup(db, usableDatabasePayloads.sqlite ? backupSqlite : null, {
+        beforeCommit: (nextDatabaseLineage) => {
+          // Retain the transaction's lineage in memory too, so an ambiguous COMMIT
+          // error that is resolved as committed can still return the correct
+          // replacement ownership after finishing forward.
+          databaseLineage = nextDatabaseLineage
+          // If the backup carries a legacy db.json, import it into SQLite inside
+          // the restore transaction so a failed re-import rolls everything back.
+          if (usableDatabasePayloads.legacyJson) importLegacyDatabaseSnapshot(db, legacySnapshot)
+          event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateRestored)
+
+          fs.renameSync(journal.assets.tmpPath, journal.assets.livePath)
+          updateRestoreSwapJournal(journalFile, journal, { phase: 'assets-installed' })
+          fs.renameSync(journal.save.tmpPath, journal.save.livePath)
+          updateRestoreSwapJournal(journalFile, journal, { phase: 'save-installed' })
+          // This lineage is transactionally visible iff COMMIT succeeds. Boot can
+          // therefore resolve a crash before the post-COMMIT phase write.
+          updateRestoreSwapJournal(journalFile, journal, {
+            phase: 'committing',
+            expectedDatabaseLineage: nextDatabaseLineage,
+          })
+        },
+        afterCommit: () => {
+          sqliteCommitted = true
+          updateRestoreSwapJournal(journalFile, journal, { phase: 'committed' })
+        },
+        onPostCommitError: (error) => {
+          sqliteCommitted = true
+          logRestoreRecovery(
+            undefined,
+            'error',
+            { err: error, restoreId: id },
+            'Backup restore committed; finishing the directory swap forward after a post-commit error',
+          )
+        },
+      })
+      sqliteCommitted = true
+      completeRestoreSwapForward(journalFile, journal)
+    } catch (err) {
+      const committed = sqliteCommitted || restoreJournalDatabaseCommitted(db, journal)
+      if (committed) {
         logRestoreRecovery(
           undefined,
           'error',
-          { err: recoveryError, restoreId: id },
-          'Backup restore rollback is incomplete and will be retried on boot',
+          { err, restoreId: id },
+          'Backup restore committed; completing the directory swap forward',
         )
-        throw new AggregateError([err, recoveryError], 'Backup restore failed and directory rollback is incomplete')
+        completeRestoreSwapForward(journalFile, journal)
+      } else {
+        try {
+          completeRestoreSwapBackward(journalFile, journal)
+        } catch (recoveryError) {
+          logRestoreRecovery(
+            undefined,
+            'error',
+            { err: recoveryError, restoreId: id },
+            'Backup restore rollback is incomplete and will be retried on boot',
+          )
+          throw new AggregateError([err, recoveryError], 'Backup restore failed and directory rollback is incomplete')
+        }
+        throw err
       }
-      throw err
     }
-  }
 
-  if (!event) {
-    throw new Error('restore did not produce a command event')
-  }
-  if (!databaseLineage) {
-    throw new Error('restore did not return database lineage')
-  }
-  if (automaticBackup) {
-    try {
-      // A retention cap of one temporarily needs both the restore source and
-      // its safety snapshot. Once restore is complete, the old source may be
-      // pruned without racing the operation; always retain the new snapshot.
-      pruneAutomaticBackups(
-        dataDir,
-        options.automaticBackupRetention ?? DEFAULT_AUTOMATIC_BACKUP_RETENTION,
-        new Set([automaticBackup.id]),
-      )
-    } catch {
-      // The safety snapshot already exists and the restore has committed. Do
-      // not report a false restore failure for post-operation housekeeping;
-      // the next safety snapshot will retry bounded retention.
+    if (!event) {
+      throw new Error('restore did not produce a command event')
     }
-  }
-  return {
-    revision: event.revision,
-    event,
-    databaseLineage,
-    writerEpoch: getDatabaseWriterMetadata(db).epoch,
+    if (!databaseLineage) {
+      throw new Error('restore did not return database lineage')
+    }
+    const result: RestoreBackupResult = {
+      revision: event.revision,
+      event,
+      databaseLineage,
+      writerEpoch: getDatabaseWriterMetadata(db).epoch,
+    }
+    // Reconcile the restored ledger and publish state.restored before another
+    // request can accept work in the replacement lineage during retention.
+    options.onCommitted?.(result)
+    if (automaticBackup) {
+      try {
+        // A retention cap of one temporarily needs both the restore source and
+        // its safety snapshot. Once restore is complete, the old source may be
+        // pruned without racing the operation; always retain the new snapshot.
+        await pruneAutomaticBackups(
+          dataDir,
+          lease,
+          options.automaticBackupRetention ?? DEFAULT_AUTOMATIC_BACKUP_RETENTION,
+          new Set([automaticBackup.id]),
+        )
+      } catch {
+        // The safety snapshot already exists and the restore has committed. Do
+        // not report a false restore failure for post-operation housekeeping;
+        // the next safety snapshot will retry bounded retention.
+      }
+    }
+    return result
+  } finally {
+    lease.release()
   }
 }
 
-export function deleteBackup(dataDir: string, id: string): void {
-  if (!isValidBackupId(id)) {
-    throw new EntityNotFoundError(`Backup not found: ${id}`)
+export async function deleteBackup(dataDir: string, id: string): Promise<void> {
+  const lease = getMaintenanceCoordinator(dataDir).beginExclusive('delete-backup')
+  try {
+    await deleteBackupUnderLease(dataDir, id, lease)
+  } finally {
+    lease.release()
   }
+}
+
+async function deleteBackupUnderLease(dataDir: string, id: string, lease: MaintenanceLease): Promise<void> {
+  getMaintenanceCoordinator(dataDir).assertExclusive(lease)
+  if (!isValidBackupId(id)) throw new EntityNotFoundError(`Backup not found: ${id}`)
   const dir = backupDir(dataDir, id)
-  if (!fs.existsSync(dir)) {
-    throw new EntityNotFoundError(`Backup not found: ${id}`)
-  }
-  fs.rmSync(dir, { recursive: true, force: true })
-}
-
-function copyDirectoryIfPresent(from: string, to: string): void {
-  if (!fs.existsSync(from)) return
-  fs.cpSync(from, to, { recursive: true })
+  if (!fs.existsSync(dir)) throw new EntityNotFoundError(`Backup not found: ${id}`)
+  await fs.promises.rm(dir, { recursive: true, force: true })
 }
 
 function rmDirectoryIfPresent(dir: string): void {

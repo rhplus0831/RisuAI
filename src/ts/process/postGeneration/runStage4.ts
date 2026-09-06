@@ -1,4 +1,5 @@
-import { getDatabase, type character, type MessageGenerationInfo } from '../../storage/database.svelte'
+import { type character, type Database, type MessageGenerationInfo } from '../../storage/database.svelte'
+import { settingsResourceState } from '../../server/resourceState.svelte'
 import { loadAndTrimCharEmotion } from './charEmotionStore'
 import { applyEmotionFromResponse } from './emotionFromResponse'
 import { runEmotionEmbeddingFallback } from './emotionFallbackEmbedding'
@@ -7,24 +8,34 @@ import { runImggenStableDiff } from './imggenStableDiff'
 import { fireDesktopNotification, type DesktopNotificationInput } from './notification'
 import { finalizeStage4, type StageTimings } from './stage4Finalize'
 import type { DispatchSuccessReq } from '../dispatch/dispatchRequest'
+import type { StablePostGenerationMessageTarget } from './stableTarget'
+import type { ServerGenerationEffectLedgerRef } from '@risuai/protocol/generation-sse'
+import {
+  completedGenerationEffect,
+  runLedgeredGenerationEffect,
+  skippedGenerationEffect,
+} from '../generationEffectLedger'
+import { yieldBeforeCompletionEffect } from '../completionEffectScheduling'
 
 export type RunStage4Result = { status: 'resend' } | { status: 'done' }
 
 export interface RunStage4Args {
+  database: Database
   req: DispatchSuccessReq
   currentChar: character
   result: string
   resendChat: boolean
   emoChanged: boolean
   abortSignal: AbortSignal
-  selectedChar: number
-  selectedChat: number
+  target: StablePostGenerationMessageTarget | null
   /** Mutated: `stage3Duration`, `stage4Start`, `stage4Duration` written. */
   stageTimings: StageTimings
   /** Mutated: `stageTiming.stage3` written before stage 4 starts; `finalizeStage4` later writes all four stages. */
   generationInfo: MessageGenerationInfo
   throwError: (msg: string) => void
   setProcessStage: (n: number) => void
+  effectLedger?: ServerGenerationEffectLedgerRef
+  effectDelivery?: 'live_terminal' | 'late_recovery'
 }
 
 /**
@@ -35,7 +46,7 @@ export interface RunStage4Args {
  * finalize stage 4 cleanly.
  *
  * The discriminated-union return lets `resend` ask the coordinator to release
- * the `doingChat` lease and recurse into `sendChat` (the helper avoids the
+ * the chat-keyed activity lease and recurse into `sendChat` (the helper avoids the
  * circular import that direct recursion would
  * introduce); `done` means the helper has already called `finalizeStage4`
  * (default path) or intentionally skipped it (emotion-fallback paths,
@@ -48,8 +59,7 @@ export async function runStage4(args: RunStage4Args): Promise<RunStage4Result> {
     result,
     resendChat,
     abortSignal,
-    selectedChar,
-    selectedChat,
+    target,
     stageTimings,
     generationInfo,
     throwError,
@@ -66,48 +76,97 @@ export async function runStage4(args: RunStage4Args): Promise<RunStage4Result> {
   stageTimings.stage4Start = Date.now()
 
   if (resendChat) {
-    finalizeStage4({ stageTimings, generationInfo, selectedChar, selectedChat })
+    await Promise.all([
+      runLedgeredGenerationEffect(args.effectLedger, 'notification', args.effectDelivery ?? 'live_terminal', () =>
+        skippedGenerationEffect('resend'),
+      ),
+      runLedgeredGenerationEffect(
+        args.effectLedger,
+        'emotion_image_state',
+        args.effectDelivery ?? 'live_terminal',
+        () => skippedGenerationEffect('resend', false),
+      ),
+    ])
+    finalizeStage4({ stageTimings, generationInfo, target })
     return { status: 'resend' }
   }
 
-  if (getDatabase().notification) {
-    await fireDesktopNotification(chatCompletionNotificationInput(currentChar, result))
+  await runLedgeredGenerationEffect(
+    args.effectLedger,
+    'notification',
+    args.effectDelivery ?? 'live_terminal',
+    async () => {
+      if (
+        settingsResourceState.status !== 'ready' ||
+        !(settingsResourceState.value as Record<string, unknown>).notification
+      ) {
+        return skippedGenerationEffect('not_configured')
+      }
+      await fireDesktopNotification(chatCompletionNotificationInput(currentChar, result))
+      return completedGenerationEffect(undefined)
+    },
+  )
+
+  if (
+    !currentChar.inlayViewScreen &&
+    !abortSignal.aborted &&
+    (currentChar.viewScreen === 'emotion' || currentChar.viewScreen === 'imggen')
+  ) {
+    await yieldBeforeCompletionEffect()
   }
+  const stateEffect = await runLedgeredGenerationEffect(
+    args.effectLedger,
+    'emotion_image_state',
+    args.effectDelivery ?? 'live_terminal',
+    async () => {
+      if (req.special && applyEmotionFromResponse({ emotion: req.special.emotion, currentChar })) {
+        emoChanged = true
+      }
 
-  if (req.special && applyEmotionFromResponse({ emotion: req.special.emotion, currentChar })) {
-    emoChanged = true
-  }
+      if (currentChar.inlayViewScreen || abortSignal.aborted) {
+        return skippedGenerationEffect('current_state_not_applicable', false)
+      }
+      if (currentChar.viewScreen === 'emotion' && !emoChanged) {
+        const { tempEmotion, charemotions } = loadAndTrimCharEmotion(currentChar.chaId)
 
-  if (!currentChar.inlayViewScreen) {
-    if (currentChar.viewScreen === 'emotion' && !emoChanged && abortSignal.aborted === false) {
-      const { tempEmotion, charemotions } = loadAndTrimCharEmotion(currentChar.chaId)
+        if (
+          settingsResourceState.status === 'ready' &&
+          (settingsResourceState.value as Record<string, unknown>).emotionProcesser === 'embedding'
+        ) {
+          await runEmotionEmbeddingFallback({
+            result,
+            currentChar,
+            tempEmotion,
+            charemotions,
+          })
+          return completedGenerationEffect(true)
+        }
 
-      if (getDatabase().emotionProcesser === 'embedding') {
-        await runEmotionEmbeddingFallback({
+        await runEmotionLlmFallback({
+          database: args.database,
           result,
           currentChar,
+          abortSignal,
+          throwError,
+          emotionPrompt2:
+            settingsResourceState.status === 'ready'
+              ? ((settingsResourceState.value as Record<string, unknown>).emotionPrompt2 as string | undefined)
+              : undefined,
           tempEmotion,
           charemotions,
         })
-        return { status: 'done' }
+        return completedGenerationEffect(true)
       }
+      if (currentChar.viewScreen === 'imggen') {
+        await runImggenStableDiff({ currentChar, target, abortSignal })
+        return completedGenerationEffect(false)
+      }
+      return skippedGenerationEffect('current_state_not_applicable', false)
+    },
+  )
+  if (stateEffect.value === true) return { status: 'done' }
 
-      await runEmotionLlmFallback({
-        result,
-        currentChar,
-        abortSignal,
-        throwError,
-        emotionPrompt2: getDatabase().emotionPrompt2,
-        tempEmotion,
-        charemotions,
-      })
-      return { status: 'done' }
-    } else if (currentChar.viewScreen === 'imggen' && abortSignal.aborted === false) {
-      await runImggenStableDiff({ currentChar, selectedChar, selectedChat, abortSignal })
-    }
-  }
-
-  finalizeStage4({ stageTimings, generationInfo, selectedChar, selectedChat })
+  finalizeStage4({ stageTimings, generationInfo, target })
   return { status: 'done' }
 }
 

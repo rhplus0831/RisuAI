@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import {
+  normalizeAgentConfiguration,
   normalizeAgentPresetDefaultId,
   normalizeAgentPresets,
+  resolveAgentPresetSteps,
+  validateAgentRecord,
+  validateAgentRecords,
+  validateAgentPresetRecords,
+  validateAgentPresetStepRecord,
+  validateAgentPresetUseRecord,
   validateAgentPresetRecord,
   type AgentPresetRecord,
   type AgentPresetStepRecord,
+  type ReadonlyAgentRecord,
+  type ReadonlyAgentPresetRecord,
 } from './agentPresetRecords'
 
 function step(patch: Partial<AgentPresetStepRecord> = {}): AgentPresetStepRecord {
@@ -43,7 +52,176 @@ function preset(patch: Partial<AgentPresetRecord> = {}): AgentPresetRecord {
   }
 }
 
+function deepFreezeInput<T>(value: T): T {
+  if (value && typeof value === 'object') {
+    Object.values(value).forEach(deepFreezeInput)
+    Object.freeze(value)
+  }
+  return value
+}
+
 describe('agent preset records', () => {
+  it('validates frozen modular inputs and returns independently mutable resolved and normalized records', () => {
+    const normalized = normalizeAgentConfiguration(undefined, [
+      preset({
+        steps: [
+          step({
+            toggles: [{ key: 'tone', label: 'Tone', kind: 'select', options: ['warm', 'formal'] }],
+            lorebookInputs: [{ key: 'setting', displayName: 'Setting', required: true }],
+            instruction: '{{agentToggle::tone}} {{agentInput::setting}}',
+            failurePolicy: { mode: 'fallbackText', text: 'Fallback' },
+          }),
+        ],
+      }),
+    ])
+    normalized.agentPresets[0].agentUses![0].modelOverride = { mode: 'modelProfile', profileId: 'fast' }
+    normalized.agentPresets[0].agentUses![0].runtimeOverride = { timeoutMs: 5_000 }
+    const agent: ReadonlyAgentRecord = deepFreezeInput(normalized.agents[0])
+    const inputPreset: ReadonlyAgentPresetRecord = deepFreezeInput(normalized.agentPresets[0])
+    const agents = Object.freeze([agent])
+    const before = JSON.stringify({ agent, inputPreset })
+
+    expect(validateAgentRecord(agent)).toEqual([])
+    expect(validateAgentRecords(agents)).toEqual([])
+    expect(validateAgentPresetRecords(Object.freeze([inputPreset]), agents)).toEqual([])
+    expect(validateAgentPresetUseRecord(inputPreset.agentUses![0])).toEqual([])
+    const resolved: AgentPresetStepRecord[] = resolveAgentPresetSteps(inputPreset, agents)
+    expect(resolved[0]).toMatchObject({
+      model: { mode: 'modelProfile', profileId: 'fast' },
+      runtime: { timeoutMs: 5_000, maxInputChars: 20_000 },
+      inputScopes: ['currentUserMessage', 'recentChatTail'],
+    })
+    resolved[0].dependencies.push('other')
+    resolved[0].inputScopes.push('memoryContext')
+    resolved[0].toggles![0].options.push('playful')
+    resolved[0].lorebookInputs![0].displayName = 'Edited'
+    resolved[0].runtime.timeoutMs = 10_000
+    resolved[0].model = { mode: 'inheritMain' }
+    resolved[0].failurePolicy = { mode: 'optional' }
+
+    const owned = normalizeAgentConfiguration(agents, Object.freeze([inputPreset]))
+    owned.agents[0].inputScopes.push('memoryContext')
+    owned.agents[0].toggles![0].options.push('playful')
+    owned.agentPresets[0].agentUses![0].dependencies.push('other')
+    owned.agentPresets[0].agentUses![0].runtimeOverride!.timeoutMs = 12_000
+    expect(JSON.stringify({ agent, inputPreset })).toBe(before)
+  })
+
+  it('copies every nested legacy step collection from frozen input without adding absent optional fields', () => {
+    const inputPreset: ReadonlyAgentPresetRecord = deepFreezeInput(
+      preset({
+        steps: [
+          step({
+            toggles: [{ key: 'tone', label: 'Tone', kind: 'select', options: ['warm'] }],
+            lorebookInputs: [{ key: 'setting', displayName: 'Setting', required: false }],
+            instruction: '{{agentToggle::tone}} {{agentInput::setting}}',
+          }),
+          step({ id: 'aps_second', outputKey: 'second', dependencies: ['aps_context'] }),
+        ],
+      }),
+    )
+    expect(validateAgentPresetRecord(inputPreset)).toEqual([])
+    expect(validateAgentPresetStepRecord(inputPreset.steps[0])).toEqual([])
+    const resolved: AgentPresetStepRecord[] = resolveAgentPresetSteps(inputPreset, Object.freeze([]))
+    expect(resolved).toEqual(inputPreset.steps)
+    expect(Object.hasOwn(resolved[1], 'toggles')).toBe(false)
+    expect(Object.hasOwn(resolved[1], 'lorebookInputs')).toBe(false)
+    resolved[0].toggles![0].options.push('formal')
+    resolved[0].lorebookInputs![0].required = true
+    resolved[1].dependencies.push('other')
+    resolved[1].inputScopes.push('memoryContext')
+    expect(inputPreset.steps[0].toggles![0].options).toEqual(['warm'])
+    expect(inputPreset.steps[0].lorebookInputs![0].required).toBe(false)
+    expect(inputPreset.steps[1].dependencies).toEqual(['aps_context'])
+    expect(inputPreset.steps[1].inputScopes).toEqual(['currentUserMessage', 'recentChatTail'])
+  })
+
+  it('migrates embedded steps into standalone Agents and preset uses without deduplicating them', () => {
+    const normalized = normalizeAgentConfiguration(undefined, [
+      preset({ id: 'ap_a', steps: [step({ id: 'shared_name' })] }),
+      preset({ id: 'ap_b', steps: [step({ id: 'shared_name', instruction: 'Different behavior.' })] }),
+    ])
+
+    expect(normalized.agents).toHaveLength(2)
+    expect(normalized.agents.map((agent) => agent.id)).toEqual(['shared_name', 'shared_name_ap_b'])
+    expect(normalized.agentPresets[0].steps).toEqual([])
+    expect(normalized.agentPresets[0].agentUses).toEqual([
+      expect.objectContaining({ id: 'shared_name', agentId: 'shared_name', outputKey: 'context' }),
+    ])
+    expect(normalized.agentPresets[1].agentUses?.[0].agentId).toBe('shared_name_ap_b')
+  })
+
+  it('resolves shared Agent defaults with per-preset model and runtime overrides', () => {
+    const normalized = normalizeAgentConfiguration(undefined, [preset()])
+    const agent = normalized.agents[0]
+    const firstPreset = normalized.agentPresets[0]
+    const secondPreset: AgentPresetRecord = {
+      id: 'ap_second',
+      name: 'Second',
+      enabled: true,
+      version: 1,
+      steps: [],
+      agentUses: [
+        {
+          ...firstPreset.agentUses![0],
+          id: 'use_second',
+          modelOverride: { mode: 'modelProfile', profileId: 'profile_fast' },
+          runtimeOverride: { timeoutMs: 5_000 },
+        },
+      ],
+    }
+
+    expect(resolveAgentPresetSteps(firstPreset, [agent])[0]).toMatchObject({
+      agentId: agent.id,
+      instruction: 'Collect context.',
+      model: { mode: 'inheritMain' },
+      runtime: { timeoutMs: 30_000 },
+    })
+    expect(resolveAgentPresetSteps(secondPreset, [agent])[0]).toMatchObject({
+      agentId: agent.id,
+      model: { mode: 'modelProfile', profileId: 'profile_fast' },
+      runtime: { timeoutMs: 5_000, maxInputChars: 20_000 },
+    })
+  })
+
+  it('normalizes and resolves the Agent-owned ChatML request mode', () => {
+    const normalized = normalizeAgentConfiguration(
+      [
+        {
+          id: 'agent-chatml',
+          name: 'ChatML Agent',
+          instruction: '<|im_start|>user\n{{currentUserMessage}}<|im_end|>',
+          useChatML: true,
+          inputScopes: ['currentUserMessage'],
+        },
+      ],
+      [
+        {
+          id: 'preset-chatml',
+          name: 'ChatML Preset',
+          agentUses: [{ id: 'use-chatml', agentId: 'agent-chatml', outputKey: 'result' }],
+        },
+      ],
+    )
+
+    expect(normalized.agents[0].useChatML).toBe(true)
+    expect(resolveAgentPresetSteps(normalized.agentPresets[0], normalized.agents)[0].useChatML).toBe(true)
+  })
+
+  it('rejects plain instructions when an Agent enables ChatML', () => {
+    const normalized = normalizeAgentConfiguration(
+      [{ id: 'agent-chatml', name: 'ChatML Agent', instruction: 'Plain instruction.', useChatML: true }],
+      [],
+    ).agents[0]
+
+    expect(validateAgentRecord(normalized)).toContainEqual(
+      expect.objectContaining({
+        code: 'invalid_instruction',
+        path: 'agent.instruction',
+        message: expect.stringContaining('<|im_start|>'),
+      }),
+    )
+  })
   it('normalizes stored records without inventing default presets', () => {
     expect(normalizeAgentPresets(undefined)).toEqual([])
 
@@ -96,12 +274,89 @@ describe('agent preset records', () => {
     ])
   })
 
+  it('preserves a non-empty final output CBS template and drops a blank one', () => {
+    expect(
+      normalizeAgentPresets([
+        { id: 'ap_composed', name: 'Composed', finalOutputTemplate: ' {{slot::mainOutput}} ' },
+        { id: 'ap_blank', name: 'Blank', finalOutputTemplate: '   ' },
+      ]),
+    ).toEqual([
+      expect.objectContaining({ id: 'ap_composed', finalOutputTemplate: ' {{slot::mainOutput}} ' }),
+      expect.not.objectContaining({ finalOutputTemplate: expect.anything() }),
+    ])
+  })
+
+  it('preserves non-empty module integration and drops a blank value', () => {
+    expect(
+      normalizeAgentPresets([
+        { id: 'ap_modules', name: 'Modules', moduleIntergration: ' research-tools, module-id ' },
+        { id: 'ap_blank_modules', name: 'Blank Modules', moduleIntergration: '   ' },
+      ]),
+    ).toEqual([
+      expect.objectContaining({ id: 'ap_modules', moduleIntergration: ' research-tools, module-id ' }),
+      expect.not.objectContaining({ moduleIntergration: expect.anything() }),
+    ])
+  })
+
   it('clears default ids that do not point to an existing preset', () => {
     const presets = normalizeAgentPresets([{ id: 'ap_a', name: 'A' }])
 
     expect(normalizeAgentPresetDefaultId('ap_a', presets)).toBe('ap_a')
     expect(normalizeAgentPresetDefaultId('missing', presets)).toBeUndefined()
     expect(normalizeAgentPresetDefaultId('', presets)).toBeUndefined()
+  })
+
+  it('normalizes Agent toggle and named lorebook input definitions', () => {
+    const normalized = normalizeAgentConfiguration(
+      [
+        {
+          id: 'agent-context',
+          name: 'Context',
+          instruction: '{{agentToggle::tone}}\n{{agentInput::reference}}',
+          toggles: [{ key: ' tone ', label: ' Tone ', kind: 'select', options: ['Warm', 'Cold'] }],
+          lorebookInputs: [{ key: ' reference ', displayName: ' Reference Notes ' }],
+        },
+      ],
+      [],
+    ).agents[0]
+
+    expect(normalized.toggles).toEqual([{ key: 'tone', label: 'Tone', kind: 'select', options: ['Warm', 'Cold'] }])
+    expect(normalized.lorebookInputs).toEqual([{ key: 'reference', displayName: 'Reference Notes', required: true }])
+  })
+
+  it('rejects duplicate local keys and required lorebook inputs that are not placed in the instruction', () => {
+    const issues = validateAgentPresetRecord(
+      preset({
+        steps: [
+          step({
+            toggles: [
+              { key: 'tone', label: 'Tone', kind: 'boolean', options: [] },
+              { key: 'tone', label: 'Duplicate', kind: 'boolean', options: [] },
+            ],
+            lorebookInputs: [{ key: 'reference', displayName: 'Reference Notes', required: true }],
+          }),
+        ],
+      }),
+    )
+
+    expect(issues.map((issue) => issue.code)).toEqual(
+      expect.arrayContaining(['invalid_toggle', 'invalid_lorebook_input']),
+    )
+  })
+
+  it('rejects Agent-local placeholders that do not have matching definitions', () => {
+    const issues = validateAgentPresetRecord(
+      preset({
+        steps: [step({ instruction: '{{agentToggle::missing_toggle}}\n{{agentInput::missing_input}}' })],
+      }),
+    )
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'invalid_toggle', message: expect.stringContaining('missing_toggle') }),
+        expect.objectContaining({ code: 'invalid_lorebook_input', message: expect.stringContaining('missing_input') }),
+      ]),
+    )
   })
 
   it('validates output keys, dependency ids, cycles, and phase direction', () => {

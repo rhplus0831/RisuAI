@@ -10,6 +10,17 @@ const supporterSpies = vi.hoisted(() => ({
   loadSupporters: vi.fn(),
 }))
 
+const routeIntentSpies = vi.hoisted(() => ({
+  prefetch: vi.fn(),
+}))
+
+vi.mock('src/ts/routeIntentPrefetch', () => ({ prefetchRouteIntent: routeIntentSpies.prefetch }))
+
+vi.mock('src/ts/server/routeResourceLoader', () => ({
+  finishRouteResources: vi.fn(async () => true),
+  prepareRouteResources: vi.fn(async () => true),
+}))
+
 vi.mock('src/ts/alert', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/alert')>()
   return {
@@ -61,12 +72,10 @@ import { SUPPORTER_ENDPOINT } from './Pages/supporters'
 import Settings from './Settings.svelte'
 import { language } from 'src/lang'
 import { additionalSettingsMenu, MobileGUI, SettingsMenuIndex } from 'src/ts/stores.svelte'
-import {
-  getResourceDatabase as getDatabase,
-  replaceResourceDatabase as setDatabaseLite,
-} from 'src/ts/server/resourceState.svelte'
+import { replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
 import { isLite } from 'src/ts/lite'
 import { applyRouteToStores, currentRoute, navigate } from 'src/ts/router'
+import { getResourceDatabase as getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -94,6 +103,12 @@ async function applyNavigatedRoute() {
   await applyRouteToStores(get(currentRoute))
   await tick()
   await Promise.resolve()
+  await vi.waitFor(
+    () => {
+      expect(target.querySelector('[data-testid$="-pending"]')).toBeNull()
+    },
+    { timeout: 5_000 },
+  )
 }
 
 async function resizeViewport(width: number) {
@@ -119,6 +134,7 @@ describe('Settings supporter tab', () => {
     alertSpies.alertConfirm.mockReset()
     alertSpies.alertConfirm.mockResolvedValue(false)
     supporterSpies.loadSupporters.mockClear()
+    routeIntentSpies.prefetch.mockReset()
     vi.stubGlobal('fetch', vi.fn())
 
     target = document.createElement('div')
@@ -200,7 +216,65 @@ describe('Settings supporter tab', () => {
     expect(settingsButton(language.settingsNavPromptPresets)).toBeTruthy()
     expect(settingsButton(language.settingsNavAgentPresets)).toBeTruthy()
     expect(settingsButton(language.settingsNavInputHooks)).toBeTruthy()
+    expect(settingsButton(language.settingsNavMemory)).toBeTruthy()
+    expect(settingsButton(language.bardWiki.title)).toBeTruthy()
     expect(settingsButton(language.settingsNavLegacyBotPresets)).toBeUndefined()
+  })
+
+  it('warms the exact settings page on pointer or keyboard intent', () => {
+    const modelButton = settingsButton(language.settingsNavModelProfiles)
+    const promptButton = settingsButton(language.settingsNavPromptPresets)
+    const memoryButton = settingsButton(language.settingsNavMemory)
+    const bardWikiButton = settingsButton(language.bardWiki.title)
+    expect(modelButton).toBeTruthy()
+    expect(promptButton).toBeTruthy()
+    expect(memoryButton).toBeTruthy()
+    expect(bardWikiButton).toBeTruthy()
+
+    modelButton?.dispatchEvent(new Event('pointerover', { bubbles: true }))
+    promptButton?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    memoryButton?.dispatchEvent(new Event('pointerover', { bubbles: true }))
+    bardWikiButton?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+
+    expect(routeIntentSpies.prefetch).toHaveBeenNthCalledWith(1, '/settings/model')
+    expect(routeIntentSpies.prefetch).toHaveBeenNthCalledWith(2, '/settings/prompt-settings')
+    expect(routeIntentSpies.prefetch).toHaveBeenNthCalledWith(3, '/settings/memory')
+    expect(routeIntentSpies.prefetch).toHaveBeenNthCalledWith(4, '/settings/bardwiki')
+  })
+
+  it('opens Memory through its canonical route', async () => {
+    const memoryButton = settingsButton(language.settingsNavMemory)
+    expect(memoryButton).toBeTruthy()
+
+    memoryButton?.click()
+    await flushClick()
+
+    expect(get(currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings/memory',
+      section: 'memory',
+      index: 2,
+    })
+  })
+
+  it('opens the standalone BardWiki settings page from Tools & Extensions', async () => {
+    const bardWikiButton = settingsButton(language.bardWiki.title)
+    expect(bardWikiButton).toBeTruthy()
+
+    bardWikiButton?.click()
+    await flushClick()
+
+    expect(get(currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings/bardwiki',
+      section: 'bardwiki',
+      index: 23,
+    })
+
+    await applyNavigatedRoute()
+
+    expect(get(SettingsMenuIndex)).toBe(23)
+    expect(target.querySelector('[data-risu-bardwiki-settings]')).toBeTruthy()
   })
 
   it('updates a selected settings page layout across the responsive breakpoint', async () => {
@@ -284,6 +358,41 @@ describe('Settings supporter tab', () => {
     expect(get(SettingsMenuIndex)).toBe(20)
     expect(target.textContent).toContain(language.inputHooks)
     expect(target.querySelector('[data-risu-input-hook-settings]')).toBeTruthy()
+  })
+
+  it('opens Request History from the Data settings group', async () => {
+    const requestHistoryButton = settingsButton(language.settingsNavRequestHistory)
+    expect(requestHistoryButton).toBeTruthy()
+
+    requestHistoryButton?.click()
+    await flushClick()
+
+    expect(get(currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings/request-history',
+      section: 'request-history',
+      index: 21,
+    })
+  })
+
+  it('opens Source Code from Advanced & About', async () => {
+    const sourceCodeButton = settingsButton(language.settingsNavSourceCode)
+    expect(sourceCodeButton).toBeTruthy()
+
+    sourceCodeButton?.click()
+    await flushClick()
+
+    expect(get(currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings/source-code',
+      section: 'source-code',
+      index: 22,
+    })
+
+    await applyNavigatedRoute()
+
+    expect(get(SettingsMenuIndex)).toBe(22)
+    expect(target.querySelector('[data-risu-source-code]')).toBeTruthy()
   })
 
   it('hides the legacy global lorebook and regex settings items by default', () => {

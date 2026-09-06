@@ -1,18 +1,30 @@
 import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { performance } from 'node:perf_hooks'
-import type { Chat, Database, Message, MessagePresetInfo, character } from '../../../../src/ts/storage/database.svelte'
-import type { CbsCallbackMemo } from '../../../../src/ts/cbs'
-import type { PromptItem } from '../../../../src/ts/process/prompt'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
-import { trimUntilPunctuation } from '../../../../src/ts/util/punctuation.js'
+import { isDeepStrictEqual } from 'node:util'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+  FastifyLoreBook as loreBook,
+  FastifyMessage as Message,
+  FastifyMessagePresetInfo as MessagePresetInfo,
+} from './serverTypes.js'
+import type { PromptItem } from './promptTemplate.js'
+import type { CbsCallbackMemo } from './cbsCallbackMemo.js'
+import type { ReportedClientContext } from '@risuai/protocol/client-context'
+import type { PromptMessage } from './promptMessage.js'
+import { trimUntilPunctuation } from '@risuai/shared-core/punctuation'
+import { hypaV3PresetIndexFromStableId } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 import { EntityNotFoundError } from '../repository.js'
 import {
+  determineHypaV3SummarizedPrefixStartIndex,
   normalizeHypaV3Settings,
   planStandardHypaV3Memory,
   type HypaV3Settings,
   type HypaV3SummaryRef,
 } from '../memoryPlanner.js'
+import { emptyPromptMemoryQueryDiagnostics, type PromptMemoryQueryDiagnostics } from '../promptMemoryQuery.js'
 import { planHypaV3ChunkJobs } from '../memoryChunkPlanner.js'
 import {
   buildFormatOrder,
@@ -46,6 +58,7 @@ import {
   type AssetLookup,
   type EditProcessHook,
   type PreparedDepthPrompt,
+  type PromptAssetDropDiagnostic,
 } from './history.js'
 import { buildAssetLookup, type ResolveStoredAsset } from './assetLookup.js'
 import { buildPromptAssetTable, type PromptAssetTable } from './promptAssets.js'
@@ -76,9 +89,10 @@ import type { PostGenerationLuaTraceCollector } from './luaPostGenerationTrace.j
 import type { PostGenerationLuaProgressTracker } from './luaPostGenerationProgress.js'
 import { processScriptAsync } from './scripts.js'
 import { getActiveModules, getModuleTriggers } from './modules.js'
-import { parseKeyValue } from '../../../../src/ts/util/parseKeyValue'
 import { expandVariables, type ExpandContext } from './variables.js'
-import type { PromptEvent } from './sseEvents.js'
+import { getChatDefaultVariables } from './chatVarDefaults.js'
+import { modelInfoForPromptScope, type ServerCbsCallbackDiagnosticReason } from './promptScope.js'
+import type { PromptEvent, WarningEvent } from './sseEvents.js'
 import type { MemorySelectionInput } from '../memorySelectionService.js'
 import {
   cleanupOrphanedMemoryWithSummarySnapshot,
@@ -91,14 +105,17 @@ import {
 } from '../memoryRepository.js'
 import { filterMemorySummariesForModel } from '../memorySummaryCompatibility.js'
 import { tokenize, tokenizeChat } from './tokens.js'
+import { buildBardWikiPromptRows, type BardWikiPromptDiagnostics } from './bardWiki.js'
+import { BardWikiPinnedBudgetError } from './bardWikiSelection.js'
 import { tokenizeHypaV3PrefixChat } from './prefixTokenMemo.js'
-import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
+import { ensureTokenizerLoadedForDb, tokenizerOptionsFromDb } from './tokenizerConfig.js'
 import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
 import { bumpAssemblyCbsHistoryGeneration, createAssemblyCbsCallbackMemo } from './cbsCallbackMemo.js'
-import { buildEffectiveGenerationConfig } from './effectiveGenerationConfig.js'
+import { buildEffectiveGenerationConfig, cloneGenerationWorkingCharacter } from './effectiveGenerationConfig.js'
 import { summarizePromptRows, type PromptRowsSummary } from './promptSummary.js'
 import {
   AgentPresetGenerationError,
+  assertAgentPresetLorebookInputsReady,
   agentPresetStepResultErrorMessage,
   executeAgentPresetPhase,
   executeAgentPresetStep,
@@ -114,9 +131,9 @@ import {
   resolveAgentPresetForChat,
   type AgentPresetExecutionPlan,
   type AgentPresetResolution,
-} from '../../../../src/ts/agentPresetResolver.js'
-import { resolveModelProfile, type ResolvedModelProfile } from '../../../../src/ts/model/modelProfileResolver.js'
-import type { AgentPresetRecord } from '../../../../src/ts/agentPresetRecords.js'
+} from '@risuai/shared-core/agent-preset-resolver'
+import type { ResolvedModelProfile } from '@risuai/shared-core/model-profile-resolver'
+import type { ReadonlyAgentPresetRecord as AgentPresetRecord } from '@risuai/shared-core/agent-preset-records'
 
 /**
  * Root prompt assembly entry point.
@@ -137,9 +154,14 @@ import type { AgentPresetRecord } from '../../../../src/ts/agentPresetRecords.js
  */
 export interface AssembleDeps {
   loadDatabase(): Database | null
+  resolveSpeakerName?: (characterId: string) => string | undefined
   loadMemoryDatabase?(): DatabaseSync | null
+  /** Server asset root used by Lua image generation. */
+  assetDataDir?: string
   loadPromptMemoryQueryVectors?(): MemorySelectionInput['queryVectors']
+  loadPromptMemoryQueryDiagnostics?(): PromptMemoryQueryDiagnostics
   enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
+  onPromptMemoryJobEnqueued?: (job: MemoryJob) => void
   executeAgentPresetStep?: AgentPresetStepExecutor
   /** Optional live progress reporter for Agent Preset helper steps. */
   agentPresetProgress?: AgentPresetProgressReporter
@@ -170,6 +192,8 @@ export type PromptAssemblyStage =
 
 export interface PromptMemoryChunkPlanningDiagnostics {
   attempted: boolean
+  summarizedPrefixStartIndex: number
+  summarizedPrefixTokens: number
   chunksCreated: number
   jobsCreated: number
   plannedWindows: number
@@ -186,19 +210,33 @@ export interface AssembleInput {
   mode: 'send' | 'continue' | 'preview' | 'preview_prompt' | 'regenerate'
   regenerateMessageId?: string
   userMessage?: string
+  /** Durable identity of a protocol-v1 accepted user row already in the transcript. */
+  acceptedMessageId?: string
+  /** Retry-only: the accepted row's submit-time input hooks already committed. */
+  reuseAcceptedSubmitTransforms?: boolean
+  /** Original-compatible send from an assistant tail without appending a user row. */
+  emptySend?: boolean
+  /** Client-created empty-send sentinel; skips only submit-time input hooks. */
+  syntheticSayNothing?: boolean
   resetMessages?: boolean
   expectedRevision?: number
   /** Legacy compatibility only; Fastify inlay bytes should live in `/assets`. */
   inlayAssets?: unknown[]
   /** Legacy browser-local inlay id -> server asset id aliases. */
   inlayAssetRefs?: unknown[]
+  /** Browser values reported by the client for server-owned CBS expansion. */
+  clientContext?: ReportedClientContext
 }
+
+/** Server-derived persistence behavior for a Continue generation. */
+export type ContinueDisposition = 'append' | 'extend'
 
 export type AssembleMutationSource =
   | 'user_message'
   | 'regenerate'
   | 'run_var'
   | 'history_normalize'
+  | 'history_inject'
   | 'start_trigger'
   | 'input_trigger'
   | 'editinput'
@@ -226,6 +264,13 @@ export type AssembleMessageMutation =
       beforeLength: number
       afterLength: number
       messages: Message[]
+    }
+  | {
+      type: 'replace_by_id'
+      source: 'history_inject'
+      messageId: string
+      before: Message
+      message: Message
     }
 
 const MESSAGE_MUTATION_FIRST_CHANGED_INDEX = Symbol('messageMutationFirstChangedIndex')
@@ -261,8 +306,15 @@ export interface AgentPresetRuntimeState {
   outputRequired: Record<string, boolean>
   userInputModified?: boolean
   finalTextModified?: boolean
+  finalOutputComposed?: boolean
   mainOutputText?: string
-  failure?: AgentPresetPhaseFailure
+  failure?: AgentPresetPhaseFailure | AgentPresetFinalOutputFailure
+}
+
+interface AgentPresetFinalOutputFailure {
+  phase: 'afterMain'
+  message: string
+  failureKind: 'final_output_cbs'
 }
 
 const assemblyMessageCaptureInstrumentation: AssemblyMessageCaptureInstrumentation = {
@@ -322,13 +374,24 @@ export interface AssembleAdditionalSystemPromptMutation {
   origin: 'start' | 'historyend' | 'promptend'
   slot: 'lastChat' | 'postEverything'
   placement: 'push' | 'unshift'
-  row: OpenAIChat
+  row: PromptMessage
 }
 
 export interface AssembleChatMetadataMutation {
   key: 'lastMemory'
   before: string | null
   after: string | null
+}
+
+export type AssembleCharacterFieldMutation = {
+  key: 'name' | 'firstMessage' | 'backgroundHTML' | 'desc'
+  before: string | null
+  after: string
+}
+
+export interface AssembleLocalLoreMutation {
+  before: loreBook[]
+  after: loreBook[]
 }
 
 export interface AssembleMutationPayload {
@@ -340,6 +403,8 @@ export interface AssembleMutationPayload {
   messageMutations: AssembleMessageMutation[]
   chatVarMutations: AssembleChatVarMutation[]
   chatMetadataMutations?: AssembleChatMetadataMutation[]
+  characterFieldMutations?: AssembleCharacterFieldMutation[]
+  localLoreMutation?: AssembleLocalLoreMutation
   additionalSystemPrompt: AssembleAdditionalSystemPromptMutation[]
 }
 
@@ -352,7 +417,11 @@ export interface AssembleRestorationPayload {
   scriptstate?: Record<string, string | number | boolean>
 }
 
-export type AssembleAbortReason = 'trigger_stop' | 'history_context_overflow' | 'overflow'
+export type AssembleAbortReason =
+  | 'trigger_stop'
+  | 'history_context_overflow'
+  | 'bardwiki_pinned_budget_exceeded'
+  | 'overflow'
 
 /**
  * The full assembler output. `prompt` is the `prompt` SSE event payload; the
@@ -367,31 +436,32 @@ export interface AssembleResult {
   abortReason?: AssembleAbortReason
   /** The `prompt` SSE event payload (messages + promptInfo + lore report). */
   prompt?: Omit<PromptEvent, 'type'>
-  /** The budgeted flat prompt (full `OpenAIChat` rows) for dispatch. */
-  formated?: OpenAIChat[]
+  /** The budgeted flat prompt (full `PromptMessage` rows) for dispatch. */
+  formated?: PromptMessage[]
   /** Expanded global + character provider logit-bias rows. */
   biases?: [string, number][]
   /** Metadata-only deterministic summary/hash of the budgeted dispatch rows. */
   promptSummary?: PromptRowsSummary
   /** Final input token count from `finalizeRequestBudget`. */
   inputTokens?: number
-  /** Clamped response budget from `finalizeRequestBudget`. */
+  /** Reserved response budget from `finalizeRequestBudget`, clamped when pinned input requires it. */
   outputTokens?: number
+  /** Non-fatal assembly diagnostics emitted through the existing warning SSE channel. */
+  warnings?: Omit<WarningEvent, 'type'>[]
   /** Server-owned chat and variable mutations produced during assembly. */
   mutations?: AssembleMutationPayload
   /** Browser-visible state from before the server-owned mutations replay. */
   restoration?: AssembleRestorationPayload
   /**
-   * Submit-time transcript the route persists when {@link submitTranscriptChanged}
-   * is set. It contains the authoritative server-owned user-input transforms,
-   * including a successful before-main Agent Preset `userInput` destination.
-   * Route-only (not on the SSE wire).
+   * Optional full transcript snapshot used when persistence cannot be expressed
+   * as identity-addressed mutations alone. Route-only (not on the SSE wire).
    */
   submitMessages?: Message[]
   /**
-   * True when the submit-time input trigger, `editinput`, or a before-main Agent
-   * Preset transformed the user message — i.e. the route must persist
-   * {@link submitMessages}. Stays false for a plain send with no input transform.
+   * True when a submit-time input transform or history `@@inject` rewrite made
+   * the route responsible for transcript persistence, using either
+   * {@link submitMessages} or the message mutation payload. Stays false for
+   * plain prompt-local history regex transforms.
    */
   submitTranscriptChanged?: boolean
   /**
@@ -413,6 +483,8 @@ export interface AssemblyState {
   database: Database
   currentChar: character
   currentChat: Chat
+  /** Older durable chat history was omitted by either context-budget pass. */
+  historyTruncated?: boolean
   /** Prompt preset name and active toggle snapshot for the generated assistant row. */
   promptInfo: MessagePresetInfo
   /** Index into `database.characters`. */
@@ -428,9 +500,28 @@ export interface AssemblyState {
   usingPromptTemplate: boolean
   /** Per-assembly cache for template cards stable across token preflight and final render. */
   stableCardCache: StableCardRenderCache
+  /**
+   * Scriptstate surrounding the speculative stable-card preflight. Preflight
+   * run-var writes are rolled back so the start trigger observes its baseline
+   * input; an unchanged final render replays `after`, while an invalidated
+   * render executes the cards once against the post-trigger state.
+   */
+  stableCardPreflightScriptstate?: {
+    before: Record<string, string | number | boolean>
+    after?: Record<string, string | number | boolean>
+  }
+  stableCardCacheInvalidated?: boolean
   formatOrder: FormatOrderKey[]
   /** `input.mode === 'continue'`; drives the `[Continue the last response]` marker. */
   isContinue: boolean
+  /**
+   * Compatibility policy derived from the effective `useSayNothing` setting.
+   * `append` mirrors the original transient say-nothing turn; `extend` keeps
+   * Fastify's explicit in-place continuation behavior.
+   */
+  continueDisposition: ContinueDisposition
+  /** Identity of the non-persistent say-nothing row used by append-style Continue. */
+  transientContinueBoundaryId?: string
   /** Abort signal from `AssembleDeps.signal`, handed to every Lua run. */
   signal?: AbortSignal
   /**
@@ -445,11 +536,23 @@ export interface AssemblyState {
   loadoutId?: string
   activeModuleIds?: string[]
   resolvedMainProfile?: ResolvedModelProfile
+  /** Unsupported trigger types observed anywhere in this generation. */
+  unsupportedTriggerEffectTypes: Set<string>
+  /** Types already surfaced through the warning SSE channel. */
+  warnedUnsupportedTriggerEffectTypes: Set<string>
+  /** Unavailable CBS callbacks observed anywhere in this generation. */
+  cbsCallbackDiagnostics: Map<string, ServerCbsCallbackDiagnosticReason>
+  /** CBS callback names already surfaced through the warning SSE channel. */
+  warnedCbsCallbackNames: Set<string>
   // --- Lorebook placement + token preflight (set by `fillLorebookSlots`) ---
   /** The lorebook activation report (entries that fired + why). */
   report?: LorebookActivationReport
   /** `{{position::}}` resolver shared by the template / render walkers. */
-  positionParser?: (text: string, loc: string) => string
+  positionParser?: (text: string, loc: string | undefined) => string
+  /** The base character-description row, retained across lorebook insertion. */
+  descriptionBasePrompt?: PromptMessage
+  /** Index of the base character-description row after lorebook placement. */
+  descriptionBaseIndex?: number
   /** Depth-positioned lore the history splicer consumes. */
   depthPrompts?: LoreEntryActive[]
   /**
@@ -468,7 +571,7 @@ export interface AssemblyState {
    * The flattened history rows from `buildHistoryWindow`. Captured here only;
    * the memory window pushes them into `unformated.chats`.
    */
-  historyMessages?: OpenAIChat[]
+  historyMessages?: PromptMessage[]
   biases?: [string, number][]
   /**
    * The start-trigger result threaded out of the history walk. Later assembly
@@ -491,46 +594,69 @@ export interface AssemblyState {
    * Memory-card rows split out of the history by the memory window and fed to
    * `renderFinalPrompt`.
    */
-  memories?: OpenAIChat[]
+  memories?: PromptMessage[]
   promptMemoryChunkPlanningDiagnostics?: PromptMemoryChunkPlanningDiagnostics
+  promptMemoryQueryDiagnostics?: PromptMemoryQueryDiagnostics
   promptMemorySelectionDiagnostics?: PromptMemoryAdapterDiagnostics
   promptMemoryRowAssemblyDiagnostics?: PromptMemoryRowAssemblyDiagnostics
   promptMemoryFollowUpDiagnostics?: PromptMemoryFollowUpDiagnostics
+  bardWikiPromptDiagnostics?: BardWikiPromptDiagnostics
+  bardWikiRows?: PromptMessage[]
   recordAssemblyStageTiming?: (stage: PromptAssemblyStage, durationMs: number) => void
-  promptMemoryRows?: OpenAIChat[]
+  promptMemoryRows?: PromptMessage[]
+  /** Stored-summary boundary applied only when the Hypa V3 prompt-memory path is enabled. */
+  promptMemoryHistoryStartIndex?: number
+  /** Token cost removed with `promptMemoryHistoryStartIndex`. */
+  promptMemorySummarizedHistoryTokens?: number
   /** Agent Preset resolution, hidden step outputs, and diagnostics for this generation. */
   agentPreset?: AgentPresetRuntimeState
   // --- Final render + budget (set by `renderAndBudget`) ---
   /** The budgeted flat prompt for dispatch. */
-  formated?: OpenAIChat[]
+  formated?: PromptMessage[]
   /** Metadata-only deterministic summary/hash of the budgeted dispatch rows. */
   promptSummary?: PromptRowsSummary
   /** Template-path prompt-info rows (`renderFinalPrompt.promptText`). */
-  promptText?: OpenAIChat[]
+  promptText?: PromptMessage[]
   /** Final input token count from `finalizeRequestBudget`. */
   inputTokens?: number
-  /** Clamped response budget from `finalizeRequestBudget`. */
+  /** Reserved response budget from `finalizeRequestBudget`, clamped when pinned input requires it. */
   outputTokens?: number
   /** Why the send aborted, when `stopSending` is true. */
   abortReason?: AssembleAbortReason
   // --- Typed mutation handoff (set while assembling) ---
   initialMessages?: Message[]
+  /**
+   * Authoritative submit-time transcript projection. Prompt-only transforms
+   * (notably regenerate truncation and run-var expansion) never write here.
+   * Route-owned submit transforms update rows in this snapshot by identity and
+   * `captureSubmitTranscript()` persists from it rather than the working prompt.
+   */
+  authoritativeMessages?: Message[]
   messageMutationCheckpoint?: Message[]
   initialScriptstate?: Record<string, string | number | boolean>
   initialLastMemory?: string
+  initialCharacterFields?: Record<AssembleCharacterFieldMutation['key'], string | null>
+  initialLocalLore?: loreBook[]
   /** The submit-time input trigger rewrote the transcript. */
   inputTriggerRewroteTranscript?: boolean
   /** `editinput` transformed the submitted user message. */
   editInputTransformed?: boolean
   /** A before-main Agent Preset step replaced the latest user message. */
   agentPresetInputTransformed?: boolean
+  /** A matched history `@@inject` rewrote one or more persistence-eligible rows. */
+  historyInjectRewroteTranscript?: boolean
+  /** An injected row did not exist at assembly start and needs full transcript persistence. */
+  historyInjectRequiresTranscriptReplacement?: boolean
   /** Submit transcript snapshot used when a server-owned input transform changed it. */
   submitMessages?: Message[]
   messageMutations?: AssembleMessageMutation[]
   additionalSystemPromptMutations?: AssembleAdditionalSystemPromptMutation[]
   memoryDatabase?: DatabaseSync | null
+  /** Server asset root used by Lua image generation. */
+  assetDataDir?: string
   promptMemoryQueryVectors?: MemorySelectionInput['queryVectors']
   enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
+  onPromptMemoryJobEnqueued?: (job: MemoryJob) => void
   executeAgentPresetStep?: AgentPresetStepExecutor
   /**
    * The non-empty asset lookup the history walk resolves inlay / asset bytes
@@ -540,6 +666,8 @@ export interface AssemblyState {
   assetLookup?: AssetLookup
   /** Char + module asset rows shared by `assetLookup` and the history walk. */
   promptAssetTable?: PromptAssetTable
+  /** Prompt asset markers dropped because metadata or stored bytes were unavailable. */
+  promptAssetDropDiagnostics?: PromptAssetDropDiagnostic[]
   resolveStoredAsset?: ResolveStoredAsset
 }
 
@@ -564,6 +692,7 @@ interface ResolvedScope {
   currentChar: character
   currentChat: Chat
   promptInfo: MessagePresetInfo
+  resolvedMainProfile: ResolvedModelProfile
   selectedCharID: number
   chatPage: number
 }
@@ -581,17 +710,18 @@ function resolveScope(input: AssembleInput, deps: AssembleDeps): ResolvedScope {
     throw new EntityNotFoundError('database not found')
   }
 
-  const selectedCharID = database.characters.findIndex((c) => c.chaId === input.characterId)
+  const characters = database.characters
+  const selectedCharID = characters.findIndex((c) => c.chaId === input.characterId)
   if (selectedCharID === -1) {
     throw new EntityNotFoundError(`character not found: ${input.characterId}`)
   }
-  const currentChar = database.characters[selectedCharID]
+  const currentChar = characters[selectedCharID]
 
   const chatPage = currentChar.chats.findIndex((ch) => ch.id === input.chatId)
   if (chatPage === -1) {
     throw new EntityNotFoundError(`chat not found: ${input.chatId}`)
   }
-  const currentChat = structuredClone(currentChar.chats[chatPage])
+  const currentChat = currentChar.chats[chatPage]
 
   const effective = buildEffectiveGenerationConfig({
     database,
@@ -607,6 +737,7 @@ function resolveScope(input: AssembleInput, deps: AssembleDeps): ResolvedScope {
     currentChar: effective.currentChar,
     currentChat: effective.currentChat,
     promptInfo: effective.promptInfo,
+    resolvedMainProfile: effective.resolvedMainProfile,
     selectedCharID,
     chatPage,
   }
@@ -617,18 +748,28 @@ function resolveScope(input: AssembleInput, deps: AssembleDeps): ResolvedScope {
  * `ExpandContext` + empty slots, and run the pure template helpers.
  */
 export function beginAssembly(input: AssembleInput, deps: AssembleDeps): AssemblyState {
-  const { database, currentChar, currentChat, promptInfo, selectedCharID, chatPage } = resolveScope(input, deps)
+  const { database, currentChar, currentChat, promptInfo, resolvedMainProfile, selectedCharID, chatPage } =
+    resolveScope(input, deps)
 
   const cbsCallbackMemo = createAssemblyCbsCallbackMemo()
   const luaExecBudget = createLuaExecBudget()
-  const resolvedMainProfile = resolveModelProfile({ database })
+  const memoryDatabase = deps.loadMemoryDatabase?.() ?? null
+  const unsupportedTriggerEffectTypes = new Set<string>()
+  const cbsCallbackDiagnostics = new Map<string, ServerCbsCallbackDiagnosticReason>()
   const ctx: ExpandContext = {
     database,
     selectedCharID,
     chatPage,
+    modelInfo: modelInfoForPromptScope(resolvedMainProfile),
     signal: deps.signal,
+    resolveSpeakerName: deps.resolveSpeakerName,
     luaExecBudget,
+    ...(memoryDatabase ? { requestHistoryDb: memoryDatabase } : {}),
+    ...(deps.assetDataDir ? { assetDataDir: deps.assetDataDir } : {}),
     cbsCallbackMemo,
+    unsupportedTriggerEffectTypes,
+    clientContext: input.clientContext,
+    cbsCallbackDiagnostics,
   }
   const unformated = createEmptyUnformatedSlots()
 
@@ -638,6 +779,24 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
   const formatOrder = buildFormatOrder(database)
   const stableCardCache = createStableCardRenderCache()
   const initialMessages = cloneMessages(currentChat.message ?? [], 'initialMessages')
+  const continueDisposition: ContinueDisposition =
+    input.mode === 'continue' && (currentChar as { type?: string }).type !== 'group' && database.useSayNothing === true
+      ? 'append'
+      : 'extend'
+  const transientContinueBoundaryId = continueDisposition === 'append' ? randomUUID() : undefined
+  if (transientContinueBoundaryId) {
+    ;(currentChat.message ??= []).push({
+      role: 'user',
+      data: '*says nothing*',
+      chatId: transientContinueBoundaryId,
+      name: database.username,
+    } as Message)
+    // This is an effective-database working copy, not durable storage. Keeping
+    // it in sync makes CBS/Lua history reads see the same boundary the original
+    // browser implementation exposed throughout prompt assembly.
+    const effectiveChat = database.characters?.[selectedCharID]?.chats?.[chatPage]
+    if (effectiveChat) effectiveChat.message = currentChat.message
+  }
   const activeModuleIds = getActiveModules(database, currentChar, currentChat).map((module) => module.id)
 
   return {
@@ -658,20 +817,33 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     signal: deps.signal,
     luaExecBudget,
     isContinue: input.mode === 'continue',
+    continueDisposition,
+    ...(transientContinueBoundaryId ? { transientContinueBoundaryId } : {}),
     modelPresetId: currentChat.generationSettings?.modelPresetId,
     promptPresetId: currentChat.generationSettings?.promptPresetId,
     loadoutId: input.loadoutId,
     activeModuleIds,
     resolvedMainProfile,
+    unsupportedTriggerEffectTypes,
+    warnedUnsupportedTriggerEffectTypes: new Set<string>(),
+    cbsCallbackDiagnostics,
+    warnedCbsCallbackNames: new Set<string>(),
     initialMessages,
+    authoritativeMessages: structuredClone(initialMessages) as Message[],
     messageMutationCheckpoint: initialMessages,
     initialScriptstate: cloneScriptstate(currentChat.scriptstate),
     initialLastMemory: currentChat.lastMemory,
+    initialCharacterFields: characterFieldSnapshot(currentChar),
+    initialLocalLore: cloneLocalLore(currentChat.localLore),
     messageMutations: [],
     additionalSystemPromptMutations: [],
-    memoryDatabase: deps.loadMemoryDatabase?.() ?? null,
+    memoryDatabase,
+    assetDataDir: deps.assetDataDir,
     promptMemoryQueryVectors: deps.loadPromptMemoryQueryVectors?.() ?? [],
+    promptMemoryQueryDiagnostics:
+      deps.loadPromptMemoryQueryDiagnostics?.() ?? emptyPromptMemoryQueryDiagnostics(undefined, 'feature-disabled'),
     enqueuePromptMemoryFollowUpJob: deps.enqueuePromptMemoryFollowUpJob,
+    onPromptMemoryJobEnqueued: deps.onPromptMemoryJobEnqueued,
     resolveStoredAsset: deps.resolveStoredAsset,
     executeAgentPresetStep: deps.executeAgentPresetStep,
   }
@@ -687,6 +859,29 @@ function cloneMessages(
 
 function cloneScriptstate(scriptstate: Chat['scriptstate'] | undefined): Record<string, string | number | boolean> {
   return structuredClone(scriptstate ?? {}) as Record<string, string | number | boolean>
+}
+
+function persistentMessageRows(state: AssemblyState): Message[] {
+  const rows = state.currentChat.message ?? []
+  const boundaryId = state.transientContinueBoundaryId
+  return boundaryId ? rows.filter((message) => message.chatId !== boundaryId) : rows
+}
+
+function characterFieldValue(value: unknown): string | null {
+  return typeof value === 'string' ? value : null
+}
+
+function characterFieldSnapshot(value: character): Record<AssembleCharacterFieldMutation['key'], string | null> {
+  return {
+    name: characterFieldValue(value.name),
+    firstMessage: characterFieldValue(value.firstMessage),
+    backgroundHTML: characterFieldValue(value.backgroundHTML),
+    desc: characterFieldValue(value.desc),
+  }
+}
+
+function cloneLocalLore(localLore: Chat['localLore'] | undefined): loreBook[] {
+  return structuredClone(localLore ?? []) as loreBook[]
 }
 
 function scriptstateEqual(
@@ -751,6 +946,17 @@ function syncWorkingScriptstate(state: AssemblyState): void {
   }
 }
 
+function replaceWorkingScriptstate(state: AssemblyState, scriptstate: Record<string, string | number | boolean>): void {
+  const persisted = currentPersistedChat(state)
+  if (!persisted) return
+  if (Object.keys(scriptstate).length === 0) {
+    delete persisted.scriptstate
+  } else {
+    persisted.scriptstate = structuredClone(scriptstate)
+  }
+  syncWorkingScriptstate(state)
+}
+
 function syncWorkingTranscript(state: AssemblyState): void {
   const persisted = currentPersistedChat(state)
   if (persisted) {
@@ -765,6 +971,43 @@ function foldStableCardCacheVars(state: AssemblyState): void {
   syncWorkingScriptstate(state)
 }
 
+function invalidateStableCardCache(state: AssemblyState): void {
+  state.stableCardCache.clear()
+  state.stableCardCacheInvalidated = true
+}
+
+function finishStableCardPreflight(state: AssemblyState, before: Record<string, string | number | boolean>): void {
+  const after = currentPersistedScriptstateSnapshot(state)
+  const changed = !scriptstateEqual(before, after)
+  state.stableCardPreflightScriptstate = {
+    before,
+    ...(changed ? { after } : {}),
+  }
+  if (changed) {
+    // The preflight is speculative. The final render either reuses its rows and
+    // replays this exact result, or invalidates the rows and executes run-var CBS
+    // once against the post-start-trigger state.
+    replaceWorkingScriptstate(state, before)
+  }
+}
+
+function prepareStableCardsForFinalRender(state: AssemblyState): void {
+  const preflight = state.stableCardPreflightScriptstate
+  if (!preflight) return
+
+  if (!state.stableCardCacheInvalidated) {
+    const live = currentPersistedScriptstateSnapshot(state)
+    if (!scriptstateEqual(live, preflight.before)) {
+      invalidateStableCardCache(state)
+    }
+  }
+
+  if (!state.stableCardCacheInvalidated && preflight.after) {
+    replaceWorkingScriptstate(state, preflight.after)
+    state.varChanged = true
+  }
+}
+
 function bumpHistoryCallbackMemo(state: Pick<AssemblyState, 'cbsCallbackMemo'>): void {
   bumpAssemblyCbsHistoryGeneration(state.cbsCallbackMemo)
 }
@@ -774,7 +1017,7 @@ function captureMessageReplacement(
   source: Exclude<AssembleMutationSource, 'user_message'>,
 ): void {
   const before = state.messageMutationCheckpoint ?? []
-  const afterRows = state.currentChat.message ?? []
+  const afterRows = persistentMessageRows(state)
   assemblyMessageCaptureInstrumentation.messageReplacementComparisons++
   const firstChangedIndex = firstChangedMessageIndex(before, afterRows)
   if (firstChangedIndex === undefined) return
@@ -805,6 +1048,38 @@ function setMessageMutationCheckpointRow(state: AssemblyState, index: number, me
   state.messageMutationCheckpoint = next
 }
 
+function replaceAuthoritativeTranscript(state: AssemblyState, messages: readonly Message[]): void {
+  state.authoritativeMessages = structuredClone(messages) as Message[]
+}
+
+function upsertAuthoritativeMessage(state: AssemblyState, index: number, message: Message): void {
+  const messages = (state.authoritativeMessages ??= structuredClone(state.initialMessages ?? []) as Message[])
+  const messageId = message.chatId
+  const existingIndex = messageId ? messages.findIndex((candidate) => candidate.chatId === messageId) : -1
+  const next = structuredClone(message) as Message
+  if (existingIndex >= 0) {
+    messages[existingIndex] = next
+    return
+  }
+  if (index >= messages.length) {
+    messages.push(next)
+    return
+  }
+  messages.splice(Math.max(0, index), 0, next)
+}
+
+function updateAuthoritativeMessageById(
+  state: AssemblyState,
+  messageId: string | undefined,
+  update: (message: Message) => Message,
+): void {
+  if (!messageId) return
+  const messages = (state.authoritativeMessages ??= structuredClone(state.initialMessages ?? []) as Message[])
+  const index = messages.findIndex((message) => message.chatId === messageId)
+  if (index < 0) return
+  messages[index] = structuredClone(update(messages[index])) as Message
+}
+
 function appendUserMessageRow(state: AssemblyState): void {
   const userMessage = state.input.userMessage
   if (state.input.mode !== 'send' || typeof userMessage !== 'string') return
@@ -812,12 +1087,23 @@ function appendUserMessageRow(state: AssemblyState): void {
   const messages = (state.currentChat.message ??= [])
   const lastIndex = messages.length - 1
   const lastMessage = messages[lastIndex]
-  if (lastMessage?.role === 'user' && lastMessage.data === userMessage && (lastMessage.name ?? null) === null) {
+  const acceptedTailMatches =
+    typeof state.input.acceptedMessageId === 'string' &&
+    lastMessage?.role === 'user' &&
+    lastMessage.chatId === state.input.acceptedMessageId
+  if (acceptedTailMatches && state.input.reuseAcceptedSubmitTransforms === true) {
+    syncWorkingTranscript(state)
+    return
+  }
+  if (
+    acceptedTailMatches ||
+    (lastMessage?.role === 'user' && lastMessage.data === userMessage && (lastMessage.name ?? null) === null)
+  ) {
     const message = {
       ...structuredClone(lastMessage),
       chatId: lastMessage.chatId ?? randomUUID(),
       time: lastMessage.time ?? Date.now(),
-      name: null as unknown as undefined,
+      name: null,
     } as Message
     messages[lastIndex] = message
     const checkpointMessage = structuredClone(message) as Message
@@ -828,6 +1114,7 @@ function appendUserMessageRow(state: AssemblyState): void {
       message: checkpointMessage,
     })
     setMessageMutationCheckpointRow(state, lastIndex, checkpointMessage)
+    upsertAuthoritativeMessage(state, lastIndex, checkpointMessage)
     syncWorkingTranscript(state)
     bumpHistoryCallbackMemo(state)
     return
@@ -837,8 +1124,8 @@ function appendUserMessageRow(state: AssemblyState): void {
     role: 'user',
     data: userMessage,
     time: Date.now(),
-    chatId: randomUUID(),
-    name: null as unknown as undefined,
+    chatId: state.input.acceptedMessageId ?? randomUUID(),
+    name: null,
   } as Message
   const index = messages.length
   messages.push(message)
@@ -850,6 +1137,7 @@ function appendUserMessageRow(state: AssemblyState): void {
     message: checkpointMessage,
   })
   setMessageMutationCheckpointRow(state, index, checkpointMessage)
+  upsertAuthoritativeMessage(state, index, checkpointMessage)
   syncWorkingTranscript(state)
   bumpHistoryCallbackMemo(state)
 }
@@ -881,10 +1169,11 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
   const lastIndex = messages.length - 1
   const lastMessage = messages[lastIndex]
   const lastIsNewUser =
-    typeof rawUserMessage === 'string' &&
     lastMessage?.role === 'user' &&
-    lastMessage.data === rawUserMessage &&
-    (lastMessage.name ?? null) === null
+    ((typeof state.input.acceptedMessageId === 'string' && lastMessage.chatId === state.input.acceptedMessageId) ||
+      (typeof rawUserMessage === 'string' &&
+        lastMessage.data === rawUserMessage &&
+        (lastMessage.name ?? null) === null))
   const priorMessages = lastIsNewUser ? messages.slice(0, lastIndex) : messages.slice()
 
   const triggerCtx: TriggerRunContext = {
@@ -894,6 +1183,9 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
     selectedCharID: state.selectedCharID,
     chatPage: state.chatPage,
     signal: state.signal,
+    unsupportedEffectTypes: state.unsupportedTriggerEffectTypes,
+    clientContext: state.ctx.clientContext,
+    cbsCallbackDiagnostics: state.cbsCallbackDiagnostics,
     runLua: async ({ code, mode, lowLevelAccess, chat, varEngine, source }) => {
       const result = await runServerLua(
         { code, mode, lowLevelAccess, source },
@@ -907,6 +1199,8 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
           model: db.aiModel,
           signal: state.signal,
           execBudget: state.luaExecBudget,
+          ...(state.memoryDatabase ? { requestHistoryDb: state.memoryDatabase } : {}),
+          ...(state.assetDataDir ? { assetDataDir: state.assetDataDir } : {}),
         },
       )
       throwServerLuaFailure(result, `Lua ${mode} trigger failed`)
@@ -925,6 +1219,13 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
   // the route persists the delta.
   state.varChanged = !!state.varChanged || result.varChanged
   syncWorkingScriptstate(state)
+  if (result.aborted) return
+
+  // Lore upserts replace the array on the shallow trigger chat, so carry that
+  // durable field back independently of transcript bookkeeping.
+  if (result.chat.localLore !== state.currentChat.localLore) {
+    state.currentChat.localLore = result.chat.localLore
+  }
 
   // Adopt the rewritten transcript only on a real change (parity-preserving for
   // trigger-less chars). The user message — excluded above — is re-added by
@@ -932,7 +1233,8 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
   // trigger.
   const rewritten = result.chat.message ?? []
   if (firstChangedMessageIndex(priorMessages, rewritten) !== undefined) {
-    state.currentChat = result.chat
+    state.currentChat.message = rewritten
+    replaceAuthoritativeTranscript(state, rewritten)
     state.inputTriggerRewroteTranscript = true
     syncWorkingTranscript(state)
     captureMessageReplacement(state, 'input_trigger')
@@ -944,7 +1246,7 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
  * mode is deliberately display-only and limited by the trigger runner's
  * request allowlist, matching the retained browser wrapper.
  */
-export async function applyRequestTrigger(state: AssemblyState, rows: OpenAIChat[]): Promise<OpenAIChat[]> {
+export async function applyRequestTrigger(state: AssemblyState, rows: PromptMessage[]): Promise<PromptMessage[]> {
   const triggerCtx: TriggerRunContext = {
     modules: getActiveModules(state.database, state.currentChar, state.currentChat),
     model: state.database.aiModel,
@@ -952,6 +1254,9 @@ export async function applyRequestTrigger(state: AssemblyState, rows: OpenAIChat
     selectedCharID: state.selectedCharID,
     chatPage: state.chatPage,
     signal: state.signal,
+    unsupportedEffectTypes: state.unsupportedTriggerEffectTypes,
+    clientContext: state.ctx.clientContext,
+    cbsCallbackDiagnostics: state.cbsCallbackDiagnostics,
   }
   try {
     const result = await runTrigger(triggerCtx, state.currentChar, 'request', {
@@ -959,9 +1264,9 @@ export async function applyRequestTrigger(state: AssemblyState, rows: OpenAIChat
       displayMode: true,
       displayData: JSON.stringify(rows),
     })
-    if (!result || typeof result.displayData !== 'string') return rows
+    if (!result || result.aborted || typeof result.displayData !== 'string') return rows
     const parsed = JSON.parse(result.displayData) as unknown
-    return Array.isArray(parsed) ? (parsed as OpenAIChat[]) : rows
+    return Array.isArray(parsed) ? (parsed as PromptMessage[]) : rows
   } catch {
     return rows
   }
@@ -974,7 +1279,8 @@ export async function applyRequestTrigger(state: AssemblyState, rows: OpenAIChat
  * `processScriptFull`'s order for the user text: the Lua `editInput` hook
  * (`runLuaEditTrigger(char,'editinput',…)`) → CBS expansion (the
  * `risuChatParser` at `scripts.ts`) → the regex `editinput` scripts
- * ({@link processScript}). `chatID` is `-1` (submit-time; the SPA default).
+ * ({@link processScript}). Because Fastify owns the transform after appending
+ * the submitted row, its actual message index is used for Lua metadata and CBS.
  *
  * The transform applies in place to the last (user) row that
  * `appendUserMessageRow` produced, whose `.data` is still the raw submitted text.
@@ -988,16 +1294,31 @@ async function applyEditInput(state: AssemblyState): Promise<void> {
   if (typeof rawUserMessage !== 'string') return
 
   const messages = state.currentChat.message ?? []
-  const lastMessage = messages[messages.length - 1]
+  const lastMessageIndex = messages.length - 1
+  const lastMessage = messages[lastMessageIndex]
   // Only the freshly-submitted user row (still carrying the raw text) is edited.
   if (lastMessage?.role !== 'user' || (lastMessage.name ?? null) !== null || lastMessage.data !== rawUserMessage) {
     return
   }
 
   const { editCtx, varEngine } = buildLuaEditTriggerContext(state)
-  let text = await runLuaEditTrigger(state.currentChar, 'editinput', rawUserMessage, { index: -1 }, editCtx)
-  text = expandVariables(text, { ...state.ctx, chara: state.currentChar }).text
-  text = await processScriptAsync(state.ctx, state.currentChar, text, 'editinput', {}, -1, state.currentChat)
+  let text = await runLuaEditTrigger(
+    state.currentChar,
+    'editinput',
+    rawUserMessage,
+    { index: lastMessageIndex },
+    editCtx,
+  )
+  text = expandVariables(text, { ...state.ctx, chatID: lastMessageIndex, chara: state.currentChar }).text
+  text = await processScriptAsync(
+    state.ctx,
+    state.currentChar,
+    text,
+    'editinput',
+    {},
+    lastMessageIndex,
+    state.currentChat,
+  )
 
   if (varEngine.varChanged) {
     state.varChanged = true
@@ -1006,6 +1327,7 @@ async function applyEditInput(state: AssemblyState): Promise<void> {
 
   if (text === rawUserMessage) return
   lastMessage.data = text
+  updateAuthoritativeMessageById(state, lastMessage.chatId, (message) => ({ ...message, data: text }))
   state.editInputTransformed = true
   syncWorkingTranscript(state)
   captureMessageReplacement(state, 'editinput')
@@ -1022,10 +1344,6 @@ function prepareRegenerateTranscript(state: AssemblyState): void {
   const messages = (state.currentChat.message ??= [])
   const targetIndex = messages.findIndex((message) => message.chatId === regenerateMessageId)
   if (targetIndex === -1) {
-    const lastMessage = messages.at(-1)
-    if (lastMessage?.role === 'user') {
-      return
-    }
     throw new EntityNotFoundError(`regenerate message not found: ${regenerateMessageId}`)
   }
 
@@ -1128,8 +1446,24 @@ function buildChatMetadataMutations(state: AssemblyState): AssembleChatMetadataM
   return before === after ? [] : [{ key: 'lastMemory', before, after }]
 }
 
+function buildCharacterFieldMutations(state: AssemblyState): AssembleCharacterFieldMutation[] {
+  const before = state.initialCharacterFields ?? characterFieldSnapshot(state.currentChar)
+  const after = characterFieldSnapshot(state.currentChar)
+  return (Object.keys(after) as AssembleCharacterFieldMutation['key'][]).flatMap((key) =>
+    before[key] === after[key] || after[key] === null ? [] : [{ key, before: before[key], after: after[key] }],
+  )
+}
+
+function buildLocalLoreMutation(state: AssemblyState): AssembleLocalLoreMutation | undefined {
+  const before = state.initialLocalLore ?? []
+  const after = cloneLocalLore(state.currentChat.localLore)
+  return isDeepStrictEqual(before, after) ? undefined : { before: cloneLocalLore(before), after }
+}
+
 function buildMutationPayload(state: AssemblyState): AssembleMutationPayload {
   const chatMetadataMutations = buildChatMetadataMutations(state)
+  const characterFieldMutations = buildCharacterFieldMutations(state)
+  const localLoreMutation = buildLocalLoreMutation(state)
   return {
     chatId: state.input.chatId,
     characterId: state.input.characterId,
@@ -1139,6 +1473,8 @@ function buildMutationPayload(state: AssemblyState): AssembleMutationPayload {
     messageMutations: state.messageMutations ?? [],
     chatVarMutations: buildChatVarMutations(state),
     ...(chatMetadataMutations.length > 0 ? { chatMetadataMutations } : {}),
+    ...(characterFieldMutations.length > 0 ? { characterFieldMutations } : {}),
+    ...(localLoreMutation ? { localLoreMutation } : {}),
     additionalSystemPrompt: state.additionalSystemPromptMutations ?? [],
   }
 }
@@ -1156,21 +1492,36 @@ export function buildRestorationPayload(state: AssemblyState): AssembleRestorati
 }
 
 /**
- * Snapshot the submit-time transcript after a server-owned input rewrite. The
- * initial capture happens after the input trigger + `editinput`; a before-main
- * user-input modifier refreshes it after Agent Preset execution.
+ * Snapshot the submit-time transcript after a server-owned rewrite. The initial
+ * capture happens after the input trigger + `editinput`; Agent Preset and
+ * identity-addressed history `@@inject` mutations refresh it later.
  */
+function submitTranscriptReplacementRequired(state: AssemblyState): boolean {
+  return (
+    !!state.inputTriggerRewroteTranscript ||
+    !!state.editInputTransformed ||
+    !!state.agentPresetInputTransformed ||
+    !!state.historyInjectRequiresTranscriptReplacement
+  )
+}
+
 function captureSubmitTranscript(state: AssemblyState): void {
-  if (!submitTranscriptChanged(state)) return
-  state.submitMessages = cloneMessages(state.currentChat.message ?? [], 'submitTranscript')
+  if (!submitTranscriptReplacementRequired(state)) return
+  state.submitMessages = cloneMessages(state.authoritativeMessages ?? state.initialMessages ?? [], 'submitTranscript')
 }
 
 /**
- * The route owns the transcript write only when a submit hook or before-main
- * Agent Preset changed the user input. Plain sends leave persistence to the browser.
+ * The route owns the transcript write only when a submit hook, before-main
+ * Agent Preset, or history `@@inject` changed it. Plain history regex transforms
+ * remain prompt-local.
  */
 function submitTranscriptChanged(state: AssemblyState): boolean {
-  return !!state.inputTriggerRewroteTranscript || !!state.editInputTransformed || !!state.agentPresetInputTransformed
+  return (
+    !!state.inputTriggerRewroteTranscript ||
+    !!state.editInputTransformed ||
+    !!state.agentPresetInputTransformed ||
+    !!state.historyInjectRewroteTranscript
+  )
 }
 
 /**
@@ -1198,14 +1549,21 @@ export function fillStaticSlots(state: AssemblyState): void {
 
   unformated.authorNote.push(...buildAuthorNote(ctx, currentChat))
   unformated.postEverything.push(...buildCotInstruction(ctx, usingPromptTemplate))
-  unformated.description.push(...buildDescription(ctx, currentChar))
+  const descriptionRows = buildDescription(ctx, currentChar)
+  state.descriptionBasePrompt = descriptionRows[0]
+  unformated.description.push(...descriptionRows)
   unformated.personaPrompt.push(...buildPersona(ctx))
   unformated.postEverything.push(...buildInlayViewInstruction(currentChar))
 }
 
 export async function runAgentPresetBeforeMainStage(state: AssemblyState, deps: AssembleDeps): Promise<void> {
   const resolution = resolveAgentPresetForChat({
-    database: state.database,
+    database: {
+      ...state.database,
+      agentPresets: state.database.agentPresets ?? [],
+      agents: state.database.agents ?? [],
+      modelProfiles: state.database.modelProfiles ?? [],
+    },
     currentCharacter: state.currentChar,
     currentChat: state.currentChat,
     generationSettings: state.currentChat.generationSettings,
@@ -1225,8 +1583,17 @@ export async function runAgentPresetBeforeMainStage(state: AssemblyState, deps: 
   runtime.outputRequired = beforeMainOutputRequiredByKey(resolution.plan)
   syncAgentPresetExpansionContext(state)
 
+  assertAgentPresetLorebookInputsReady({
+    steps: resolution.plan.stableSteps.map((planned) => planned.step),
+    currentChar: state.currentChar,
+    currentChat: state.currentChat,
+    presetId: resolution.preset.id,
+    presetName: resolution.preset.name,
+  })
+
   const beforeMain = await executeAgentPresetPhase({
     database: state.database,
+    ...(state.memoryDatabase ? { requestHistoryDb: state.memoryDatabase } : {}),
     currentChar: state.currentChar,
     currentChat: state.currentChat,
     currentUserMessage: latestUserMessage(state.currentChat),
@@ -1309,6 +1676,7 @@ function applyAgentPresetUserInputModifier(
   if (!current || current.data === modifier.outputText) return
 
   messages[index] = { ...current, data: modifier.outputText }
+  updateAuthoritativeMessageById(state, current.chatId, (message) => ({ ...message, data: modifier.outputText }))
   state.agentPresetInputTransformed = true
   if (state.agentPreset) state.agentPreset.userInputModified = true
   syncWorkingTranscript(state)
@@ -1426,10 +1794,14 @@ function applyLorebookReport(
   }
 
   const { positionParser, depthPrompts } = buildLorebookContext(ctx, currentChar, report, unformated)
+  state.descriptionBaseIndex = state.descriptionBasePrompt
+    ? unformated.description.indexOf(state.descriptionBasePrompt)
+    : undefined
 
   // Match the SPA prompt assembly: seed with the max response budget plus a
   // small headroom for unexpected error overhead.
   let currentTokens = (db.maxResponse ?? 0) + 50
+  const stableCardScriptstateBefore = currentPersistedScriptstateSnapshot(state)
   const preflight = preflightTemplateTokens({
     ctx,
     currentChar,
@@ -1438,9 +1810,10 @@ function applyLorebookReport(
     usingPromptTemplate,
     report,
     stableCardCache: state.stableCardCache,
+    descriptionBaseIndex: state.descriptionBaseIndex,
   })
   currentTokens += preflight.addedTokens
-  foldStableCardCacheVars(state)
+  finishStableCardPreflight(state, stableCardScriptstateBefore)
 
   state.report = report
   state.positionParser = positionParser
@@ -1459,7 +1832,8 @@ export function fillLorebookSlots(state: AssemblyState): void {
     database: db,
     currentChar,
     currentChat,
-    model: db.aiModel,
+    cbsContext: state.ctx,
+    resolveSpeakerName: state.ctx.resolveSpeakerName,
     writeChatVar: (key, value) => {
       const persisted = currentPersistedChat(state)
       if (!persisted) return
@@ -1475,6 +1849,7 @@ export function fillLorebookSlots(state: AssemblyState): void {
 }
 
 export async function fillLorebookSlotsAsync(state: AssemblyState): Promise<void> {
+  await ensureTokenizerLoadedForDb(state.database)
   const { currentChar, currentChat } = state
   const db = state.database
   let stickyChatVarDirty = false
@@ -1483,7 +1858,8 @@ export async function fillLorebookSlotsAsync(state: AssemblyState): Promise<void
     database: db,
     currentChar,
     currentChat,
-    model: db.aiModel,
+    cbsContext: state.ctx,
+    resolveSpeakerName: state.ctx.resolveSpeakerName,
     writeChatVar: (key, value) => {
       const persisted = currentPersistedChat(state)
       if (!persisted) return
@@ -1564,6 +1940,12 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
   state.varChanged = !!state.varChanged || history.varChanged
   syncWorkingScriptstate(state)
 
+  if (history.triggerResult) {
+    // A start trigger can change chat rows, scriptstate, or request-local
+    // character state. Conservatively discard the pre-trigger stable rows.
+    invalidateStableCardCache(state)
+  }
+
   if (history.stopSending === true) {
     state.stopSending = true
     state.abortReason = 'trigger_stop'
@@ -1575,6 +1957,7 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
   state.currentTokens = (state.currentTokens ?? 0) + history.addedTokens
   state.historyMessages = history.messages
   state.preparedDepthPrompts = history.preparedDepthPrompts
+  state.promptAssetDropDiagnostics = history.assetDiagnostics
   const globalBias = Array.isArray(state.database.bias) ? state.database.bias : []
   const characterBias = Array.isArray(currentChar.bias) ? currentChar.bias : []
   state.biases = [...globalBias, ...characterBias].flatMap((row) => {
@@ -1584,6 +1967,29 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
   })
   if (history.triggerResult) {
     captureMessageReplacement(state, 'start_trigger')
+  }
+  if (history.injectMutations.length > 0) {
+    const persistentInjectMutations = history.injectMutations.filter(
+      (mutation) => mutation.messageId !== state.transientContinueBoundaryId,
+    )
+    state.historyInjectRewroteTranscript = persistentInjectMutations.length > 0
+    for (const mutation of persistentInjectMutations) {
+      const initial = state.initialMessages?.find((message) => message.chatId === mutation.messageId)
+      if (!initial) state.historyInjectRequiresTranscriptReplacement = true
+      state.messageMutations?.push({
+        type: 'replace_by_id',
+        source: 'history_inject',
+        messageId: mutation.messageId,
+        before: initial ? (structuredClone(initial) as Message) : mutation.before,
+        message: mutation.after,
+      })
+      updateAuthoritativeMessageById(state, mutation.messageId, () => mutation.after)
+    }
+    if (persistentInjectMutations.length > 0) {
+      captureSubmitTranscript(state)
+      bumpHistoryCallbackMemo(state)
+      invalidateStableCardCache(state)
+    }
   }
 }
 
@@ -1608,11 +2014,45 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
 
   const { ctx, currentChar, unformated } = state
   const db = state.database
-  const promptMemoryRows = buildPromptMemoryRowsForAssembly(state)
+  let bardWikiRows: PromptMessage[] = []
+  let hypaTokenBudget: number | null = null
+  if (state.memoryDatabase) {
+    try {
+      const bardWiki = buildBardWikiPromptRows({
+        db: state.memoryDatabase,
+        database: state.database,
+        querySource: {
+          chatId: state.input.chatId,
+          characterId: state.input.characterId,
+          mode: state.input.mode,
+          regenerateMessageId: state.input.regenerateMessageId,
+          userMessage: state.input.userMessage,
+        },
+      })
+      bardWikiRows = bardWiki.rows
+      hypaTokenBudget = bardWiki.budgets.hypaTokenBudget
+      state.bardWikiPromptDiagnostics = bardWiki.diagnostics
+      state.bardWikiRows = bardWiki.rows
+    } catch (error) {
+      if (!(error instanceof BardWikiPinnedBudgetError)) throw error
+      state.stopSending = true
+      state.abortReason = 'bardwiki_pinned_budget_exceeded'
+      state.inputTokens = error.requiredTokens
+      return
+    }
+  }
+  const promptMemoryRows = buildPromptMemoryRowsForAssembly(state, hypaTokenBudget)
+  const historyStartIndex = state.promptMemoryHistoryStartIndex ?? 0
+  const promptHistory = (state.historyMessages ?? []).slice(historyStartIndex)
+  const currentTokens =
+    (state.currentTokens ?? 0) -
+    (state.promptMemorySummarizedHistoryTokens ?? 0) +
+    (state.bardWikiPromptDiagnostics?.consumedTokens ?? 0)
+  state.currentTokens = currentTokens
 
   const mem = buildMemoryWindow({
-    chats: [...promptMemoryRows, ...(state.historyMessages ?? [])],
-    currentTokens: state.currentTokens ?? 0,
+    chats: [...bardWikiRows, ...promptMemoryRows, ...promptHistory],
+    currentTokens,
     maxContextTokens: db.maxContext ?? 0,
     currentChat: state.currentChat,
     memoryCardUsed: !!state.memoryCardUsed,
@@ -1623,12 +2063,13 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
 
   if (mem.stopSending === true) {
     state.stopSending = true
-    state.abortReason = 'history_context_overflow'
+    state.abortReason = mem.reason
     state.inputTokens = state.currentTokens
     return
   }
 
   state.currentChat = mem.currentChat
+  state.historyTruncated = state.historyTruncated === true || mem.historyTruncated === true
   syncWorkingTranscript(state)
   state.memories = mem.memories
   // The SPA root re-tokenizes the rendered prompt, but the post-trim estimate is
@@ -1648,7 +2089,7 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
   if (triggerResult) {
     const sys = triggerResult.additonalSysPrompt
     if (sys.promptend) {
-      const row: OpenAIChat = { role: 'system', content: sys.promptend }
+      const row: PromptMessage = { role: 'system', content: sys.promptend }
       unformated.postEverything.push(row)
       state.additionalSystemPromptMutations?.push({
         type: 'insert_prompt_row',
@@ -1660,7 +2101,7 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
       })
     }
     if (sys.historyend) {
-      const row: OpenAIChat = { role: 'system', content: sys.historyend }
+      const row: PromptMessage = { role: 'system', content: sys.historyend }
       unformated.lastChat.push(row)
       state.additionalSystemPromptMutations?.push({
         type: 'insert_prompt_row',
@@ -1672,7 +2113,7 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
       })
     }
     if (sys.start) {
-      const row: OpenAIChat = { role: 'system', content: sys.start }
+      const row: PromptMessage = { role: 'system', content: sys.start }
       unformated.lastChat.unshift(row)
       state.additionalSystemPromptMutations?.push({
         type: 'insert_prompt_row',
@@ -1686,15 +2127,17 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
   }
 }
 
-function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
+function buildPromptMemoryRowsForAssembly(state: AssemblyState, hypaTokenBudget: number | null): PromptMessage[] {
   const memoryDb = state.memoryDatabase
   if (!memoryDb) {
     state.promptMemoryRows = []
+    state.promptMemoryHistoryStartIndex = 0
+    state.promptMemorySummarizedHistoryTokens = 0
     state.promptMemoryChunkPlanningDiagnostics = emptyPromptMemoryChunkPlanningDiagnostics()
     state.promptMemoryFollowUpDiagnostics = emptyPromptMemoryFollowUpDiagnostics()
     return []
   }
-  const enabled = shouldSelectPromptMemory(state)
+  const enabled = shouldSelectPromptMemory(state, hypaTokenBudget)
   const { settings } = normalizeHypaV3Settings(
     resolveHypaV3PresetSettings(state.database) as Partial<HypaV3Settings> | null | undefined,
   )
@@ -1708,6 +2151,8 @@ function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
     settings,
   })
   state.promptMemoryChunkPlanningDiagnostics = planning.diagnostics
+  state.promptMemoryHistoryStartIndex = planning.summarizedPrefixStartIndex
+  state.promptMemorySummarizedHistoryTokens = planning.summarizedPrefixTokens
   const selection = selectPromptMemory({
     db: memoryDb,
     enabled,
@@ -1715,7 +2160,10 @@ function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
     summaryModel: settings.summarizationModel,
     embeddingModel,
     queryVectors: state.promptMemoryQueryVectors ?? [],
-    availableTokens: Math.floor((state.database.maxContext ?? 0) * settings.memoryTokensRatio),
+    availableTokens: clampHypaTokenBudget(
+      Math.floor((state.database.maxContext ?? 0) * settings.memoryTokensRatio),
+      hypaTokenBudget,
+    ),
     settings: {
       recentMemoryRatio: settings.recentMemoryRatio,
       similarMemoryRatio: settings.similarMemoryRatio,
@@ -1723,6 +2171,9 @@ function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
     summarySnapshot: planning.summarySnapshot,
     getSummaryTokenCost: createPromptMemorySummaryTokenCost(state.database),
   })
+  selection.diagnostics.hotPathWork.generatedQueryEmbeddings =
+    state.promptMemoryQueryDiagnostics?.status === 'success' && state.promptMemoryQueryDiagnostics.vectors > 0
+  selection.diagnostics.hotPathWork.calledProviders = state.promptMemoryQueryDiagnostics?.providerCallAttempted ?? false
   state.promptMemorySelectionDiagnostics = selection.diagnostics
 
   const assembled = assemblePromptMemoryRows(selection)
@@ -1734,6 +2185,7 @@ function buildPromptMemoryRowsForAssembly(state: AssemblyState): OpenAIChat[] {
     embeddingModel,
     diagnostics: selection.diagnostics.missingMemory,
     enqueueJob: state.enqueuePromptMemoryFollowUpJob,
+    onJobCreated: state.onPromptMemoryJobEnqueued,
   })
   state.promptMemoryRows = assembled.rows
   return assembled.rows
@@ -1761,12 +2213,21 @@ function planPromptMemoryChunksForAssembly(input: {
   chatId: string
   enabled: boolean
   settings: ReturnType<typeof normalizeHypaV3Settings>['settings']
-}): { diagnostics: PromptMemoryChunkPlanningDiagnostics; summarySnapshot?: MemorySummarySnapshot } {
+}): {
+  diagnostics: PromptMemoryChunkPlanningDiagnostics
+  summarySnapshot?: MemorySummarySnapshot
+  summarizedPrefixStartIndex: number
+  summarizedPrefixTokens: number
+} {
   const diagnostics = emptyPromptMemoryChunkPlanningDiagnostics()
-  if (!input.enabled) return { diagnostics }
+  if (!input.enabled) {
+    return { diagnostics, summarizedPrefixStartIndex: 0, summarizedPrefixTokens: 0 }
+  }
 
   diagnostics.attempted = true
   let summarySnapshot: MemorySummarySnapshot | undefined
+  let summarizedPrefixStartIndex = 0
+  let summarizedPrefixTokens = 0
   try {
     const chats = input.state.historyMessages ?? []
     const currentChatMemos = chats.map((chat) => chat.memo).filter(isNonEmptyString)
@@ -1783,6 +2244,7 @@ function planPromptMemoryChunksForAssembly(input: {
     }
 
     const summaries = filterMemorySummariesForModel(summarySnapshot.summaries, input.settings.summarizationModel)
+    summarizedPrefixStartIndex = determineHypaV3SummarizedPrefixStartIndex(chats, summaries.map(summaryToHypaV3Ref))
     const { encoding, options } = tokenizerOptionsFromDb(input.state.database)
     const plan = planStandardHypaV3Memory({
       chats,
@@ -1794,6 +2256,9 @@ function planPromptMemoryChunksForAssembly(input: {
       tokenizeChat: (chat) => tokenizeChat(chat, encoding, options),
       tokenizeSummarizedPrefixChat: (chat) => tokenizeHypaV3PrefixChat(chat, encoding, options),
     })
+    summarizedPrefixTokens = -(plan.tokenDeltas.find((delta) => delta.kind === 'summarized_history')?.amount ?? 0)
+    diagnostics.summarizedPrefixStartIndex = summarizedPrefixStartIndex
+    diagnostics.summarizedPrefixTokens = summarizedPrefixTokens
     diagnostics.plannerWarnings.push(...plan.warnings.map((warning) => warning.message))
     diagnostics.plannerErrors.push(...plan.errors.map((error) => error.message))
 
@@ -1803,6 +2268,7 @@ function planPromptMemoryChunksForAssembly(input: {
       chats,
       plan,
       model: input.settings.summarizationModel,
+      onJobCreated: input.state.onPromptMemoryJobEnqueued,
     })
     diagnostics.plannedWindows = planned.planned.length
     diagnostics.chunksCreated = planned.chunksCreated
@@ -1810,12 +2276,14 @@ function planPromptMemoryChunksForAssembly(input: {
   } catch (error) {
     diagnostics.errors.push(errorMessage(error, 'failed to plan Hypa V3 memory chunks'))
   }
-  return { diagnostics, summarySnapshot }
+  return { diagnostics, summarySnapshot, summarizedPrefixStartIndex, summarizedPrefixTokens }
 }
 
 function emptyPromptMemoryChunkPlanningDiagnostics(): PromptMemoryChunkPlanningDiagnostics {
   return {
     attempted: false,
+    summarizedPrefixStartIndex: 0,
+    summarizedPrefixTokens: 0,
     chunksCreated: 0,
     jobsCreated: 0,
     plannedWindows: 0,
@@ -1852,17 +2320,29 @@ function errorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
-function shouldSelectPromptMemory(state: AssemblyState): boolean {
-  return state.memoryDatabase !== null && state.database.hypaV3 === true && state.currentChar.supaMemory === true
+function shouldSelectPromptMemory(state: AssemblyState, hypaTokenBudget: number | null): boolean {
+  return (
+    hypaTokenBudget !== 0 &&
+    state.memoryDatabase !== null &&
+    state.database.hypaV3 === true &&
+    state.currentChar.supaMemory === true
+  )
+}
+
+function clampHypaTokenBudget(legacyBudget: number, hypaTokenBudget: number | null): number {
+  return hypaTokenBudget === null ? legacyBudget : Math.min(legacyBudget, hypaTokenBudget)
 }
 
 function resolveHypaV3PresetSettings(database: Database): unknown {
-  const presetId = typeof database.hypaV3PresetId === 'number' ? database.hypaV3PresetId : 0
+  const presetId = hypaV3PresetIndexFromStableId({
+    hypaV3Presets: database.hypaV3Presets,
+    selectedHypaV3PresetId: database.selectedHypaV3PresetId,
+  })
   const preset = database.hypaV3Presets?.[presetId]
   if (preset && typeof preset === 'object' && 'settings' in preset) {
     return preset.settings
   }
-  return database.hypaV3Settings
+  return null
 }
 
 function resolvePromptMemoryEmbeddingModel(database: Database): string {
@@ -1891,9 +2371,7 @@ function buildLuaEditTriggerContext(state: AssemblyState): {
     database: db,
     selectedCharID: state.selectedCharID,
     chatPage: state.chatPage,
-    defaultVariables: parseKeyValue(state.currentChar.defaultVariables ?? '').concat(
-      parseKeyValue(db.templateDefaultVariables ?? ''),
-    ),
+    defaultVariables: getChatDefaultVariables(state.currentChar, db),
   })
   const editCtx: ServerLuaEditTriggerContext = {
     chat: state.currentChat,
@@ -1904,6 +2382,8 @@ function buildLuaEditTriggerContext(state: AssemblyState): {
     model: db.aiModel,
     signal: state.signal,
     execBudget: state.luaExecBudget,
+    ...(state.memoryDatabase ? { requestHistoryDb: state.memoryDatabase } : {}),
+    ...(state.assetDataDir ? { assetDataDir: state.assetDataDir } : {}),
     moduleTriggers: getModuleTriggers(getActiveModules(db, state.currentChar, state.currentChat)),
   }
   return { editCtx, varEngine }
@@ -1922,7 +2402,7 @@ function buildLuaEditTriggerContext(state: AssemblyState): {
  * `varChanged` into the assembly state.
  */
 function buildLuaEditRequest(state: AssemblyState): {
-  editRequest: (rows: OpenAIChat[]) => Promise<OpenAIChat[]>
+  editRequest: (rows: PromptMessage[]) => Promise<PromptMessage[]>
   varEngine: TriggerVarEngine
   persistedScriptstateChanged: () => boolean
 } {
@@ -1951,19 +2431,21 @@ function buildLuaEditRequest(state: AssemblyState): {
  *     hook ({@link buildLuaEditRequest}) over both `formated` and the
  *     prompt-info capture, mirroring the browser's `runLuaEditTrigger`;
  *   - `finalizeRequestBudget` re-tokenizes the rendered rows, trims
- *     `removable` rows under `db.maxContext`, and clamps the response
- *     budget. On overflow the send aborts (`stopSending` +
- *     `abortReason = 'overflow'`).
+ *     `removable` rows to reserve `db.maxResponse` within `db.maxContext`, and
+ *     clamps the response budget only when pinned rows require it. On overflow
+ *     the send aborts (`stopSending` + `abortReason = 'overflow'`).
  *
  * Runs after `fillMemoryAndPostHistory`, so a prior `stopSending`
  * short-circuits before any rendering.
  */
 export async function renderAndBudget(state: AssemblyState): Promise<void> {
+  await ensureTokenizerLoadedForDb(state.database)
   if (state.stopSending) return
 
   const { ctx, currentChar, unformated } = state
   const db = state.database
 
+  prepareStableCardsForFinalRender(state)
   const lua = buildLuaEditRequest(state)
   const render = await measureAssemblyStageAsync(state, 'final_render', () =>
     renderFinalPrompt({
@@ -1978,6 +2460,7 @@ export async function renderAndBudget(state: AssemblyState): Promise<void> {
       isContinue: state.isContinue,
       editRequest: lua.editRequest,
       stableCardCache: state.stableCardCache,
+      descriptionBaseIndex: state.descriptionBaseIndex,
     }),
   )
   state.promptText = render.promptText
@@ -1999,16 +2482,37 @@ export async function renderAndBudget(state: AssemblyState): Promise<void> {
       formated: render.formated,
       maxContextTokens: db.maxContext ?? 0,
       maxResponse: db.maxResponse ?? 0,
+      historyMessageIds: new Set(
+        (state.currentChat.message ?? [])
+          .map((message) => message.chatId)
+          .filter((messageId): messageId is string => typeof messageId === 'string' && messageId.length > 0),
+      ),
     }),
   )
   if (!budget.ok) {
     state.stopSending = true
-    state.abortReason = 'overflow'
+    const { encoding, options } = tokenizerOptionsFromDb(db)
+    const pinnedBardWikiTokens = render.formated
+      .filter((row) => row.memo === 'bardWiki' && row.removable === false)
+      .reduce((tokens, row) => tokens + tokenizeChat(row, encoding, options), 0)
+    state.abortReason =
+      pinnedBardWikiTokens > 0 && budget.inputTokens - pinnedBardWikiTokens <= (db.maxContext ?? 0)
+        ? 'bardwiki_pinned_budget_exceeded'
+        : 'overflow'
     state.inputTokens = budget.inputTokens
     return
   }
 
   state.formated = budget.formated
+  if (state.bardWikiPromptDiagnostics) {
+    const retainedCount = budget.formated.filter(({ memo }) => memo === 'bardWiki').length
+    state.bardWikiPromptDiagnostics.retainedCount = retainedCount
+    state.bardWikiPromptDiagnostics.trimmedCount = Math.max(
+      0,
+      state.bardWikiPromptDiagnostics.selectedCount - retainedCount,
+    )
+  }
+  state.historyTruncated = state.historyTruncated === true || budget.historyTruncated === true
   state.promptSummary = summarizePromptRows(budget.formated)
   state.inputTokens = budget.inputTokens
   state.outputTokens = budget.outputTokens
@@ -2070,14 +2574,21 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
     () => beginAssembly(input, deps),
   )
   state.recordAssemblyStageTiming = deps.recordAssemblyStageTiming
+  await ensureTokenizerLoadedForDb(state.database)
   await measureAssemblyStageAsync(state, 'submit_transforms', async () => {
     prepareRegenerateTranscript(state)
     // The submit-time input trigger runs before the user message is appended;
     // `editinput` then rewrites that user row. This mirrors the browser
     // chat-screen submit handler while the server receives the raw user text.
-    await runInputTrigger(state)
+    const bypassInputHooks =
+      state.input.mode === 'send' &&
+      (state.input.emptySend === true ||
+        (state.input.syntheticSayNothing === true && state.input.userMessage === '*says nothing*'))
+    const reuseAcceptedSubmitTransforms =
+      state.input.mode === 'send' && state.input.reuseAcceptedSubmitTransforms === true
+    if (!bypassInputHooks && !reuseAcceptedSubmitTransforms) await runInputTrigger(state)
     appendUserMessageRow(state)
-    await applyEditInput(state)
+    if (!bypassInputHooks && !reuseAcceptedSubmitTransforms) await applyEditInput(state)
     captureSubmitTranscript(state)
     applyCurrentChatRunVars(state)
   })
@@ -2087,6 +2598,19 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
   await measureAssemblyStageAsync(state, 'history_bias', () => fillHistoryAndBias(state))
   measureAssemblyStage(state, 'memory_bridge', () => fillMemoryAndPostHistory(state))
   await renderAndBudget(state)
+
+  const warnings: Omit<WarningEvent, 'type'>[] = [
+    ...(state.promptAssetDropDiagnostics ?? []).map((diagnostic) => ({
+      message: 'Prompt asset was omitted because its metadata or stored bytes were unavailable.',
+      context: {
+        kind: 'prompt_asset_dropped',
+        name: diagnostic.name,
+        ...(diagnostic.reference ? { reference: diagnostic.reference } : {}),
+        reason: diagnostic.reason,
+      },
+    })),
+    ...takeServerCompatibilityWarnings(state),
+  ]
 
   if (state.stopSending) {
     return {
@@ -2098,6 +2622,7 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
       restoration: buildRestorationPayload(state),
       submitMessages: state.submitMessages,
       submitTranscriptChanged: submitTranscriptChanged(state),
+      ...(warnings.length > 0 ? { warnings } : {}),
     }
   }
 
@@ -2124,6 +2649,7 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
     promptSummary,
     inputTokens: state.inputTokens,
     outputTokens: state.outputTokens,
+    ...(warnings.length > 0 ? { warnings } : {}),
     mutations: buildMutationPayload(state),
     restoration: buildRestorationPayload(state),
     submitMessages: state.submitMessages,
@@ -2167,6 +2693,12 @@ export interface ServerPostGenerationInput {
    * choices against the same context/order as retained multiline generation.
    */
   beforeOutputTrigger?: (alternateState: AssemblyState) => Promise<void>
+  /**
+   * Retain an interrupted provider result using only the streaming-visible
+   * `editoutput` pipeline. Cancellation and post-token failures must not run
+   * completion-only Agent Preset/output-trigger effects.
+   */
+  partial?: boolean
 }
 
 /** Result of {@link runServerPostGeneration}. */
@@ -2183,6 +2715,41 @@ export interface ServerPostGenerationResult {
   resendChat: boolean
   /** A durable chat-var write occurred; the route persists when true. */
   changed: boolean
+  /** Unsupported output-trigger effects first observed after assembly warnings were emitted. */
+  warnings?: Omit<WarningEvent, 'type'>[]
+}
+
+function takeUnsupportedTriggerWarnings(state: AssemblyState): Omit<WarningEvent, 'type'>[] {
+  const warnings: Omit<WarningEvent, 'type'>[] = []
+  for (const effectType of state.unsupportedTriggerEffectTypes) {
+    if (state.warnedUnsupportedTriggerEffectTypes.has(effectType)) continue
+    state.warnedUnsupportedTriggerEffectTypes.add(effectType)
+    warnings.push({
+      message: `Trigger effect "${effectType}" is unsupported on this server and was skipped.`,
+      context: { kind: 'unsupported_trigger_effect', effectType },
+    })
+  }
+  return warnings
+}
+
+function takeCbsCallbackWarnings(state: AssemblyState): Omit<WarningEvent, 'type'>[] {
+  const warnings: Omit<WarningEvent, 'type'>[] = []
+  for (const [callbackName, reason] of state.cbsCallbackDiagnostics) {
+    if (state.warnedCbsCallbackNames.has(callbackName)) continue
+    state.warnedCbsCallbackNames.add(callbackName)
+    warnings.push({
+      message:
+        reason === 'unsupported_on_server'
+          ? `CBS callback "${callbackName}" is unsupported on this server and returned an empty value.`
+          : `CBS callback "${callbackName}" could not resolve because client context was not reported and returned an empty value.`,
+      context: { kind: 'unsupported_cbs_callback', callbackName, reason },
+    })
+  }
+  return warnings
+}
+
+function takeServerCompatibilityWarnings(state: AssemblyState): Omit<WarningEvent, 'type'>[] {
+  return [...takeUnsupportedTriggerWarnings(state), ...takeCbsCallbackWarnings(state)]
 }
 
 function cloneAgentPresetRuntime(runtime: AgentPresetRuntimeState | undefined): AgentPresetRuntimeState | undefined {
@@ -2199,8 +2766,12 @@ function cloneAgentPresetRuntime(runtime: AgentPresetRuntimeState | undefined): 
 }
 
 function clonePostGenerationState(state: AssemblyState): AssemblyState {
-  const database = structuredClone(state.database)
-  const currentChar = structuredClone(state.currentChar)
+  const database: Database = {
+    ...state.database,
+    characters: state.database.characters.slice(),
+    globalChatVariables: { ...state.database.globalChatVariables },
+  }
+  const currentChar = cloneGenerationWorkingCharacter(state.currentChar)
   const currentChat = structuredClone(state.currentChat)
   const luaExecBudget = state.luaExecBudget ? { ...state.luaExecBudget } : undefined
   currentChar.chats[state.chatPage] = currentChat
@@ -2243,10 +2814,13 @@ export async function runServerAlternatePostGeneration(state: AssemblyState, com
   const continueIndex = messages.length - 1
   const initialMessages = isolated.initialMessages ?? messages
   const initialContinueIndex = initialMessages.length - 1
-  const continueBase =
-    isContinue && initialMessages[initialContinueIndex]?.role === 'char'
-      ? (initialMessages[initialContinueIndex].data ?? '')
-      : ''
+  const continueBase = isContinue
+    ? isolated.continueDisposition === 'append'
+      ? '*says nothing*'
+      : initialMessages[initialContinueIndex]?.role === 'char'
+        ? (initialMessages[initialContinueIndex].data ?? '')
+        : ''
+    : ''
   const editIndex = isContinue ? continueIndex : messages.length
 
   const reformatted = reformatCompletion(continueBase + completionText)
@@ -2280,7 +2854,7 @@ async function applyEditOutput(
   editCtx.postGenerationTrace = luaTrace
   editCtx.postGenerationProgress = luaProgress
   let out = await runLuaEditTrigger(state.currentChar, 'editoutput', text, { index: msgIndex }, editCtx)
-  out = expandVariables(out, { ...state.ctx, chara: state.currentChar }).text
+  out = expandVariables(out, { ...state.ctx, chatID: msgIndex, chara: state.currentChar }).text
   out = await processScriptAsync(state.ctx, state.currentChar, out, 'editoutput', {}, msgIndex, state.currentChat)
   if (varEngine.varChanged) {
     state.varChanged = true
@@ -2305,21 +2879,39 @@ function appendAssistantRow(
   continueIndex: number,
 ): void {
   const messages = (state.currentChat.message ??= [])
-  if (isContinue && messages[continueIndex]?.role === 'char') {
+  if (isContinue && state.continueDisposition === 'extend' && messages[continueIndex]?.role === 'char') {
     messages[continueIndex] = { ...messages[continueIndex], data: editedText }
     bumpHistoryCallbackMemo(state)
     return
   }
-  messages.push({
+  const promptInfo = promptInfoForPersistence(state, input.promptInfo)
+  const message = {
     role: 'char',
     data: editedText,
     saying: state.currentChar.chaId,
     time: Date.now(),
     chatId: input.generationId,
     ...(input.generationInfo ? { generationInfo: input.generationInfo } : {}),
-    ...(input.promptInfo ? { promptInfo: input.promptInfo } : {}),
-  } as Message)
+    ...(promptInfo !== undefined ? { promptInfo } : {}),
+  } as Message
+  if (
+    isContinue &&
+    state.continueDisposition === 'append' &&
+    messages[continueIndex]?.chatId === state.transientContinueBoundaryId
+  ) {
+    messages[continueIndex] = message
+    delete state.transientContinueBoundaryId
+  } else {
+    messages.push(message)
+  }
   bumpHistoryCallbackMemo(state)
+}
+
+function promptInfoForPersistence(
+  state: AssemblyState,
+  promptInfo: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  return state.database.promptInfoInsideChat === true ? promptInfo : {}
 }
 
 /**
@@ -2344,6 +2936,9 @@ async function runOutputTrigger(
     selectedCharID: state.selectedCharID,
     chatPage: state.chatPage,
     signal: state.signal,
+    unsupportedEffectTypes: state.unsupportedTriggerEffectTypes,
+    clientContext: state.ctx.clientContext,
+    cbsCallbackDiagnostics: state.cbsCallbackDiagnostics,
     runLua: async ({ code, mode, lowLevelAccess, chat, varEngine, source }) => {
       const traceRun = luaTrace?.beginRun({
         phase: 'onOutput',
@@ -2370,6 +2965,8 @@ async function runOutputTrigger(
             model: db.aiModel,
             signal: state.signal,
             execBudget: state.luaExecBudget,
+            ...(state.memoryDatabase ? { requestHistoryDb: state.memoryDatabase } : {}),
+            ...(state.assetDataDir ? { assetDataDir: state.assetDataDir } : {}),
           },
         )
       } catch (error) {
@@ -2402,6 +2999,7 @@ async function runOutputTrigger(
 
   state.varChanged = !!state.varChanged || result.varChanged
   syncWorkingScriptstate(state)
+  if (result.aborted) return false
   state.currentChat = result.chat
   // No-op when the trigger left the transcript untouched.
   captureMessageReplacement(state, 'output_trigger')
@@ -2417,7 +3015,7 @@ function assistantTextAfterPass(
   fallback: string,
 ): string {
   const messages = state.currentChat.message ?? []
-  if (isContinue) {
+  if (isContinue && state.continueDisposition === 'extend') {
     return messages[continueIndex]?.data ?? fallback
   }
   const byId = messages.find((message) => message.chatId === input.generationId)
@@ -2441,55 +3039,107 @@ async function runAgentPresetAfterMainStage(
   }
 
   runtime.mainOutputText = mainDraft
-  if (plan.afterMain.steps.length === 0) {
-    runtime.finalTextModified = false
-    return { finalText: mainDraft }
-  }
+  let outputTextByKey = outputTextByKeyFromPreviousOutputs(runtime.previousAgentOutputs)
+  let directFinalText = mainDraft
 
-  const afterMain = await executeAgentPresetPhase({
-    database: state.database,
-    currentChar: state.currentChar,
-    currentChat: state.currentChat,
-    currentUserMessage: latestUserMessage(state.currentChat),
-    previousAgentOutputs: runtime.previousAgentOutputs,
-    mainDraft,
-    plan: plan.afterMain,
-    resolvedMainProfile: state.resolvedMainProfile,
-    maxConcurrency: plan.maxConcurrency,
-    signal: state.signal,
-    executeStep: state.executeAgentPresetStep ?? executeAgentPresetStep,
-    onProgress: (progress) =>
-      progressReporter?.({
-        chatId: state.currentChat.id ?? state.input.chatId,
-        presetId: runtime.preset?.id ?? '',
-        presetName: runtime.preset?.name ?? '',
-        ...progress,
-      }),
-  })
-  runtime.afterMain = afterMain
-  runtime.previousAgentOutputs = afterMain.previousAgentOutputs
+  if (plan.afterMain.steps.length > 0) {
+    const afterMain = await executeAgentPresetPhase({
+      database: state.database,
+      ...(state.memoryDatabase ? { requestHistoryDb: state.memoryDatabase } : {}),
+      currentChar: state.currentChar,
+      currentChat: state.currentChat,
+      currentUserMessage: latestUserMessage(state.currentChat),
+      previousAgentOutputs: runtime.previousAgentOutputs,
+      mainDraft,
+      plan: plan.afterMain,
+      resolvedMainProfile: state.resolvedMainProfile,
+      maxConcurrency: plan.maxConcurrency,
+      signal: state.signal,
+      executeStep: state.executeAgentPresetStep ?? executeAgentPresetStep,
+      onProgress: (progress) =>
+        progressReporter?.({
+          chatId: state.currentChat.id ?? state.input.chatId,
+          presetId: runtime.preset?.id ?? '',
+          presetName: runtime.preset?.name ?? '',
+          ...progress,
+        }),
+    })
+    runtime.afterMain = afterMain
+    runtime.previousAgentOutputs = afterMain.previousAgentOutputs
+    outputTextByKey = afterMain.outputTextByKey
 
-  if (afterMain.blockingFailure) {
-    runtime.failure = afterMain.blockingFailure
-    runtime.finalTextModified = false
-    return {
-      finalText: mainDraft,
-      error: agentPresetPhaseError(runtime, afterMain.blockingFailure).body,
+    if (afterMain.blockingFailure) {
+      runtime.failure = afterMain.blockingFailure
+      runtime.finalTextModified = false
+      return {
+        finalText: mainDraft,
+        error: agentPresetPhaseError(runtime, afterMain.blockingFailure).body,
+      }
     }
+
+    const modifier = plan.finalOutputModifierStepId
+      ? afterMain.stepResults.find(
+          (result) => result.status === 'success' && result.stepId === plan.finalOutputModifierStepId,
+        )
+      : undefined
+    directFinalText = modifier?.status === 'success' ? modifier.outputText : mainDraft
   }
 
-  const modifier = plan.finalOutputModifierStepId
-    ? afterMain.stepResults.find(
-        (result) => result.status === 'success' && result.stepId === plan.finalOutputModifierStepId,
-      )
-    : undefined
-  const finalText = modifier?.status === 'success' ? modifier.outputText : mainDraft
+  let finalText = directFinalText
+  if (runtime.preset?.finalOutputTemplate) {
+    try {
+      finalText = expandVariables(runtime.preset.finalOutputTemplate, {
+        ...state.ctx,
+        slot: { ...(state.ctx.slot ?? {}), mainOutput: mainDraft },
+        agentOutputs: outputTextByKey,
+        agentOutputRequired: allAgentOutputsRequiredByKey(plan),
+      }).text
+      runtime.finalOutputComposed = true
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      const failure: AgentPresetFinalOutputFailure = {
+        phase: 'afterMain',
+        message: `Final output CBS failed: ${detail}`,
+        failureKind: 'final_output_cbs',
+      }
+      runtime.failure = failure
+      runtime.finalOutputComposed = false
+      runtime.finalTextModified = false
+      return {
+        finalText: mainDraft,
+        error: new AgentPresetGenerationError(failure.message, {
+          phase: failure.phase,
+          presetId: runtime.preset.id,
+          presetName: runtime.preset.name,
+          failureKind: failure.failureKind,
+          diagnostics: { status: failure.failureKind },
+        }).body,
+      }
+    }
+  } else {
+    runtime.finalOutputComposed = false
+  }
+
   runtime.finalTextModified = finalText !== mainDraft
   return { finalText }
 }
 
+function outputTextByKeyFromPreviousOutputs(outputs: readonly AgentPresetPreviousOutput[]): Record<string, string> {
+  const byKey: Record<string, string> = {}
+  for (const output of outputs) byKey[output.outputKey] = output.text
+  return byKey
+}
+
+function allAgentOutputsRequiredByKey(plan: AgentPresetExecutionPlan): Record<string, boolean> {
+  const required: Record<string, boolean> = {}
+  for (const planned of plan.stableSteps) {
+    if (planned.step.failurePolicy.mode !== 'optional') required[planned.step.outputKey] = true
+  }
+  return required
+}
+
 function attachAgentPresetDiagnostics(generationInfo: Record<string, unknown> | undefined, state: AssemblyState): void {
-  if (!generationInfo || !state.agentPreset) return
+  if (!generationInfo || !state.agentPreset || state.agentPreset.resolution.status === 'none') return
   generationInfo.agentPreset = buildAgentPresetGenerationDiagnostics(state.agentPreset)
 }
 
@@ -2521,6 +3171,7 @@ function buildAgentPresetGenerationDiagnostics(runtime: AgentPresetRuntimeState)
     steps,
     userInputModified: runtime.userInputModified === true,
     finalTextModified: runtime.finalTextModified === true,
+    finalOutputComposed: runtime.finalOutputComposed === true,
     ...(runtime.mainOutputText !== undefined
       ? { mainOutputPreview: boundedPreview(runtime.mainOutputText), mainOutputChars: runtime.mainOutputText.length }
       : {}),
@@ -2595,24 +3246,61 @@ export async function runServerPostGeneration(
   const isContinue = state.input.mode === 'continue'
   const messages = (state.currentChat.message ??= [])
   const continueIndex = messages.length - 1
-  const continueBase =
-    isContinue && messages[continueIndex]?.role === 'char' ? (messages[continueIndex].data ?? '') : ''
-  const editIndex = isContinue ? continueIndex : messages.length
+  const continueBase = isContinue
+    ? state.continueDisposition === 'append'
+      ? '*says nothing*'
+      : messages[continueIndex]?.role === 'char'
+        ? (messages[continueIndex].data ?? '')
+        : ''
+    : ''
+  const editIndex =
+    isContinue &&
+    state.continueDisposition === 'append' &&
+    messages[continueIndex]?.chatId !== state.transientContinueBoundaryId
+      ? messages.length
+      : isContinue
+        ? continueIndex
+        : messages.length
 
   // Baseline the post-gen delta against the post-assembly scriptstate (the route
   // already persisted the assembly-time delta), and clear the assembly-time
   // mutation accumulators so the payload carries only post-gen writes.
   state.initialScriptstate = cloneScriptstate(currentPersistedChat(state)?.scriptstate)
   state.initialLastMemory = state.currentChat.lastMemory
+  state.initialCharacterFields = characterFieldSnapshot(state.currentChar)
+  state.initialLocalLore = cloneLocalLore(state.currentChat.localLore)
   state.varChanged = false
   state.messageMutations = []
   state.additionalSystemPromptMutations = []
 
+  // Accepted divergence (OR-6): baseline index.svelte.ts:1631 entered a
+  // buffered per-choice loop that fired `editoutput` once on the raw Continue
+  // fragment and again on the combined row. Keep the intentional single pass.
   const reformatted = reformatCompletion(continueBase + input.completionText)
   let editedText = await applyEditOutput(state, reformatted, editIndex, input.luaTrace, input.luaProgress)
   if (state.database.removeIncompleteResponse) {
     editedText = trimUntilPunctuation(editedText)
   }
+
+  if (input.partial) {
+    appendAssistantRow(state, editedText, input, isContinue, continueIndex)
+    const mutations = buildMutationPayload(state)
+    const changed =
+      mutations.varChanged ||
+      mutations.chatVarMutations.length > 0 ||
+      (mutations.characterFieldMutations?.length ?? 0) > 0 ||
+      mutations.localLoreMutation !== undefined
+    const warnings = takeServerCompatibilityWarnings(state)
+    return {
+      finalText: editedText,
+      textChanged: editedText !== reformatted,
+      mutations,
+      resendChat: false,
+      changed,
+      ...(warnings.length > 0 ? { warnings } : {}),
+    }
+  }
+
   const alternateAgentPreset = cloneAgentPresetRuntime(state.agentPreset)
   const agentPresetAfterMain = await runAgentPresetAfterMainStage(state, editedText, input.agentPresetProgress)
   attachAgentPresetDiagnostics(input.generationInfo, state)
@@ -2642,7 +3330,12 @@ export async function runServerPostGeneration(
   const finalText = assistantTextAfterPass(state, input, isContinue, continueIndex, agentPresetAfterMain.finalText)
   attachAgentPresetDiagnostics(input.generationInfo, state)
   const mutations = buildMutationPayload(state)
-  const changed = mutations.varChanged || mutations.chatVarMutations.length > 0
+  const changed =
+    mutations.varChanged ||
+    mutations.chatVarMutations.length > 0 ||
+    (mutations.characterFieldMutations?.length ?? 0) > 0 ||
+    mutations.localLoreMutation !== undefined
+  const warnings = takeServerCompatibilityWarnings(state)
 
   return {
     finalText,
@@ -2650,5 +3343,6 @@ export async function runServerPostGeneration(
     mutations,
     resendChat,
     changed,
+    ...(warnings.length > 0 ? { warnings } : {}),
   }
 }

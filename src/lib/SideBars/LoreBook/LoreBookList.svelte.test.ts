@@ -2,7 +2,10 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database, loreBook } from 'src/ts/storage/database.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
-import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { lorebookPageOwner } from 'src/ts/server/lorebookPageOwner.svelte'
+
+import { charactersResourceState, collectionsResourceState } from 'src/ts/server/resourceState.svelte'
 
 const lorebookListMocks = vi.hoisted(() => {
   type Deferred<T> = {
@@ -182,7 +185,7 @@ vi.mock('src/ts/alert', () => ({
   alertNormal: lorebookListMocks.alertNormal,
 }))
 
-vi.mock('src/ts/server/lorebookBridge.svelte', () => ({
+vi.mock('src/ts/server/lorebookOwner.svelte', () => ({
   applyLorebookEntryDraftEdit: lorebookListMocks.applyLorebookEntryDraftEdit,
   applyLorebookEntryDraftRollback: vi.fn((draft: loreBook) => ({ draft, restoredFields: [] })),
   applyServerCharacterLorebookResource: vi.fn(() => true),
@@ -191,6 +194,8 @@ vi.mock('src/ts/server/lorebookBridge.svelte', () => ({
   flushPendingLorebookEntryDraftEdit: lorebookListMocks.flushPendingLorebookEntryDraftEdit,
   markCharacterLorebookHydrated: vi.fn(),
   mergeLorebookEntryProjectionDraft: lorebookListMocks.mergeLorebookEntryProjectionDraft,
+  recordCanonicalCharacterLorebookScopes: vi.fn(),
+  recordCanonicalLorebookCollections: vi.fn(),
   recordHydratedCharacterLorebooks: vi.fn(),
   replaceCharacterLorebookCollection: lorebookListMocks.replaceCharacterLorebookCollection,
   replaceCharacterLorebookCollectionWithOutcome: lorebookListMocks.replaceCharacterLorebookCollection,
@@ -212,6 +217,7 @@ vi.mock('src/ts/tokenizer', () => ({
 import LoreBookListHarness from './LoreBookList.testHarness.svelte'
 import LoreBookList from './LoreBookList.svelte'
 import { resetScopedLorebookMutationUiStateForTests } from 'src/ts/server/scopedLorebookMutationUiState'
+import { getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 type LoreBookListHarnessComponent = MountedComponent & {
@@ -307,6 +313,7 @@ describe('LoreBookList', () => {
       loreBook: [],
       loreBookPage: 0,
     } as Database)
+    lorebookPageOwner.projectStructuralSelection(0)
   })
 
   afterEach(() => {
@@ -321,6 +328,7 @@ describe('LoreBookList', () => {
     target.remove()
     document.body.innerHTML = ''
     selectedCharID.set(-1)
+    lorebookPageOwner.reset()
     setDatabaseLite({} as Database)
     resetScopedLorebookMutationUiStateForTests()
   })
@@ -436,6 +444,31 @@ describe('LoreBookList', () => {
     expect(component.getEntries().map((entry) => entry.comment)).toEqual(['Legacy A', 'Legacy C'])
   })
 
+  it('fails closed when a captured stable entry id is duplicated before deletion settles', async () => {
+    const initialEntries = [
+      makeLoreBook({ id: 'entry-a', comment: 'Entry A' }),
+      makeLoreBook({ id: 'entry-b', comment: 'Entry B' }),
+    ]
+    const confirm = lorebookListMocks.createDeferred<boolean>()
+    lorebookListMocks.queueConfirm(confirm)
+
+    component = mountHarness(initialEntries)
+    await tick()
+    deleteButtonForRow(rowByEntryId('entry-b')).click()
+    await tick()
+
+    const duplicatedEntries = [
+      makeLoreBook({ id: 'entry-b', comment: 'Inserted Duplicate' }),
+      ...cloneEntries(initialEntries),
+    ]
+    component.setEntries(duplicatedEntries)
+    await tick()
+    confirm.resolve(true)
+    await flushAsyncWork()
+
+    expect(component.getEntries()).toEqual(duplicatedEntries)
+  })
+
   it('does not poison detail tracking when a closed row is deleted', async () => {
     lorebookListMocks.queueConfirm(true)
     component = mountHarness([
@@ -541,6 +574,76 @@ describe('LoreBookList', () => {
     await flushAsyncWork()
 
     expect(lorebookListMocks.replaceCharacterLorebookCollection).toHaveBeenCalledWith('character-resource', [])
+  })
+
+  it('renders and mutates the authoritative selected character owner when the compatibility selection is stale', async () => {
+    setDatabaseLite({
+      characters: [
+        {
+          chaId: 'compatibility-character',
+          chatPage: 0,
+          chats: [],
+          globalLore: [makeLoreBook({ id: 'compatibility-entry', comment: 'Compatibility Entry' })],
+        },
+        {
+          chaId: 'owner-character',
+          chatPage: 0,
+          chats: [],
+          globalLore: [makeLoreBook({ id: 'owner-entry', comment: 'Owner Entry' })],
+        },
+      ],
+      loreBook: [],
+      loreBookPage: 0,
+    } as Database)
+    selectedCharID.set(0)
+    charactersResourceState.currentChar = 1
+    charactersResourceState.selectionRevision = 7
+
+    resourceComponent = mount(LoreBookList, { target, props: { submenu: 0 } })
+    await tick()
+
+    expect(lorebookRows().map((row) => row.dataset.risuLorebookId)).toEqual(['owner-entry'])
+    lorebookListMocks.queueConfirm(true)
+    deleteButtonForRow(rowByEntryId('owner-entry')).click()
+    await flushAsyncWork()
+
+    expect(lorebookListMocks.replaceCharacterLorebookCollection).toHaveBeenCalledWith('owner-character', [])
+  })
+
+  it('fails closed when the selected chat id has duplicate owners', async () => {
+    setDatabaseLite({
+      characters: [
+        {
+          chaId: 'selected-character',
+          chatPage: 0,
+          chats: [
+            {
+              id: 'duplicate-chat',
+              localLore: [makeLoreBook({ id: 'unsafe-entry', comment: 'Unsafe Entry' })],
+            },
+          ],
+          globalLore: [],
+        },
+        {
+          chaId: 'other-character',
+          chatPage: 0,
+          chats: [{ id: 'duplicate-chat', localLore: [] }],
+          globalLore: [],
+        },
+      ],
+      loreBook: [],
+      loreBookPage: 0,
+    } as Database)
+    selectedCharID.set(0)
+    charactersResourceState.currentChar = 0
+    charactersResourceState.selectionRevision = 8
+
+    resourceComponent = mount(LoreBookList, { target, props: { submenu: 1 } })
+    await tick()
+
+    expect(lorebookRows()).toHaveLength(0)
+    expect(target.textContent).toContain('No Lorebook')
+    expect(lorebookListMocks.replaceChatLorebookCollection).not.toHaveBeenCalled()
   })
 
   it('does not transfer an open row to another character with the same entry id', async () => {
@@ -690,9 +793,7 @@ describe('LoreBookList', () => {
 
     deleteButtonForRow(rowByEntryId('delete-outcome-entry')).click()
     await flushAsyncWork()
-    expect(target.querySelector('[data-risu-lorebook-persistence="pending"]')?.textContent).toContain(
-      'Saving lorebook changes',
-    )
+    expect(target.querySelector('p[data-risu-lorebook-persistence="pending"]')).toBeNull()
     expect(deleteButtonForRow(rowByEntryId('delete-outcome-entry')).disabled).toBe(true)
 
     deferred.resolve({ status: 'failed', error: 'delete rejected' })
@@ -753,9 +854,7 @@ describe('LoreBookList', () => {
     const cleanupStatus = target.querySelector(
       '[data-risu-lorebook-mutation-context="local-activation-cleanup"][data-risu-lorebook-persistence="queued"]',
     )
-    expect(cleanupStatus?.textContent).toContain('Local activation cleanup queued')
-    expect(cleanupStatus?.getAttribute('data-risu-lorebook-mutation-scope')).toBe('chat:chat-delete-local-a')
-    expect(cleanupStatus?.getAttribute('data-risu-lorebook-mutation-entry')).toBe('delete-local-entry')
+    expect(cleanupStatus).toBeNull()
   })
 
   it('explains a failed local-activation cleanup after character deletion restores it', async () => {
@@ -842,14 +941,12 @@ describe('LoreBookList', () => {
       expect.objectContaining({ id: 'reorder-b' }),
       expect.objectContaining({ id: 'reorder-a' }),
     ])
-    expect(target.querySelector('[data-risu-lorebook-persistence="pending"]')).not.toBeNull()
+    expect(target.querySelector('p[data-risu-lorebook-persistence="pending"]')).toBeNull()
 
     deferred.resolve({ status: 'queued' })
     await flushAsyncWork()
     expect(lorebookListMocks.alertNormal).toHaveBeenCalledWith('Lorebook change queued.')
-    expect(target.querySelector('[data-risu-lorebook-persistence="queued"]')?.textContent).toContain(
-      'Lorebook change queued',
-    )
+    expect(target.querySelector('p[data-risu-lorebook-persistence="queued"]')).toBeNull()
   })
 
   it('disables local chat activation until its owner-scoped operation settles', async () => {
@@ -953,6 +1050,92 @@ describe('LoreBookList', () => {
     expect(entryARow.textContent).toContain('Prompt')
   })
 
+  it('renders the owner-selected global collection when the compatibility pointer is stale', async () => {
+    setDatabaseLite({
+      characters: [],
+      loreBook: [
+        {
+          id: 'compatibility-book',
+          name: 'Compatibility Book',
+          data: [makeLoreBook({ id: 'compatibility-entry', comment: 'Compatibility Entry' })],
+        },
+        {
+          id: 'owner-book',
+          name: 'Owner Book',
+          data: [makeLoreBook({ id: 'owner-entry', comment: 'Owner Entry' })],
+        },
+      ],
+      loreBookPage: 0,
+    } as unknown as Database)
+    lorebookPageOwner.reset()
+    lorebookPageOwner.hydrate({
+      revision: 2,
+      setting: 'loreBookPage',
+      state: { present: true, value: 1 },
+    })
+    withTestDatabaseWrite(() => {
+      getDatabase().loreBookPage = 0
+    })
+
+    resourceComponent = mount(LoreBookList, { target, props: { globalMode: true } })
+    await tick()
+
+    expect(lorebookRows().map((row) => row.dataset.risuLorebookId)).toEqual(['owner-entry'])
+  })
+
+  it('fails closed when the owner-selected global lorebook id is duplicated', async () => {
+    setDatabaseLite({
+      characters: [],
+      loreBook: [
+        {
+          id: 'duplicate-book',
+          name: 'Duplicate A',
+          data: [makeLoreBook({ id: 'unsafe-entry', comment: 'Unsafe Entry' })],
+        },
+        {
+          id: 'duplicate-book',
+          name: 'Duplicate B',
+          data: [makeLoreBook({ id: 'other-entry', comment: 'Other Entry' })],
+        },
+      ],
+      loreBookPage: 0,
+    } as unknown as Database)
+    lorebookPageOwner.hydrate({
+      revision: 3,
+      setting: 'loreBookPage',
+      state: { present: true, value: 0 },
+    })
+
+    resourceComponent = mount(LoreBookList, { target, props: { globalMode: true } })
+    await tick()
+
+    expect(lorebookRows()).toHaveLength(0)
+    expect(target.textContent).toContain('No Lorebook')
+    expect(lorebookListMocks.replaceGlobalLorebookEntryCollection).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when the global lorebook collection owner is in error', async () => {
+    setDatabaseLite({
+      characters: [],
+      loreBook: [
+        {
+          id: 'unsafe-book',
+          name: 'Unsafe Book',
+          data: [makeLoreBook({ id: 'unsafe-entry', comment: 'Unsafe Entry' })],
+        },
+      ],
+      loreBookPage: 0,
+    } as unknown as Database)
+    collectionsResourceState.statuses.loreBook = 'error'
+
+    resourceComponent = mount(LoreBookList, { target, props: { globalMode: true } })
+    await tick()
+
+    expect(lorebookRows()).toHaveLength(0)
+    expect(target.textContent).toContain('No Lorebook')
+    expect(lorebookListMocks.replaceGlobalLorebookEntryCollection).not.toHaveBeenCalled()
+  })
+
   it('dispatches global entry edits and deletion to the captured lorebook id', async () => {
     const initialEntries = [
       makeLoreBook({ id: 'global-entry-a', comment: 'Global Entry A' }),
@@ -966,6 +1149,12 @@ describe('LoreBookList', () => {
       ],
       loreBookPage: 1,
     } as unknown as Database)
+    lorebookPageOwner.reset()
+    lorebookPageOwner.hydrate({
+      revision: 1,
+      setting: 'loreBookPage',
+      state: { present: true, value: 1 },
+    })
 
     resourceComponent = mount(LoreBookList, { target, props: { globalMode: true } })
     await tick()
@@ -1009,6 +1198,7 @@ describe('LoreBookList', () => {
       ],
       loreBookPage: 0,
     } as unknown as Database)
+    lorebookPageOwner.projectStructuralSelection(0)
     await tick()
 
     confirm.resolve(true)

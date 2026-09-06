@@ -5,9 +5,9 @@ import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import * as fflate from 'fflate'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ImageGenerationRequest } from '../../../src/ts/server/imageGenerationProtocol.js'
+import type { ImageGenerationRequest } from '@risuai/protocol/image-generation-operation'
 import { buildApp } from '../src/app.js'
-import { executeImageGeneration, ImageGenerationError, parseImageGenerationRequest } from '../src/imageGeneration.js'
+import { executeImageGeneration, parseImageGenerationRequest } from '../src/imageGeneration.js'
 import { createImageGenerationDisconnectAbort } from '../src/routes/imageGeneration.js'
 
 const PNG_HEADER = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
@@ -380,6 +380,78 @@ describe('image generation provider execution', () => {
     expect(authHeader(fetchImpl.mock.calls[0][1])).toBe('Bearer stored-nai-key')
   })
 
+  it('never sends the stored NovelAI credential to a configured custom endpoint', async () => {
+    const fetchImpl = vi.fn()
+    const request = parseImageGenerationRequest({
+      provider: 'novelai',
+      credential: { source: 'stored' },
+      payload: {
+        input: 'prompt',
+        model: 'nai-diffusion-4-5-full',
+        action: 'generate',
+        parameters: {
+          n_samples: 1,
+          width: 1024,
+          height: 1024,
+          steps: 28,
+          scale: 5,
+          negative_prompt: '',
+          sampler: 'k_euler_ancestral',
+          noise_schedule: 'karras',
+          seed: 1,
+          extra_noise_seed: 2,
+        },
+      },
+    })
+
+    await expect(
+      executeImageGeneration(
+        request,
+        { NAIApiKey: 'stored-nai-key', NAIImgUrl: 'http://127.0.0.1/private-generation' },
+        { fetchImpl },
+      ),
+    ).rejects.toMatchObject({ code: 'image_generation_configuration_invalid' })
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('uses only an explicit draft credential for a configured custom NovelAI endpoint', async () => {
+    const archive = fflate.zipSync({ 'image.png': pngBytes('custom-novel') })
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
+      Promise.resolve(new Response(responseBody(archive))),
+    )
+    const request = parseImageGenerationRequest({
+      provider: 'novelai',
+      credential: { source: 'provided', apiKey: 'draft-nai-key' },
+      payload: {
+        input: 'prompt',
+        model: 'nai-diffusion-4-5-full',
+        action: 'generate',
+        parameters: {
+          n_samples: 1,
+          width: 1024,
+          height: 1024,
+          steps: 28,
+          scale: 5,
+          negative_prompt: '',
+          sampler: 'k_euler_ancestral',
+          noise_schedule: 'karras',
+          seed: 1,
+          extra_noise_seed: 2,
+        },
+      },
+    })
+
+    const result = await executeImageGeneration(
+      request,
+      { NAIApiKey: 'stored-must-not-leak', NAIImgUrl: 'https://custom.example.test/generate' },
+      { fetchImpl },
+    )
+
+    expect(result.bytes).toEqual(pngBytes('custom-novel'))
+    expect(fetchImpl.mock.calls[0][0]).toBe('https://custom.example.test/generate')
+    expect(authHeader(fetchImpl.mock.calls[0][1])).toBe('Bearer draft-nai-key')
+  })
+
   it('stops WaveSpeed polling at the configured attempt limit', async () => {
     const fetchImpl = vi
       .fn()
@@ -505,15 +577,5 @@ describe('image generation disconnect abort', () => {
     disconnect.cleanup()
     expect(request.listenerCount('close')).toBe(0)
     expect(response.listenerCount('close')).toBe(0)
-  })
-})
-
-describe('image generation error shape', () => {
-  it('uses a dedicated sanitized error type', () => {
-    expect(new ImageGenerationError('image_generation_failed', 502, 429)).toMatchObject({
-      code: 'image_generation_failed',
-      statusCode: 502,
-      upstreamStatus: 429,
-    })
   })
 })

@@ -8,6 +8,12 @@ transfer of chat-process ownership from the browser to the server.
 | [`fastify-migration/`](fastify-migration/README.md)               | Original Fastify migration phases, server-projection invariants, provider references, and the Phase-9-era client-thinning contract.               |
 | [`client-thinning-closeout/`](client-thinning-closeout/README.md) | Later rewritten client-thinning workstream: server prompt assembly, provider capability routing, Lua/A2 processing, and final ownership closeout. |
 | [`risuai-fastify-behavior-differences.md`](risuai-fastify-behavior-differences.md) | Dated 2026-07-11 comparison with the original RisuAI and the remediation state recorded after that audit. |
+| [`upstream-sync/`](upstream-sync/README.md) | Closed 2026-08-07 behavior-porting sweep, fork conventions, and disposition ledger. |
+| [`original-risu-behavioral-compatibility/`](original-risu-behavioral-compatibility/README.md) | Closed 2026-08-30 exhaustive fork-point and upstream behavioral audit, signed difference registry, remediation record, and permanent compatibility gates. |
+| [`architecture-modernization/`](architecture-modernization/PLAN.md) | Completed portfolio roadmap for the cross-runtime, canonical-state, and client-resource changes, plus the inactive replay-safe event-delta proposal. |
+| [`cross-runtime-boundaries/`](cross-runtime-boundaries/PLAN.md) | Closed 2026-08-31 browser/protocol/shared-core/Fastify dependency-direction workstream, including the zero-edge inventory and declaration-independent server checks. |
+| [`canonical-state-and-compatibility/`](canonical-state-and-compatibility/PLAN.md) | Closed 2026-08-31 canonical persisted-owner, migration/repair-boundary, and interchange workstream, including the final compatibility disposition gate. |
+| [`client-resource-ownership/`](client-resource-ownership/PLAN.md) | Closed 2026-08-31 explicit browser resource-owner and facade/bridge retirement workstream, including the zero-production-consumer baseline and final seam decisions. |
 
 The `fastify-migration/client-thinning/` subtree and the later
 `client-thinning-closeout/` record overlap in subject but are not duplicates.

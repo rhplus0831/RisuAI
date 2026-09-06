@@ -9,6 +9,7 @@ import {
   _resetDomObserverForTesting,
   resetBgmObserverForChatSwitch,
   startObserveDom,
+  stopObserveDom,
 } from './observer.svelte'
 
 async function flushMutationObserver() {
@@ -35,7 +36,27 @@ afterEach(() => {
 })
 
 describe('startObserveDom', () => {
-  it('M14: repeated observer starts bind one contextmenu listener per code block', () => {
+  it('stops observing new nodes until the optional runtime is restarted', async () => {
+    startObserveDom()
+    stopObserveDom()
+
+    const stoppedCodeBlock = document.createElement('pre')
+    stoppedCodeBlock.setAttribute('x-hl-lang', 'js')
+    const stoppedListener = vi.spyOn(stoppedCodeBlock, 'addEventListener')
+    document.body.appendChild(stoppedCodeBlock)
+    await flushMutationObserver()
+    expect(countListenerAdds(stoppedListener, 'contextmenu')).toBe(0)
+
+    startObserveDom()
+    const restartedCodeBlock = document.createElement('pre')
+    restartedCodeBlock.setAttribute('x-hl-lang', 'ts')
+    const restartedListener = vi.spyOn(restartedCodeBlock, 'addEventListener')
+    document.body.appendChild(restartedCodeBlock)
+    await flushMutationObserver()
+    expect(countListenerAdds(restartedListener, 'contextmenu')).toBe(1)
+  })
+
+  it('repeated observer starts bind one contextmenu listener per code block', () => {
     const codeBlock = document.createElement('pre')
     codeBlock.setAttribute('x-hl-lang', 'js')
     codeBlock.textContent = 'console.log("once")'
@@ -50,7 +71,7 @@ describe('startObserveDom', () => {
     expect(countListenerAdds(addListener, 'contextmenu')).toBe(1)
   })
 
-  it('M14: processes nested code blocks inserted through mutations without a polling tick', async () => {
+  it('processes nested code blocks inserted through mutations without a polling tick', async () => {
     startObserveDom()
 
     const wrapper = document.createElement('section')
@@ -70,7 +91,7 @@ describe('startObserveDom', () => {
     expect(countListenerAdds(addListener, 'contextmenu')).toBe(1)
   })
 
-  it('M14: processes nodes that gain matching attributes after insertion once', async () => {
+  it('processes nodes that gain matching attributes after insertion once', async () => {
     startObserveDom()
 
     const codeBlock = document.createElement('pre')
@@ -154,7 +175,7 @@ describe('startObserveDom', () => {
     expect(document.getElementById('code-contextmenu')).toBeNull()
   })
 
-  it('M14: processes each BGM control node once even after repeated scans', () => {
+  it('processes each BGM control node once even after repeated scans', () => {
     let endedListener: (() => void) | null = null
     const play = vi.fn()
     const pause = vi.fn()
@@ -283,7 +304,120 @@ describe('startObserveDom', () => {
     expect(_getBgmElementForTesting()).toBeNull()
   })
 
-  it('L33: chat switch cleanup pauses current BGM and lets the next control attach', async () => {
+  it('stops active BGM only when its owned control node is removed', async () => {
+    const play = vi.fn().mockResolvedValue(undefined)
+    const pause = vi.fn()
+    const remove = vi.fn()
+    const audioInstances: Array<{ src: string; volume: number }> = []
+    const AudioMock = vi.fn(function (
+      this: {
+        src: string
+        volume: number
+        addEventListener: () => void
+        play: () => Promise<void>
+        pause: () => void
+        remove: () => void
+      },
+      src: string,
+    ) {
+      this.src = src
+      this.volume = 0
+      this.addEventListener = () => {}
+      this.play = play
+      this.pause = pause
+      this.remove = remove
+      audioInstances.push(this)
+    })
+    vi.stubGlobal('Audio', AudioMock)
+
+    const unrelated = document.createElement('section')
+    unrelated.appendChild(document.createElement('div'))
+    const ctrl = document.createElement('div')
+    ctrl.setAttribute('risu-ctrl', 'bgm___auto___/active-bgm.mp3')
+    document.body.append(unrelated, ctrl)
+    startObserveDom()
+    await Promise.resolve()
+
+    expect(audioInstances).toHaveLength(1)
+    expect(_getBgmElementForTesting()).toBe(audioInstances[0])
+
+    unrelated.remove()
+    await flushMutationObserver()
+
+    expect(pause).not.toHaveBeenCalled()
+    expect(remove).not.toHaveBeenCalled()
+    expect(_getBgmElementForTesting()).toBe(audioInstances[0])
+
+    ctrl.remove()
+    await flushMutationObserver()
+
+    expect(pause).toHaveBeenCalledOnce()
+    expect(remove).toHaveBeenCalledOnce()
+    expect(_getBgmElementForTesting()).toBeNull()
+  })
+
+  it('stops active BGM when the optional DOM runtime is torn down', () => {
+    const play = vi.fn()
+    const pause = vi.fn()
+    const remove = vi.fn()
+    const AudioMock = vi.fn(function (this: {
+      volume: number
+      addEventListener: () => void
+      play: () => void
+      pause: () => void
+      remove: () => void
+    }) {
+      this.volume = 0
+      this.addEventListener = () => {}
+      this.play = play
+      this.pause = pause
+      this.remove = remove
+    })
+    vi.stubGlobal('Audio', AudioMock)
+
+    const ctrl = document.createElement('div')
+    ctrl.setAttribute('risu-ctrl', 'bgm___auto___/teardown-bgm.mp3')
+    document.body.appendChild(ctrl)
+    startObserveDom()
+
+    stopObserveDom()
+
+    expect(pause).toHaveBeenCalledOnce()
+    expect(remove).toHaveBeenCalledOnce()
+    expect(_getBgmElementForTesting()).toBeNull()
+  })
+
+  it('cancels a pending autoplay retry when the optional DOM runtime is torn down', async () => {
+    const play = vi.fn().mockRejectedValueOnce(new DOMException('Autoplay blocked', 'NotAllowedError'))
+    const AudioMock = vi.fn(function (this: {
+      volume: number
+      addEventListener: () => void
+      play: () => Promise<void>
+      pause: () => void
+      remove: () => void
+    }) {
+      this.volume = 0
+      this.addEventListener = () => {}
+      this.play = play
+      this.pause = vi.fn()
+      this.remove = vi.fn()
+    })
+    vi.stubGlobal('Audio', AudioMock)
+
+    const ctrl = document.createElement('div')
+    ctrl.setAttribute('risu-ctrl', 'bgm___auto___/blocked-teardown-bgm.mp3')
+    document.body.appendChild(ctrl)
+    startObserveDom()
+    await Promise.resolve()
+
+    stopObserveDom()
+    document.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+
+    expect(AudioMock).toHaveBeenCalledOnce()
+    expect(_getBgmElementForTesting()).toBeNull()
+  })
+
+  it('chat switch cleanup pauses current BGM and lets the next control attach', async () => {
     const play = vi.fn()
     const pause = vi.fn()
     const remove = vi.fn()

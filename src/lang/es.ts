@@ -1,5 +1,52 @@
 export const languageSpanish = {
+  generationRecovery: {
+    failed:
+      'La aplicación no pudo terminar de recuperar una generación anterior. Los mensajes nuevos están pausados, pero tus borradores se conservan.',
+    retry: 'Reintentar recuperación',
+    retrying: 'Reintentando recuperación…',
+    discard: 'Descartar recuperación',
+    discarding: 'Descartando recuperación…',
+  },
+  acceptedSendRecovery: {
+    generationFailed:
+      'Tu mensaje se guardó, pero no se pudo iniciar la respuesta. Reintenta la respuesta sin volver a enviar el mensaje.',
+    generationInProgress:
+      'Tu mensaje se guardó, pero otro dispositivo o sesión ya está generando en este chat. Reintenta cuando termine.',
+    abandoned: 'Tu mensaje se guardó, pero un reinicio del servidor interrumpió la respuesta. Puedes reintentarla.',
+    providerMayHaveRun: 'Es posible que la solicitud anterior al proveedor ya se haya ejecutado y facturado.',
+    providerMayHaveRunConfirm:
+      'Es posible que la solicitud anterior ya se haya facturado. Reintentar puede generar otro cargo. ¿Reintentar de todos modos?',
+    retry: 'Reintentar respuesta',
+    retrying: 'Reintentando…',
+  },
+  generationStop: {
+    stopping: 'Deteniendo…',
+    failed: 'No se pudo confirmar la detención. Es posible que la generación siga en curso.',
+    retry: 'Reintentar detención',
+    savingStoppedPartial: 'Detenido. Guardando la respuesta parcial…',
+  },
+  generationPersistenceQueued: 'Esta respuesta está esperando a guardarse y sigue siendo provisional.',
+  generationPersistenceStalled:
+    'El guardado de esta respuesta provisional sigue fallando. Permanece en cola y se reintentará automáticamente.',
+  generationPersistenceTerminal:
+    'Esta respuesta provisional no pudo guardarse de forma segura y no volverá a intentarse automáticamente. Su registro de diario se ha conservado.',
+  generationPersistenceStalledLegacy:
+    'Esta respuesta provisional restaurada no puede reintentarse de forma segura porque su registro de recuperación antiguo no contiene una instantánea de la conversación.',
   unknownInteractionTime: 'Desconocido',
+  generationReattachFailure: {
+    message: 'Es posible que esta respuesta siga generándose, pero este dispositivo no pudo volver a conectarse.',
+    lastError: (error: string) => `Último error de conexión: ${error}`,
+    retry: 'Reintentar',
+    refresh: 'Actualizar',
+    stop: 'Detener',
+    sidebarWarning: (name: string) => `Conexión perdida: ${name}`,
+  },
+  characterCreationQueued:
+    'El personaje nuevo se guardó en este dispositivo y está en cola. El servidor aún no lo ha aceptado y se reintentará automáticamente.',
+  characterCreationFailed: 'No se pudo crear el personaje. Se eliminó el personaje provisional.',
+  characterImportQueued:
+    'El personaje importado se guardó en este dispositivo y está en cola. El servidor aún no lo ha aceptado y se reintentará automáticamente.',
+  characterImportFailed: 'No se pudo guardar el personaje importado. Se eliminó el personaje provisional.',
   secretInput: {
     savedPlaceholder: 'Credencial guardada',
     savedStatus: 'Hay una credencial guardada.',
@@ -43,6 +90,8 @@ export const languageSpanish = {
   },
   showHelp: 'Mostrar Ayuda',
   help: {
+    hypaV3ProgressOpenChatOnly:
+      'Muestra el indicador completo de tareas de memoria solo para el chat abierto. Las tareas de otros chats siguen visibles como un contador compacto.',
     model: 'La opción de modelo es el modelo principal usado en el chat.',
     submodel:
       'El Modelo Auxiliar es un modelo que se utiliza para analizar imágenes de emociones, auto sugerencias, etc. Se recomienda GPT-3.5.',
@@ -208,6 +257,8 @@ export const languageSpanish = {
       'Si está habilitado, traducirá el texto antes de los scripts Regex y el formateo HTML. Esto podría reducir los tokens pero podría romper el formateo.',
     translatorSendTextAsIs:
       'Si se habilita, la traducción con Ax. Model envía el texto del mensaje al modelo exactamente como está escrito — en una sola solicitud, sin protección de líneas, división ni marcadores de posición de estilo — y utiliza la respuesta del modelo sin modificar como resultado de la traducción.',
+    translatorExcludeThoughts:
+      'Cuando «Enviar texto tal cual» está activado, elimina los bloques `<Thoughts>` y `<think>` del texto de origen y del historial de traducción antes de enviarlos al modelo.',
     translatorHistoryMaxTokens:
       'Presupuesto máximo aproximado de tokens compartido por los espacios del historial original y traducido. Los mensajes completos más antiguos se eliminan al superar el límite.',
     autoTranslateCachedOnly:
@@ -769,9 +820,28 @@ export const languageSpanish = {
   savebackup: 'Guardar Respaldo en Google',
   loadbackup: 'Cargar Respaldo desde Google',
   files: 'Archivos',
+  backupUnsupportedStandaloneChatBlocks:
+    'Esta copia de seguridad guarda chats en bloques CHAT independientes que esta versión de RisuAI no puede importar. No se importó nada y tus datos existentes no se modificaron.',
   backupConfirm: '¿Realmente deseas guardar el respaldo?',
   backupLoadConfirm: '¿Realmente deseas cargar el respaldo? ¡Todos los datos se perderán!',
   backupLoadConfirm2: '¿Realmente, realmente deseas cargar el respaldo? ¡Todos los datos se perderán!',
+  backupImportSuccess: 'La copia de seguridad local se cargó.',
+  backupImportSuccessWithAssetCaveats: (missingCount: number, orphanedCount: number) => {
+    const caveats: string[] = []
+    if (missingCount > 0) {
+      caveats.push(
+        missingCount === 1 ? 'falta un recurso referenciado' : `faltan ${missingCount} recursos referenciados`,
+      )
+    }
+    if (orphanedCount > 0) {
+      caveats.push(
+        orphanedCount === 1
+          ? 'un recurso almacenado no está referenciado por los datos restaurados'
+          : `${orphanedCount} recursos almacenados no están referenciados por los datos restaurados`,
+      )
+    }
+    return `La copia de seguridad local se cargó, pero ${caveats.join(' y ')}.`
+  },
   pasteAuthCode: 'Por favor, copia el código de autenticación de la ventana emergente y pégalo aquí:',
   others: 'Otros',
   presets: 'Presets',
@@ -828,6 +898,8 @@ export const languageSpanish = {
   showFirstMessagePages: 'Mostrar Páginas del Primer Mensaje',
   roundIcons: 'Iconos Redondos',
   streaming: 'Streaming',
+  oobaLegacyBufferedOnlyNotice:
+    'Ooba Legacy solo usa el modo de compatibilidad HTTP con búfer. El streaming y el medio streaming no están disponibles.',
   chatBot: 'Chat Bot',
   otherBots: 'Otros Bots',
   user: 'Usuario',
@@ -847,6 +919,7 @@ export const languageSpanish = {
   globalRegexScript: 'Regex Global',
   accessibility: 'Accesibilidad',
   reducedMotion: 'Reducir movimiento',
+  hypaV3ProgressOpenChatOnly: 'Mostrar progreso completo de memoria solo para el chat abierto',
   sendWithEnter:
     'Enviar con la Tecla Enter(Al desactivar la verificación, Shift + Enter cambia a Transmisión de Mensajes.)',
   fixedChatTextarea: 'Fijación en la parte inferior de la ventana de chat',
@@ -966,6 +1039,7 @@ export const languageSpanish = {
   ifRandom: 'Si aleatorio',
   ifValue: 'Si valor',
   hideRealm: 'Ocultar RisuRealm',
+  openRisuRealm: 'Abrir Risu Realm',
   sendExternalServerWarning:
     'Continuar enviará una solicitud a un servidor externo y puede transmitir tu dirección IP. ¿Quieres continuar?',
   hideAllImages: 'Ocultar todas las imágenes',
@@ -1146,6 +1220,16 @@ export const languageSpanish = {
   resultStoredVar: 'Variable para Almacenar el Resultado',
   triggerEffRunLLM: 'Ejecutar Modelo Principal',
   triggerEffectSendAI: 'Reenviar IA',
+  triggerConfigurationUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
+    `Esta configuración contiene definiciones no compatibles con el servidor. Se conservan, pero se bloquean durante la generación.${effectTypes.length > 0 ? ` Efectos: ${effectTypes.join(', ')}.` : ''}${cbsCallbacks.length > 0 ? ` Retrollamadas CBS: ${cbsCallbacks.join(', ')}.` : ''}`,
+  triggerImportUnsupportedDiagnostic: (effectTypes: string[], cbsCallbacks: string[]) =>
+    `Las definiciones importadas se conservaron sin cambios, pero el comportamiento no compatible se bloqueará durante la generación.${effectTypes.length > 0 ? ` Efectos: ${effectTypes.join(', ')}.` : ''}${cbsCallbacks.length > 0 ? ` Retrollamadas CBS: ${cbsCallbacks.join(', ')}.` : ''}`,
+  triggerEffectRuntimeUnsupported: (effectType: string) =>
+    `El efecto de activador «${effectType}» no es compatible con este servidor y se omitió.`,
+  cbsCallbackRuntimeUnsupported: (callbackName: string) =>
+    `La retrollamada CBS «${callbackName}» no es compatible con este servidor y devolvió un valor vacío.`,
+  cbsClientContextUnavailable: (callbackName: string) =>
+    `La retrollamada CBS «${callbackName}» no se pudo resolver porque el contexto del navegador no estaba disponible.`,
   triggerEffCheckSim: 'Verificar Similitud',
   triggerEffShowAlert: 'Mostrar Alerta',
   normal: 'Normal',
@@ -1247,8 +1331,10 @@ export const languageSpanish = {
   translatorPrompt: 'Prompt de Traducción',
   translateBeforeHTMLFormatting: 'Traducir Antes del Formateo HTML',
   translatorSendTextAsIs: 'Enviar texto tal cual',
+  translatorExcludeThoughts: 'Excluir cadena de pensamiento',
   translatorHistoryMaxTokens: 'Tokens máximos del historial de traducción',
   retranslate: 'Retraducir',
+  retranslateConfirm: '¿Volver a traducir este mensaje? La traducción actual se reemplazará.',
   editTranslation: 'Editar traducción',
   editTranslationSave: 'Guardar traducción',
   exportTranslationCache: 'Exportar caché de traducción',
@@ -1288,8 +1374,6 @@ export const languageSpanish = {
   expandSidebar: 'Expandir barra lateral',
   home: 'Inicio',
   showSavingIcon: 'Mostrar Icono de Guardado',
-  pluginVersionWarn:
-    'Esta es la versión {{plugin_version}} del plugin, que no es compatible con esta versión de Risuai. Por favor, actualiza el plugin a la versión {{required_version}}.',
   imageTranslation: 'Traducción de Imagen',
   banCharacterset: 'Regeneración Automática en Conjunto de Caracteres',
   realmDirectOpen: 'Abrir personaje directamente en RisuRealm',
@@ -1330,6 +1414,21 @@ export const languageSpanish = {
     preserveOrphanedMemoryLabel: 'Preservar Memoria Huérfana',
     applyRegexScriptWhenRerollingLabel: 'Aplicar Script Regex al Regenerar',
     doNotSummarizeUserMessageLabel: 'No Resumir Mensajes del Usuario',
+  },
+  hypaV3Progress: {
+    activeJobs: (count: number) => `${count} ${count === 1 ? 'tarea activa' : 'tareas activas'} de memoria`,
+    activeInOtherChats: (count: number) =>
+      `${count} ${count === 1 ? 'tarea activa' : 'tareas activas'} de memoria en otros chats`,
+    otherChatsCompact: (count: number) => `+${count} en otros chats`,
+    openDetailsAction: (count: number) =>
+      `Mostrar detalles de ${count} ${count === 1 ? 'tarea activa' : 'tareas activas'} de memoria`,
+    closeDetailsAction: 'Ocultar detalles de tareas de memoria',
+    unnamedChat: 'Chat sin nombre',
+    unknownChat: (id: string) => `Chat ${id}`,
+    kind: { chunk: 'Preparando memoria', embed: 'Buscando en la memoria', summarize: 'Resumiendo memoria' },
+    pending: 'En espera',
+    running: 'En ejecución',
+    attempt: (attemptCount: number, maxAttempts: number) => `Intento ${attemptCount}/${maxAttempts}`,
   },
   hypaV3Modal: {
     titleLabel: 'HypaV3',
@@ -1445,6 +1544,7 @@ export const languageSpanish = {
     'Extiende el tiempo de caché para Claude Caching, solicitando cada 4 minutos. esto puede reducir la tasa de fallos de caché, pero puede aumentar el costo si no se usa correctamente.',
   automaticCachePoint: 'Punto de Caché Automático',
   experimentalChatCompression: 'Manejo Experimental de Datos de Chat',
+  loadingChat: 'Cargando chat…',
   loadingChatData: 'Cargando Datos de Chat',
   chatDataLoadFailed: 'No se pudieron cargar los datos del chat.',
   promptTemplateLoadFailed: 'No se pudo cargar la plantilla de prompt.',
@@ -1607,8 +1707,6 @@ export const languageSpanish = {
     'El plugin {} solicita acceso mediante el asistente de red de Internet pública de RisuAI. Esta solicitud puede enviar datos de chats o cuentas a terceros. El asistente bloquea destinos privados, locales, de metadatos y de servicios de RisuAI. ¿Desea permitirlo?',
   pluginUpdateSourceConsent:
     'RisuAI comprobará y descargará actualizaciones del plugin {{plugin}} únicamente desde su fuente HTTPS declarada:\n{{url}}\nEste permiso se limita a comprobar y descargar actualizaciones; no concede al plugin acceso a los asistentes de red durante la ejecución. ¿Desea continuar?',
-  legacyRuntimeConsent:
-    'El plugin heredado {} solicita permiso para ejecutarse como código de confianza en la página principal de RisuAI. Puede leer o modificar chats y datos de la cuenta, y acceder a servicios de red públicos, privados o locales. Permita únicamente plugins en los que confíe plenamente. ¿Desea continuar?',
   v3RuntimeConsent:
     'El plugin {} solicita permiso para ejecutar código de interfaz de navegador de confianza. Puede contactar destinos de red públicos, privados, locales, de metadatos o de RisuAI y enviar datos de chats o cuentas fuera de RisuAI, incluso mediante API del navegador que omiten el consentimiento del asistente de red. Ejecute solo plugins en los que confíe plenamente. ¿Desea continuar?',
   fetchLogConsent:
@@ -1663,6 +1761,9 @@ export const languageSpanish = {
   inputHookAdd: 'Añadir hook',
   inputHookName: 'Nombre del hook',
   inputHookPrompt: 'Prompt del hook',
+  inputHookModel: 'Modelo',
+  inputHookTranslation: 'Traducción',
+  inputHookInheritOtherAxModel: 'Heredar modelo auxiliar',
   inputHookDelete: 'Eliminar hook',
   inputHookDraftLabel: 'Borrador',
   inputHookDraftPlaceholder: 'La salida del hook aparecerá aquí. Puedes editarla antes de enviarla.',

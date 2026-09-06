@@ -1,0 +1,58 @@
+{
+  "finding": "F03",
+  "evidenceKind": "structural-work-counters",
+  "node": "v24.19.0",
+  "samples": [
+    {
+      "name": "small",
+      "unrelatedCharacters": 1,
+      "unrelatedMessagesPerCharacter": 2,
+      "targetMessages": 2,
+      "messageBodyBytes": 256,
+      "snapshotApi": "captureChatFolderMetadataPatch",
+      "rollbackApi": "restoreChatFolderRowMetadata",
+      "snapshotBytes": 126,
+      "snapshotCloneCount": 2,
+      "largestCloneBytes": 5,
+      "capturedCharacterCount": 0,
+      "capturedMessageCount": 0,
+      "folderRollbackCloneCount": 1,
+      "folderRollbackLargestCloneBytes": 5,
+      "unrelatedMessageIdentityPreserved": true
+    },
+    {
+      "name": "intermediate",
+      "unrelatedCharacters": 8,
+      "unrelatedMessagesPerCharacter": 100,
+      "targetMessages": 2,
+      "messageBodyBytes": 256,
+      "snapshotApi": "captureChatFolderMetadataPatch",
+      "rollbackApi": "restoreChatFolderRowMetadata",
+      "snapshotBytes": 126,
+      "snapshotCloneCount": 2,
+      "largestCloneBytes": 5,
+      "capturedCharacterCount": 0,
+      "capturedMessageCount": 0,
+      "folderRollbackCloneCount": 1,
+      "folderRollbackLargestCloneBytes": 5,
+      "unrelatedMessageIdentityPreserved": true
+    },
+    {
+      "name": "large",
+      "unrelatedCharacters": 32,
+      "unrelatedMessagesPerCharacter": 1000,
+      "targetMessages": 2,
+      "messageBodyBytes": 256,
+      "snapshotApi": "captureChatFolderMetadataPatch",
+      "rollbackApi": "restoreChatFolderRowMetadata",
+      "snapshotBytes": 126,
+      "snapshotCloneCount": 2,
+      "largestCloneBytes": 5,
+      "capturedCharacterCount": 0,
+      "capturedMessageCount": 0,
+      "folderRollbackCloneCount": 1,
+      "folderRollbackLargestCloneBytes": 5,
+      "unrelatedMessageIdentityPreserved": true
+    }
+  ]
+}

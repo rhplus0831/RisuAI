@@ -43,6 +43,7 @@ export function createBlankChar(): character {
     replaceGlobalNote: '',
     triggerscript: [
       {
+        id: uuidv4(),
         comment: '',
         type: 'manual',
         conditions: [],
@@ -55,6 +56,7 @@ export function createBlankChar(): character {
         ],
       },
       {
+        id: uuidv4(),
         comment: 'New Event',
         type: 'manual',
         conditions: [],

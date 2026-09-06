@@ -1,0 +1,271 @@
+{
+  "finding": "F03-organization",
+  "evidenceKind": "structural-work-counters",
+  "node": "v24.19.0",
+  "samples": [
+    {
+      "name": "small",
+      "unrelatedCharacters": 1,
+      "otherHistory": 2,
+      "kind": "create",
+      "snapshotBytes": 326,
+      "messageCount": 0,
+      "clones": 1,
+      "largestCloneBytes": 76,
+      "budget": 4096
+    },
+    {
+      "name": "small",
+      "unrelatedCharacters": 1,
+      "otherHistory": 2,
+      "kind": "folder-create",
+      "snapshotBytes": 234,
+      "messageCount": 0,
+      "clones": 1,
+      "largestCloneBytes": 62,
+      "budget": 4096
+    },
+    {
+      "name": "small",
+      "unrelatedCharacters": 1,
+      "otherHistory": 2,
+      "kind": "delete",
+      "snapshotBytes": 958,
+      "messageCount": 2,
+      "clones": 0,
+      "largestCloneBytes": 0,
+      "budget": 4096
+    },
+    {
+      "name": "small",
+      "unrelatedCharacters": 1,
+      "otherHistory": 2,
+      "kind": "folder-delete",
+      "snapshotBytes": 257,
+      "messageCount": 0,
+      "clones": 1,
+      "largestCloneBytes": 43,
+      "budget": 4096
+    },
+    {
+      "name": "small",
+      "unrelatedCharacters": 1,
+      "otherHistory": 2,
+      "kind": "order",
+      "snapshotBytes": 298,
+      "messageCount": 0,
+      "clones": 0,
+      "largestCloneBytes": 0,
+      "budget": 4096
+    },
+    {
+      "name": "small",
+      "unrelatedCharacters": 1,
+      "otherHistory": 2,
+      "kind": "fork",
+      "snapshotBytes": 1501,
+      "messageCount": 2,
+      "clones": 4,
+      "largestCloneBytes": 691,
+      "budget": 4096
+    },
+    {
+      "name": "small",
+      "unrelatedCharacters": 1,
+      "otherHistory": 2,
+      "kind": "reset",
+      "snapshotBytes": 1574,
+      "messageCount": 4,
+      "clones": 0,
+      "largestCloneBytes": 0,
+      "budget": 3517
+    },
+    {
+      "name": "small",
+      "unrelatedCharacters": 1,
+      "otherHistory": 2,
+      "kind": "import",
+      "snapshotBytes": 196,
+      "messageCount": 0,
+      "clones": 0,
+      "largestCloneBytes": 0,
+      "budget": 4096
+    },
+    {
+      "name": "intermediate",
+      "unrelatedCharacters": 8,
+      "otherHistory": 100,
+      "kind": "create",
+      "snapshotBytes": 326,
+      "messageCount": 0,
+      "clones": 1,
+      "largestCloneBytes": 76,
+      "budget": 4096
+    },
+    {
+      "name": "intermediate",
+      "unrelatedCharacters": 8,
+      "otherHistory": 100,
+      "kind": "folder-create",
+      "snapshotBytes": 234,
+      "messageCount": 0,
+      "clones": 1,
+      "largestCloneBytes": 62,
+      "budget": 4096
+    },
+    {
+      "name": "intermediate",
+      "unrelatedCharacters": 8,
+      "otherHistory": 100,
+      "kind": "delete",
+      "snapshotBytes": 958,
+      "messageCount": 2,
+      "clones": 0,
+      "largestCloneBytes": 0,
+      "budget": 4096
+    },
+    {
+      "name": "intermediate",
+      "unrelatedCharacters": 8,
+      "otherHistory": 100,
+      "kind": "folder-delete",
+      "snapshotBytes": 257,
+      "messageCount": 0,
+      "clones": 1,
+      "largestCloneBytes": 43,
+      "budget": 4096
+    },
+    {
+      "name": "intermediate",
+      "unrelatedCharacters": 8,
+      "otherHistory": 100,
+      "kind": "order",
+      "snapshotBytes": 298,
+      "messageCount": 0,
+      "clones": 0,
+      "largestCloneBytes": 0,
+      "budget": 4096
+    },
+    {
+      "name": "intermediate",
+      "unrelatedCharacters": 8,
+      "otherHistory": 100,
+      "kind": "fork",
+      "snapshotBytes": 1501,
+      "messageCount": 2,
+      "clones": 4,
+      "largestCloneBytes": 691,
+      "budget": 4096
+    },
+    {
+      "name": "intermediate",
+      "unrelatedCharacters": 8,
+      "otherHistory": 100,
+      "kind": "reset",
+      "snapshotBytes": 32142,
+      "messageCount": 102,
+      "clones": 0,
+      "largestCloneBytes": 0,
+      "budget": 34085
+    },
+    {
+      "name": "intermediate",
+      "unrelatedCharacters": 8,
+      "otherHistory": 100,
+      "kind": "import",
+      "snapshotBytes": 196,
+      "messageCount": 0,
+      "clones": 0,
+      "largestCloneBytes": 0,
+      "budget": 4096
+    },
+    {
+      "name": "large",
+      "unrelatedCharacters": 32,
+      "otherHistory": 1000,
+      "kind": "create",
+      "snapshotBytes": 326,
+      "messageCount": 0,
+      "clones": 1,
+      "largestCloneBytes": 76,
+      "budget": 4096
+    },
+    {
+      "name": "large",
+      "unrelatedCharacters": 32,
+      "otherHistory": 1000,
+      "kind": "folder-create",
+      "snapshotBytes": 234,
+      "messageCount": 0,
+      "clones": 1,
+      "largestCloneBytes": 62,
+      "budget": 4096
+    },
+    {
+      "name": "large",
+      "unrelatedCharacters": 32,
+      "otherHistory": 1000,
+      "kind": "delete",
+      "snapshotBytes": 958,
+      "messageCount": 2,
+      "clones": 0,
+      "largestCloneBytes": 0,
+      "budget": 4096
+    },
+    {
+      "name": "large",
+      "unrelatedCharacters": 32,
+      "otherHistory": 1000,
+      "kind": "folder-delete",
+      "snapshotBytes": 257,
+      "messageCount": 0,
+      "clones": 1,
+      "largestCloneBytes": 43,
+      "budget": 4096
+    },
+    {
+      "name": "large",
+      "unrelatedCharacters": 32,
+      "otherHistory": 1000,
+      "kind": "order",
+      "snapshotBytes": 298,
+      "messageCount": 0,
+      "clones": 0,
+      "largestCloneBytes": 0,
+      "budget": 4096
+    },
+    {
+      "name": "large",
+      "unrelatedCharacters": 32,
+      "otherHistory": 1000,
+      "kind": "fork",
+      "snapshotBytes": 1501,
+      "messageCount": 2,
+      "clones": 4,
+      "largestCloneBytes": 691,
+      "budget": 4096
+    },
+    {
+      "name": "large",
+      "unrelatedCharacters": 32,
+      "otherHistory": 1000,
+      "kind": "reset",
+      "snapshotBytes": 313842,
+      "messageCount": 1002,
+      "clones": 0,
+      "largestCloneBytes": 0,
+      "budget": 315785
+    },
+    {
+      "name": "large",
+      "unrelatedCharacters": 32,
+      "otherHistory": 1000,
+      "kind": "import",
+      "snapshotBytes": 196,
+      "messageCount": 0,
+      "clones": 0,
+      "largestCloneBytes": 0,
+      "budget": 4096
+    }
+  ]
+}

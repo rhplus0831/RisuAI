@@ -21,7 +21,7 @@ function step(overrides: Partial<TranslatorPresetStep> = {}): TranslatorPresetSt
 }
 
 describe('translator pipeline resolution', () => {
-  it('resolves legacy settings without mutating the input', () => {
+  it('uses canonical defaults without consulting legacy settings', () => {
     const state = {
       translatorPrompt: 'Translate {{slot::content}}',
       translatorMaxResponse: 123,
@@ -32,14 +32,40 @@ describe('translator pipeline resolution', () => {
     const steps = resolveTranslatorPipeline(state)
 
     expect(state).toEqual(before)
-    expect(steps).toMatchObject([
-      {
-        enabled: true,
-        prompt: 'Translate {{slot::content}}',
-        maxResponse: 123,
-        model: { mode: 'inheritTranslate' },
-      },
-    ])
+    expect(steps).toEqual([])
+  })
+
+  it('uses selected canonical prompt and maxResponse when legacy scalars are stale', () => {
+    const state = {
+      translatorPrompt: 'stale scalar prompt',
+      translatorMaxResponse: 7,
+      translatorPresets: [
+        createTranslatorPreset('Canonical', {
+          prompt: 'canonical prompt {{slot::content}}',
+          maxResponse: 321,
+          id: 'canonical',
+        }),
+      ],
+      translatorPresetId: 'canonical',
+    }
+
+    const steps = resolveTranslatorPipeline(state)
+
+    expect(steps[0]).toMatchObject({ prompt: 'canonical prompt {{slot::content}}', maxResponse: 321 })
+  })
+
+  it('resolves a stable chat binding before the global preset index', () => {
+    const state = {
+      translatorPresets: [
+        createTranslatorPreset('Global', { id: 'global', prompt: 'Global {{slot::content}}' }),
+        createTranslatorPreset('Chat', { id: 'chat', prompt: 'Chat {{slot::content}}' }),
+      ],
+      translatorPresetId: 'global',
+    }
+
+    expect(resolveTranslatorPipeline(state, 'chat')[0].prompt).toBe('Chat {{slot::content}}')
+    expect(resolveTranslatorPipeline(state, 'missing')[0].prompt).toBe('Global {{slot::content}}')
+    expect(state.translatorPresetId).toBe('global')
   })
 })
 
@@ -216,6 +242,49 @@ describe('runTranslatorPipeline', () => {
     expect(runStep.mock.calls[1][0].messages).toEqual([
       { role: 'system', content: 'Refine draft output with draft output and source' },
     ])
+  })
+
+  it('removes internal reasoning before chaining or returning LLM translations', async () => {
+    const runStep = vi
+      .fn()
+      .mockResolvedValueOnce(
+        '<Thoughts data-private="true">draft secret <think>nested secret</think></Thoughts>\n\ndraft output',
+      )
+      .mockResolvedValueOnce('<think>final secret</think>\n<THOUGHTS>more secret</THOUGHTS>\nfinal output')
+
+    await expect(
+      runTranslatorPipeline(
+        {
+          steps: [
+            step({ id: 'draft', prompt: 'Draft {{slot::content}}', outputKey: 'draft' }),
+            step({ id: 'refine', prompt: 'Refine {{slot::prev}} with {{slot::out::draft}}' }),
+          ],
+          sourceText: 'source',
+          to: 'ko',
+          from: 'en',
+          translatorNote: '',
+        },
+        runStep,
+      ),
+    ).resolves.toBe('final output')
+    expect(runStep.mock.calls[1][0].messages).toEqual([
+      { role: 'system', content: 'Refine draft output with draft output' },
+    ])
+  })
+
+  it('drops an unfinished internal-reasoning tail from an LLM translation', async () => {
+    await expect(
+      runTranslatorPipeline(
+        {
+          steps: [step()],
+          sourceText: 'source',
+          to: 'ko',
+          from: 'en',
+          translatorNote: '',
+        },
+        async () => 'translated text\n<Thoughts>unfinished private reasoning',
+      ),
+    ).resolves.toBe('translated text')
   })
 
   it('runs the first step when all steps are disabled', async () => {

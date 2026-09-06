@@ -21,7 +21,11 @@ vi.mock('../triggers', () => ({
 import { setDatabase, type Chat, type Database, type Message, type character } from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'
 import { ChatTokenizer } from '../../tokenizer'
-import { buildHistoryWindow, type BuildHistoryWindowResult } from '../promptAssembly/buildHistoryWindow'
+import {
+  buildHistoryWindow as buildHistoryWindowWithModel,
+  type BuildHistoryWindowArgs,
+  type BuildHistoryWindowResult,
+} from '../promptAssembly/buildHistoryWindow'
 
 type NonStop = Exclude<BuildHistoryWindowResult, { stopSending: true }>
 
@@ -77,17 +81,30 @@ function makeChat(messages: Message[], fmIndex: number = -1): Chat {
   } as unknown as Chat
 }
 
+let seededDatabase: Database
+
 function seedDb(extra: Partial<Database> = {}) {
-  setDatabase({
+  seededDatabase = {
     aiModel: 'gpt-4o',
     subModel: 'gpt-4o',
     characters: [makeChar()],
     ...extra,
-  } as unknown as Database)
+  } as unknown as Database
+  setDatabase(seededDatabase)
   selectedCharID.set(0)
 }
 
 const noCache = () => makeChar({ name: 'Cached' })
+
+function buildHistoryWindow(
+  args: Omit<BuildHistoryWindowArgs, 'modelId' | 'database'>,
+): Promise<BuildHistoryWindowResult> {
+  return buildHistoryWindowWithModel({
+    ...args,
+    database: seededDatabase,
+    modelId: seededDatabase.aiModel,
+  })
+}
 
 describe('buildHistoryWindow - happy path', () => {
   beforeEach(() => {
@@ -137,6 +154,23 @@ describe('buildHistoryWindow - start-new-chat marker gating', () => {
     })
     assertNotStopped(result)
     expect(result.chats.some((c) => c.content === '[Start a new chat]')).toBe(false)
+  })
+
+  it('uses the request-scoped resolved model instead of the flat database model', async () => {
+    seedDb({ aiModel: 'gpt-4o' })
+    const result = await buildHistoryWindowWithModel({
+      database: seededDatabase,
+      currentChar: makeChar(),
+      currentChat: makeChat([]),
+      modelId: 'novelai:something',
+      usingPromptTemplate: false,
+      tokenizer: new FakeTokenizer() as unknown as ChatTokenizer,
+      findCharacterbyIdwithCache: noCache,
+      depthPrompts: [],
+      resolvePosition: (text) => text,
+    })
+    assertNotStopped(result)
+    expect(result.chats.some((chat) => chat.content === '[Start a new chat]')).toBe(false)
   })
 
   it('omits the marker when promptSettings.trimStartNewChat is true', async () => {

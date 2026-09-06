@@ -11,6 +11,8 @@ interface DeletePushSubscriptionBody {
   endpoint?: unknown
 }
 
+export const PUSH_SUBSCRIPTION_BODY_LIMIT = 16 * 1024
+
 export function registerPushNotificationRoutes(
   app: FastifyInstance,
   authState: AuthState,
@@ -20,31 +22,45 @@ export function registerPushNotificationRoutes(
     return { publicKey: pushNotifications.publicKey() }
   })
 
-  app.post('/api/v1/push/subscriptions', async (req, reply) => {
-    if (!(await requireAuth(authState, req, reply))) return
+  app.post(
+    '/api/v1/push/subscriptions',
+    {
+      bodyLimit: PUSH_SUBSCRIPTION_BODY_LIMIT,
+      onRequest: async (req, reply) => {
+        await requireAuth(authState, req, reply)
+      },
+    },
+    async (req, reply) => {
+      const body = (req.body ?? {}) as PushSubscriptionBody
+      const subscription = normalizePushSubscription(body.subscription)
+      if (!subscription) {
+        reply.code(400).send({ error: 'subscription is invalid' })
+        return
+      }
 
-    const body = (req.body ?? {}) as PushSubscriptionBody
-    const subscription = normalizePushSubscription(body.subscription)
-    if (!subscription) {
-      reply.code(400).send({ error: 'subscription is invalid' })
-      return
-    }
+      pushNotifications.upsertSubscription(subscription)
+      return { status: 'ok' }
+    },
+  )
 
-    pushNotifications.upsertSubscription(subscription)
-    return { status: 'ok' }
-  })
+  app.delete(
+    '/api/v1/push/subscriptions',
+    {
+      bodyLimit: PUSH_SUBSCRIPTION_BODY_LIMIT,
+      onRequest: async (req, reply) => {
+        await requireAuth(authState, req, reply)
+      },
+    },
+    async (req, reply) => {
+      const body = (req.body ?? {}) as DeletePushSubscriptionBody
+      const endpoint = normalizePushEndpoint(body.endpoint)
+      if (!endpoint) {
+        reply.code(400).send({ error: 'endpoint is invalid' })
+        return
+      }
 
-  app.delete('/api/v1/push/subscriptions', async (req, reply) => {
-    if (!(await requireAuth(authState, req, reply))) return
-
-    const body = (req.body ?? {}) as DeletePushSubscriptionBody
-    const endpoint = normalizePushEndpoint(body.endpoint)
-    if (!endpoint) {
-      reply.code(400).send({ error: 'endpoint is invalid' })
-      return
-    }
-
-    pushNotifications.deleteSubscription(endpoint)
-    return { status: 'ok' }
-  })
+      pushNotifications.deleteSubscription(endpoint)
+      return { status: 'ok' }
+    },
+  )
 }

@@ -15,8 +15,10 @@ import {
   writeGenerationTraceSidecar,
   type GenerationTraceContext,
 } from './generationTraceSidecar.js'
-import type { ServerToolDefinition, ServerToolRound } from '../../../../src/ts/process/request/serverToolProtocol.js'
+import type { ServerToolDefinition, ServerToolRound } from '@risuai/protocol/server-tool'
+import { extractApiResponseMetadata, mergeApiResponseMetadata } from './apiMetadata.js'
 import { appendGeminiToolRounds, geminiToolDefinitions, parseGeminiToolCalls } from './serverTools.js'
+import { applyAdditionalParameters } from './additionalParams.js'
 
 export interface VertexAuthInput {
   projectId: string
@@ -48,11 +50,34 @@ export interface GeminiRequest {
   presencePenalty?: number
   frequencyPenalty?: number
   thinkingTokens?: number
+  thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high'
+  thinkingLevelNoMinimal?: boolean
+  geminiBlockOff?: boolean
+  noCivilIntegrity?: boolean
+  responseSchema?: Record<string, unknown>
+  extraHeaders?: Record<string, string>
+  /** Persisted profile additional-parameter overrides, applied after defaults and extra headers. */
+  additionalParams?: Array<[string, string]>
   /** Reveal reasoning deltas as they arrive instead of buffering them until answer text. */
   streamThoughts?: boolean
   trace?: GenerationTraceContext
   tools?: ServerToolDefinition[]
+  responseModalities?: readonly GeminiResponseModality[]
+  persistInlineData?: (inlineData: GeminiInlineData) => Promise<string>
+  onWarning?: (warning: GeminiResponseWarning) => void
   signal: AbortSignal
+}
+
+export type GeminiResponseModality = 'TEXT' | 'IMAGE' | 'AUDIO'
+
+export interface GeminiInlineData {
+  mimeType: string
+  data: string
+}
+
+export interface GeminiResponseWarning {
+  message: string
+  context?: Record<string, unknown>
 }
 
 export interface GeminiContent {
@@ -78,10 +103,20 @@ interface GeminiResolveInput {
   presencePenalty?: unknown
   frequencyPenalty?: unknown
   thinkingTokens?: unknown
+  thinkingLevel?: unknown
+  thinkingLevelNoMinimal?: unknown
+  geminiBlockOff?: unknown
+  noCivilIntegrity?: unknown
+  responseSchema?: unknown
+  extraHeaders?: Record<string, string>
+  additionalParams?: Array<[string, string]>
   streamThoughts?: unknown
   trace?: GenerationTraceContext
   tools?: ServerToolDefinition[]
   toolRounds?: ServerToolRound[]
+  responseModalities?: readonly GeminiResponseModality[]
+  persistInlineData?: (inlineData: GeminiInlineData) => Promise<string>
+  onWarning?: (warning: GeminiResponseWarning) => void
   signal: AbortSignal
 }
 
@@ -105,9 +140,9 @@ const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
  *   - `contents` alternating between `user` and `model` roles with `parts`.
  *
  * Function/tool rows are dropped. Consecutive same-role rows are coalesced
- * since Gemini also rejects two `user` (or two `model`) in a row. Supports the
- * text-only browser request shape; tool, multimodal, thinking-config, and
- * response-schema rows are omitted.
+ * since Gemini also rejects two `user` (or two `model`) in a row. Request-level
+ * tool, multimodal, thinking, and response-schema controls are added after this
+ * message-only conversion.
  */
 export interface GeminiReformatResult {
   contents: GeminiContent[]
@@ -201,7 +236,8 @@ export function resolveGeminiRequest(input: GeminiResolveInput): GeminiRequest |
   const temperature =
     typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
   const topP = typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
-  const topK = typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
+  const topK =
+    typeof input.topK === 'number' && Number.isFinite(input.topK) && input.topK !== 0 ? input.topK : undefined
   const presencePenalty =
     typeof input.presencePenalty === 'number' && Number.isFinite(input.presencePenalty)
       ? input.presencePenalty
@@ -213,6 +249,13 @@ export function resolveGeminiRequest(input: GeminiResolveInput): GeminiRequest |
   const thinkingTokens =
     typeof input.thinkingTokens === 'number' && Number.isFinite(input.thinkingTokens) && input.thinkingTokens >= 0
       ? input.thinkingTokens
+      : undefined
+  const thinkingLevel =
+    input.thinkingLevel === 'minimal' ||
+    input.thinkingLevel === 'low' ||
+    input.thinkingLevel === 'medium' ||
+    input.thinkingLevel === 'high'
+      ? input.thinkingLevel
       : undefined
 
   return {
@@ -229,11 +272,49 @@ export function resolveGeminiRequest(input: GeminiResolveInput): GeminiRequest |
     presencePenalty,
     frequencyPenalty,
     thinkingTokens,
+    thinkingLevel,
+    thinkingLevelNoMinimal: input.thinkingLevelNoMinimal === true,
+    geminiBlockOff: input.geminiBlockOff === true,
+    noCivilIntegrity: input.noCivilIntegrity === true,
+    responseSchema:
+      input.responseSchema && typeof input.responseSchema === 'object' && !Array.isArray(input.responseSchema)
+        ? (input.responseSchema as Record<string, unknown>)
+        : undefined,
+    extraHeaders: input.extraHeaders,
+    additionalParams: input.additionalParams,
     streamThoughts: input.streamThoughts === true,
     trace: input.trace,
     tools: input.tools,
+    responseModalities: input.responseModalities,
+    persistInlineData: input.persistInlineData,
+    onWarning: input.onWarning,
     signal: input.signal,
   }
+}
+
+const GEMINI_SAFETY_CATEGORIES = [
+  'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+  'HARM_CATEGORY_HATE_SPEECH',
+  'HARM_CATEGORY_HARASSMENT',
+  'HARM_CATEGORY_DANGEROUS_CONTENT',
+  'HARM_CATEGORY_CIVIC_INTEGRITY',
+] as const
+
+function buildSafetySettings(req: GeminiRequest): Array<{ category: string; threshold: 'BLOCK_NONE' | 'OFF' }> {
+  const threshold = req.geminiBlockOff === true ? 'OFF' : 'BLOCK_NONE'
+  return GEMINI_SAFETY_CATEGORIES.filter(
+    (category) => !(req.noCivilIntegrity === true && category === 'HARM_CATEGORY_CIVIC_INTEGRITY'),
+  ).map((category) => ({ category, threshold }))
+}
+
+function buildThinkingConfig(req: GeminiRequest): Record<string, unknown> | undefined {
+  if ((req.tools?.length ?? 0) > 0) return undefined
+  if (req.thinkingTokens !== undefined) {
+    return { thinkingBudget: req.thinkingTokens, includeThoughts: true }
+  }
+  if (req.thinkingLevel === undefined) return undefined
+  const thinkingLevel = req.thinkingLevel === 'minimal' && req.thinkingLevelNoMinimal ? 'low' : req.thinkingLevel
+  return { thinkingLevel, includeThoughts: true }
 }
 
 function buildPayload(req: GeminiRequest): Record<string, unknown> {
@@ -244,12 +325,17 @@ function buildPayload(req: GeminiRequest): Record<string, unknown> {
   if (req.topK !== undefined) generationConfig.topK = req.topK
   if (req.presencePenalty !== undefined) generationConfig.presencePenalty = req.presencePenalty
   if (req.frequencyPenalty !== undefined) generationConfig.frequencyPenalty = req.frequencyPenalty
-  if ((req.tools?.length ?? 0) === 0 && req.thinkingTokens !== undefined) {
-    generationConfig.thinkingConfig = { thinkingBudget: req.thinkingTokens, includeThoughts: true }
+  if (req.responseModalities !== undefined) generationConfig.responseModalities = [...req.responseModalities]
+  const thinkingConfig = buildThinkingConfig(req)
+  if (thinkingConfig !== undefined) generationConfig.thinkingConfig = thinkingConfig
+  if (req.responseSchema !== undefined) {
+    generationConfig.response_mime_type = 'application/json'
+    generationConfig.response_schema = req.responseSchema
   }
   const body: Record<string, unknown> = {
     contents: req.contents,
     generationConfig,
+    safetySettings: buildSafetySettings(req),
   }
   if (req.systemInstruction !== undefined) {
     body.systemInstruction = { parts: [{ text: req.systemInstruction }] }
@@ -259,11 +345,11 @@ function buildPayload(req: GeminiRequest): Record<string, unknown> {
 }
 
 /**
- * Some Gemini 3 preview models are only available on the `global` Vertex
- * endpoint regardless of the user's configured region. Mirror the SPA's
- * `isVertexGlobalOnlyModel` check in `src/ts/process/request/google.ts`.
+ * Gemini 3 preview models and the Gemini 3.5/3.6 Flash family are only
+ * available on the `global` Vertex endpoint regardless of configured region.
+ * Mirror the SPA's `isVertexGlobalOnlyModel` check.
  */
-const VERTEX_GLOBAL_ONLY = /^gemini-3-.*-preview$/
+const VERTEX_GLOBAL_ONLY = /^(?:gemini-3-.*-preview$|gemini-3\.[56]-flash)/
 
 function endpointStudio(req: GeminiRequest, stream: boolean): string {
   const base = req.baseUrl.endsWith('/') ? req.baseUrl.slice(0, -1) : req.baseUrl
@@ -290,6 +376,21 @@ function endpoint(req: GeminiRequest, stream: boolean): string {
 
 function headers(): Record<string, string> {
   return { 'content-type': 'application/json' }
+}
+
+function buildRequestInit(
+  req: GeminiRequest,
+  defaultHeaders: Record<string, string>,
+): { body: Record<string, unknown>; bodyText: string; headers: Record<string, string> } {
+  const body = buildPayload(req)
+  const requestHeaders = { ...defaultHeaders, ...(req.extraHeaders ?? {}) }
+  if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
+    applyAdditionalParameters(body, requestHeaders, req.additionalParams)
+  }
+  // Gemini selects streaming through the operation URL, not a body field.
+  // Ignore a Chat Completions-style override that could contradict dispatch.
+  delete body.stream
+  return { body, bodyText: JSON.stringify(body), headers: requestHeaders }
 }
 
 async function emitGeminiProviderBodyMetric(args: {
@@ -346,6 +447,7 @@ interface GeminiResponsePart {
   thought?: unknown
   thoughtSignature?: unknown
   functionCall?: unknown
+  inlineData?: unknown
 }
 
 interface GeminiCandidate {
@@ -407,6 +509,80 @@ function extractText(
   return text
 }
 
+function readGeminiInlineData(value: unknown): GeminiInlineData | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const mimeType = (value as { mimeType?: unknown }).mimeType
+  const data = (value as { data?: unknown }).data
+  if (typeof mimeType !== 'string' || mimeType.trim().length === 0 || typeof data !== 'string' || data.length === 0) {
+    return null
+  }
+  return { mimeType: mimeType.trim(), data }
+}
+
+function geminiInlineDataWarning(req: GeminiRequest, inlineData: GeminiInlineData | null, error: unknown): void {
+  const mimeType = inlineData?.mimeType
+  const mediaType = mimeType?.split('/', 1)[0] ?? 'unknown'
+  const detail = error instanceof Error ? error.message : String(error)
+  req.onWarning?.({
+    message: `Gemini returned ${mediaType} output that could not be persisted and was skipped.`,
+    context: {
+      kind: 'gemini_inline_data_persistence_failed',
+      mediaType,
+      ...(mimeType ? { mimeType } : {}),
+      error: detail,
+    },
+  })
+}
+
+async function extractBufferedContent(body: GeminiResponse, req: GeminiRequest): Promise<string> {
+  const state: GeminiTextExtractionState = { thinkingOpen: false }
+  let text = ''
+  const candidates = Array.isArray(body.candidates) ? body.candidates : []
+  for (const candidate of candidates) {
+    const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : []
+    for (const part of parts) {
+      if (part.thought === true && typeof part.text === 'string') {
+        if (!state.thinkingOpen) {
+          text += '<Thoughts>\n'
+          state.thinkingOpen = true
+        }
+        text += part.text
+        continue
+      }
+      if (typeof part.text === 'string') {
+        if (state.thinkingOpen) {
+          text += '</Thoughts>\n\n'
+          state.thinkingOpen = false
+        }
+        text += part.text
+      }
+      if (part.inlineData === undefined) continue
+      const inlineData = readGeminiInlineData(part.inlineData)
+      if (!inlineData) {
+        geminiInlineDataWarning(req, null, new Error('invalid inlineData payload'))
+        continue
+      }
+      if (!req.persistInlineData) {
+        geminiInlineDataWarning(req, inlineData, new Error('server asset persistence is unavailable'))
+        continue
+      }
+      try {
+        const assetId = await req.persistInlineData(inlineData)
+        if (!assetId) throw new Error('asset persistence returned an empty id')
+        if (state.thinkingOpen) {
+          text += '</Thoughts>\n\n'
+          state.thinkingOpen = false
+        }
+        text += `{{inlay::${assetId}}}`
+      } catch (error) {
+        geminiInlineDataWarning(req, inlineData, error)
+      }
+    }
+  }
+  if (state.thinkingOpen) text += '</Thoughts>\n\n'
+  return text
+}
+
 function mapFinishReason(raw: unknown): CompletionStreamFrame['finishReason'] {
   if (typeof raw !== 'string' || raw.length === 0) return 'stop'
   if (raw === 'STOP') return 'stop'
@@ -462,23 +638,22 @@ export async function runGemini(req: GeminiRequest): Promise<CompletionResult> {
   }
 
   const url = endpoint(req, false)
-  const requestBody = buildPayload(req)
-  const bodyText = JSON.stringify(requestBody)
+  const init = buildRequestInit(req, h.headers)
   let response: Response
   try {
     await emitGeminiProviderBodyMetric({
       url,
-      headers: h.headers,
-      body: requestBody,
-      bodyText,
+      headers: init.headers,
+      body: init.body,
+      bodyText: init.bodyText,
       model: req.model,
       stream: false,
       trace: req.trace,
     })
     response = await fetch(url, {
       method: 'POST',
-      headers: h.headers,
-      body: bodyText,
+      headers: init.headers,
+      body: init.bodyText,
       signal: req.signal,
     })
   } catch (err) {
@@ -520,7 +695,9 @@ export async function runGemini(req: GeminiRequest): Promise<CompletionResult> {
     return { type: 'fail', result: `invalid upstream JSON: ${msg}` }
   }
 
-  const text = extractText(body)
+  const apiMetadata = extractApiResponseMetadata(body, ['candidates', 'error', 'modelVersion'])
+
+  const text = await extractBufferedContent(body, req)
   const toolParts = (body.candidates ?? []).flatMap((candidate) => candidate.content?.parts ?? [])
   const hasToolCalls = toolParts.some((part) => part.functionCall !== undefined)
   if (hasToolCalls) {
@@ -531,6 +708,7 @@ export async function runGemini(req: GeminiRequest): Promise<CompletionResult> {
     if (parsed.ok === false) return { type: 'fail', result: `invalid upstream tool call: ${parsed.error}` }
     const result: CompletionResult = { type: 'success', result: text, toolCalls: parsed.value }
     if (typeof body.modelVersion === 'string') result.model = body.modelVersion
+    if (apiMetadata) result.apiMetadata = apiMetadata
     return result
   }
   if (text.length === 0) {
@@ -538,6 +716,7 @@ export async function runGemini(req: GeminiRequest): Promise<CompletionResult> {
   }
   const result: CompletionResult = { type: 'success', result: text }
   if (typeof body.modelVersion === 'string') result.model = body.modelVersion
+  if (apiMetadata) result.apiMetadata = apiMetadata
   return result
 }
 
@@ -552,23 +731,22 @@ export async function* runGeminiStream(req: GeminiRequest): AsyncGenerator<Compl
   }
 
   const url = endpoint(req, true)
-  const requestBody = buildPayload(req)
-  const bodyText = JSON.stringify(requestBody)
+  const init = buildRequestInit(req, h.headers)
   let response: Response
   try {
     await emitGeminiProviderBodyMetric({
       url,
-      headers: h.headers,
-      body: requestBody,
-      bodyText,
+      headers: init.headers,
+      body: init.body,
+      bodyText: init.bodyText,
       model: req.model,
       stream: true,
       trace: req.trace,
     })
     response = await fetch(url, {
       method: 'POST',
-      headers: h.headers,
-      body: bodyText,
+      headers: init.headers,
+      body: init.bodyText,
       signal: req.signal,
     })
   } catch (err) {
@@ -600,6 +778,7 @@ export async function* runGeminiStream(req: GeminiRequest): AsyncGenerator<Compl
   let finishReason: CompletionStreamFrame['finishReason'] = 'stop'
   const extractionState: GeminiTextExtractionState = { thinkingOpen: false }
   let bufferedText = ''
+  let apiMetadata: Record<string, unknown> | undefined
 
   try {
     while (true) {
@@ -638,6 +817,24 @@ export async function* runGeminiStream(req: GeminiRequest): AsyncGenerator<Compl
           yield { kind: 'error', error: `invalid upstream stream JSON: ${msg}` }
           return
         }
+        if (frame.error && typeof frame.error === 'object') {
+          const message =
+            typeof frame.error.message === 'string' && frame.error.message.length > 0
+              ? frame.error.message
+              : 'upstream returned an error frame'
+          const code =
+            typeof frame.error.status === 'string' && frame.error.status.length > 0 ? frame.error.status : undefined
+          const statusText = upstreamStatusText(response)
+          yield {
+            kind: 'error',
+            error: formatUpstreamHttpError(response, url, { message, code }),
+            status: response.status,
+            ...(statusText ? { statusText } : {}),
+            ...(code ? { code } : {}),
+          }
+          return
+        }
+        apiMetadata = mergeApiResponseMetadata(apiMetadata, extractApiResponseMetadata(frame, ['candidates', 'error']))
         const text = extractText(frame, extractionState, false)
         if (text.length > 0) {
           if (req.streamThoughts || hasAnswerText(frame)) {
@@ -674,6 +871,6 @@ export async function* runGeminiStream(req: GeminiRequest): AsyncGenerator<Compl
     }
     if (extractionState.thinkingOpen) bufferedText += '</Thoughts>\n\n'
     if (bufferedText.length > 0) yield { kind: 'token', content: bufferedText }
-    yield { kind: 'done', finishReason }
+    yield { kind: 'done', finishReason, ...(apiMetadata ? { apiMetadata } : {}) }
   }
 }

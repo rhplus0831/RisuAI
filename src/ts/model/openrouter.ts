@@ -1,4 +1,3 @@
-import { getDatabase } from '../storage/database.svelte'
 import { providerOperationCredential, requestProviderOperation } from '../server/providerOperations'
 import type { ModelGridItem } from './modelGrid'
 import { createKeyedRequestCache } from './keyedRequestCache'
@@ -50,10 +49,7 @@ function resolveOpenRouterCatalogContext(context?: OpenRouterCatalogFetchContext
   apiKey: string
   profileId?: string | null
 } {
-  if (context !== undefined) {
-    return { apiKey: context.apiKey ?? '', profileId: context.profileId }
-  }
-  return { apiKey: getDatabase().openrouterKey }
+  return { apiKey: context?.apiKey ?? '', profileId: context?.profileId }
 }
 
 export async function getOpenRouterProviders(

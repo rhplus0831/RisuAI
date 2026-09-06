@@ -3,8 +3,10 @@ import type { character } from '../storage/database.svelte'
 import type { CommandEvent } from './commands'
 
 const api = vi.hoisted(() => ({
+  shell: vi.fn(),
   settings: vi.fn(),
   settingsGroup: vi.fn(),
+  standaloneSetting: vi.fn(),
   collections: vi.fn(),
   collection: vi.fn(),
   characters: vi.fn(),
@@ -17,6 +19,9 @@ const api = vi.hoisted(() => ({
   lorebook: vi.fn(),
   lorebooks: vi.fn(),
   inlay: vi.fn(),
+  bardWikiChat: vi.fn(),
+  bardWikiDocument: vi.fn(),
+  bardWikiVersions: vi.fn(),
 }))
 
 const sideEffects = vi.hoisted(() => ({
@@ -32,14 +37,17 @@ const sideEffects = vi.hoisted(() => ({
   markLorebook: vi.fn(),
   applyChat: vi.fn(() => true),
   applyLorebook: vi.fn(() => true),
+  refreshGreeting: vi.fn(async () => true),
 }))
 
 const promptHydration = vi.hoisted(() => ({
   currentOwner: null as string | null,
   ensure: vi.fn(async () => true),
   invalidate: vi.fn(),
+  stale: vi.fn(),
   mark: vi.fn(),
   reset: vi.fn(),
+  isHydrated: vi.fn(() => true),
 }))
 
 const languageSideEffects = vi.hoisted(() => ({
@@ -55,8 +63,10 @@ vi.mock('../../lang', () => ({
 }))
 
 vi.mock('./resourceReads', () => ({
+  fetchServerShell: api.shell,
   fetchServerSettings: api.settings,
   fetchServerSettingsGroup: api.settingsGroup,
+  fetchServerStandaloneSetting: api.standaloneSetting,
   fetchServerCollections: api.collections,
   fetchServerCollection: api.collection,
   fetchServerCharacters: api.characters,
@@ -64,6 +74,9 @@ vi.mock('./resourceReads', () => ({
   fetchServerCharacterOrder: api.characterOrder,
   fetchServerCharacterSelection: api.characterSelection,
   fetchServerInlayCatalog: api.inlay,
+  fetchServerBardWikiChat: api.bardWikiChat,
+  fetchServerBardWikiDocument: api.bardWikiDocument,
+  fetchServerBardWikiVersions: api.bardWikiVersions,
 }))
 
 vi.mock('./hydrationReads', () => ({
@@ -90,6 +103,8 @@ vi.mock('./promptTemplateHydration', () => ({
   currentPromptTemplateOwnerId: () => promptHydration.currentOwner,
   ensurePromptTemplateHydrated: promptHydration.ensure,
   invalidatePromptTemplateHydration: promptHydration.invalidate,
+  isPromptTemplateHydrated: promptHydration.isHydrated,
+  markPromptTemplateHydrationStale: promptHydration.stale,
   markPromptTemplateProjectionApplied: promptHydration.mark,
   resetPromptTemplateHydration: promptHydration.reset,
 }))
@@ -101,6 +116,7 @@ import {
   refreshInvalidatedServerResources,
   type ServerResourceInvalidationHooks,
 } from './resourceInvalidation'
+import { lorebookPageOwner } from './lorebookPageOwner.svelte'
 import {
   SERVER_COLLECTION_NAMES,
   applyCharacterResource,
@@ -111,7 +127,6 @@ import {
   captureCharacterLorebookProjectionEpoch,
   captureCharacterRowProjectionEpoch,
   charactersResourceState,
-  getResourceDatabase,
   hasCharacterLorebookProjectionEpochChanged,
   hasCharacterRowProjectionEpochChanged,
   markCharacterLorebookProjectionApplied,
@@ -120,12 +135,22 @@ import {
 } from './resourceState.svelte'
 import { SERVER_SETTINGS_KEYS_BY_GROUP } from './settingsGroups'
 import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from './staleStateGuards'
-import { withTrustedResourceWrite } from './resourceWriteGuard.svelte'
+
+import { SERVER_SHELL_PROTOCOL_VERSION, type ServerShellSettings } from '@risuai/protocol/shell-resource'
 import {
   applyServerInlayCatalogResource,
   getServerInlayCatalogResource,
   resetServerInlayCatalogResource,
 } from './inlayCatalog'
+import {
+  applyBardWikiChatResource,
+  applyBardWikiDocumentResource,
+  getBardWikiChatResource,
+  getBardWikiDocumentResource,
+  resetBardWikiResource,
+} from './bardWikiResource'
+import { BARDWIKI_PROTOCOL_VERSION, DEFAULT_BARDWIKI_GLOBAL_SETTINGS } from '@risuai/protocol'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 const hooks: ServerResourceInvalidationHooks = {
   reapplyPendingPresetProjections: sideEffects.reapplyPendingPresets,
@@ -140,6 +165,7 @@ const hooks: ServerResourceInvalidationHooks = {
   markCharacterLorebookHydrated: sideEffects.markLorebook,
   triggerOpenChatGenerationReattach: sideEffects.reattach,
   clearActiveMessageTranslation: sideEffects.clearTranslation,
+  refreshGreetingTranslations: sideEffects.refreshGreeting,
 }
 
 function metadataCharacter(chaId: string, name: string, chatId = `chat-${chaId}`, message: unknown[] = []): character {
@@ -157,6 +183,17 @@ function metadataCharacter(chaId: string, name: string, chatId = `chat-${chaId}`
   } as unknown as character
 }
 
+function characterSummaryShell(chaId: string, name: string, chatId = `chat-${chaId}`): character {
+  return {
+    __serverCharacterShell: true,
+    chaId,
+    name,
+    chats: [{ id: chatId, name: '', message: [] }],
+    chatPage: 0,
+    chatFolders: [],
+  } as unknown as character
+}
+
 function completeCollections(pluginCustomStorage: Record<string, unknown> = {}) {
   return Object.fromEntries(
     SERVER_COLLECTION_NAMES.map((name) => [name, name === 'pluginCustomStorage' ? pluginCustomStorage : []]),
@@ -171,6 +208,7 @@ function seedResources(revision = 1): void {
     summaries: [{ text: 'resident summary', chatMemos: [], isImportant: false }],
   }
   applyCharactersResource({
+    version: 1,
     revision,
     characters: [ada, metadataCharacter('char-b', 'Bea', 'chat-b', [{ role: 'user', data: 'resident-b' }])],
     characterOrder: ['char-a', 'char-b'],
@@ -187,6 +225,7 @@ function fullReadMocks(revision: number): void {
   })
   api.characters.mockResolvedValue({
     status: 'ok',
+    version: 1,
     revision,
     characters: [
       metadataCharacter('char-a', 'Ada refreshed', 'chat-a'),
@@ -195,6 +234,70 @@ function fullReadMocks(revision: number): void {
     characterOrder: ['char-b', 'char-a'],
     currentChar: 1,
   })
+}
+
+function shellSettings(language = 'en'): ServerShellSettings {
+  return {
+    language,
+    username: 'User',
+    colorScheme: {
+      bgcolor: '#111111',
+      darkbg: '#000000',
+      borderc: '#222222',
+      selected: '#333333',
+      draculared: '#ff0000',
+      textcolor: '#ffffff',
+      textcolor2: '#cccccc',
+      darkBorderc: '#444444',
+      darkbutton: '#555555',
+      type: 'dark',
+    },
+    colorSchemeName: 'custom',
+    textTheme: 'standard',
+    customTextTheme: {
+      FontColorStandard: '#ffffff',
+      FontColorBold: '#ffffff',
+      FontColorItalic: '#cccccc',
+      FontColorItalicBold: '#cccccc',
+      FontColorQuote1: '#00ffff',
+      FontColorQuote2: '#ffaa00',
+    },
+    font: 'default',
+    customFont: '',
+    customCSS: '',
+    animationSpeed: 0.4,
+    reducedMotion: false,
+    heightMode: 'percent',
+    sideBarSize: 0,
+    roundIcons: false,
+    menuSideBar: false,
+    showFolderName: true,
+    showSavingIcon: true,
+    hamburgerButtonBottom: false,
+    botSettingAtStart: false,
+    enableDevTools: false,
+    doNotWarnExternalServers: false,
+    keepSessionAlive: 'off',
+  }
+}
+
+function shellRead(revision: number) {
+  return {
+    status: 'ok' as const,
+    protocolVersion: SERVER_SHELL_PROTOCOL_VERSION,
+    revision,
+    settings: shellSettings('ko'),
+    characters: {
+      version: 1 as const,
+      revision,
+      characters: [
+        characterSummaryShell('char-a', 'Ada refreshed', 'chat-a'),
+        characterSummaryShell('char-b', 'Bea refreshed', 'chat-b'),
+      ],
+      characterOrder: ['char-b', 'char-a'],
+      currentChar: 1,
+    },
+  }
 }
 
 function event(revision: number, resource: string, ids: { id?: string; parentId?: string } = {}): CommandEvent {
@@ -211,7 +314,9 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 
 beforeEach(() => {
   resetServerResourceState()
+  lorebookPageOwner.reset()
   resetServerInlayCatalogResource()
+  resetBardWikiResource()
   for (const mock of Object.values(api)) mock.mockReset()
   api.inlay.mockImplementation(async () => {
     const settingsResult = await api.settings.mock.results.at(-1)?.value
@@ -226,12 +331,15 @@ beforeEach(() => {
   for (const mock of [
     promptHydration.ensure,
     promptHydration.invalidate,
+    promptHydration.stale,
     promptHydration.mark,
     promptHydration.reset,
+    promptHydration.isHydrated,
   ]) {
     mock.mockClear()
   }
   promptHydration.currentOwner = null
+  promptHydration.isHydrated.mockReturnValue(true)
   sideEffects.mergePluginCollection.mockImplementation((value: any[]) => value)
   sideEffects.mergePluginProvider.mockImplementation((value: unknown) => (typeof value === 'string' ? value : ''))
   sideEffects.mergePluginStorage.mockImplementation((value: Record<string, unknown>) => value)
@@ -242,17 +350,16 @@ beforeEach(() => {
 })
 
 describe('API-backed resource invalidation', () => {
-  it('loads one consistent initial resource set, invalidating chat bodies and preserving pending plugin storage', async () => {
+  it('loads only the coherent shell at ordinary startup', async () => {
     seedResources(4)
-    fullReadMocks(5)
-    sideEffects.mergePluginStorage.mockImplementation((value) => ({ ...value, pending: 'local' }))
+    api.shell.mockResolvedValue(shellRead(5))
 
-    await expect(loadInitialServerResources({ hooks })).resolves.toEqual({ status: 'ok', revision: 5, scope: 'full' })
+    await expect(loadInitialServerResources({ hooks })).resolves.toEqual({ status: 'ok', revision: 5, scope: 'shell' })
 
     const database = getResourceDatabase()
     expect(database).toMatchObject({
       language: 'ko',
-      pluginCustomStorage: { authoritative: true, pending: 'local' },
+      pluginCustomStorage: { resident: true },
       currentChar: 1,
     })
     expect(database.characters.find((candidate) => candidate.chaId === 'char-a')).toMatchObject({
@@ -264,14 +371,67 @@ describe('API-backed resource invalidation', () => {
         },
       ],
     })
-    expect(sideEffects.mergePluginStorage).toHaveBeenCalledWith({ authoritative: true })
-    expect(sideEffects.reapplyPendingPresets).toHaveBeenCalledTimes(1)
-    expect(promptHydration.reset).toHaveBeenCalledTimes(1)
+    expect(api.settings).not.toHaveBeenCalled()
+    expect(api.collections).not.toHaveBeenCalled()
+    expect(api.characters).not.toHaveBeenCalled()
+    expect(api.inlay).not.toHaveBeenCalled()
+    expect(sideEffects.mergeAgentPresetCharacters).toHaveBeenCalledOnce()
     expect(languageSideEffects.change).toHaveBeenLastCalledWith('ko')
+  })
+
+  it('refreshes only resident slices for contiguous events but keeps gap recovery complete', async () => {
+    api.shell.mockResolvedValue(shellRead(1))
+    await expect(loadInitialServerResources({ hooks })).resolves.toMatchObject({ status: 'ok', scope: 'shell' })
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      group: 'display',
+      settings: { colorSchemeName: 'remote' },
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(event(2, 'settings', { id: 'display' }), {
+        appliedRevision: 1,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+    expect(api.settingsGroup).toHaveBeenCalledWith('display', undefined)
+
+    api.settingsGroup.mockClear()
+    await expect(
+      refreshInvalidatedServerResources(event(3, 'settings', { id: 'runtime' }), {
+        appliedRevision: 2,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 3, scope: 'targeted' })
+    expect(api.settingsGroup).not.toHaveBeenCalled()
+
+    await expect(
+      refreshInvalidatedServerResources(event(4, 'pluginCollection'), { appliedRevision: 3, hooks }),
+    ).resolves.toEqual({ status: 'ok', revision: 4, scope: 'targeted' })
+    expect(api.collection).not.toHaveBeenCalled()
+
+    await expect(
+      refreshInvalidatedServerResources(event(5, 'inlayCatalog'), { appliedRevision: 4, hooks }),
+    ).resolves.toEqual({ status: 'ok', revision: 5, scope: 'targeted' })
+    expect(api.inlay).not.toHaveBeenCalled()
+
+    fullReadMocks(7)
+    await expect(
+      refreshInvalidatedServerResources(event(7, 'settings', { id: 'runtime' }), {
+        appliedRevision: 5,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 7, scope: 'full' })
+    expect(api.settings).toHaveBeenCalledOnce()
+    expect(api.collections).toHaveBeenCalledOnce()
+    expect(api.characters).toHaveBeenCalledOnce()
+    expect(api.inlay).toHaveBeenCalledOnce()
   })
 
   it('refreshes the server-owned inlay catalog for another client event', async () => {
     const assetId = 'a'.repeat(64)
+    applyServerInlayCatalogResource({ revision: 1, assets: [] })
     api.inlay.mockResolvedValue({
       status: 'ok',
       revision: 2,
@@ -354,6 +514,7 @@ describe('API-backed resource invalidation', () => {
     })
     api.characters.mockResolvedValue({
       status: 'ok',
+      version: 1,
       revision: 5,
       characters: [authoritativeCharacter],
       characterOrder: ['char-a'],
@@ -397,6 +558,7 @@ describe('API-backed resource invalidation', () => {
     api.characters
       .mockResolvedValueOnce({
         status: 'ok',
+        version: 1,
         revision: 6,
         characters: [],
         characterOrder: [],
@@ -404,6 +566,7 @@ describe('API-backed resource invalidation', () => {
       })
       .mockResolvedValueOnce({
         status: 'ok',
+        version: 1,
         revision: 7,
         characters: [],
         characterOrder: [],
@@ -422,6 +585,7 @@ describe('API-backed resource invalidation', () => {
     api.collections.mockResolvedValue({ status: 'ok', revision: 3, collections: completeCollections() })
     api.characters.mockResolvedValue({
       status: 'ok',
+      version: 1,
       revision: 3,
       characters: [],
       characterOrder: [],
@@ -485,6 +649,20 @@ describe('API-backed resource invalidation', () => {
     })
   })
 
+  it('refreshes only the affected greeting translation projection for its targeted event', async () => {
+    seedResources(5)
+    await expect(
+      refreshInvalidatedServerResources(event(6, 'greetingTranslation', { id: 'char-a' }), {
+        appliedRevision: 5,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 6, scope: 'targeted' })
+    expect(sideEffects.refreshGreeting).toHaveBeenCalledWith('char-a', 6)
+    expect(api.character).not.toHaveBeenCalled()
+    expect(api.characters).not.toHaveBeenCalled()
+    expect(api.settings).not.toHaveBeenCalled()
+  })
+
   it('keeps an optimistic character-row edit when an older generic read completes', async () => {
     seedResources(1)
     const staleCharacter = metadataCharacter('char-a', 'Ada', 'chat-a')
@@ -503,7 +681,7 @@ describe('API-backed resource invalidation', () => {
     })
     expect(api.character).toHaveBeenCalledWith('char-a', undefined)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const liveCharacter = getResourceDatabase().characters.find((candidate) => candidate.chaId === 'char-a')
       if (!liveCharacter) throw new Error('Missing optimistic character')
       liveCharacter.customscript = [{ id: 'script-a', out: 'newer optimistic edit' }] as never
@@ -533,7 +711,7 @@ describe('API-backed resource invalidation', () => {
     })
     expect(api.collection).toHaveBeenCalledWith('modules', undefined)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const live = getResourceDatabase()
       live.modules = [{ id: 'module-a', name: 'Optimistic', regex: [] }] as never
     })
@@ -561,6 +739,7 @@ describe('API-backed resource invalidation', () => {
     }>()
     const charactersResponse = deferred<{
       status: 'ok'
+      version: 1
       revision: number
       characters: character[]
       characterOrder: string[]
@@ -575,7 +754,7 @@ describe('API-backed resource invalidation', () => {
     expect(api.collections).toHaveBeenCalledOnce()
     expect(api.characters).toHaveBeenCalledOnce()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const liveCharacter = getResourceDatabase().characters.find((candidate) => candidate.chaId === 'char-a')
       if (!liveCharacter) throw new Error('Missing optimistic character')
       liveCharacter.customscript = [{ id: 'script-a', out: 'optimistic during refresh' }] as never
@@ -585,6 +764,7 @@ describe('API-backed resource invalidation', () => {
     collectionsResponse.resolve({ status: 'ok', revision: 2, collections: completeCollections() })
     charactersResponse.resolve({
       status: 'ok',
+      version: 1,
       revision: 2,
       characters: [metadataCharacter('char-a', 'Ada restored', 'chat-a')],
       characterOrder: ['char-a'],
@@ -654,13 +834,20 @@ describe('API-backed resource invalidation', () => {
 
   it('reads only language settings alongside translator preset mutations', async () => {
     seedResources(1)
-    const translatorPresets = [{ name: 'Authoritative translator', prompt: 'Translate this' }]
+    const translatorPresets = [
+      {
+        id: 'preset-a',
+        name: 'Authoritative translator',
+        prompt: 'Translate this',
+        maxResponse: 2048,
+      },
+    ]
     api.settingsGroup.mockResolvedValue({
       status: 'ok',
       revision: 2,
       group: 'language',
       settings: {
-        translatorPresetId: 0,
+        translatorPresetId: 'preset-a',
         translatorPrompt: 'Translate this',
         translatorMaxResponse: 2048,
       },
@@ -686,7 +873,7 @@ describe('API-backed resource invalidation', () => {
     expect(api.collections).not.toHaveBeenCalled()
     expect(getResourceDatabase()).toMatchObject({
       translatorPresets,
-      translatorPresetId: 0,
+      translatorPresetId: 'preset-a',
       translatorPrompt: 'Translate this',
       translatorMaxResponse: 2048,
     })
@@ -815,6 +1002,74 @@ describe('API-backed resource invalidation', () => {
     expect(getResourceDatabase()).toMatchObject({ agentPresets, agentPresetDefaultId: 'agent-a' })
   })
 
+  it('coalesces standalone Agent and preset-use events into one agents-group read', async () => {
+    seedResources(1)
+    const agents = [
+      {
+        id: 'agent-a',
+        name: 'Agent A',
+        version: 1,
+        instruction: 'Help',
+        modelDefaults: { mode: 'inheritMain' },
+        runtimeDefaults: {},
+        inputScopes: [],
+        outputFormat: 'text',
+      },
+    ]
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 10,
+      group: 'agents',
+      settings: { agents, agentPresets: [] },
+    })
+    const events: CommandEvent[] = [
+      { type: 'agent.created', revision: 2, resource: 'agentPreset', id: 'agent-a' },
+      { type: 'agent.updated', revision: 3, resource: 'agentPreset', id: 'agent-a' },
+      {
+        type: 'agent.duplicated',
+        revision: 4,
+        resource: 'agentPreset',
+        id: 'agent-b',
+        parentId: 'agent-a',
+      },
+      { type: 'agent.deleted', revision: 5, resource: 'agentPreset', id: 'agent-b' },
+      { type: 'agent.reordered', revision: 6, resource: 'agentPreset' },
+      {
+        type: 'agentPreset.use.created',
+        revision: 7,
+        resource: 'agentPreset',
+        id: 'use-a',
+        parentId: 'preset-a',
+      },
+      {
+        type: 'agentPreset.use.updated',
+        revision: 8,
+        resource: 'agentPreset',
+        id: 'use-a',
+        parentId: 'preset-a',
+      },
+      {
+        type: 'agentPreset.use.deleted',
+        revision: 9,
+        resource: 'agentPreset',
+        id: 'use-a',
+        parentId: 'preset-a',
+      },
+      { type: 'agentPreset.use.reordered', revision: 10, resource: 'agentPreset', id: 'preset-a' },
+    ]
+
+    await expect(refreshInvalidatedServerResources(events, { appliedRevision: 1, hooks })).resolves.toEqual({
+      status: 'ok',
+      revision: 10,
+      scope: 'targeted',
+    })
+
+    expect(api.settingsGroup).toHaveBeenCalledOnce()
+    expect(api.settingsGroup).toHaveBeenCalledWith('agents', undefined)
+    expect(api.settings).not.toHaveBeenCalled()
+    expect(getResourceDatabase()).toMatchObject({ agents, agentPresets: [] })
+  })
+
   it('refreshes the agents group plus deletion cascades for an Agent Preset delete', async () => {
     seedResources(1)
     applySettingsResource({
@@ -853,6 +1108,7 @@ describe('API-backed resource invalidation', () => {
     authoritativeCharacter.chats[0].generationSettings = { agentPresetId: 'agent-delete' } as never
     api.characters.mockResolvedValue({
       status: 'ok',
+      version: 1,
       revision: 2,
       characters: [authoritativeCharacter],
       characterOrder: ['char-a'],
@@ -1037,6 +1293,52 @@ describe('API-backed resource invalidation', () => {
     expect(getResourceDatabase().enabledModules).toEqual(['module-a'])
   })
 
+  it('reads only the modules settings group for module folder metadata events', async () => {
+    seedResources(1)
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      group: 'modules',
+      settings: { enabledModules: [], moduleFolders: [{ id: 'folder-a', name: 'Folder A' }] },
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(event(2, 'moduleFolders', { id: 'folder-a' }), {
+        appliedRevision: 1,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+
+    expect(api.settingsGroup).toHaveBeenCalledWith('modules', undefined)
+    expect(api.collection).not.toHaveBeenCalled()
+    expect(getResourceDatabase().moduleFolders).toEqual([{ id: 'folder-a', name: 'Folder A' }])
+  })
+
+  it('reads module folders and module rows after a folder deletion', async () => {
+    seedResources(1)
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      group: 'modules',
+      settings: { enabledModules: [], moduleFolders: [] },
+    })
+    api.collection.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      collections: { modules: [{ id: 'module-a', name: 'A', description: '' }] },
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(event(2, 'moduleOrganization', { id: 'folder-a' }), {
+        appliedRevision: 1,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+
+    expect(api.settingsGroup).toHaveBeenCalledWith('modules', undefined)
+    expect(api.collection).toHaveBeenCalledWith('modules', undefined)
+  })
+
   it('reads only enabled modules alongside the required module deletion cascade', async () => {
     seedResources(1)
     api.settingsGroup.mockResolvedValue({
@@ -1052,6 +1354,7 @@ describe('API-backed resource invalidation', () => {
     }))
     api.characters.mockResolvedValue({
       status: 'ok',
+      version: 1,
       revision: 2,
       characters: [metadataCharacter('char-a', 'Ada'), metadataCharacter('char-b', 'Bea')],
       characterOrder: ['char-a', 'char-b'],
@@ -1072,8 +1375,9 @@ describe('API-backed resource invalidation', () => {
 
     expect(api.settingsGroup).toHaveBeenCalledWith('modules', undefined)
     expect(api.settings).not.toHaveBeenCalled()
-    expect(api.collection).toHaveBeenCalledTimes(2)
+    expect(api.collection).toHaveBeenCalledTimes(3)
     expect(api.collection).toHaveBeenCalledWith('modules', undefined)
+    expect(api.collection).toHaveBeenCalledWith('personas', undefined)
     expect(api.collection).toHaveBeenCalledWith('loadouts', undefined)
     expect(api.characters).toHaveBeenCalledWith(undefined)
   })
@@ -1355,15 +1659,16 @@ describe('API-backed resource invalidation', () => {
     })
   })
 
-  it('refreshes only character shells for a character-created event and preserves resident bodies', async () => {
+  it('refreshes only character shells for a character-created event without retaining resident detail', async () => {
     seedResources(20)
     api.characters.mockResolvedValue({
       status: 'ok',
+      version: 1,
       revision: 21,
       characters: [
-        metadataCharacter('char-a', 'Ada refreshed', 'chat-a'),
-        metadataCharacter('char-b', 'Bea refreshed', 'chat-b'),
-        metadataCharacter('char-imported', 'Imported', 'chat-imported'),
+        characterSummaryShell('char-a', 'Ada refreshed', 'chat-a'),
+        characterSummaryShell('char-b', 'Bea refreshed', 'chat-b'),
+        characterSummaryShell('char-imported', 'Imported', 'chat-imported'),
       ],
       characterOrder: ['char-a', 'char-b', 'char-imported'],
       currentChar: 0,
@@ -1393,9 +1698,9 @@ describe('API-backed resource invalidation', () => {
     expect(api.lorebooks).not.toHaveBeenCalled()
     expect(sideEffects.reattach).not.toHaveBeenCalled()
     expect(getResourceDatabase().characters).toMatchObject([
-      { chaId: 'char-a', name: 'Ada refreshed', chats: [{ message: [{ data: 'resident-a' }] }] },
-      { chaId: 'char-b', name: 'Bea refreshed', chats: [{ message: [{ data: 'resident-b' }] }] },
-      { chaId: 'char-imported', name: 'Imported', chats: [{ message: [] }] },
+      { __serverCharacterShell: true, chaId: 'char-a', name: 'Ada refreshed', chats: [{ message: [] }] },
+      { __serverCharacterShell: true, chaId: 'char-b', name: 'Bea refreshed', chats: [{ message: [] }] },
+      { __serverCharacterShell: true, chaId: 'char-imported', name: 'Imported', chats: [{ message: [] }] },
     ])
   })
 
@@ -1409,6 +1714,7 @@ describe('API-backed resource invalidation', () => {
       chatId,
       message: [{ role: 'char', data: 'fresh-a' }],
       hypaV3Data: { fresh: 'a' },
+      hypaV3DataIncluded: true,
       alternates: [{ role: 'char', data: `${chatId}-alternate` }],
     }))
     api.generationChat.mockImplementation(async (chatId: string) => ({
@@ -1416,7 +1722,7 @@ describe('API-backed resource invalidation', () => {
       revision: 5,
       chatId,
       message: [{ role: 'char', data: 'fresh-b' }],
-      hypaV3Data: { fresh: 'b' },
+      hypaV3DataIncluded: false,
       alternates: [{ role: 'char', data: `${chatId}-alternate` }],
       messageStart: 1,
       messageTotal: 2,
@@ -1453,13 +1759,15 @@ describe('API-backed resource invalidation', () => {
       { fresh: 'a' },
       [{ role: 'char', data: 'chat-a-alternate' }],
       undefined,
+      { hypaV3DataIncluded: true },
     )
     expect(sideEffects.applyChat).toHaveBeenCalledWith(
       'chat-b',
       [{ role: 'char', data: 'fresh-b' }],
-      { fresh: 'b' },
+      undefined,
       [{ role: 'char', data: 'chat-b-alternate' }],
       { start: 1, total: 2 },
+      { hypaV3DataIncluded: false },
     )
     expect(sideEffects.applyLorebook).toHaveBeenCalledWith('char-a', [{ key: 'A' }])
     expect(sideEffects.applyLorebook).toHaveBeenCalledWith('char-b', [{ key: 'B' }])
@@ -1566,6 +1874,24 @@ describe('API-backed resource invalidation', () => {
     })
 
     await expect(refresh).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+    expect(sideEffects.applyLorebook).not.toHaveBeenCalled()
+  })
+
+  it('rejects a single-character lorebook response for a different resident character', async () => {
+    seedResources(1)
+    api.lorebook.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      characterId: 'char-b',
+      globalLore: [{ key: 'wrong resident character' }],
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(event(2, 'characterLorebook', { id: 'char-a' }), {
+        appliedRevision: 1,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'error', error: 'Failed to apply server character char-a lorebook response' })
     expect(sideEffects.applyLorebook).not.toHaveBeenCalled()
   })
 
@@ -1868,9 +2194,12 @@ describe('API-backed resource invalidation', () => {
     seedResources(1)
     api.settingsGroup.mockResolvedValue({
       status: 'ok',
-      revision: 4,
+      revision: 5,
       group: 'models',
       settings: {
+        providerCredentials: [
+          { id: 'credential-a', name: 'Credential A', type: 'apiKey', apiKey: '__RISU_SECRET_MASKED__' },
+        ],
         modelProfiles: [{ id: 'profile-a', name: 'Profile A', modelId: 'model-a' }],
         modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-a' } },
         modelRuntimeDefaults: { maxContext: 8_192 },
@@ -1883,18 +2212,27 @@ describe('API-backed resource invalidation', () => {
           { type: 'modelProfile.updated', revision: 2, resource: 'modelProfile', id: 'profile-a' },
           { type: 'modelProfile.roles.updated', revision: 3, resource: 'modelProfile' },
           { type: 'modelProfile.runtimeDefaults.updated', revision: 4, resource: 'modelProfile' },
+          {
+            type: 'providerCredential.updated',
+            revision: 5,
+            resource: 'providerCredential',
+            id: 'credential-a',
+          },
         ],
         {
           appliedRevision: 1,
           hooks,
         },
       ),
-    ).resolves.toEqual({ status: 'ok', revision: 4, scope: 'targeted' })
+    ).resolves.toEqual({ status: 'ok', revision: 5, scope: 'targeted' })
 
     expect(api.settingsGroup).toHaveBeenCalledOnce()
     expect(api.settingsGroup).toHaveBeenCalledWith('models', undefined)
     expect(api.settings).not.toHaveBeenCalled()
     expect(getResourceDatabase()).toMatchObject({
+      providerCredentials: [
+        { id: 'credential-a', name: 'Credential A', type: 'apiKey', apiKey: '__RISU_SECRET_MASKED__' },
+      ],
       modelProfiles: [{ id: 'profile-a', name: 'Profile A', modelId: 'model-a' }],
       modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-a' } },
       modelRuntimeDefaults: { maxContext: 8_192 },
@@ -2013,7 +2351,8 @@ describe('API-backed resource invalidation', () => {
 
     expect(api.collection).toHaveBeenCalledTimes(1)
     expect(api.collection).toHaveBeenCalledWith('promptTemplate', undefined)
-    expect(promptHydration.invalidate).toHaveBeenCalledWith('prompt-preset-a')
+    expect(promptHydration.stale).toHaveBeenCalledWith('prompt-preset-a')
+    expect(promptHydration.invalidate).not.toHaveBeenCalled()
     expect(promptHydration.ensure).toHaveBeenCalledWith({
       applyProjection: false,
       force: true,
@@ -2023,6 +2362,22 @@ describe('API-backed resource invalidation', () => {
     expect(promptHydration.mark).toHaveBeenCalledWith(null, 3)
     expect(api.settings).not.toHaveBeenCalled()
     expect(api.collections).not.toHaveBeenCalled()
+  })
+
+  it('fully invalidates a retained prompt owner when its targeted refresh fails', async () => {
+    seedResources(1)
+    promptHydration.currentOwner = 'prompt-preset-a'
+    promptHydration.ensure.mockResolvedValueOnce(false)
+
+    await expect(
+      refreshInvalidatedServerResources(event(2, 'promptItem', { id: 'item-a', parentId: 'prompt-preset-a' }), {
+        appliedRevision: 1,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'error', error: 'Failed to refresh an invalidated prompt-template owner' })
+
+    expect(promptHydration.stale).toHaveBeenCalledWith('prompt-preset-a')
+    expect(promptHydration.invalidate).toHaveBeenCalledWith('prompt-preset-a')
   })
 
   it.each([
@@ -2191,6 +2546,7 @@ describe('API-backed resource invalidation', () => {
       }))
       api.characters.mockResolvedValue({
         status: 'ok',
+        version: 1,
         revision: 2,
         characters: [metadataCharacter('char-a', 'Ada authoritative')],
         characterOrder: ['char-a'],
@@ -2205,8 +2561,11 @@ describe('API-backed resource invalidation', () => {
       ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
 
       expect(api.settings).toHaveBeenCalledOnce()
-      expect(api.collection).toHaveBeenCalledTimes(2)
+      expect(api.collection).toHaveBeenCalledTimes(resource === 'modelPreset' ? 3 : 2)
       expect(api.collection).toHaveBeenCalledWith(ownerCollection, undefined)
+      if (resource === 'modelPreset') {
+        expect(api.collection).toHaveBeenCalledWith('promptPresets', undefined)
+      }
       expect(api.collection).toHaveBeenCalledWith('loadouts', undefined)
       expect(api.characters).toHaveBeenCalledOnce()
       expect(promptHydration.ensure).toHaveBeenCalledTimes(promptTemplate ? 1 : 0)
@@ -2336,6 +2695,11 @@ describe('API-backed resource invalidation', () => {
     expect(api.settings).toHaveBeenCalledOnce()
     expect(api.collection).not.toHaveBeenCalled()
     expect(api.collections).not.toHaveBeenCalled()
+    expect(lorebookPageOwner.snapshot()).toMatchObject({
+      status: 'ready',
+      revision: 2,
+      state: { present: true, value: 0 },
+    })
   })
 
   it.each([{ type: 'lorebook.deleted', id: 'book-a' }, { type: 'lorebook.reordered' }])(
@@ -2445,5 +2809,98 @@ describe('API-backed resource invalidation', () => {
     expect(result).toMatchObject({ status: 'error', error: expect.stringContaining('older than event revision 2') })
     expect(result).not.toHaveProperty('revision')
     expect(getResourceDatabase().language).toBe('en')
+  })
+
+  it.each([
+    {
+      boundary: 'targeted document',
+      changedEvent: {
+        type: 'bardwiki.document.updated',
+        revision: 2,
+        resource: 'bardWikiDocument',
+        id: 'document-a',
+        parentId: 'chat-a',
+      },
+    },
+    {
+      boundary: 'chat-wide change-set',
+      changedEvent: {
+        type: 'bardwiki.change_set.applied',
+        revision: 2,
+        resource: 'bardWikiChat',
+        id: 'chat-a',
+      },
+    },
+  ])('refreshes resident BardWiki indexes and document bodies after a $boundary event', async ({ changedEvent }) => {
+    const document = {
+      id: 'document-a',
+      chatId: 'chat-a',
+      kind: 'location' as const,
+      title: 'Old Tavern',
+      logicalPath: 'Places/Old Tavern',
+      normalizedPath: 'places/old tavern',
+      aliases: [],
+      contextPolicy: 'relevant' as const,
+      reviewState: 'active' as const,
+      contentHash: 'a'.repeat(64),
+      version: 1,
+      createdAt: '2026-08-29T00:00:00.000Z',
+      updatedAt: '2026-08-29T00:00:00.000Z',
+    }
+    applyBardWikiChatResource({
+      protocolVersion: BARDWIKI_PROTOCOL_VERSION,
+      revision: 1,
+      chatId: 'chat-a',
+      globalSettings: DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+      chatSettings: null,
+      effectiveSettings: DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+      confirmationCandidate: null,
+      documents: [document],
+      receipts: [],
+      jobs: [],
+    })
+    applyBardWikiDocumentResource({
+      protocolVersion: BARDWIKI_PROTOCOL_VERSION,
+      revision: 1,
+      chatId: 'chat-a',
+      document: { ...document, markdown: 'old', deletedAt: null },
+      links: [],
+    })
+    const updated = { ...document, title: 'New Tavern', contentHash: 'b'.repeat(64), version: 2 }
+    api.bardWikiChat.mockResolvedValue({
+      status: 'ok',
+      protocolVersion: BARDWIKI_PROTOCOL_VERSION,
+      revision: 2,
+      chatId: 'chat-a',
+      globalSettings: DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+      chatSettings: null,
+      effectiveSettings: DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+      confirmationCandidate: null,
+      documents: [updated],
+      receipts: [],
+      jobs: [],
+    })
+    api.bardWikiDocument.mockResolvedValue({
+      status: 'ok',
+      protocolVersion: BARDWIKI_PROTOCOL_VERSION,
+      revision: 2,
+      chatId: 'chat-a',
+      document: { ...updated, markdown: 'new', deletedAt: null },
+      links: [],
+    })
+
+    await expect(refreshInvalidatedServerResources(changedEvent, { appliedRevision: 1, hooks })).resolves.toEqual({
+      status: 'ok',
+      revision: 2,
+      scope: 'targeted',
+    })
+
+    expect(api.bardWikiChat).toHaveBeenCalledOnce()
+    expect(api.bardWikiDocument).toHaveBeenCalledOnce()
+    expect(getBardWikiChatResource('chat-a')?.documents[0]).toMatchObject({ title: 'New Tavern', version: 2 })
+    expect(getBardWikiDocumentResource('chat-a', 'document-a')?.document).toMatchObject({
+      markdown: 'new',
+      version: 2,
+    })
   })
 })

@@ -22,7 +22,8 @@
   let nextSuggestionRequestOwnershipToken = 0
   const suggestionRequestOwners = new Map<string, number>()
 
-  function claimSuggestionRequestOwnership(key: string): SharedSuggestionRequestOwnership {
+  function claimSuggestionRequestOwnership(key: string): SharedSuggestionRequestOwnership | undefined {
+    if (suggestionRequestOwners.has(key)) return undefined
     const ownership = { key, token: ++nextSuggestionRequestOwnershipToken }
     suggestionRequestOwners.set(key, ownership.token)
     return ownership
@@ -92,33 +93,46 @@
 
 <script lang="ts">
   import { requestChatData } from 'src/ts/process/request/request'
-  import { doingChat, type OpenAIChat } from '../../ts/process/index.svelte'
-  import { getDatabase, type character, type Message } from '../../ts/storage/database.svelte'
-  import { selectedCharID } from '../../ts/stores.svelte'
+  import type { OpenAIChat } from '../../ts/process/index.svelte'
+  import type { Chat, Database, character, Message } from '../../ts/storage/database.svelte'
   import { translate } from 'src/ts/translator/translator'
   import { CopyIcon, LanguagesIcon, RefreshCcwIcon } from '@lucide/svelte'
   import { alertConfirm } from 'src/ts/alert'
   import { language } from 'src/lang'
   import { getUserName, replacePlaceholders } from '../../ts/utilState'
   import { onDestroy, untrack } from 'svelte'
-  import { get } from 'svelte/store'
   import { ParseMarkdown } from 'src/ts/parser/parser.svelte'
   import { defaultAutoSuggestPrompt } from '../../ts/storage/defaultPrompts.js'
-  import { dispatchUpdateChatRow, type ChatRowMetadataSnapshot } from 'src/ts/chatCommands'
+  import { dispatchUpdateChatRow, type ActiveChatTarget, type ChatRowMetadataSnapshot } from 'src/ts/chatCommands'
+  import { resolveModelForRole } from '@risuai/shared-core/model-roles'
   import {
-    rollbackServerBackedChatRowMetadata,
-    syncServerBackedChatMetadataBaselines,
-  } from 'src/ts/server/chatBridge.svelte'
-  import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
-  import { resolveModelForRole } from 'src/ts/model/modelRoles'
+    consumeChatSuggestionCompletion,
+    findPendingChatSuggestionCompletion,
+    pendingChatSuggestionCompletions,
+  } from 'src/ts/process/chatSuggestionCompletion.svelte'
+  import { activeChatGenerations, chatGenerationTargetKey } from 'src/ts/process/generationActivity.svelte'
+  import {
+    applyChatMetadataOwnerPatch,
+    charactersResourceState,
+    collectionsResourceState,
+    getCharacterResourceOwner,
+    getChatMetadataOwnerSnapshot,
+    getChatMetadataOwnerState,
+    restoreChatMetadataOwnerSnapshot,
+    settingsResourceState,
+  } from 'src/ts/server/resourceState.svelte'
+  import { selectCharacterOwner } from 'src/ts/characterState'
+  import { safeStructuredClone } from 'src/ts/safeStructuredClone'
 
   interface Props {
     send: () => any
     messageInput: (string: string) => any
+    isGenerationActive?: boolean
   }
 
   interface SuggestionTargetSnapshot {
     selectedCharID: number
+    chatPage: number
     characterId: string | undefined
     chatId: string | undefined
     suggestMessages: string[]
@@ -129,12 +143,138 @@
     controller: AbortController
   }
 
-  let { send, messageInput }: Props = $props()
-  const initialCharacter = getDatabase().characters[$selectedCharID]
-  const initialChat = initialCharacter?.chats[initialCharacter.chatPage]
-  let suggestMessages: string[] | undefined = $state(initialChat?.suggestMessages)
+  const suggestionRequestSettingsGroups = ['providers', 'models', 'runtime', 'prompt'] as const
+
+  let { send, messageInput, isGenerationActive }: Props = $props()
+  function chatMetadataFor(chat: Chat | undefined) {
+    if (!chat?.id) return undefined
+    return charactersResourceState.status === 'ready' ? getChatMetadataOwnerState(chat.id) : undefined
+  }
+
+  function suggestionMessagesFor(characterId: string | undefined, chat: Chat | undefined): string[] | undefined {
+    const messages =
+      charactersResourceState.status === 'ready' && characterId && chat?.id
+        ? getChatMetadataOwnerSnapshot(characterId, chat.id)?.metadata.suggestMessages
+        : undefined
+    return Array.isArray(messages) && messages.every((message) => typeof message === 'string') ? messages : undefined
+  }
+
+  function selectedCharacterIndex(): number {
+    return charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : -1
+  }
+
+  function suggestionCharacterOwners(): readonly character[] | undefined {
+    return charactersResourceState.status === 'ready' ? charactersResourceState.characters : undefined
+  }
+
+  function selectedSuggestionCharacter(): character | undefined {
+    const owners = suggestionCharacterOwners()
+    return owners ? selectCharacterOwner(owners, selectedCharacterIndex()) : undefined
+  }
+
+  function uniqueChatOwner(
+    characterOwner: character | undefined,
+    chatId: string | undefined,
+    characterOwners = suggestionCharacterOwners(),
+  ): Chat | undefined {
+    if (!characterOwner || !chatId) return undefined
+    if (!characterOwners) return undefined
+    const ownerCount = characterOwners.reduce(
+      (count, character) => count + (character.chats ?? []).filter((candidate) => candidate.id === chatId).length,
+      0,
+    )
+    if (ownerCount !== 1) return undefined
+    const matches = (characterOwner.chats ?? []).filter((candidate) => candidate.id === chatId)
+    return matches.length === 1 ? matches[0] : undefined
+  }
+
+  function selectedSuggestionChat():
+    | { character: character; chat: Chat; chatPage: number; selectedCharID: number }
+    | undefined {
+    const character = selectedSuggestionCharacter()
+    const chatPage = character?.chatPage
+    const candidate = character?.chats?.[chatPage]
+    if (!character || chatPage === undefined || !candidate) return undefined
+    if (candidate.id) {
+      const chat = uniqueChatOwner(character, candidate.id)
+      if (!chat) return undefined
+      return { character, chat, chatPage, selectedCharID: selectedCharacterIndex() }
+    }
+    return undefined
+  }
+
+  function resolveSuggestionTarget(target: SuggestionTargetSnapshot): { character: character; chat: Chat } | undefined {
+    const characterOwners = suggestionCharacterOwners()
+    if (!characterOwners) return undefined
+    const character = target.characterId ? getCharacterResourceOwner(target.characterId) : undefined
+    if (!character) return undefined
+    const chat = target.chatId
+      ? uniqueChatOwner(character, target.chatId, characterOwners)
+      : character.chats?.[target.chatPage]
+    if (!chat || !target.chatId) return undefined
+    return { character, chat }
+  }
+
+  function translatorEnabled(): boolean {
+    if (settingsResourceState.status === 'error') return false
+    if ((settingsResourceState.groupStatuses.language ?? 'idle') !== 'ready') return false
+    return typeof settingsResourceState.value.translator === 'string' && settingsResourceState.value.translator !== ''
+  }
+
+  function suggestionRequestDatabase(): Database | undefined {
+    if (
+      settingsResourceState.status === 'error' ||
+      collectionsResourceState.status === 'error' ||
+      charactersResourceState.status !== 'ready'
+    ) {
+      return undefined
+    }
+    if (
+      suggestionRequestSettingsGroups.some(
+        (group) => (settingsResourceState.groupStatuses[group] ?? 'idle') !== 'ready',
+      )
+    ) {
+      return undefined
+    }
+
+    const readyCollections = Object.fromEntries(
+      Object.entries(collectionsResourceState.values).filter(
+        ([name]) =>
+          collectionsResourceState.statuses[name as keyof typeof collectionsResourceState.statuses] === 'ready',
+      ),
+    )
+    return safeStructuredClone({
+      ...settingsResourceState.value,
+      ...readyCollections,
+      characters: charactersResourceState.characters,
+      characterOrder: charactersResourceState.characterOrder,
+      currentChar: charactersResourceState.currentChar,
+    }) as unknown as Database
+  }
+
+  let fallbackGenerationTargetKey = $derived.by(() => {
+    const selected = selectedSuggestionChat()
+    if (!selected) return null
+    return chatGenerationTargetKey({
+      selectedCharID: selected.selectedCharID,
+      chatPage: selected.chatPage,
+      characterId: selected.character.chaId,
+      chatId: selected.chat.id,
+    })
+  })
+  let effectiveGenerationActive = $derived(
+    isGenerationActive ??
+      (fallbackGenerationTargetKey !== null &&
+        $activeChatGenerations.some((activity) => activity.targetKey === fallbackGenerationTargetKey)),
+  )
+  const initialSelection = selectedSuggestionChat()
+  const initialChat = initialSelection?.chat
+  const initialChatMetadata = chatMetadataFor(initialChat)
+  let suggestMessages: string[] | undefined = $state(
+    suggestionMessagesFor(initialSelection?.character.chaId, initialChat),
+  )
   let suggestMessagesTranslated: string[] = $state()
-  let toggleTranslate: boolean = $state(initialChat?.autoTranslate === true)
+  let toggleTranslate: boolean = $state(initialChatMetadata?.autoTranslate === true)
   let progress: boolean = $state()
   let abortController: AbortController | undefined
   let chatPage: number | undefined = $state()
@@ -146,6 +286,7 @@
   let destroyed = false
   let observedTranscriptOwner: string | undefined
   let observedResidentMessageCount = 0
+  let observedMetadataOwner: string | undefined
 
   function copySuggestionMessages(messages: readonly string[] | undefined): string[] {
     return [...(messages ?? [])]
@@ -183,21 +324,32 @@
   }
 
   function activeSuggestionTarget(messages: readonly string[] | undefined): SuggestionTargetSnapshot | undefined {
-    const selectedChar = $selectedCharID
-    const currentChar = getDatabase().characters?.[selectedChar]
-    const currentChat = currentChar?.chats?.[currentChar.chatPage]
-    if (selectedChar < 0 || !currentChar || !currentChat) return undefined
+    const selected = selectedSuggestionChat()
+    if (!selected || selected.selectedCharID < 0) return undefined
     return {
-      selectedCharID: selectedChar,
-      characterId: currentChar.chaId,
-      chatId: currentChat.id,
+      selectedCharID: selected.selectedCharID,
+      chatPage: selected.chatPage,
+      characterId: selected.character.chaId,
+      chatId: selected.chat.id,
       suggestMessages: copySuggestionMessages(messages),
+    }
+  }
+
+  function activeCompletionTarget(): ActiveChatTarget | undefined {
+    const selected = selectedSuggestionChat()
+    if (!selected || selected.selectedCharID < 0) return undefined
+    return {
+      selectedCharID: selected.selectedCharID,
+      chatPage: selected.chatPage,
+      characterId: selected.character.chaId,
+      chatId: selected.chat.id,
     }
   }
 
   function cloneSuggestionTarget(target: SuggestionTargetSnapshot): SuggestionTargetSnapshot {
     return {
       ...target,
+      chatPage: target.chatPage,
       suggestMessages: copySuggestionMessages(target.suggestMessages),
     }
   }
@@ -211,6 +363,7 @@
     suggestionTarget = target
       ? {
           selectedCharID: target.selectedCharID,
+          chatPage: target.chatPage,
           characterId: target.characterId,
           chatId: target.chatId,
           suggestMessages: copySuggestionMessages(messages),
@@ -230,25 +383,24 @@
   function isFreshSuggestionTarget(target: SuggestionTargetSnapshot | undefined) {
     if (destroyed) return false
     if (!target) return false
-    if ($selectedCharID !== target.selectedCharID) return false
-    const currentChar = getDatabase().characters?.[target.selectedCharID]
-    const currentChat = currentChar?.chats?.[currentChar.chatPage]
+    const selected = selectedSuggestionChat()
+    if (!selected || selected.selectedCharID !== target.selectedCharID) return false
     return (
-      currentChar?.chaId === target.characterId &&
-      currentChat?.id === target.chatId &&
+      selected.character.chaId === target.characterId &&
+      selected.chat.id === target.chatId &&
       suggestionMessagesMatch(suggestMessages, target.suggestMessages)
     )
   }
 
   const updateSuggestions = () => {
     if (destroyed) return
-    if ($selectedCharID > -1 && !$doingChat) {
-      const currentChar = getDatabase().characters[$selectedCharID]
-      const currentChat = currentChar?.chats[currentChar.chatPage]
+    if (selectedCharacterIndex() > -1 && !effectiveGenerationActive) {
+      const selected = selectedSuggestionChat()
+      const currentChat = selected?.chat
       if (progress && progressChatId && progressChatId !== currentChat?.id) {
         abandonActiveSuggestionRequest()
       }
-      setVisibleSuggestions(currentChat?.suggestMessages)
+      setVisibleSuggestions(suggestionMessagesFor(selected?.character.chaId, currentChat))
     }
   }
 
@@ -256,24 +408,24 @@
     target: SuggestionTargetSnapshot,
     suggestions: string[],
     ownership?: SuggestionRequestOwnership,
-  ) {
-    if (destroyed || (ownership && !isSuggestionRequestOwnerCurrent(ownership))) return
-    if (!target.chatId) return
-    let applied = false
-    withTrustedResourceWrite(() => {
-      if (destroyed || (ownership && !isSuggestionRequestOwnerCurrent(ownership))) return
-      const character = target.characterId
-        ? getDatabase().characters?.find((candidate) => candidate.chaId === target.characterId)
-        : getDatabase().characters?.[target.selectedCharID]
-      const chat = character?.chats?.find((candidate) => candidate.id === target.chatId)
-      if (!chat || !suggestionMessagesMatch(chat.suggestMessages, target.suggestMessages)) return
-      chat.suggestMessages = copySuggestionMessages(suggestions)
-      applied = true
+  ): boolean {
+    if (destroyed || (ownership && !isSuggestionRequestOwnerCurrent(ownership))) return false
+    if (charactersResourceState.status !== 'ready' || !target.characterId || !target.chatId) return false
+    if (!resolveSuggestionTarget(target)) return false
+    const metadataOwner = getChatMetadataOwnerSnapshot(target.characterId, target.chatId)
+    if (
+      !metadataOwner ||
+      !suggestionMessagesMatch(
+        metadataOwner.metadata.suggestMessages as readonly string[] | undefined,
+        target.suggestMessages,
+      )
+    ) {
+      return false
+    }
+    const applied = applyChatMetadataOwnerPatch(target.characterId, target.chatId, {
+      suggestMessages: copySuggestionMessages(suggestions),
     })
-    if (!applied || destroyed || (ownership && !isSuggestionRequestOwnerCurrent(ownership))) return
-    syncServerBackedChatMetadataBaselines()
-
-    if (destroyed || (ownership && !isSuggestionRequestOwnerCurrent(ownership))) return
+    if (!applied || destroyed || (ownership && !isSuggestionRequestOwnerCurrent(ownership))) return false
 
     const rollback: ChatRowMetadataSnapshot = {
       selectedCharID: target.selectedCharID,
@@ -288,15 +440,26 @@
       { suggestMessages: copySuggestionMessages(suggestions) },
       rollback,
       {},
-      rollbackServerBackedChatRowMetadata,
+      rollbackSuggestionMetadata,
     )
+    return true
+  }
+
+  function rollbackSuggestionMetadata(snapshot: ChatRowMetadataSnapshot): void {
+    if (charactersResourceState.status !== 'ready' || !snapshot.characterId) return
+    restoreChatMetadataOwnerSnapshot({
+      characterId: snapshot.characterId,
+      chatId: snapshot.chatId,
+      metadata: snapshot.metadata,
+      attempted: snapshot.attempted,
+    })
   }
 
   function clearFreshSuggestions(target: SuggestionTargetSnapshot | undefined) {
     if (destroyed) return false
     if (!target || !isFreshSuggestionTarget(target)) return false
+    if (!persistSuggestions(target, [])) return false
     setVisibleSuggestions([], target)
-    persistSuggestions(target, [])
     return true
   }
 
@@ -321,7 +484,7 @@
     const target = captureSuggestionTarget()
     alertConfirm(language.askReRollAutoSuggestions).then((result) => {
       if (destroyed) return
-      if (!result || get(doingChat)) return
+      if (!result || effectiveGenerationActive) return
       if (clearFreshSuggestions(target)) requestSuggestions()
     })
   }
@@ -339,18 +502,22 @@
   }
 
   function requestSuggestions(): void {
-    if (destroyed || get(doingChat)) return
-    if ($selectedCharID > -1 && (!suggestMessages || suggestMessages.length === 0) && !progress) {
-      const requestSelectedCharId = $selectedCharID
-      const database = getDatabase()
-      let currentChar: character = database.characters[$selectedCharID]
+    if (destroyed || effectiveGenerationActive) return
+    if (selectedCharacterIndex() > -1 && (!suggestMessages || suggestMessages.length === 0) && !progress) {
+      const selected = selectedSuggestionChat()
+      if (!selected) return
+      const requestSelectedCharId = selected.selectedCharID
+      const database = suggestionRequestDatabase()
+      if (!database) return
+      const currentChar = selected.character
       const requestCharacterId = currentChar?.chaId
-      const requestChatPage = currentChar?.chatPage
-      const requestChat = currentChar?.chats[requestChatPage]
+      const requestChatPage = selected.chatPage
+      const requestChat = selected.chat
       const requestChatId = requestChat?.id
       if (!currentChar || !requestChat) return
       const requestSuggestionTarget: SuggestionTargetSnapshot = {
         selectedCharID: requestSelectedCharId,
+        chatPage: requestChatPage,
         characterId: requestCharacterId,
         chatId: requestChatId,
         suggestMessages: copySuggestionMessages(suggestMessages),
@@ -395,12 +562,14 @@
         ]
       }
 
+      const sharedOwnership = claimSuggestionRequestOwnership(suggestionRequestOwnershipKey(requestSuggestionTarget))
+      if (!sharedOwnership) return
+
+      const controller = new AbortController()
       progress = true
       progressChatId = requestChatId
-      const controller = new AbortController()
       abortController = controller
       const requestId = ++suggestionRequestId
-      const sharedOwnership = claimSuggestionRequestOwnership(suggestionRequestOwnershipKey(requestSuggestionTarget))
       const ownership: SuggestionRequestOwnership = {
         ...sharedOwnership,
         requestId,
@@ -409,6 +578,7 @@
       activeSuggestionRequest = ownership
       requestChatData(
         {
+          database,
           formated: promptbody,
           bias: {},
           currentChar: currentChar as character,
@@ -418,11 +588,12 @@
       )
         .then((rq2) => {
           if (!isSuggestionRequestOwnerCurrent(ownership)) return
-          const liveChar = getDatabase().characters[$selectedCharID]
-          const liveChat = liveChar?.chats[liveChar.chatPage]
+          const liveSelection = selectedSuggestionChat()
+          const liveChar = liveSelection?.character
+          const liveChat = liveSelection?.chat
           const staleResponse =
             !isSuggestionRequestOwnerCurrent(ownership) ||
-            requestSelectedCharId !== $selectedCharID ||
+            requestSelectedCharId !== liveSelection?.selectedCharID ||
             requestCharacterId !== liveChar?.chaId ||
             requestChatId !== liveChat?.id ||
             !isFreshSuggestionTarget(requestSuggestionTarget)
@@ -438,11 +609,12 @@
               .filter((msg) => msg.startsWith('-'))
               .map((msg) => msg.replace('-', '').trim())
             if (!isSuggestionRequestOwnerCurrent(ownership)) return
-            setVisibleSuggestions(suggestMessagesNew, {
-              ...requestSuggestionTarget,
-              suggestMessages: suggestMessagesNew,
-            })
-            persistSuggestions(requestSuggestionTarget, suggestMessagesNew, ownership)
+            if (persistSuggestions(requestSuggestionTarget, suggestMessagesNew, ownership)) {
+              setVisibleSuggestions(suggestMessagesNew, {
+                ...requestSuggestionTarget,
+                suggestMessages: suggestMessagesNew,
+              })
+            }
           }
         })
         .catch((error) => {
@@ -461,7 +633,39 @@
     }
   }
 
-  const unsub = doingChat.subscribe(handleDoingChatChange)
+  let observedGenerationActive: boolean | undefined
+  $effect(() => {
+    const active = effectiveGenerationActive
+    if (active === observedGenerationActive) return
+    observedGenerationActive = active
+    untrack(() => handleDoingChatChange(active))
+  })
+
+  $effect(() => {
+    const completion = findPendingChatSuggestionCompletion($pendingChatSuggestionCompletions, activeCompletionTarget())
+    if (!completion || effectiveGenerationActive) return
+
+    const resolved = resolveSuggestionTarget({
+      selectedCharID: completion.target.selectedCharID,
+      chatPage: completion.target.chatPage,
+      characterId: completion.target.characterId,
+      chatId: completion.target.chatId,
+      suggestMessages: [],
+    })
+    const chat = resolved?.chat
+    if (!chat) return
+    if ((suggestionMessagesFor(resolved?.character.chaId, chat)?.length ?? 0) > 0) {
+      untrack(() => {
+        consumeChatSuggestionCompletion(completion.id)
+      })
+      return
+    }
+    if ((chat.message?.length ?? 0) === 0) return
+
+    untrack(() => {
+      if (consumeChatSuggestionCompletion(completion.id)) requestSuggestions()
+    })
+  })
 
   const translateSuggest = async (toggle: boolean, messages: string[] | undefined) => {
     if (destroyed) return
@@ -474,7 +678,7 @@
       requestId,
       toggle,
       messages,
-      translationEnabled: () => getDatabase().translator !== '',
+      translationEnabled: translatorEnabled,
       getCurrentRunId: () => suggestionTranslationId,
       getCurrentRequestId: () => suggestionRequestId,
       getCurrentMessages: () => suggestMessages,
@@ -495,19 +699,28 @@
     destroyed = true
     suggestionTranslationId += 1
     abandonActiveSuggestionRequest()
-    unsub()
   })
 
   $effect.pre(() => {
-    $selectedCharID
     // Reads chatPage so suggestions update when the selected chat changes.
-    const currentCharacter = getDatabase().characters[$selectedCharID]
-    chatPage = currentCharacter?.chatPage
-    const currentChat = currentCharacter?.chats[chatPage]
+    charactersResourceState.currentChar
+    charactersResourceState.status
+    const selected = selectedSuggestionChat()
+    const currentCharacter = selected?.character
+    chatPage = selected?.chatPage
+    const currentChat = selected?.chat
+    const currentChatMetadata = chatMetadataFor(currentChat)
+    const metadataOwner = currentChatMetadata
+      ? `${currentCharacter?.chaId ?? charactersResourceState.currentChar}:${currentChatMetadata.chatId}`
+      : undefined
+    if (metadataOwner !== observedMetadataOwner) {
+      observedMetadataOwner = metadataOwner
+      toggleTranslate = currentChatMetadata?.autoTranslate === true
+    }
     const residentMessageCount = currentChat?.message?.length ?? 0
-    const persistedSuggestionCount = currentChat?.suggestMessages?.length ?? 0
+    const persistedSuggestionCount = suggestionMessagesFor(currentCharacter?.chaId, currentChat)?.length ?? 0
     const transcriptOwner = currentChat
-      ? JSON.stringify([currentCharacter?.chaId ?? $selectedCharID, currentChat.id ?? chatPage])
+      ? JSON.stringify([currentCharacter?.chaId ?? charactersResourceState.currentChar, currentChat.id ?? chatPage])
       : undefined
     const hydrationCompleted =
       transcriptOwner !== undefined &&
@@ -517,7 +730,7 @@
     observedTranscriptOwner = transcriptOwner
     observedResidentMessageCount = residentMessageCount
     updateSuggestions()
-    if (hydrationCompleted && !$doingChat && persistedSuggestionCount === 0) {
+    if (hydrationCompleted && !effectiveGenerationActive && persistedSuggestionCount === 0) {
       untrack(() => {
         void handleDoingChatChange(false)
       })
@@ -534,8 +747,8 @@
       <div class="loadmove mx-2"></div>
       <div>{language.creatingSuggestions}</div>
     </div>
-  {:else if !$doingChat}
-    {#if getDatabase().translator !== ''}
+  {:else if !effectiveGenerationActive}
+    {#if translatorEnabled()}
       <div class="flex mr-2 mb-2">
         <button
           aria-label={language.translate}
@@ -566,7 +779,7 @@
           onclick={() => {
             sendFreshSuggestion(suggest, i)
           }}>
-          {#await ParseMarkdown(getDatabase().translator !== '' && toggleTranslate && suggestMessagesTranslated && suggestMessagesTranslated.length > 0 ? (suggestMessagesTranslated[i] ?? suggest) : suggest) then md}
+          {#await ParseMarkdown(translatorEnabled() && toggleTranslate && suggestMessagesTranslated && suggestMessagesTranslated.length > 0 ? (suggestMessagesTranslated[i] ?? suggest) : suggest) then md}
             {@html md}
           {/await}
         </button>

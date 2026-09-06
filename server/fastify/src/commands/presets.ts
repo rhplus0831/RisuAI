@@ -6,13 +6,19 @@ import {
   normalizeLegacyFallbackModels,
   normalizeLegacySeperateModels,
   normalizeModelRoleOverrides,
-} from '../../../../src/ts/model/modelRoles.js'
+} from '@risuai/shared-core/model-roles'
 import {
+  normalizeModelProfileOrder,
   normalizeModelRuntimeDefaults,
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
-} from '../../../../src/ts/model/modelProfileRecords.js'
-import { normalizeAgentPresetDefaultId, normalizeAgentPresets } from '../../../../src/ts/agentPresetRecords.js'
+} from '@risuai/shared-core/model-profile-records'
+import {
+  normalizeAgentConfiguration,
+  normalizeAgentPresetDefaultId,
+  normalizeAgents,
+  normalizeAgentPresets,
+} from '@risuai/shared-core/agent-preset-records'
 
 type JsonRecord = Record<string, unknown>
 type AssetValidationOptions = { assetDb?: DatabaseSync }
@@ -28,6 +34,7 @@ const SNAPSHOT_KEYS: Array<[string, string]> = [
   ['openAIKey', 'openAIKey'],
   ['localNetworkMode', 'localNetworkMode'],
   ['localNetworkTimeoutSec', 'localNetworkTimeoutSec'],
+  ['additionalParams', 'additionalParams'],
   ['mainPrompt', 'mainPrompt'],
   ['jailbreak', 'jailbreak'],
   ['globalNote', 'globalNote'],
@@ -41,8 +48,10 @@ const SNAPSHOT_KEYS: Array<[string, string]> = [
   ['subModel', 'subModel'],
   ['modelRoles', 'modelRoles'],
   ['modelProfiles', 'modelProfiles'],
+  ['modelProfileOrder', 'modelProfileOrder'],
   ['modelRoleProfiles', 'modelRoleProfiles'],
   ['modelRuntimeDefaults', 'modelRuntimeDefaults'],
+  ['agents', 'agents'],
   ['agentPresets', 'agentPresets'],
   ['agentPresetDefaultId', 'agentPresetDefaultId'],
   ['currentPluginProvider', 'currentPluginProvider'],
@@ -253,8 +262,12 @@ export function applyPreset(database: JsonRecord, preset: PresetRecord): void {
   let appliedAgentPresetSettings = false
   for (const [presetKey, databaseKey] of APPLY_KEYS) {
     if (Object.prototype.hasOwnProperty.call(preset, presetKey)) {
-      database[databaseKey] = normalizePresetAppliedValue(databaseKey, cloneJson(preset[presetKey]))
-      if (databaseKey === 'agentPresets' || databaseKey === 'agentPresetDefaultId') {
+      database[databaseKey] = normalizePresetAppliedValue(
+        databaseKey,
+        cloneJson(preset[presetKey]),
+        normalizeModelProfiles(database.modelProfiles),
+      )
+      if (databaseKey === 'agents' || databaseKey === 'agentPresets' || databaseKey === 'agentPresetDefaultId') {
         appliedAgentPresetSettings = true
       }
     }
@@ -264,11 +277,17 @@ export function applyPreset(database: JsonRecord, preset: PresetRecord): void {
   }
 }
 
-function normalizePresetAppliedValue(databaseKey: string, value: unknown): unknown {
+function normalizePresetAppliedValue(
+  databaseKey: string,
+  value: unknown,
+  profiles = normalizeModelProfiles(undefined),
+): unknown {
   if (databaseKey === 'modelRoles') return normalizeModelRoleOverrides(value)
   if (databaseKey === 'modelProfiles') return normalizeModelProfiles(value)
+  if (databaseKey === 'modelProfileOrder') return normalizeModelProfileOrder(value, profiles)
   if (databaseKey === 'modelRoleProfiles') return normalizeModelRoleProfiles(value)
   if (databaseKey === 'modelRuntimeDefaults') return normalizeModelRuntimeDefaults(value)
+  if (databaseKey === 'agents') return normalizeAgents(value)
   if (databaseKey === 'agentPresets') return normalizeAgentPresets(value)
   if (databaseKey === 'seperateModels') return normalizeLegacySeperateModels(value)
   if (databaseKey === 'fallbackModels') return normalizeLegacyFallbackModels(value)
@@ -279,6 +298,12 @@ function normalizePresetAppliedValue(databaseKey: string, value: unknown): unkno
 function normalizePresetProfileFields(record: JsonRecord): void {
   if (Object.prototype.hasOwnProperty.call(record, 'modelProfiles')) {
     record.modelProfiles = normalizeModelProfiles(record.modelProfiles)
+  }
+  if (Object.prototype.hasOwnProperty.call(record, 'modelProfileOrder')) {
+    record.modelProfileOrder = normalizeModelProfileOrder(
+      record.modelProfileOrder,
+      normalizeModelProfiles(record.modelProfiles),
+    )
   }
   if (Object.prototype.hasOwnProperty.call(record, 'modelRoleProfiles')) {
     record.modelRoleProfiles = normalizeModelRoleProfiles(record.modelRoleProfiles)
@@ -291,8 +316,10 @@ function normalizePresetProfileFields(record: JsonRecord): void {
 
 function normalizePresetAgentFields(record: JsonRecord): void {
   if (Object.prototype.hasOwnProperty.call(record, 'agentPresets')) {
-    const agentPresets = normalizeAgentPresets(record.agentPresets)
-    record.agentPresets = agentPresets
+    const normalized = normalizeAgentConfiguration(record.agents, record.agentPresets)
+    record.agents = normalized.agents
+    record.agentPresets = normalized.agentPresets
+    const agentPresets = normalized.agentPresets
     if (Object.prototype.hasOwnProperty.call(record, 'agentPresetDefaultId')) {
       const defaultId = normalizeAgentPresetDefaultId(record.agentPresetDefaultId, agentPresets)
       if (defaultId) {
@@ -313,8 +340,10 @@ function normalizePresetAgentFields(record: JsonRecord): void {
 }
 
 function normalizeDatabaseAgentPresetSettings(database: JsonRecord): void {
-  const agentPresets = normalizeAgentPresets(database.agentPresets)
-  database.agentPresets = agentPresets
+  const normalized = normalizeAgentConfiguration(database.agents, database.agentPresets)
+  database.agents = normalized.agents
+  database.agentPresets = normalized.agentPresets
+  const agentPresets = normalized.agentPresets
   const defaultId = normalizeAgentPresetDefaultId(database.agentPresetDefaultId, agentPresets)
   if (defaultId) {
     database.agentPresetDefaultId = defaultId

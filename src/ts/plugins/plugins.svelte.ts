@@ -1,16 +1,15 @@
-import { get, writable } from 'svelte/store'
+import { get, readonly, writable } from 'svelte/store'
 import { language } from '../../lang'
-import { getCurrentCharacter, getDatabase, setDatabase, setDatabaseLite } from '../storage/database.svelte'
-import { alertConfirm, alertError, alertPluginConfirm } from '../alert'
-import { sleep } from '../util'
+import type { character } from '../storage/database.svelte'
+import { alertConfirm, alertError } from '../alert'
 import { selectSingleFile } from '../filePicker'
 import type { OpenAIChat } from '../process/index.svelte'
 import { pluginFetchNative, pluginGlobalFetch, readImage, saveAsset } from '../globalApi.svelte'
-import { hotReloading, pluginAlertModalStore, selectedCharID } from '../stores.svelte'
+import { hotReloading, selectedCharID } from '../stores.svelte'
+import { invalidateModuleRenderRevision } from '../moduleRenderRevision'
 import type { ScriptMode } from '../process/scripts'
 import type { RisuModule } from '../process/modules'
 import { safeStructuredClone } from '../polyfill'
-import { checkCodeSafety } from './pluginSafety'
 import {
   BlockedPluginNetworkPrimitive,
   SafeDocument,
@@ -24,7 +23,14 @@ import { loadV3Plugins } from './apiV3/v3.svelte'
 import { pluginCodeTranspiler } from './apiV3/transpiler'
 import {
   acceptedPluginRuntimeProjection,
+  applyPluginProviderOwner,
+  applyPluginSettingsOwnerPatch,
+  currentPluginCharacterSnapshot,
+  currentPluginCollectionSnapshot,
+  currentPluginDatabaseSnapshot,
   currentPluginStorageSnapshot,
+  currentPluginStorageOwnerSnapshot,
+  currentPluginStorageValueOwner,
   currentPluginStateSnapshot,
   currentPluginSettingsPatchRollbackSnapshot,
   dispatchBulkPluginStorage,
@@ -34,6 +40,11 @@ import {
   dispatchPutPluginStorage,
   dispatchSelectPluginProvider,
   dispatchUpdatePlugin,
+  replacePluginCharacterOwnerAt,
+  replacePluginCharactersOwner,
+  applyPluginCharacterPointerOwner,
+  replacePluginCollectionOwner,
+  replacePluginStorageOwner,
   runCreatePluginCommand,
   runUpdatePluginCommand,
   toPluginSnapshot,
@@ -47,7 +58,7 @@ import {
 } from '../moduleCommands'
 import { currentCharacterRowSnapshot, prepareCompatibleCharacterUpdateScoped } from '../characterCommands'
 import { canUseServerCommands } from '../server/commands'
-import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
+import { collectionsResourceState, settingsResourceState } from '../server/resourceState.svelte'
 import { assertNoUnsupportedCharacterChanges } from './unsupportedServerWriteGuard'
 import {
   beginPluginImport,
@@ -59,15 +70,60 @@ import {
   type PluginImportOperation,
 } from '../server/pluginImport'
 import { createPluginNetworkAccess, createPluginWebFetch } from './pluginNetworkAccess'
-import { getPluginPermission } from './pluginPermissions'
 import {
   checkPluginUpdate as checkPluginUpdateRequest,
   comparePluginVersions,
   downloadPluginUpdate,
 } from './pluginUpdates'
 import { mirrorTopLevelPresetFieldWithOutcome } from '../presetFieldMirror'
+import {
+  addChatOutputListener,
+  chatOutputListeners,
+  removeChatOutputListener,
+  setChatOutputRuntimeReadyPredicate,
+  type ChatOutputListener,
+} from './chatOutputListeners'
+import { settleStartupPluginRuntimeReadiness } from '../startupReadiness'
 
 export const customProviderStore = writable([] as string[])
+
+export type PluginRuntimePhase = 'idle' | 'loading' | 'ready' | 'error'
+
+export interface PluginRuntimeState {
+  phase: PluginRuntimePhase
+  targetSignature: string | null
+  error: unknown | null
+}
+
+const initialPluginRuntimeState: PluginRuntimeState = {
+  phase: 'idle',
+  targetSignature: null,
+  error: null,
+}
+const pluginRuntimeStateWritable = writable(initialPluginRuntimeState)
+let pluginRuntimeStateSnapshot = initialPluginRuntimeState
+
+function publishPluginRuntimeState(state: PluginRuntimeState): void {
+  pluginRuntimeStateSnapshot = state
+  pluginRuntimeStateWritable.set(state)
+  settleStartupPluginRuntimeReadiness(state.phase === 'ready')
+}
+
+export const pluginRuntimeStateStore = readonly(pluginRuntimeStateWritable)
+
+export function getPluginRuntimeState(): PluginRuntimeState {
+  return { ...pluginRuntimeStateSnapshot }
+}
+
+export function isPluginRuntimeReady(): boolean {
+  return pluginRuntimeStateSnapshot.phase === 'ready'
+}
+
+export function _setPluginRuntimePhaseForTesting(phase: PluginRuntimePhase): void {
+  publishPluginRuntimeState({ phase, targetSignature: null, error: null })
+}
+
+setChatOutputRuntimeReadyPredicate(isPluginRuntimeReady)
 
 interface ProviderPlugin {
   name: string
@@ -75,7 +131,7 @@ interface ProviderPlugin {
   script: string
   arguments: { [key: string]: 'int' | 'string' | string[] }
   realArg: { [key: string]: number | string }
-  version?: 1 | 2 | '2.1' | '3.0'
+  version: '3.0'
   customLink: ProviderPluginCustomLink[]
   argMeta: { [key: string]: { [key: string]: string } }
   versionOfPlugin?: string
@@ -89,6 +145,23 @@ interface ProviderPluginCustomLink {
 }
 
 export type RisuPlugin = ProviderPlugin
+
+export class UnsupportedPluginApiVersionError extends Error {
+  constructor(pluginName: string, version: unknown) {
+    const versionLabel =
+      typeof version === 'string' || typeof version === 'number' ? JSON.stringify(version) : 'missing'
+    super(
+      `Plugin "${pluginName}" uses unsupported API version ${versionLabel}. Fastify supports only API version "3.0".`,
+    )
+    this.name = 'UnsupportedPluginApiVersionError'
+  }
+}
+
+function assertSupportedPluginApiVersion(plugin: { name: string; version?: unknown }): void {
+  if (plugin.version !== '3.0') {
+    throw new UnsupportedPluginApiVersionError(plugin.name, plugin.version)
+  }
+}
 
 export async function createBlankPlugin() {
   await importPlugin(
@@ -105,12 +178,12 @@ Risuai.log("Hello from New Plugin!");
 
 function currentPluginImportFreshness(): PluginImportFreshness<RisuPlugin> {
   return {
-    plugins: getDatabase().plugins ?? [],
+    plugins: currentPluginCollectionSnapshot(),
   }
 }
 
 function isCurrentPluginUpdateTarget(plugin: Pick<RisuPlugin, 'name' | 'script' | 'updateURL'>): boolean {
-  const current = (getDatabase().plugins ?? []).find((candidate) => candidate.name === plugin.name)
+  const current = currentPluginCollectionSnapshot().find((candidate) => candidate.name === plugin.name)
   return current?.script === plugin.script && current.updateURL === plugin.updateURL
 }
 
@@ -413,6 +486,10 @@ export async function importPlugin(
       return showError('plugin version must be at least 0.0.1')
     }
 
+    if (apiVersion !== '3.0') {
+      throw new UnsupportedPluginApiVersionError(name, apiVersion)
+    }
+
     if (isTypescript) {
       if (!isFreshImport()) {
         return { status: 'stale' }
@@ -428,58 +505,13 @@ export async function importPlugin(
       }
     }
 
-    let apiInternalVersion: 2 | '2.1' | '3.0' = '2.1'
-
-    if (apiVersion === '2.1') {
-      if (!isFreshImport()) {
-        return { status: 'stale' }
-      }
-      const safety = await checkCodeSafety(jsFile)
-      if (!isFreshImport()) {
-        return { status: 'stale' }
-      }
-      if (!safety.isSafe) {
-        pluginAlertModalStore.errors = safety.errors
-        pluginAlertModalStore.open = true
-
-        // Poll while the modal owns the user's accept/reject decision.
-        while (pluginAlertModalStore.open) {
-          await sleep(100)
-          if (!isFreshImport()) {
-            pluginAlertModalStore.open = false
-            return { status: 'stale' }
-          }
-        }
-
-        if (!isFreshImport()) {
-          return { status: 'stale' }
-        }
-
-        if (pluginAlertModalStore.errors.length > 0) {
-          return { status: 'cancelled' }
-        }
-      }
-      apiInternalVersion = '2.1'
-    } else if (apiVersion === '2.0') {
-      //Only block installing
-      return showError(
-        'Your code does not include //@api or specifies API version 2.0, which is outdated. Please update your plugin to use at least API version 2.1.',
-      )
-    } else if (apiVersion === '3.0') {
-      apiInternalVersion = '3.0'
-    }
-
-    if (apiInternalVersion !== '3.0' && argu.isHotReload) {
-      return showError('Only API version 3.0 plugins can be hot-reloaded.')
-    }
-
     let pluginData: RisuPlugin = {
       name: name,
       script: jsFile,
       realArg: realArg,
       arguments: arg,
       displayName: displayName,
-      version: apiInternalVersion,
+      version: '3.0',
       customLink: customLink,
       argMeta: argMeta,
       versionOfPlugin: versionOfPlugin,
@@ -549,23 +581,13 @@ export async function importPlugin(
     releasePluginRuntimeSync = deferPluginRuntimeSync()
     let persistenceResult: ReturnType<typeof runCreatePluginCommand> | ReturnType<typeof runUpdatePluginCommand> = null
     if (applyTarget.kind === 'update') {
-      // Re-read the live database inside the trusted write scope so the
-      // optimistic update never mutates the read-only server projection
-      // through a stale reference captured before the scope.
-      withTrustedResourceWrite(() => {
-        const db = getDatabase()
-        db.plugins ??= []
-        db.plugins[applyTarget.index] = pluginData
-        setDatabaseLite(db)
-      })
+      const plugins = currentPluginCollectionSnapshot()
+      if (applyTarget.index < 0 || applyTarget.index >= plugins.length) return { status: 'stale' }
+      plugins[applyTarget.index] = pluginData
+      replacePluginCollectionOwner(plugins)
       persistenceResult = runUpdatePluginCommand(applyTarget.pluginId, toPluginSnapshot(pluginData), previous)
     } else if (applyTarget.kind === 'create') {
-      withTrustedResourceWrite(() => {
-        const db = getDatabase()
-        db.plugins ??= []
-        db.plugins.push(pluginData)
-        setDatabaseLite(db)
-      })
+      replacePluginCollectionOwner([...currentPluginCollectionSnapshot(), pluginData])
       persistenceResult = runCreatePluginCommand(pluginData, previous)
     }
 
@@ -595,6 +617,9 @@ export async function importPlugin(
     completePluginImport(pluginData.name, apiVersion, argu.isHotReload)
     return { status: 'accepted', pluginName: pluginData.name }
   } catch (error) {
+    if (error instanceof UnsupportedPluginApiVersionError) {
+      throw error
+    }
     console.error(error)
     if (!operation || isFreshPluginImport(operation, currentPluginImportFreshness())) {
       alertError(language.errors.noData)
@@ -660,11 +685,11 @@ function deferPluginRuntimeSync(): () => void {
 export function startPluginRuntimeSync(): void {
   if (stopPluginRuntimeSyncEffect) return
   pluginRuntimeSyncState.targetSignature ??= pluginRuntimeSignature(
-    acceptedPluginRuntimeProjection(getDatabase().plugins ?? []),
+    acceptedPluginRuntimeProjection(currentPluginCollectionSnapshot()),
   )
   stopPluginRuntimeSyncEffect = $effect.root(() => {
     $effect(() => {
-      const signature = pluginRuntimeSignature(acceptedPluginRuntimeProjection(getDatabase().plugins ?? []))
+      const signature = pluginRuntimeSignature(acceptedPluginRuntimeProjection(currentPluginCollectionSnapshot()))
       const suppressionDepth = pluginRuntimeSyncState.suppressionDepth
       const targetSignature = pluginRuntimeSyncState.targetSignature
       if (suppressionDepth > 0 || targetSignature === signature) return
@@ -681,6 +706,8 @@ export function stopPluginRuntimeSync(): void {
   stopPluginRuntimeSyncEffect = null
   pluginRuntimeSyncState.suppressionDepth = 0
   pluginRuntimeSyncState.targetSignature = null
+  customProviderStore.set([])
+  publishPluginRuntimeState(initialPluginRuntimeState)
 }
 
 let pluginLoadQueue: Promise<void> | null = null
@@ -690,20 +717,40 @@ async function runQueuedPluginLoads() {
   while (pluginLoadQueued) {
     pluginLoadQueued = false
     console.log('Loading plugins...')
-    const db = getDatabase()
+    const plugins = acceptedPluginRuntimeProjection(currentPluginCollectionSnapshot())
+    const signature = pluginRuntimeSignature(plugins)
+    customProviderStore.set([])
+    publishPluginRuntimeState({ phase: 'loading', targetSignature: signature, error: null })
 
-    const enabledPlugins = acceptedPluginRuntimeProjection(db.plugins ?? []).filter((p: RisuPlugin) => p.enabled)
-    const pluginV2 = enabledPlugins.filter((a: RisuPlugin) => a.version === 2 || a.version === '2.1')
-    const pluginV3 = enabledPlugins.filter((a: RisuPlugin) => a.version === '3.0')
+    try {
+      for (const plugin of plugins) assertSupportedPluginApiVersion(plugin)
+      await loadV3Plugins(plugins.filter((plugin) => plugin.enabled))
+    } catch (error) {
+      const latestSignature = pluginRuntimeSignature(acceptedPluginRuntimeProjection(currentPluginCollectionSnapshot()))
+      if (latestSignature !== signature) {
+        pluginRuntimeSyncState.targetSignature = latestSignature
+        pluginLoadQueued = true
+        continue
+      }
+      publishPluginRuntimeState({ phase: 'error', targetSignature: signature, error })
+      throw error
+    }
 
-    await loadV2Plugin(pluginV2)
-    await loadV3Plugins(pluginV3)
+    const latestSignature = pluginRuntimeSignature(acceptedPluginRuntimeProjection(currentPluginCollectionSnapshot()))
+    if (latestSignature !== signature) {
+      pluginRuntimeSyncState.targetSignature = latestSignature
+      pluginLoadQueued = true
+      continue
+    }
+
+    customProviderStore.set(Array.from(pluginV2.providers.keys()))
+    publishPluginRuntimeState({ phase: 'ready', targetSignature: signature, error: null })
   }
 }
 
 export function loadPlugins(): Promise<void> {
   pluginRuntimeSyncState.targetSignature = pluginRuntimeSignature(
-    acceptedPluginRuntimeProjection(getDatabase().plugins ?? []),
+    acceptedPluginRuntimeProjection(currentPluginCollectionSnapshot()),
   )
   pluginLoadQueued = true
   pluginLoadQueue ??= runQueuedPluginLoads().finally(() => {
@@ -717,6 +764,17 @@ export function loadPlugins(): Promise<void> {
     }
   })
   return pluginLoadQueue
+}
+
+/** Explicit retry for a localized runtime reload failure after startup. */
+export async function retryPluginRuntime(): Promise<boolean> {
+  try {
+    await loadPlugins()
+    startPluginRuntimeSync()
+    return true
+  } catch {
+    return false
+  }
 }
 
 export type PluginV2ProviderArgument = {
@@ -755,38 +813,8 @@ export const pluginV2 = {
   editinput: new Set<EditFunction>(),
   replacerbeforeRequest: new Set<ReplacerFunction>(),
   replacerafterRequest: new Set<(content: string, type: string) => string | Promise<string>>(),
+  chatOutput: chatOutputListeners,
   unload: new Set<() => void | Promise<void>>(),
-  loaded: false,
-}
-
-const V2_PLUGIN_UNLOAD_TIMEOUT_MS = 1000
-let v2PluginLoadGeneration = 0
-
-async function runV2PluginUnloadCallbacks(callbacks: Array<() => void | Promise<void>>) {
-  if (callbacks.length === 0) return
-
-  const pendingCallbacks = callbacks.map(async (unload) => {
-    try {
-      await unload()
-    } catch (error) {
-      console.error('Error running V2 plugin unload callback:', error)
-    }
-  })
-
-  await Promise.race([Promise.all(pendingCallbacks), sleep(V2_PLUGIN_UNLOAD_TIMEOUT_MS)])
-}
-
-function clearV2PluginRegistrations() {
-  pluginV2.providers.clear()
-  pluginV2.providerOptions.clear()
-  pluginV2.editdisplay.clear()
-  pluginV2.editoutput.clear()
-  pluginV2.editprocess.clear()
-  pluginV2.editinput.clear()
-  pluginV2.replacerbeforeRequest.clear()
-  pluginV2.replacerafterRequest.clear()
-  pluginV2.unload.clear()
-  customProviderStore.set([])
 }
 
 export const allowedDbKeys = [
@@ -857,17 +885,11 @@ function cloneJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-function pluginCustomStorage(): Record<string, unknown> {
-  const db = getDatabase()
-  db.pluginCustomStorage ??= {}
-  return db.pluginCustomStorage as Record<string, unknown>
-}
-
 async function setPluginStorageValue(key: string, value: unknown): Promise<void> {
   const previous = currentPluginStorageSnapshot()
-  withTrustedResourceWrite(() => {
-    pluginCustomStorage()[key] = cloneJsonValue(value)
-  })
+  const next = currentPluginStorageOwnerSnapshot()
+  next[key] = cloneJsonValue(value)
+  replacePluginStorageOwner(next)
   if (canUseServerCommands()) {
     await requirePluginMutation(dispatchPutPluginStorage(key, value, previous), 'set plugin storage')
   }
@@ -875,9 +897,9 @@ async function setPluginStorageValue(key: string, value: unknown): Promise<void>
 
 async function deletePluginStorageValue(key: string): Promise<void> {
   const previous = currentPluginStorageSnapshot()
-  withTrustedResourceWrite(() => {
-    delete pluginCustomStorage()[key]
-  })
+  const next = currentPluginStorageOwnerSnapshot()
+  delete next[key]
+  replacePluginStorageOwner(next)
   if (canUseServerCommands()) {
     await requirePluginMutation(dispatchDeletePluginStorage(key, previous), 'delete plugin storage')
   }
@@ -885,9 +907,7 @@ async function deletePluginStorageValue(key: string): Promise<void> {
 
 async function replacePluginStorage(values: Record<string, unknown>): Promise<void> {
   const previous = currentPluginStorageSnapshot()
-  withTrustedResourceWrite(() => {
-    getDatabase().pluginCustomStorage = cloneJsonValue(values)
-  })
+  replacePluginStorageOwner(values)
   if (canUseServerCommands()) {
     await requirePluginMutation(dispatchBulkPluginStorage({ values, clear: true }, previous), 'replace plugin storage')
   }
@@ -917,6 +937,7 @@ async function applyPluginDatabasePatch(newDb: Record<string, unknown>, options:
   const blockedKeys: string[] = []
   const persistence: Array<Promise<{ status: 'accepted' | 'queued' | 'failed' }>> = []
   let replacedStorage: Record<string, unknown> | null = null
+  const storageValuesToApply: Record<string, unknown> = {}
 
   for (const [key, value] of Object.entries(newDb)) {
     if (value === undefined) {
@@ -931,9 +952,6 @@ async function applyPluginDatabasePatch(newDb: Record<string, unknown>, options:
         value && typeof value === 'object' && !Array.isArray(value)
           ? cloneJsonValue(value as Record<string, unknown>)
           : {}
-      withTrustedResourceWrite(() => {
-        getDatabase().pluginCustomStorage = cloneJsonValue(replacedStorage)
-      })
       continue
     }
 
@@ -946,13 +964,52 @@ async function applyPluginDatabasePatch(newDb: Record<string, unknown>, options:
     }
 
     if (allowedDbKeys.includes(key)) {
-      withTrustedResourceWrite(() => {
-        ;(getDatabase() as any)[key] = cloneJsonValue(value)
-      })
+      if (key === 'characters' && Array.isArray(value)) {
+        replacePluginCharactersOwner(value as character[])
+        continue
+      }
+      if (key === 'characterOrder' && Array.isArray(value)) {
+        applyPluginCharacterPointerOwner(key, value)
+        continue
+      }
+      if (key === 'currentChar' && Number.isInteger(value)) {
+        applyPluginCharacterPointerOwner(key, value)
+        continue
+      }
+      if (
+        [
+          'personas',
+          'modelPresets',
+          'promptPresets',
+          'botPresets',
+          'promptTemplate',
+          'loadouts',
+          'loreBook',
+          'translatorPresets',
+          'hypaV3Presets',
+        ].includes(key)
+      ) {
+        ;(collectionsResourceState.values as Record<string, unknown>)[key] = cloneJsonValue(value)
+        continue
+      }
+      if (key === 'modules' && Array.isArray(value)) {
+        collectionsResourceState.values.modules = cloneJsonValue(
+          value,
+        ) as typeof collectionsResourceState.values.modules
+        invalidateModuleRenderRevision()
+      }
+      if (key === 'enabledModules' && Array.isArray(value)) {
+        ;(settingsResourceState.value as Record<string, unknown>).enabledModules = cloneJsonValue(value)
+        invalidateModuleRenderRevision()
+      }
+      if (key === 'plugins' && Array.isArray(value)) {
+        replacePluginCollectionOwner(value as RisuPlugin[])
+      }
       const mirroredPresetOutcome = mirrorTopLevelPresetFieldWithOutcome(key, value)
       if (mirroredPresetOutcome) {
         persistence.push(mirroredPresetOutcome)
       } else if (key === 'currentPluginProvider' && typeof value === 'string') {
+        applyPluginProviderOwner(value)
         const pending = dispatchSelectPluginProvider(value, previous)
         if (pending) persistence.push(pending)
       } else if (key === 'plugins' && Array.isArray(value)) {
@@ -968,7 +1025,7 @@ async function applyPluginDatabasePatch(newDb: Record<string, unknown>, options:
           )
         }
       } else if (key === 'enabledModules' && Array.isArray(value) && previousModules) {
-        const moduleSource = Array.isArray(newDb.modules) ? (newDb.modules as RisuModule[]) : getDatabase().modules
+        const moduleSource = Array.isArray(newDb.modules) ? (newDb.modules as RisuModule[]) : previousModules.modules
         const pending = dispatchEnabledModulesPatch(value, previousModules, moduleSource ?? [])
         if (pending) {
           persistence.push(
@@ -980,14 +1037,19 @@ async function applyPluginDatabasePatch(newDb: Record<string, unknown>, options:
         }
       } else {
         settingsPatch[key] = value
+        applyPluginSettingsOwnerPatch({ [key]: value })
       }
       continue
     }
 
     storageValues[key] = cloneJsonValue(value)
-    withTrustedResourceWrite(() => {
-      pluginCustomStorage()[key] = cloneJsonValue(value)
-    })
+    storageValuesToApply[key] = cloneJsonValue(value)
+  }
+
+  if (replacedStorage) {
+    replacePluginStorageOwner({ ...replacedStorage, ...storageValuesToApply })
+  } else if (Object.keys(storageValuesToApply).length > 0) {
+    replacePluginStorageOwner({ ...currentPluginStorageOwnerSnapshot(), ...storageValuesToApply })
   }
 
   if (replacedStorage) {
@@ -1013,9 +1075,7 @@ async function applyPluginDatabasePatch(newDb: Record<string, unknown>, options:
     )
   }
 
-  if (!serverMode && options.full) {
-    setDatabase(getDatabase({ snapshot: true }))
-  }
+  void options
 
   const outcomes = await Promise.all(persistence)
   if (outcomes.some((outcome) => outcome.status === 'failed')) {
@@ -1036,9 +1096,9 @@ interface TrackedPluginEventListener {
 }
 
 /**
- * Revokes callbacks created through the supported legacy surface when its load
- * generation ends. V2.1 remains trusted main-realm code, but ordinary timers,
- * listeners, and API closures must not keep operating after disable/reload.
+ * Revokes callbacks created through deprecated compatibility methods exposed
+ * by the V3 host when its load generation ends. Timers, listeners, and API
+ * closures must not keep operating after disable/reload.
  */
 class PluginRuntimeLifecycle {
   private readonly timeouts = new Set<ReturnType<typeof globalThis.setTimeout>>()
@@ -1263,37 +1323,33 @@ export const getV2PluginAPIs = (
     safeNavigator: SafePluginNavigator,
     safeLocation: SafePluginLocation,
     getArg: (arg: string) => {
-      const db = getDatabase()
       const [name, realArg] = arg.split('::')
-      for (const plugin of db.plugins) {
-        if (plugin.name === name) {
-          return plugin.realArg[realArg]
-        }
-      }
+      const matches = currentPluginCollectionSnapshot().filter((candidate) => candidate.name === name)
+      if (matches.length !== 1) return undefined
+      return matches[0].realArg?.[realArg]
     },
     getChar: () => {
-      return getCurrentCharacter({ snapshot: true })
+      const index = get(selectedCharID)
+      return currentPluginCharacterSnapshot(index)
     },
     setChar: (char: any) => {
       lifecycle.assertCurrent()
-      const charid = get(selectedCharID)
+      const charIndex = get(selectedCharID)
+      const previousCharacter = currentPluginCharacterSnapshot(charIndex)
+      if (!previousCharacter?.chaId) return Promise.resolve(null)
       if (!canUseServerCommands()) {
-        withTrustedResourceWrite(() => {
-          getDatabase().characters[charid] = char
-        })
+        replacePluginCharacterOwnerAt(charIndex, previousCharacter.chaId, char)
         return Promise.resolve(null)
       }
 
-      const previousCharacter = getDatabase().characters?.[charid]
       assertNoUnsupportedCharacterChanges(previousCharacter, char, 'setChar')
-      const previous = currentCharacterRowSnapshot(charid)
-      const previousCharacterSnapshot = previousCharacter ? $state.snapshot(previousCharacter) : undefined
-      const preparation = prepareCompatibleCharacterUpdateScoped(previousCharacterSnapshot, char, previous)
+      const previous = currentCharacterRowSnapshot(charIndex)
+      const preparation = prepareCompatibleCharacterUpdateScoped(previousCharacter, char, previous)
       const optimisticCharacter = preparation.optimisticCharacter
       if (!optimisticCharacter || preparation.factories.length === 0) return Promise.resolve(null)
-      withTrustedResourceWrite(() => {
-        getDatabase().characters[charid] = optimisticCharacter
-      })
+      if (!replacePluginCharacterOwnerAt(charIndex, previousCharacter.chaId, optimisticCharacter)) {
+        return Promise.resolve(null)
+      }
       return preparation.dispatchAsync().then((outcome) => {
         lifecycle.assertCurrent()
         return outcome
@@ -1344,6 +1400,14 @@ export const getV2PluginAPIs = (
         throw `replacer handler named ${name} not found`
       }
     },
+    addRisuChatListener: (mode: string, func: ChatOutputListener) => {
+      lifecycle.assertCurrent()
+      addChatOutputListener(mode, func)
+    },
+    removeRisuChatListener: (mode: string, func: ChatOutputListener) => {
+      lifecycle.assertCurrent()
+      removeChatOutputListener(mode, func)
+    },
     onUnload: (func: () => void | Promise<void>) => {
       lifecycle.assertCurrent()
       pluginV2.unload.add(func)
@@ -1352,26 +1416,22 @@ export const getV2PluginAPIs = (
       lifecycle.assertCurrent()
       const [name, realArg] = arg.split('::')
       const previous = currentPluginStateSnapshot()
-      let matched = false
-      withTrustedResourceWrite(() => {
-        const db = getDatabase()
-        for (const plugin of db.plugins) {
-          if (plugin.name === name) {
-            plugin.realArg[realArg] = value
-            matched = true
-          }
+      const plugins = currentPluginCollectionSnapshot()
+      const matches = plugins.map((plugin, index) => ({ plugin, index })).filter(({ plugin }) => plugin.name === name)
+      if (matches.length === 1) {
+        const [{ plugin, index }] = matches
+        const nextPlugin = {
+          ...plugin,
+          realArg: { ...(plugin.realArg ?? {}), [realArg]: value },
         }
-      })
-      if (matched) {
-        const plugin = getDatabase().plugins.find((p) => p.name === name)
-        if (plugin) {
-          const pending = dispatchUpdatePlugin(plugin.name, { realArg: plugin.realArg }, previous)
-          if (pending) {
-            return pending.then((outcome) => {
-              lifecycle.assertCurrent()
-              return outcome
-            })
-          }
+        plugins[index] = nextPlugin
+        replacePluginCollectionOwner(plugins)
+        const pending = dispatchUpdatePlugin(plugin.name, { realArg: nextPlugin.realArg }, previous)
+        if (pending) {
+          return pending.then((outcome) => {
+            lifecycle.assertCurrent()
+            return outcome
+          })
         }
       }
       return Promise.resolve(null)
@@ -1443,7 +1503,7 @@ export const getV2PluginAPIs = (
     apiVersionCompatibleWith: ['2.0', '2.1'],
     getDatabase: () => {
       lifecycle.assertCurrent()
-      const db = getDatabase()
+      const db = currentPluginDatabaseSnapshot() as Record<string, any>
       return new Proxy(db, {
         get(target, prop) {
           if (typeof prop === 'string' && allowedDbKeys.includes(prop)) {
@@ -1458,12 +1518,15 @@ export const getV2PluginAPIs = (
         set(target, prop, value) {
           lifecycle.assertCurrent()
           if (typeof prop === 'string' && allowedDbKeys.includes(prop)) {
-            if (canUseServerCommands()) {
+            if (canUseServerCommands() && unsupportedServerBridgeKeys.has(prop)) {
               void applyPluginDatabasePatch({ [prop]: value }, { full: false }).catch((error) => {
                 console.error('Plugin database property save failed:', error)
               })
             } else {
-              ;(target as any)[prop] = value
+              ;(target as any)[prop] = cloneJsonValue(value)
+              void applyPluginDatabasePatch({ [prop]: value }, { full: false }).catch((error) => {
+                console.error('Plugin database property save failed:', error)
+              })
             }
             return true
           } else if (typeof prop === 'string' && canUseServerCommands() && unsupportedServerBridgeKeys.has(prop)) {
@@ -1475,6 +1538,8 @@ export const getV2PluginAPIs = (
             })
             return true
           } else {
+            target.pluginCustomStorage ??= {}
+            target.pluginCustomStorage[prop.toString()] = cloneJsonValue(value)
             void setPluginStorageValue(prop.toString(), value).catch((error) => {
               console.error('Plugin storage property save failed:', error)
             })
@@ -1482,15 +1547,15 @@ export const getV2PluginAPIs = (
           }
         },
         ownKeys(target) {
-          const keys = Reflect.ownKeys(target).filter((key) => typeof key === 'string' && allowedDbKeys.includes(key))
+          const keys = new Set(
+            Reflect.ownKeys(target).filter((key) => typeof key === 'string' && allowedDbKeys.includes(key)),
+          )
           if (target.pluginCustomStorage) {
-            keys.push(
-              ...Object.keys(target.pluginCustomStorage).filter(
-                (key) => !canUseServerCommands() || !unsupportedServerBridgeKeys.has(key),
-              ),
-            )
+            for (const key of Object.keys(target.pluginCustomStorage)) {
+              if (!canUseServerCommands() || !unsupportedServerBridgeKeys.has(key)) keys.add(key)
+            }
           }
-          return keys
+          return [...keys]
         },
         getOwnPropertyDescriptor(target, prop) {
           if (typeof prop !== 'string') {
@@ -1523,7 +1588,7 @@ export const getV2PluginAPIs = (
     },
     pluginStorage: {
       getItem: (key: string) => {
-        const value = getDatabase().pluginCustomStorage?.[key]
+        const value = currentPluginStorageValueOwner(key)
         return value == null ? null : safeStructuredClone(value)
       },
       setItem: (key: string, value: string) => {
@@ -1539,20 +1604,14 @@ export const getV2PluginAPIs = (
         return replacePluginStorage({})
       },
       key: (index: number) => {
-        const db = getDatabase()
-        db.pluginCustomStorage ??= {}
-        const keys = Object.keys(db.pluginCustomStorage)
+        const keys = Object.keys(currentPluginStorageOwnerSnapshot())
         return keys[index] || null
       },
       keys: () => {
-        const db = getDatabase()
-        db.pluginCustomStorage ??= {}
-        return Object.keys(db.pluginCustomStorage)
+        return Object.keys(currentPluginStorageOwnerSnapshot())
       },
       length: () => {
-        const db = getDatabase()
-        db.pluginCustomStorage ??= {}
-        return Object.keys(db.pluginCustomStorage).length
+        return Object.keys(currentPluginStorageOwnerSnapshot()).length
       },
     },
     isDeviceLocalPluginStorageEnabled,
@@ -1577,7 +1636,7 @@ export const getV2PluginAPIs = (
           lifecycle.assertCurrent()
           databasePatch = {
             ...newDb,
-            plugins: mergeInstalledPluginsWithApprovedCandidates(getDatabase().plugins ?? [], approvedCandidates),
+            plugins: mergeInstalledPluginsWithApprovedCandidates(currentPluginCollectionSnapshot(), approvedCandidates),
           }
         }
       }
@@ -1622,148 +1681,6 @@ export const getV2PluginAPIs = (
   return pluginApis
 }
 
-export async function loadV2Plugin(plugins: RisuPlugin[]) {
-  const loadGeneration = ++v2PluginLoadGeneration
-  if (pluginV2.loaded) {
-    const unloadCallbacks = Array.from(pluginV2.unload)
-    try {
-      await runV2PluginUnloadCallbacks(unloadCallbacks)
-    } finally {
-      clearV2PluginRegistrations()
-    }
-  }
-
-  pluginV2.loaded = true
-
-  globalThis.__pluginApis__ = getV2PluginAPIs()
-
-  for (const plugin of plugins) {
-    let data = ''
-    let version = plugin.version || 2
-
-    const createRealScript = (data: string): string => {
-      const tt = (
-        window as unknown as Window & {
-          trustedTypes?: {
-            createPolicy: (
-              name: string,
-              rules: { createScript: (input: string) => string },
-            ) => { createScript: (input: string) => string }
-          }
-        }
-      ).trustedTypes
-      const policyFactory = tt ?? {
-        createPolicy: (_name: string, rules: { createScript: (input: string) => string }) => rules, // Just return the rules object as the "policy"
-      }
-
-      const policy = policyFactory.createPolicy('plugin-policy', {
-        createScript: (_input) => {
-          return `(async () => {
-                        const __pluginApi = globalThis.__pluginApis__
-                        const risuFetch = __pluginApi.risuFetch
-                        const nativeFetch = __pluginApi.nativeFetch
-                        const fetch = __pluginApi.fetch
-                        const XMLHttpRequest = __pluginApi.BlockedPluginNetworkPrimitive
-                        const WebSocket = __pluginApi.BlockedPluginNetworkPrimitive
-                        const WebSocketStream = __pluginApi.BlockedPluginNetworkPrimitive
-                        const EventSource = __pluginApi.BlockedPluginNetworkPrimitive
-                        const Image = __pluginApi.BlockedPluginNetworkPrimitive
-                        const Audio = __pluginApi.BlockedPluginNetworkPrimitive
-                        const Worker = __pluginApi.BlockedPluginNetworkPrimitive
-                        const SharedWorker = __pluginApi.BlockedPluginNetworkPrimitive
-                        const WebTransport = __pluginApi.BlockedPluginNetworkPrimitive
-                        const RTCPeerConnection = __pluginApi.BlockedPluginNetworkPrimitive
-                        const Navigator = __pluginApi.BlockedPluginNetworkPrimitive
-                        const open = __pluginApi.BlockedPluginNetworkPrimitive
-                        const navigator = __pluginApi.safeNavigator
-                        const location = __pluginApi.safeLocation
-                        const getArg = __pluginApi.getArg
-                        const printLog = __pluginApi.printLog
-                        const getChar = __pluginApi.getChar
-                        const setChar = __pluginApi.setChar
-                        const addProvider = __pluginApi.addProvider
-                        const addRisuScriptHandler = __pluginApi.addRisuScriptHandler
-                        const removeRisuScriptHandler = __pluginApi.removeRisuScriptHandler
-                        const addRisuReplacer = __pluginApi.addRisuReplacer
-                        const removeRisuReplacer = __pluginApi.removeRisuReplacer
-                        const onUnload = __pluginApi.onUnload
-                        const setArg = __pluginApi.setArg
-                        const saveAsset = __pluginApi.saveAsset
-                        const readImage = __pluginApi.readImage
-                        ${
-                          version === '2.1'
-                            ? `
-                            const safeGlobalThis = __pluginApi.getSafeGlobalThis()
-                            const Risuai = __pluginApi
-                            const safeLocalStorage = __pluginApi.safeLocalStorage
-                            const safeIdbFactory = __pluginApi.safeIdbFactory
-                            const alertStore = __pluginApi.alertStore
-                            const safeDocument = __pluginApi.safeDocument
-                            const document = safeDocument
-                            const setTimeout = safeGlobalThis.setTimeout
-                            const setInterval = safeGlobalThis.setInterval
-                            const clearTimeout = safeGlobalThis.clearTimeout
-                            const clearInterval = safeGlobalThis.clearInterval
-                            const addEventListener = safeGlobalThis.addEventListener
-                            const removeEventListener = safeGlobalThis.removeEventListener
-                            const getDatabase = __pluginApi.getDatabase
-                            const setDatabaseLite = __pluginApi.setDatabaseLite
-                            const setDatabase = __pluginApi.setDatabase
-                            const loadPlugins = __pluginApi.loadPlugins
-                            const SafeFunction = __pluginApi.SafeFunction
-                        `
-                            : ''
-                        }
-
-                        ${data}
-                    })();`
-        },
-      })
-
-      return policy.createScript(data)
-    }
-
-    if (version === '2.1') {
-      const legacyRuntimeAllowed = await getPluginPermission(plugin.name, 'legacyRuntime', false, plugin.script)
-      if (loadGeneration !== v2PluginLoadGeneration) return
-      if (!legacyRuntimeAllowed) {
-        console.warn(`Skipped V2.1 plugin "${plugin.name}" because trusted legacy runtime access was denied.`)
-        continue
-      }
-
-      const safety = await checkCodeSafety(plugin.script)
-      if (loadGeneration !== v2PluginLoadGeneration) return
-      data = safety.modifiedCode
-
-      try {
-        // Each script captures an API object whose network grant is bound to
-        // this exact plugin name and script, never the ambient last-loaded API.
-        globalThis.__pluginApis__ = getV2PluginAPIs(
-          plugin,
-          () => {
-            if (loadGeneration !== v2PluginLoadGeneration) {
-              throw new Error('Legacy plugin instance is no longer active.')
-            }
-          },
-          (cleanup) => pluginV2.unload.add(cleanup),
-        )
-        new Function(createRealScript(data))()
-      } catch (error) {
-        console.error(error)
-      }
-
-      console.log('Loaded V2.1 Plugin', plugin.name)
-    } else {
-      data = plugin.script
-      console.log('Loading V2.0 Plugin', plugin.name)
-
-      console.warn(
-        `Plugin 2.0 is removed and no longer supported. Please update plugin "${plugin.name}" to API version 3.0`,
-      )
-    }
-  }
-}
-
 export async function translatorPlugin(text: string, from: string, to: string) {
   return false
 }
@@ -1790,13 +1707,10 @@ export async function handlePluginInstallViaPlugin(plugins: RisuPlugin[], assert
   const trimmedPlugins: RisuPlugin[] = []
   for (const plugin of plugins) {
     assertActive?.()
-    if (!getDatabase().plugins.find((p: RisuPlugin) => p.name === plugin.name && p.script === plugin.script)) {
-      if (plugin.version !== '3.0') {
-        console.warn(
-          `Plugin "${plugin.name}" has version "${plugin.version}", which is not supported for installation via plugin. Only API version 3.0 plugins can be installed via plugin. Skipping installation of this plugin.`,
-        )
-        continue
-      }
+    assertSupportedPluginApiVersion(plugin)
+    if (
+      !currentPluginCollectionSnapshot().some((p: RisuPlugin) => p.name === plugin.name && p.script === plugin.script)
+    ) {
       const confirmation = await alertConfirm(language.confirmInstallPluginViaPlugin.replace('{plugin}', plugin.name))
       assertActive?.()
       if (confirmation) {

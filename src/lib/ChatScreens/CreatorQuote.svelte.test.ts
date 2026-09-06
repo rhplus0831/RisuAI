@@ -15,7 +15,8 @@ vi.mock('src/ts/util', () => ({
   toLangName: (value: string) => value,
 }))
 
-vi.mock('src/ts/server/resourceState.svelte', () => ({
+vi.mock('src/ts/server/resourceState.svelte', async (importActual) => ({
+  ...(await importActual<typeof import('src/ts/server/resourceState.svelte')>()),
   getResourceDatabase: () => ({ language: 'en' }),
 }))
 

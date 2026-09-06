@@ -1,5 +1,5 @@
 import { v4 } from 'uuid'
-import { getDatabase, type character, type MessageGenerationInfo } from '../../storage/database.svelte'
+import type { character, Database, MessageGenerationInfo } from '../../storage/database.svelte'
 import type { OpenAIChat } from '../index.svelte'
 import { getGenerationModelString } from '../models/modelString'
 import { requestChatData } from '../request/request'
@@ -38,6 +38,7 @@ export type DispatchRequestResult =
  * dispatch path observe stage 3); fail / abort exits leave stage 3 written.
  */
 export async function dispatchRequest(args: {
+  database: Database
   formated: OpenAIChat[]
   biases: [string, number][]
   currentChar: character
@@ -54,6 +55,7 @@ export async function dispatchRequest(args: {
   setProcessStage: (n: number) => void
 }): Promise<DispatchRequestResult> {
   const {
+    database: db,
     formated,
     biases,
     currentChar,
@@ -78,7 +80,6 @@ export async function dispatchRequest(args: {
 
   const generationId = v4()
   const generationModel = getGenerationModelString()
-  const db = getDatabase()
 
   const generationInfo: MessageGenerationInfo = {
     model: generationModel,
@@ -96,6 +97,7 @@ export async function dispatchRequest(args: {
 
   const req = await requestChatData(
     {
+      database: db,
       formated,
       biasString: biases,
       currentChar,

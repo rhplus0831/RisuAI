@@ -1,15 +1,37 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte'
   import { AlertTriangleIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
+  import ModelGrid from 'src/lib/UI/ModelGrid.svelte'
+  import {
+    getLLMGatewayModels,
+    toModelGridItem as llmGatewayModelToGridItem,
+    type LLMGatewayModelInfo,
+  } from 'src/ts/model/llmgateway'
+  import {
+    getNeuralwattModels,
+    toModelGridItem as neuralwattModelToGridItem,
+    type NeuralwattModelInfo,
+  } from 'src/ts/model/neuralwatt'
   import { FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS } from 'src/ts/model/modelProfileResolver'
-  import type { ModelProfileSecretDraft } from 'src/ts/model/modelProfileSecrets'
+  import {
+    LLM_GATEWAY_REASONING_EFFORTS,
+    LLM_GATEWAY_ROUTING_STRATEGIES,
+    LLM_GATEWAY_SERVICE_TIERS,
+    LLM_GATEWAY_VERBOSITIES,
+    type LLMGatewayReasoningEffort,
+    type LLMGatewayRoutingStrategy,
+    type LLMGatewayServiceTier,
+    type LLMGatewayVerbosity,
+  } from 'src/ts/model/modelProfileRecords'
+  import type { ProviderCredentialRecord, ProviderCredentialType } from 'src/ts/model/providerCredentialRecords'
   import { AnthropicModels } from 'src/ts/model/providers/anthropic'
   import { GoogleModels } from 'src/ts/model/providers/google'
   import { OpenAIModels } from 'src/ts/model/providers/openai'
-  import { LLMFlags, LLMFormat, LLMTokenizer, type LLMFlags as LLMFlagValue } from 'src/ts/model/types'
+  import { FASTIFY_TOKENIZER_OPTIONS } from 'src/ts/model/tokenizerOptions'
+  import { LLMFlags, LLMFormat, type LLMFlags as LLMFlagValue } from 'src/ts/model/types'
   import KeyValueRowsEditor from './KeyValueRowsEditor.svelte'
-  import SecretField from './SecretField.svelte'
 
   interface KeyValueRow {
     key: string
@@ -22,39 +44,51 @@
   }
 
   interface Props {
+    section?: 'all' | 'setup' | 'advanced'
+    credentialEditor?: Snippet
     providerId: string
     modelId: string
     requestModel: string
-    apiKeyDraft: ModelProfileSecretDraft
+    credentialId: string
+    credentials: ProviderCredentialRecord[]
+    onCreateCredential: (type: ProviderCredentialType) => void
     baseUrl: string
     extraHeadersRows: KeyValueRow[]
     additionalParamRows: KeyValueRow[]
+    llmGatewayReasoningEffort: LLMGatewayReasoningEffort | ''
+    llmGatewayVerbosity: LLMGatewayVerbosity | ''
+    llmGatewayServiceTier: LLMGatewayServiceTier | ''
+    llmGatewayRouting: LLMGatewayRoutingStrategy | ''
     ollamaRequestFormat: string
     ollamaModelSource: string
     ollamaThinkingMode: string
     vertexProjectId: string
     vertexRegion: string
-    vertexClientEmail: string
-    vertexPrivateKeyDraft: ModelProfileSecretDraft
     customTokenizer: string
     customFlags: LLMFlagValue[]
   }
 
   let {
+    section = 'all',
+    credentialEditor,
     providerId = $bindable(),
     modelId = $bindable(),
     requestModel = $bindable(),
-    apiKeyDraft = $bindable(),
+    credentialId = $bindable(),
+    credentials = [],
+    onCreateCredential,
     baseUrl = $bindable(),
     extraHeadersRows = $bindable(),
     additionalParamRows = $bindable(),
+    llmGatewayReasoningEffort = $bindable(),
+    llmGatewayVerbosity = $bindable(),
+    llmGatewayServiceTier = $bindable(),
+    llmGatewayRouting = $bindable(),
     ollamaRequestFormat = $bindable(),
     ollamaModelSource = $bindable(),
     ollamaThinkingMode = $bindable(),
     vertexProjectId = $bindable(),
     vertexRegion = $bindable(),
-    vertexClientEmail = $bindable(),
-    vertexPrivateKeyDraft = $bindable(),
     customTokenizer = $bindable(),
     customFlags = $bindable(),
   }: Props = $props()
@@ -76,16 +110,40 @@
       fullName: `${model.fullName ?? model.name} Vertex`,
     })),
   )
-  const tokenizerOptions = [
-    { label: 'Tiktoken (cl100k_base)', value: String(LLMTokenizer.tiktokenCl100kBase) },
-    { label: 'Tiktoken (o200k_base)', value: String(LLMTokenizer.tiktokenO200Base) },
-  ]
+  const tokenizerOptions = FASTIFY_TOKENIZER_OPTIONS.filter((option) => option.value !== 'tik')
   const flagOptions = Object.entries(LLMFlags).map(([label, flag]) => ({
     label,
     flag: flag as LLMFlagValue,
   }))
 
+  let llmGatewayModels = $state<LLMGatewayModelInfo[]>([])
+  let llmGatewayModelsLoading = $state(false)
+  let llmGatewayGridItems = $derived(llmGatewayModels.map(llmGatewayModelToGridItem))
+  let neuralwattModels = $state<NeuralwattModelInfo[]>([])
+  let neuralwattModelsLoading = $state(false)
+  let neuralwattGridItems = $derived(neuralwattModels.map(neuralwattModelToGridItem))
+
+  let manualModel = $state(false)
+  let knownOptions = $derived(
+    providerId === 'openai'
+      ? openAIModelOptions
+      : providerId === 'anthropic'
+        ? anthropicModelOptions
+        : providerId === 'google'
+          ? googleModelOptions
+          : providerId === 'vertex'
+            ? vertexModelOptions
+            : [],
+  )
+
   let baseUrlIncludesSuffix = $derived(baseUrl.toLowerCase().includes('/chat/completions'))
+  let compatibleCredentialType = $derived<ProviderCredentialType>(
+    providerId === 'vertex' ? 'vertexServiceAccount' : 'apiKey',
+  )
+  let compatibleCredentials = $derived(credentials.filter((credential) => credential.type === compatibleCredentialType))
+  let selectedCredentialMissing = $derived(
+    !!credentialId && !compatibleCredentials.some((credential) => credential.id === credentialId),
+  )
 
   $effect(() => {
     if (fixedModelProviderIds.has(providerId) && modelId !== providerId) {
@@ -104,6 +162,40 @@
     }
     if (modelId === 'ollama-hosted' && ollamaRequestFormat !== String(LLMFormat.Ollama)) {
       ollamaRequestFormat = String(LLMFormat.Ollama)
+    }
+  })
+
+  $effect(() => {
+    if (providerId !== 'llmgateway' || section === 'advanced') return
+    let cancelled = false
+    llmGatewayModelsLoading = true
+    void getLLMGatewayModels()
+      .then((models) => {
+        if (!cancelled) llmGatewayModels = models
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) llmGatewayModelsLoading = false
+      })
+    return () => {
+      cancelled = true
+    }
+  })
+
+  $effect(() => {
+    if (providerId !== 'neuralwatt' || section === 'advanced') return
+    let cancelled = false
+    neuralwattModelsLoading = true
+    void getNeuralwattModels()
+      .then((models) => {
+        if (!cancelled) neuralwattModels = models
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) neuralwattModelsLoading = false
+      })
+    return () => {
+      cancelled = true
     }
   })
 
@@ -129,245 +221,88 @@
 </script>
 
 {#if !providerId}
-  <div class="rounded-md border border-darkborderc p-3 text-sm text-textcolor2">
-    {language.modelProfiles.compatibilityEditNotice}
-  </div>
+  <p class="text-sm text-textcolor2">{language.modelProfiles.compatibilityEditNotice}</p>
 {:else if !firstClassProviderIds.has(providerId)}
-  <div class="rounded-md border border-darkborderc p-3 text-sm text-textcolor2">
-    {language.modelProfiles.unsupportedProviderEditNotice(providerId)}
-  </div>
+  <p class="text-sm text-textcolor2">{language.modelProfiles.unsupportedProviderEditNotice(providerId)}</p>
 {:else}
-  <div class="flex flex-col gap-4">
-    {#if providerId === 'openai'}
-      <div class="grid gap-3 md:grid-cols-2">
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.knownModel}</span>
+  <div class="flex min-w-0 flex-col gap-4">
+    {#if section !== 'advanced'}
+      {#if providerId !== 'debug-echo'}
+        <div class="flex flex-col gap-2" data-provider-credential-picker>
+          <label class="flex flex-col gap-1 text-sm">
+            <span>{language.modelProfiles.credentialLabel}</span>
+            <select
+              aria-label={language.modelProfiles.credentialLabel}
+              class="w-full rounded-md border border-darkborderc bg-transparent px-3 py-2 text-textcolor focus:border-borderc focus:ring-2 focus:ring-borderc"
+              bind:value={credentialId}>
+              <option value="" class="bg-darkbg">{language.modelProfiles.noCredential}</option>
+              {#if selectedCredentialMissing}
+                <option value={credentialId} class="bg-darkbg"
+                  >{language.modelProfiles.missingCredential(credentialId)}</option>
+              {/if}
+              {#each compatibleCredentials as credential (credential.id)}
+                <option value={credential.id} class="bg-darkbg">{credential.name}</option>
+              {/each}
+            </select>
+          </label>
+          <button
+            type="button"
+            class="min-h-9 self-start text-sm text-textcolor2 underline underline-offset-2 hover:text-textcolor"
+            onclick={() => onCreateCredential(compatibleCredentialType)}>
+            {language.modelProfiles.createNewCredential}
+          </button>
+          {@render credentialEditor?.()}
+        </div>
+      {/if}
+      {#if providerId === 'llmgateway' || providerId === 'neuralwatt'}
+        <ModelGrid
+          bind:value={modelId}
+          items={providerId === 'llmgateway' ? llmGatewayGridItems : neuralwattGridItems}
+          loading={providerId === 'llmgateway' ? llmGatewayModelsLoading : neuralwattModelsLoading}
+          onselect={() => {
+            requestModel = ''
+          }} />
+        <label class="flex flex-col gap-1 text-sm">
+          <span>{language.modelProfiles.modelColumn}</span>
+          <TextInput size="sm" fullwidth bind:value={modelId} placeholder={language.modelProfiles.modelPlaceholder} />
+        </label>
+      {:else if knownOptions.length > 0}
+        <label class="flex flex-col gap-1 text-sm">
+          <span>{language.modelProfiles.knownModel}</span>
           <select
-            class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
-            value={knownModelValue(openAIModelOptions)}
+            aria-label={language.modelProfiles.knownModel}
+            class="w-full rounded-md border border-darkborderc bg-transparent px-3 py-2 text-textcolor focus:border-borderc focus:ring-2 focus:ring-borderc"
+            value={manualModel ? '__manual__' : knownModelValue(knownOptions) || (modelId ? '__manual__' : '')}
             onchange={(event) => {
-              if (event.currentTarget.value) modelId = event.currentTarget.value
+              manualModel = event.currentTarget.value === '__manual__'
+              if (event.currentTarget.value && !manualModel) modelId = event.currentTarget.value
             }}>
-            <option value="" class="bg-darkbg">{language.modelProfiles.manualModelOption}</option>
-            {#each openAIModelOptions as option (option.id)}
+            <option value="" disabled class="bg-darkbg">{language.modelProfiles.chooseModelPlaceholder}</option>
+            <option value="__manual__" class="bg-darkbg">{language.modelProfiles.manualModelOption}</option>
+            {#each knownOptions as option (option.id)}
               <option value={option.id} class="bg-darkbg">{option.label}</option>
             {/each}
           </select>
         </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.modelColumn}</span>
-          <TextInput size="sm" fullwidth bind:value={modelId} placeholder={language.modelProfiles.modelPlaceholder} />
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.requestModelColumn}</span>
-          <TextInput
-            size="sm"
-            fullwidth
-            bind:value={requestModel}
-            placeholder={language.modelProfiles.requestModelPlaceholder} />
-        </label>
-        <SecretField
-          label={language.modelProfiles.apiKeyLabel}
-          bind:value={apiKeyDraft}
-          placeholder={language.modelProfiles.savedSecretPlaceholder} />
-      </div>
-    {:else if providerId === 'anthropic'}
-      <div class="grid gap-3 md:grid-cols-2">
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.knownModel}</span>
-          <select
-            class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
-            value={knownModelValue(anthropicModelOptions)}
-            onchange={(event) => {
-              if (event.currentTarget.value) modelId = event.currentTarget.value
-            }}>
-            <option value="" class="bg-darkbg">{language.modelProfiles.manualModelOption}</option>
-            {#each anthropicModelOptions as option (option.id)}
-              <option value={option.id} class="bg-darkbg">{option.label}</option>
-            {/each}
-          </select>
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.modelColumn}</span>
-          <TextInput size="sm" fullwidth bind:value={modelId} placeholder={language.modelProfiles.modelPlaceholder} />
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.requestModelColumn}</span>
-          <TextInput
-            size="sm"
-            fullwidth
-            bind:value={requestModel}
-            placeholder={language.modelProfiles.requestModelPlaceholder} />
-        </label>
-        <SecretField
-          label={language.modelProfiles.apiKeyLabel}
-          bind:value={apiKeyDraft}
-          placeholder={language.modelProfiles.savedSecretPlaceholder} />
-      </div>
-    {:else if providerId === 'google'}
-      <div class="grid gap-3 md:grid-cols-2">
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.knownModel}</span>
-          <select
-            class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
-            value={knownModelValue(googleModelOptions)}
-            onchange={(event) => {
-              if (event.currentTarget.value) modelId = event.currentTarget.value
-            }}>
-            <option value="" class="bg-darkbg">{language.modelProfiles.manualModelOption}</option>
-            {#each googleModelOptions as option (option.id)}
-              <option value={option.id} class="bg-darkbg">{option.label}</option>
-            {/each}
-          </select>
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.modelColumn}</span>
-          <TextInput size="sm" fullwidth bind:value={modelId} placeholder={language.modelProfiles.modelPlaceholder} />
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.requestModelColumn}</span>
-          <TextInput
-            size="sm"
-            fullwidth
-            bind:value={requestModel}
-            placeholder={language.modelProfiles.requestModelPlaceholder} />
-        </label>
-        <SecretField
-          label={language.modelProfiles.apiKeyLabel}
-          bind:value={apiKeyDraft}
-          placeholder={language.modelProfiles.savedSecretPlaceholder} />
-      </div>
-    {:else if providerId === 'vertex'}
-      <div class="grid gap-3 md:grid-cols-2">
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.knownModel}</span>
-          <select
-            class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
-            value={knownModelValue(vertexModelOptions)}
-            onchange={(event) => {
-              if (event.currentTarget.value) modelId = event.currentTarget.value
-            }}>
-            <option value="" class="bg-darkbg">{language.modelProfiles.manualModelOption}</option>
-            {#each vertexModelOptions as option (option.id)}
-              <option value={option.id} class="bg-darkbg">{option.label}</option>
-            {/each}
-          </select>
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.modelColumn}</span>
-          <TextInput size="sm" fullwidth bind:value={modelId} placeholder={language.modelProfiles.modelPlaceholder} />
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.requestModelColumn}</span>
-          <TextInput
-            size="sm"
-            fullwidth
-            bind:value={requestModel}
-            placeholder={language.modelProfiles.requestModelPlaceholder} />
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.vertexProjectId}</span>
-          <TextInput size="sm" fullwidth bind:value={vertexProjectId} />
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.vertexRegion}</span>
-          <TextInput size="sm" fullwidth bind:value={vertexRegion} />
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.vertexClientEmail}</span>
-          <TextInput size="sm" fullwidth bind:value={vertexClientEmail} />
-        </label>
-        <SecretField
-          label={language.modelProfiles.vertexPrivateKey}
-          bind:value={vertexPrivateKeyDraft}
-          placeholder={language.modelProfiles.savedSecretPlaceholder} />
-      </div>
-    {:else if providerId === 'custom-api'}
-      <div class="grid gap-3 md:grid-cols-2">
-        <label class="flex flex-col gap-1 md:col-span-2">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.baseUrlLabel}</span>
-          <TextInput size="sm" fullwidth bind:value={baseUrl} placeholder={language.modelProfiles.baseUrlPlaceholder} />
-        </label>
-        {#if baseUrlIncludesSuffix}
-          <div class="flex gap-2 rounded-md border border-yellow-600 p-2 text-sm text-yellow-300 md:col-span-2">
-            <AlertTriangleIcon size={16} class="mt-0.5 shrink-0" />
-            <span>{language.modelProfiles.customApiChatCompletionsWarning}</span>
-          </div>
+        {#if manualModel || (modelId && !knownModelValue(knownOptions))}
+          <label class="flex flex-col gap-1 text-sm">
+            <span>{language.modelProfiles.modelColumn}</span>
+            <TextInput
+              size="sm"
+              fullwidth
+              bind:value={modelId}
+              oninput={() => {
+                manualModel = true
+              }}
+              placeholder={language.modelProfiles.modelPlaceholder} />
+          </label>
         {/if}
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.requestModelColumn}</span>
-          <TextInput
-            size="sm"
-            fullwidth
-            bind:value={requestModel}
-            placeholder={language.modelProfiles.requestModelPlaceholder} />
-        </label>
-        <SecretField
-          label={language.modelProfiles.apiKeyOptionalLabel}
-          bind:value={apiKeyDraft}
-          placeholder={language.modelProfiles.savedSecretPlaceholder} />
-      </div>
-
-      <div class="grid gap-4 md:grid-cols-2">
-        <div class="flex flex-col gap-2">
-          <h4 class="text-sm font-semibold">{language.modelProfiles.extraHeaders}</h4>
-          <KeyValueRowsEditor
-            bind:rows={extraHeadersRows}
-            keyPlaceholder={language.modelProfiles.headerNamePlaceholder}
-            valuePlaceholder={language.modelProfiles.headerValuePlaceholder}
-            addLabel={language.modelProfiles.addHeader}
-            emptyLabel={language.modelProfiles.noExtraHeaders} />
-        </div>
-
-        <div class="flex flex-col gap-2">
-          <h4 class="text-sm font-semibold">{language.modelProfiles.additionalParams}</h4>
-          <KeyValueRowsEditor
-            bind:rows={additionalParamRows}
-            keyPlaceholder={language.modelProfiles.paramNamePlaceholder}
-            valuePlaceholder={language.modelProfiles.paramValuePlaceholder}
-            addLabel={language.modelProfiles.addParam}
-            emptyLabel={language.modelProfiles.noAdditionalParams} />
-        </div>
-      </div>
-
-      <div class="grid gap-3 md:grid-cols-2">
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.customTokenizer}</span>
+      {:else if providerId === 'ollama'}
+        <label class="flex flex-col gap-1 text-sm">
+          <span>{language.modelProfiles.knownModel}</span>
           <select
-            class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
-            bind:value={customTokenizer}>
-            <option value="" class="bg-darkbg">{language.modelProfiles.defaultTokenizer}</option>
-            {#each tokenizerOptions as option (option.value)}
-              <option value={option.value} class="bg-darkbg">{option.label}</option>
-            {/each}
-          </select>
-        </label>
-        <div class="flex flex-col gap-2">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.customApiFlags}</span>
-          <div
-            data-model-custom-api-flags
-            class="grid max-h-56 grid-cols-1 gap-2 overflow-y-auto rounded-md border border-darkborderc p-2 sm:grid-cols-2">
-            {#each flagOptions as option (option.flag)}
-              <label class="flex min-w-0 items-center gap-2 text-sm text-textcolor2">
-                <input
-                  type="checkbox"
-                  class="h-4 w-4"
-                  checked={customFlags.includes(option.flag)}
-                  onchange={(event) => {
-                    setCustomFlag(option.flag, event.currentTarget.checked)
-                  }} />
-                <span class="min-w-0 break-all">{option.label}</span>
-              </label>
-            {/each}
-          </div>
-        </div>
-      </div>
-    {:else if providerId === 'ollama'}
-      <div class="grid gap-3 md:grid-cols-2">
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.knownModel}</span>
-          <select
-            class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+            aria-label={language.modelProfiles.knownModel}
+            class="w-full rounded-md border border-darkborderc bg-transparent px-3 py-2 text-textcolor focus:border-borderc focus:ring-2 focus:ring-borderc"
             value={knownModelValue(ollamaModelOptions)}
             onchange={(event) => {
               if (event.currentTarget.value) modelId = event.currentTarget.value
@@ -377,82 +312,216 @@
             {/each}
           </select>
         </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.requestModelColumn}</span>
+      {/if}
+      {#if providerId === 'vertex'}
+        <div class="grid gap-3 sm:grid-cols-2">
+          <label class="flex flex-col gap-1 text-sm"
+            ><span>{language.modelProfiles.vertexProjectId}</span><TextInput
+              size="sm"
+              fullwidth
+              bind:value={vertexProjectId} /></label>
+          <label class="flex flex-col gap-1 text-sm"
+            ><span>{language.modelProfiles.vertexRegion}</span><TextInput
+              size="sm"
+              fullwidth
+              bind:value={vertexRegion} /></label>
+        </div>
+      {/if}
+      {#if providerId === 'custom-api' || (providerId === 'ollama' && modelId !== 'ollama-cloud')}
+        <label class="flex flex-col gap-1 text-sm">
+          <span>{language.modelProfiles.baseUrlLabel}</span>
+          <TextInput
+            size="sm"
+            fullwidth
+            bind:value={baseUrl}
+            placeholder={providerId === 'ollama'
+              ? language.modelProfiles.ollamaBaseUrlPlaceholder
+              : language.modelProfiles.baseUrlPlaceholder} />
+        </label>
+        {#if providerId === 'custom-api' && baseUrlIncludesSuffix}
+          <div class="flex gap-2 rounded-md border border-yellow-600 p-2 text-sm text-yellow-300">
+            <AlertTriangleIcon size={16} class="mt-0.5 shrink-0" />
+            <span>{language.modelProfiles.customApiChatCompletionsWarning}</span>
+          </div>
+        {/if}
+      {/if}
+      {#if providerId === 'custom-api' || providerId === 'ollama'}
+        <label class="flex flex-col gap-1 text-sm">
+          <span>{language.modelProfiles.requestModelColumn}</span>
           <TextInput
             size="sm"
             fullwidth
             bind:value={requestModel}
-            placeholder={language.modelProfiles.ollamaModelPlaceholder} />
+            placeholder={providerId === 'ollama'
+              ? language.modelProfiles.ollamaModelPlaceholder
+              : language.modelProfiles.requestModelPlaceholder} />
         </label>
-        {#if modelId === 'ollama-cloud'}
-          <SecretField
-            label={language.modelProfiles.apiKeyLabel}
-            bind:value={apiKeyDraft}
-            placeholder={language.modelProfiles.savedSecretPlaceholder} />
-          <label class="flex flex-col gap-1">
-            <span class="text-sm text-textcolor2">{language.modelProfiles.ollamaRequestFormat}</span>
-            <select
-              class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
-              bind:value={ollamaRequestFormat}>
-              <option value={String(LLMFormat.Ollama)} class="bg-darkbg">
-                {language.modelProfiles.ollamaNativeFormat}
-              </option>
-              <option value={String(LLMFormat.OpenAICompatible)} class="bg-darkbg">
-                {language.modelProfiles.ollamaOpenAIFormat}
-              </option>
-              <option value={String(LLMFormat.OpenAIResponseAPI)} class="bg-darkbg">
-                {language.modelProfiles.ollamaResponsesFormat}
-              </option>
-              <option value={String(LLMFormat.Anthropic)} class="bg-darkbg">
-                {language.modelProfiles.ollamaAnthropicFormat}
-              </option>
-            </select>
-          </label>
-        {:else}
-          <label class="flex flex-col gap-1">
-            <span class="text-sm text-textcolor2">{language.modelProfiles.baseUrlLabel}</span>
-            <TextInput
-              size="sm"
-              fullwidth
-              bind:value={baseUrl}
-              placeholder={language.modelProfiles.ollamaBaseUrlPlaceholder} />
-          </label>
-          <SecretField
-            label={language.modelProfiles.apiKeyOptionalLabel}
-            bind:value={apiKeyDraft}
-            placeholder={language.modelProfiles.savedSecretPlaceholder} />
-        {/if}
-        {#if modelId !== 'ollama-cloud' || ollamaRequestFormat === String(LLMFormat.Ollama)}
-          <label class="flex flex-col gap-1">
-            <span class="text-sm text-textcolor2">{language.modelProfiles.ollamaThinkingMode}</span>
-            <select
-              class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
-              bind:value={ollamaThinkingMode}>
-              <option value="off" class="bg-darkbg">{language.modelProfiles.ollamaThinkingOff}</option>
-              <option value="on" class="bg-darkbg">{language.modelProfiles.ollamaThinkingOn}</option>
-              <option value="low" class="bg-darkbg">{language.modelProfiles.ollamaThinkingLow}</option>
-              <option value="medium" class="bg-darkbg">{language.modelProfiles.ollamaThinkingMedium}</option>
-              <option value="high" class="bg-darkbg">{language.modelProfiles.ollamaThinkingHigh}</option>
-            </select>
-          </label>
-        {/if}
-      </div>
-    {:else if providerId === 'debug-echo'}
-      <div class="grid gap-3 md:grid-cols-2">
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.baseUrlLabel}</span>
-          <TextInput size="sm" fullwidth bind:value={baseUrl} placeholder={language.modelProfiles.baseUrlPlaceholder} />
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.requestModelColumn}</span>
+      {/if}
+    {/if}
+    {#if section !== 'setup'}
+      {#if providerId !== 'custom-api' && providerId !== 'ollama'}
+        <label class="flex flex-col gap-1 text-sm">
+          <span>{language.modelProfiles.requestModelColumn}</span>
           <TextInput
             size="sm"
             fullwidth
             bind:value={requestModel}
             placeholder={language.modelProfiles.requestModelPlaceholder} />
         </label>
-      </div>
+      {/if}
+      {#if providerId === 'llmgateway'}
+        <div class="grid gap-3 sm:grid-cols-2">
+          <label class="flex flex-col gap-1">
+            <span class="text-sm text-textcolor2">{language.modelProfiles.llmGatewayReasoningEffort}</span>
+            <select
+              data-llm-gateway-reasoning-effort
+              class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+              bind:value={llmGatewayReasoningEffort}>
+              <option value="" class="bg-darkbg">{language.modelProfiles.runtimeUnset}</option>
+              {#each LLM_GATEWAY_REASONING_EFFORTS as effort (effort)}
+                <option value={effort} class="bg-darkbg">{effort}</option>
+              {/each}
+            </select>
+          </label>
+          <label class="flex flex-col gap-1">
+            <span class="text-sm text-textcolor2">{language.modelProfiles.llmGatewayVerbosity}</span>
+            <select
+              data-llm-gateway-verbosity
+              class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+              bind:value={llmGatewayVerbosity}>
+              <option value="" class="bg-darkbg">{language.modelProfiles.runtimeUnset}</option>
+              {#each LLM_GATEWAY_VERBOSITIES as verbosity (verbosity)}
+                <option value={verbosity} class="bg-darkbg">{verbosity}</option>
+              {/each}
+            </select>
+          </label>
+          <label class="flex flex-col gap-1">
+            <span class="text-sm text-textcolor2">{language.modelProfiles.llmGatewayServiceTier}</span>
+            <select
+              data-llm-gateway-service-tier
+              class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+              bind:value={llmGatewayServiceTier}>
+              <option value="" class="bg-darkbg">{language.modelProfiles.runtimeUnset}</option>
+              {#each LLM_GATEWAY_SERVICE_TIERS as tier (tier)}
+                <option value={tier} class="bg-darkbg">{tier}</option>
+              {/each}
+            </select>
+          </label>
+          <label class="flex flex-col gap-1">
+            <span class="text-sm text-textcolor2">{language.modelProfiles.llmGatewayRouting}</span>
+            <select
+              data-llm-gateway-routing
+              class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+              bind:value={llmGatewayRouting}>
+              <option value="" class="bg-darkbg">{language.modelProfiles.runtimeUnset}</option>
+              {#each LLM_GATEWAY_ROUTING_STRATEGIES as routing (routing)}
+                <option value={routing} class="bg-darkbg">{routing}</option>
+              {/each}
+            </select>
+          </label>
+        </div>
+      {:else if providerId === 'custom-api'}
+        <div class="grid gap-4 md:grid-cols-2">
+          <div class="flex flex-col gap-2">
+            <h4 class="text-sm font-semibold">{language.modelProfiles.extraHeaders}</h4>
+            <KeyValueRowsEditor
+              bind:rows={extraHeadersRows}
+              keyPlaceholder={language.modelProfiles.headerNamePlaceholder}
+              valuePlaceholder={language.modelProfiles.headerValuePlaceholder}
+              addLabel={language.modelProfiles.addHeader}
+              emptyLabel={language.modelProfiles.noExtraHeaders} />
+          </div>
+
+          <div class="flex flex-col gap-2">
+            <h4 class="text-sm font-semibold">{language.modelProfiles.additionalParams}</h4>
+            <KeyValueRowsEditor
+              bind:rows={additionalParamRows}
+              keyPlaceholder={language.modelProfiles.paramNamePlaceholder}
+              valuePlaceholder={language.modelProfiles.paramValuePlaceholder}
+              addLabel={language.modelProfiles.addParam}
+              emptyLabel={language.modelProfiles.noAdditionalParams} />
+          </div>
+        </div>
+
+        <div class="grid gap-3 md:grid-cols-2">
+          <label class="flex flex-col gap-1">
+            <span class="text-sm text-textcolor2">{language.modelProfiles.customTokenizer}</span>
+            <select
+              data-custom-tokenizer-picker
+              class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+              bind:value={customTokenizer}>
+              <option value="" class="bg-darkbg">{language.modelProfiles.defaultTokenizer}</option>
+              {#each tokenizerOptions as option (option.modelTokenizer)}
+                <option value={String(option.modelTokenizer)} class="bg-darkbg">
+                  {language.tokenizerOptions[option.labelKey]}
+                </option>
+              {/each}
+            </select>
+          </label>
+          <div class="flex flex-col gap-2">
+            <span class="text-sm text-textcolor2">{language.modelProfiles.customApiFlags}</span>
+            <div
+              data-model-custom-api-flags
+              class="grid max-h-56 grid-cols-1 gap-2 overflow-y-auto rounded-md border border-darkborderc p-2 sm:grid-cols-2">
+              {#each flagOptions as option (option.flag)}
+                <label class="flex min-w-0 items-center gap-2 text-sm text-textcolor2">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4"
+                    checked={customFlags.includes(option.flag)}
+                    onchange={(event) => {
+                      setCustomFlag(option.flag, event.currentTarget.checked)
+                    }} />
+                  <span class="min-w-0 break-all">{option.label}</span>
+                </label>
+              {/each}
+            </div>
+          </div>
+        </div>
+      {:else if providerId === 'ollama'}
+        <div class="grid gap-3 sm:grid-cols-2">
+          {#if modelId === 'ollama-cloud'}
+            <label class="flex flex-col gap-1">
+              <span class="text-sm text-textcolor2">{language.modelProfiles.ollamaRequestFormat}</span>
+              <select
+                class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+                bind:value={ollamaRequestFormat}>
+                <option value={String(LLMFormat.Ollama)} class="bg-darkbg">
+                  {language.modelProfiles.ollamaNativeFormat}
+                </option>
+                <option value={String(LLMFormat.OpenAICompatible)} class="bg-darkbg">
+                  {language.modelProfiles.ollamaOpenAIFormat}
+                </option>
+                <option value={String(LLMFormat.OpenAIResponseAPI)} class="bg-darkbg">
+                  {language.modelProfiles.ollamaResponsesFormat}
+                </option>
+                <option value={String(LLMFormat.Anthropic)} class="bg-darkbg">
+                  {language.modelProfiles.ollamaAnthropicFormat}
+                </option>
+              </select>
+            </label>
+          {/if}
+          {#if modelId !== 'ollama-cloud' || ollamaRequestFormat === String(LLMFormat.Ollama)}
+            <label class="flex flex-col gap-1">
+              <span class="text-sm text-textcolor2">{language.modelProfiles.ollamaThinkingMode}</span>
+              <select
+                class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+                bind:value={ollamaThinkingMode}>
+                <option value="off" class="bg-darkbg">{language.modelProfiles.ollamaThinkingOff}</option>
+                <option value="on" class="bg-darkbg">{language.modelProfiles.ollamaThinkingOn}</option>
+                <option value="low" class="bg-darkbg">{language.modelProfiles.ollamaThinkingLow}</option>
+                <option value="medium" class="bg-darkbg">{language.modelProfiles.ollamaThinkingMedium}</option>
+                <option value="high" class="bg-darkbg">{language.modelProfiles.ollamaThinkingHigh}</option>
+              </select>
+            </label>
+          {/if}
+        </div>
+      {:else if providerId === 'debug-echo'}
+        <label class="flex flex-col gap-1 text-sm">
+          <span>{language.modelProfiles.baseUrlLabel}</span>
+          <TextInput size="sm" fullwidth bind:value={baseUrl} placeholder={language.modelProfiles.baseUrlPlaceholder} />
+        </label>
+      {/if}
     {/if}
   </div>
 {/if}

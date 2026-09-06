@@ -3,10 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const colorSchemeMocks = vi.hoisted(() => ({
   alertError: vi.fn(),
   applyServerBackedSettingsPatch: vi.fn(),
+  cacheCustomCSS: vi.fn(),
   database: {} as any,
   downloadFile: vi.fn(),
   selectSingleFile: vi.fn(),
-  setDatabase: vi.fn(),
+  settingsResourceState: {
+    value: {} as any,
+    groupStatuses: { display: 'ready' },
+    shellRevision: null as number | null,
+    status: 'ready',
+  },
   stores: {
     customCSS: createTestStore(''),
     safeMode: createTestStore(false),
@@ -16,13 +22,14 @@ const colorSchemeMocks = vi.hoisted(() => ({
 function createTestStore<T>(initialValue: T) {
   let value = initialValue
   return {
-    set(nextValue: T) {
+    set: vi.fn((nextValue: T) => {
       value = nextValue
-    },
+    }),
     subscribe(run: (value: T) => void) {
       run(value)
       return () => {}
     },
+    value: () => value,
   }
 }
 
@@ -30,7 +37,7 @@ vi.mock('../alert', () => ({
   alertError: colorSchemeMocks.alertError,
 }))
 
-vi.mock('../server/settingsBridge.svelte', () => ({
+vi.mock('../server/settingsOwner.svelte', () => ({
   applyServerBackedSettingsPatch: colorSchemeMocks.applyServerBackedSettingsPatch,
 }))
 
@@ -38,9 +45,16 @@ vi.mock('../globalApi.svelte', () => ({
   downloadFile: colorSchemeMocks.downloadFile,
 }))
 
+vi.mock('./customCSSCache', () => ({
+  cacheCustomCSS: colorSchemeMocks.cacheCustomCSS,
+}))
+
 vi.mock('../storage/database.svelte', () => ({
   getDatabase: () => colorSchemeMocks.database,
-  setDatabase: colorSchemeMocks.setDatabase,
+}))
+
+vi.mock('../server/resourceState.svelte', () => ({
+  settingsResourceState: colorSchemeMocks.settingsResourceState,
 }))
 
 vi.mock('../stores.svelte', () => ({
@@ -58,12 +72,18 @@ vi.mock('../filePicker', () => ({
 
 import {
   builtInColorSchemes,
+  changeColorScheme,
+  exportColorScheme,
   importColorScheme,
   migrateLegacyBuiltInColorScheme,
   updateColorScheme,
+  updateCustomColorScheme,
+  updateTextThemeAndCSS,
   type ColorScheme,
 } from './colorscheme'
 import { language } from 'src/lang'
+import { isLite } from '../lite'
+import { readDisplaySettingsCache } from './displaySettingsCache'
 
 type SelectedFile = {
   name: string
@@ -124,15 +144,124 @@ async function flushAsync(): Promise<void> {
 }
 
 beforeEach(() => {
+  isLite.set(false)
   colorSchemeMocks.database = {
     colorSchemeName: 'default',
     colorScheme: scheme('aaa'),
+    customColorScheme: scheme('aaa'),
   } as any
+  colorSchemeMocks.settingsResourceState.value = colorSchemeMocks.database
+  colorSchemeMocks.settingsResourceState.groupStatuses.display = 'ready'
+  colorSchemeMocks.settingsResourceState.shellRevision = null
+  colorSchemeMocks.settingsResourceState.status = 'ready'
   colorSchemeMocks.alertError.mockReset()
   colorSchemeMocks.applyServerBackedSettingsPatch.mockReset()
+  colorSchemeMocks.cacheCustomCSS.mockReset()
+  colorSchemeMocks.downloadFile.mockReset()
   colorSchemeMocks.selectSingleFile.mockReset()
+  colorSchemeMocks.stores.customCSS.set('')
+  colorSchemeMocks.stores.customCSS.set.mockClear()
+  colorSchemeMocks.stores.safeMode.set(false)
+  colorSchemeMocks.stores.safeMode.set.mockClear()
   colorSchemeMocks.applyServerBackedSettingsPatch.mockImplementation((patch: Record<string, unknown>) => {
     Object.assign(colorSchemeMocks.database, patch)
+  })
+})
+
+describe('custom CSS cache reconciliation', () => {
+  it('replaces cached display CSS from the initial server shell', () => {
+    colorSchemeMocks.database.customCSS = 'body { color: rebeccapurple; }'
+    colorSchemeMocks.settingsResourceState.groupStatuses.display = 'idle'
+    colorSchemeMocks.settingsResourceState.shellRevision = 7
+
+    updateTextThemeAndCSS()
+
+    expect(colorSchemeMocks.cacheCustomCSS).toHaveBeenCalledWith('body { color: rebeccapurple; }')
+    expect(colorSchemeMocks.stores.customCSS.value()).toBe('body { color: rebeccapurple; }')
+  })
+
+  it('does not rewrite the live style when the server CSS matches the cached display', () => {
+    colorSchemeMocks.database.customCSS = 'body { color: rebeccapurple; }'
+    colorSchemeMocks.stores.customCSS.set('body { color: rebeccapurple; }')
+    colorSchemeMocks.stores.customCSS.set.mockClear()
+
+    updateTextThemeAndCSS()
+
+    expect(colorSchemeMocks.cacheCustomCSS).toHaveBeenCalledWith('body { color: rebeccapurple; }')
+    expect(colorSchemeMocks.stores.customCSS.set).not.toHaveBeenCalled()
+  })
+
+  it('refreshes the cache while Safe Mode keeps the live style disabled', () => {
+    colorSchemeMocks.database.customCSS = 'body { color: rebeccapurple; }'
+    colorSchemeMocks.stores.safeMode.set(true)
+
+    updateTextThemeAndCSS()
+
+    expect(colorSchemeMocks.cacheCustomCSS).toHaveBeenCalledWith('body { color: rebeccapurple; }')
+    expect(colorSchemeMocks.stores.customCSS.value()).toBe('')
+  })
+})
+
+describe('custom color scheme persistence', () => {
+  it('restores the saved custom palette without replacing it when presets are selected', () => {
+    const custom = scheme('bbb')
+    colorSchemeMocks.database.customColorScheme = custom
+
+    changeColorScheme('light')
+    expect(colorSchemeMocks.database.colorScheme).toEqual(builtInColorSchemes.light)
+    expect(colorSchemeMocks.database.customColorScheme).toEqual(custom)
+
+    changeColorScheme('custom')
+    expect(colorSchemeMocks.database.colorSchemeName).toBe('custom')
+    expect(colorSchemeMocks.database.colorScheme).toEqual(custom)
+  })
+
+  it('updates the saved and active custom palettes together', () => {
+    const custom = scheme('ccc')
+
+    updateCustomColorScheme(custom)
+
+    expect(colorSchemeMocks.applyServerBackedSettingsPatch).toHaveBeenLastCalledWith({
+      customColorScheme: custom,
+      colorScheme: custom,
+      colorSchemeName: 'custom',
+    })
+    expect(colorSchemeMocks.database.customColorScheme).toEqual(custom)
+    expect(colorSchemeMocks.database.colorScheme).toEqual(custom)
+  })
+
+  it('exports the saved custom palette even while a preset is active', () => {
+    const custom = scheme('ddd')
+    colorSchemeMocks.database.customColorScheme = custom
+    colorSchemeMocks.database.colorScheme = builtInColorSchemes.light
+
+    exportColorScheme()
+
+    expect(colorSchemeMocks.downloadFile).toHaveBeenCalledWith('colorScheme.json', JSON.stringify(custom))
+  })
+
+  it('does not export a compatibility projection while the display owner is loading', () => {
+    const compatibility = scheme('eee')
+    colorSchemeMocks.database.customColorScheme = compatibility
+    colorSchemeMocks.settingsResourceState.value = { customColorScheme: scheme('fff') }
+    colorSchemeMocks.settingsResourceState.groupStatuses.display = 'loading'
+
+    exportColorScheme()
+
+    expect(colorSchemeMocks.downloadFile).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when the display owner is in error', () => {
+    colorSchemeMocks.settingsResourceState.groupStatuses.display = 'error'
+    document.documentElement.style.removeProperty('--risu-theme-bgcolor')
+
+    updateColorScheme()
+    exportColorScheme()
+    changeColorScheme('custom')
+
+    expect(document.documentElement.style.getPropertyValue('--risu-theme-bgcolor')).toBe('')
+    expect(colorSchemeMocks.downloadFile).not.toHaveBeenCalled()
+    expect(colorSchemeMocks.applyServerBackedSettingsPatch).not.toHaveBeenCalled()
   })
 })
 
@@ -201,10 +330,12 @@ describe('importColorScheme freshness', () => {
         {
           colorSchemeName: 'custom',
           colorScheme: scheme('bbb'),
+          customColorScheme: scheme('bbb'),
         },
       ],
     ])
     expect(colorSchemeMocks.database.colorScheme).toEqual(scheme('bbb'))
+    expect(colorSchemeMocks.database.customColorScheme).toEqual(scheme('bbb'))
     expect(colorSchemeMocks.alertError).toHaveBeenCalledWith(language.fileSelectionStale)
   })
 })
@@ -236,6 +367,34 @@ describe('built-in color scheme contrast', () => {
   )
 })
 
+describe('native control color scheme', () => {
+  it('applies and caches the shell palette before the Display group is ready', () => {
+    colorSchemeMocks.settingsResourceState.groupStatuses.display = 'idle'
+    colorSchemeMocks.settingsResourceState.shellRevision = 7
+    colorSchemeMocks.database.colorScheme = { ...builtInColorSchemes.light }
+    updateColorScheme()
+    expect(document.documentElement.style.getPropertyValue('--risu-theme-bgcolor')).toBe('#ffffff')
+    expect(readDisplaySettingsCache().styles['--risu-theme-color-scheme']).toBe('light')
+  })
+
+  it('caches the resolved Lite palette instead of the configured light palette', () => {
+    isLite.set(true)
+    colorSchemeMocks.database.colorScheme = { ...builtInColorSchemes.light }
+    updateColorScheme()
+    expect(readDisplaySettingsCache().styles['--risu-theme-bgcolor']).toBe(builtInColorSchemes.lite.bgcolor)
+    expect(readDisplaySettingsCache().styles['--risu-theme-color-scheme']).toBe('dark')
+    isLite.set(false)
+  })
+
+  it.each(['dark', 'light'] as const)('publishes the %s scheme for browser-owned controls', (type) => {
+    colorSchemeMocks.database.colorScheme = { ...scheme('aaa'), type }
+
+    updateColorScheme()
+
+    expect(document.documentElement.style.getPropertyValue('--risu-theme-color-scheme')).toBe(type)
+  })
+})
+
 describe('legacy built-in color scheme migration', () => {
   it.each([
     ['default', '#64748b'],
@@ -258,6 +417,7 @@ describe('legacy built-in color scheme migration', () => {
       colorSchemeName: 'nature',
       colorScheme: { ...builtInColorSchemes.nature, textcolor2: '#4d908e' },
     }
+    colorSchemeMocks.settingsResourceState.value = colorSchemeMocks.database
 
     updateColorScheme()
 

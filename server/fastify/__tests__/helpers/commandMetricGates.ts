@@ -22,6 +22,7 @@ export const BROAD_WRITE_TABLES = [
   'bot_presets',
   'characters',
   'chats',
+  'greeting_translations',
   'hypa_v3_presets',
   'loadouts',
   'lore_books',
@@ -37,6 +38,19 @@ export const BROAD_WRITE_TABLES = [
 ] as const
 
 const MESSAGE_STORE_TABLES = ['chat_hypa_v3', 'messages'] as const
+
+export const BARDWIKI_WRITE_TABLES = [
+  'bardwiki_change_manifest',
+  'bardwiki_chat_settings',
+  'bardwiki_document_search',
+  'bardwiki_document_sources',
+  'bardwiki_document_versions',
+  'bardwiki_documents',
+  'bardwiki_jobs',
+  'bardwiki_links',
+  'bardwiki_rebuild_staging',
+  'bardwiki_turn_receipts',
+] as const
 
 export interface CommandMetricGate {
   reviewGate: string
@@ -103,7 +117,7 @@ export const COMMAND_METRIC_REVIEW_GATES = {
       "character-scoped edits write that character row (+ its own chat rows on folder-cascade / chats-reorder / fork, + the forked chat's messages, + settings only when a pointer moved) and never another collection table",
     sections: COMMAND_METRIC_SECTIONS,
     dbJsonWriteMs: 0,
-    maxTables: ['chat_hypa_v3', 'characters', 'chats', 'messages', 'settings'],
+    maxTables: ['chat_hypa_v3', 'characters', 'chats', 'greeting_translations', 'messages', 'settings'],
     forbiddenTables: [
       'bot_presets',
       'hypa_v3_presets',
@@ -129,6 +143,12 @@ export const COMMAND_METRIC_REVIEW_GATES = {
     dbJsonWriteMs: 0,
     forbiddenTables: ['characters', 'chats'],
   },
+  'targeted-cross-owner': {
+    reviewGate: 'cross-owner deletion writes only the explicitly cascaded owner rows',
+    sections: COMMAND_METRIC_SECTIONS,
+    dbJsonWriteMs: 0,
+    maxTables: ['characters', 'chats', 'loadouts', 'modules', 'personas', 'settings'],
+  },
   'targeted-plugin-storage': {
     reviewGate: 'plugin custom storage writes touch only plugin_custom_storage',
     sections: COMMAND_METRIC_SECTIONS,
@@ -140,6 +160,18 @@ export const COMMAND_METRIC_REVIEW_GATES = {
     sections: COMMAND_METRIC_SECTIONS,
     dbJsonWriteMs: 0,
     expectedTables: ['inlay_catalog'],
+  },
+  'targeted-greeting-translation': {
+    reviewGate: 'greeting translation commits touch only the normalized greeting translation store',
+    sections: COMMAND_METRIC_SECTIONS,
+    dbJsonWriteMs: 0,
+    expectedTables: ['greeting_translations'],
+  },
+  'targeted-bardwiki': {
+    reviewGate: 'BardWiki commands write only the normalized per-chat wiki, receipt, and job tables',
+    sections: COMMAND_METRIC_SECTIONS,
+    dbJsonWriteMs: 0,
+    maxTables: BARDWIKI_WRITE_TABLES,
   },
 } satisfies Record<string, CommandMetricGate>
 
@@ -172,8 +204,8 @@ export function commandMetricReviewGate(metric: CommandMutationMetric): CommandM
 /**
  * Assert a `command_mutation` metric satisfies the review gate for its
  * `mutationPath`: every timing section is a non-negative number, `dbJsonWriteMs`
- * matches when the gate fixes it, and `writtenTables` (when captured) respects
- * the gate's exact / subset / disjoint table constraints.
+ * matches when the gate fixes it, and `writtenTables` is present whenever the
+ * gate declares an exact / subset / disjoint table constraint and respects it.
  */
 export function assertCommandMetricGate(metric: CommandMutationMetric): CommandMetricGate {
   const gate = commandMetricReviewGate(metric)
@@ -184,6 +216,10 @@ export function assertCommandMetricGate(metric: CommandMutationMetric): CommandM
     expect(metric.dbJsonWriteMs, `${metric.type}.dbJsonWriteMs`).toBe(gate.dbJsonWriteMs)
   }
   const written = metric.writtenTables
+  const hasTableBudget = Boolean(gate.expectedTables || gate.maxTables || gate.forbiddenTables)
+  if (hasTableBudget) {
+    expect(written, `${metric.mutationPath}.writtenTables is required by its table budget`).toEqual(expect.any(Array))
+  }
   if (written) {
     if (gate.expectedTables) {
       expect(written, `${metric.mutationPath}.writtenTables`).toEqual([...gate.expectedTables])

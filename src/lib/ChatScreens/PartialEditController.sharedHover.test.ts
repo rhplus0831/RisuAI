@@ -1,13 +1,23 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { readFileSync } from 'node:fs'
 
-vi.mock('src/ts/storage/database.svelte', () => ({
-  getDatabase: () => ({ lineHeight: 1.25, zoomsize: 100 }),
+const partialEditSettingsMocks = vi.hoisted(() => ({
+  alertNormal: vi.fn(),
+  settingsResourceState: {
+    value: { lineHeight: 1.5, zoomsize: 200 },
+    groupStatuses: { display: 'ready' },
+  },
+}))
+
+vi.mock('src/ts/alert', () => ({ alertNormal: partialEditSettingsMocks.alertNormal }))
+
+vi.mock('src/ts/server/resourceState.svelte', () => ({
+  settingsResourceState: partialEditSettingsMocks.settingsResourceState,
 }))
 
 import PartialEditController from './PartialEditController.svelte'
 import type { PartialEditSaveDetail } from './partialEditFreshness'
+import { TRANSCRIPT_INTERACTION_CONTEXT, type TranscriptInteractionProvider } from './transcriptInteraction'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -134,6 +144,7 @@ function mountController(
   bodyRoot: HTMLElement,
   options: {
     messageData?: string
+    interactions?: TranscriptInteractionProvider
     chatIndex?: number
     chatId?: string
     messageId?: string
@@ -146,6 +157,7 @@ function mountController(
   document.body.appendChild(target)
   const component = mount(PartialEditController, {
     target,
+    context: options.interactions ? new Map([[TRANSCRIPT_INTERACTION_CONTEXT, options.interactions]]) : undefined,
     props: {
       messageData: options.messageData ?? 'partial edit shared hover body',
       chatIndex: options.chatIndex ?? 0,
@@ -210,6 +222,9 @@ function getFloatingAction(action: 'delete' | 'edit'): HTMLButtonElement {
 }
 
 beforeEach(() => {
+  partialEditSettingsMocks.settingsResourceState.value.lineHeight = 1.5
+  partialEditSettingsMocks.settingsResourceState.value.zoomsize = 200
+  partialEditSettingsMocks.settingsResourceState.groupStatuses.display = 'ready'
   vi.stubGlobal('IntersectionObserver', VisibleIntersectionObserver)
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
     configurable: true,
@@ -228,7 +243,7 @@ afterEach(() => {
 })
 
 describe('PartialEditController shared hover handler', () => {
-  it('L41: visible partial edit controllers share one document mousemove listener and remove it after unmount', async () => {
+  it('visible partial edit controllers share one document mousemove listener and remove it after unmount', async () => {
     const addSpy = vi.spyOn(document, 'addEventListener')
     const removeSpy = vi.spyOn(document, 'removeEventListener')
     const first = createHoverFixture({
@@ -273,7 +288,7 @@ describe('PartialEditController shared hover handler', () => {
     expect(rafHarness.pendingCount()).toBe(0)
   })
 
-  it('L41: shared hover keeps button zone reachability and hides on leave or scroll', async () => {
+  it('shared hover keeps button zone reachability and hides on leave or scroll', async () => {
     const fixture = createHoverFixture({
       text: 'hoverable block text',
       left: 20,
@@ -307,7 +322,7 @@ describe('PartialEditController shared hover handler', () => {
     expect(wrapper.style.display).toBe('none')
   })
 
-  it('L41: shared hover suppresses the block button during text selection', async () => {
+  it('shared hover suppresses the block button during text selection', async () => {
     const fixture = createHoverFixture({
       text: 'selected block text',
       left: 30,
@@ -382,6 +397,58 @@ describe('PartialEditController shared hover handler', () => {
     })
   })
 
+  it('leaves partial editor and confirmation state closed when interaction admission is full', async () => {
+    const fixture = createHoverFixture({ text: 'target block', left: 40, top: 100, width: 180, height: 48 })
+    stubElementFromPoint([fixture])
+    const reserve = vi.fn<TranscriptInteractionProvider['reserve']>(() => null)
+    mountController(fixture.bodyRoot, {
+      messageData: 'alpha target block omega',
+      messageId: 'message-a',
+      interactions: { reserve, subscribeAvailable: () => () => {} },
+    })
+    await settleEffects()
+    movePointer(60, 112)
+    await flushHoverFrame()
+    getBlockButtonWrapper().querySelector<HTMLButtonElement>('.partial-edit-btn-edit')?.click()
+    await tick()
+    expect(reserve).toHaveBeenCalledWith('message-a', expect.any(Object))
+    expect(document.querySelector('.partial-edit-overlay')).toBeNull()
+    expect(document.querySelector('.partial-edit-textarea')).toBeNull()
+    expect(partialEditSettingsMocks.alertNormal).toHaveBeenCalledOnce()
+  })
+
+  it('holds a partial editor through its draft and releases on cancellation or row destruction', async () => {
+    const fixture = createHoverFixture({ text: 'target block', left: 40, top: 100, width: 180, height: 48 })
+    stubElementFromPoint([fixture])
+    const release = vi.fn()
+    const reserve = vi.fn<TranscriptInteractionProvider['reserve']>(() => release)
+    const mounted = mountController(fixture.bodyRoot, {
+      messageData: 'alpha target block omega',
+      messageId: 'message-a',
+      interactions: { reserve, subscribeAvailable: () => () => {} },
+    })
+    await settleEffects()
+    movePointer(60, 112)
+    await flushHoverFrame()
+    getBlockButtonWrapper().querySelector<HTMLButtonElement>('.partial-edit-btn-edit')?.click()
+    await tick()
+    expect(reserve).toHaveBeenCalledWith('message-a', expect.any(Object))
+    expect(document.querySelector('.partial-edit-textarea')).not.toBeNull()
+    expect(release).not.toHaveBeenCalled()
+    document.querySelector<HTMLButtonElement>('.partial-edit-cancel-btn')?.click()
+    await tick()
+    expect(release).toHaveBeenCalledOnce()
+
+    movePointer(60, 112)
+    await flushHoverFrame()
+    getBlockButtonWrapper().querySelector<HTMLButtonElement>('.partial-edit-btn-edit')?.click()
+    await tick()
+    expect(document.querySelector('.partial-edit-textarea')).not.toBeNull()
+    unmountController(mounted)
+    await tick()
+    expect(release).toHaveBeenCalledTimes(2)
+  })
+
   it('cancels delayed edit-modal scrolling when the editor closes', async () => {
     const fixture = createHoverFixture({
       text: 'closing edit block',
@@ -445,6 +512,49 @@ describe('PartialEditController shared hover handler', () => {
 })
 
 describe('PartialEditController modal accessibility', () => {
+  it('uses only ready display settings and falls back safely after owner errors', async () => {
+    const fixture = createHoverFixture({
+      text: 'styled edit block',
+      left: 40,
+      top: 100,
+      width: 180,
+      height: 48,
+    })
+    stubElementFromPoint([fixture])
+    const controller = mountController(fixture.bodyRoot, {
+      messageData: 'alpha styled edit block omega',
+    })
+    await settleEffects()
+
+    movePointer(60, 112)
+    await flushHoverFrame()
+    getFloatingAction('edit').click()
+    await settleEffects()
+
+    let textarea = document.querySelector<HTMLTextAreaElement>('.partial-edit-textarea')
+    expect(textarea?.style.fontSize).toBe('1.75rem')
+    expect(textarea?.style.lineHeight).toBe('3rem')
+
+    pressKey(textarea!, 'Escape')
+    await settleEffects()
+    unmountController(controller)
+    partialEditSettingsMocks.settingsResourceState.groupStatuses.display = 'error'
+
+    const fallbackController = mountController(fixture.bodyRoot, {
+      messageData: 'alpha styled edit block omega',
+    })
+    await settleEffects()
+    movePointer(60, 112)
+    await flushHoverFrame()
+    getFloatingAction('edit').click()
+    await settleEffects()
+
+    textarea = document.querySelector<HTMLTextAreaElement>('.partial-edit-textarea')
+    expect(textarea?.style.fontSize).toBe('0.875rem')
+    expect(textarea?.style.lineHeight).toBe('1.25rem')
+    unmountController(fallbackController)
+  })
+
   it('keeps modal focus contained and restores focus after Escape', async () => {
     const fixture = createHoverFixture({
       text: 'keyboard target block',
@@ -607,48 +717,5 @@ describe('PartialEditController modal accessibility', () => {
     await settleEffects()
     expect(document.querySelector('.partial-match-failed-modal')).toBeNull()
     expect(document.activeElement).toBe(failureEditAction)
-  })
-
-  it('caps every dialog to the padded viewport instead of enforcing a 400px mobile minimum', async () => {
-    const fixture = createHoverFixture({
-      text: 'responsive target block',
-      left: 40,
-      top: 100,
-      width: 180,
-      height: 48,
-    })
-    mountController(fixture.bodyRoot)
-    await settleEffects()
-
-    const componentSource = readFileSync('src/lib/ChatScreens/PartialEditController.svelte', 'utf8')
-    const declarationsFor = (selector: string): string => {
-      const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      const matches = Array.from(componentSource.matchAll(new RegExp(`${escapedSelector}\\s*\\{([^}]+)\\}`, 'g')))
-      const responsiveDeclarations = matches
-        .map((match) => match[1])
-        .find((declarations) => declarations.includes('min-width'))
-      expect(responsiveDeclarations, `${selector} responsive CSS rule`).toBeTruthy()
-      return responsiveDeclarations!
-    }
-
-    const desktopMinimums = new Map([
-      ['.partial-match-failed-modal', '320px'],
-      ['.partial-delete-modal', '400px'],
-      ['.partial-edit-modal', '400px'],
-      ['.partial-match-selection-modal', '400px'],
-    ])
-
-    for (const [selector, desktopMinimum] of desktopMinimums) {
-      const declarations = declarationsFor(selector)
-      expect(declarations).toContain(`min-width: min(${desktopMinimum}, calc(100vw - 24px));`)
-      expect(declarations).toMatch(/max-width: min\([^;]+calc\(100vw - 24px\)\);/)
-      expect(declarations).toContain('box-sizing: border-box;')
-    }
-
-    for (const viewportWidth of [320, 360]) {
-      const availableWidth = viewportWidth - 24
-      expect(Math.min(400, availableWidth)).toBe(availableWidth)
-      expect(availableWidth).toBeLessThan(viewportWidth)
-    }
   })
 })

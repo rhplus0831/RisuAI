@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
-import type { Database } from '../../../storage/database.svelte'
 import { compressImage } from '../compressImage'
 
 const { database } = vi.hoisted(() => ({
@@ -8,9 +7,17 @@ const { database } = vi.hoisted(() => ({
   },
 }))
 
-vi.mock(import('../../../storage/database.svelte'), () => ({
-  getDatabase: () => database as Database,
-}))
+vi.mock(
+  import('../../../server/resourceState.svelte'),
+  () =>
+    ({
+      settingsResourceState: {
+        value: database,
+        groupStatuses: { media: 'ready' },
+        status: 'ready',
+      },
+    }) as unknown as typeof import('../../../server/resourceState.svelte'),
+)
 
 const doLossyCompressionMock = vi.fn()
 vi.mock(import('../lossyCompression'), () => ({

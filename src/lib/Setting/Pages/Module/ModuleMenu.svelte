@@ -12,13 +12,13 @@
   import {
     ensureClientLorebookEntryIds as ensureImportedLorebookEntryIds,
     replaceModuleLorebookCollectionDraft as replaceModuleLorebookImportDraft,
-  } from 'src/ts/server/lorebookBridge.svelte'
-  import { getResourceDatabase as getModuleImportDatabase } from 'src/ts/server/resourceState.svelte'
+  } from 'src/ts/server/lorebookOwner.svelte'
+  import { collectionsResourceState as moduleImportCollections } from 'src/ts/server/resourceState.svelte'
   import {
     applyModuleScriptDefinitionDraft as applyModuleScriptDefinitionImportDraft,
     ensureClientScriptDefinitionIds as ensureImportedScriptDefinitionIds,
     ensureClientTriggerDefinitionIds as ensureImportedTriggerDefinitionIds,
-  } from 'src/ts/server/scriptDefinitionBridge.svelte'
+  } from 'src/ts/server/scriptDefinitionOwner.svelte'
 
   function cloneModuleImportValue<T>(value: T): T {
     return JSON.parse(JSON.stringify(value)) as T
@@ -32,10 +32,30 @@
     moduleId: string,
     currentModule: ImportTargetRisuModule | null | undefined,
   ): ImportTargetRisuModule | null {
-    return (
-      getModuleImportDatabase().modules?.find((module) => module.id === moduleId) ??
-      (currentModule?.id === moduleId ? currentModule : null)
-    )
+    if (currentModule?.id !== moduleId || moduleImportCollections.statuses.modules !== 'ready') return null
+    const modules = uniqueModuleImportOwners(moduleImportCollections.values.modules)
+    if (!modules) return null
+    return modules.find((module) => module.id === moduleId) ?? null
+  }
+
+  function uniqueModuleImportOwners(value: unknown): ImportTargetRisuModule[] | null {
+    if (!Array.isArray(value)) return null
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null
+      const module = candidate as ImportTargetRisuModule
+      if (
+        typeof module.id !== 'string' ||
+        module.id.trim() !== module.id ||
+        module.id.length === 0 ||
+        ids.has(module.id) ||
+        typeof module.name !== 'string'
+      ) {
+        return null
+      }
+      ids.add(module.id)
+    }
+    return value as ImportTargetRisuModule[]
   }
 
   function latestModuleLorebook(
@@ -132,6 +152,7 @@
   import Help from 'src/lib/Others/Help.svelte'
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
   import { getFileSrc, saveAsset, downloadFile } from 'src/ts/globalApi.svelte'
+  import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
   import { alertNormal, alertError } from 'src/ts/alert'
   import { exportRegex, importRegexRows } from 'src/ts/process/scripts'
   import { selectMultipleFile } from 'src/ts/filePicker'
@@ -143,14 +164,12 @@
     ensureClientLorebookEntryIds,
     flushPendingLorebookEntryDraftEdit,
     replaceModuleLorebookCollectionDraft,
-    watchServerBackedLorebooks,
-  } from 'src/ts/server/lorebookBridge.svelte'
+  } from 'src/ts/server/lorebookOwner.svelte'
   import {
     applyModuleScriptDefinitionDraft,
     ensureClientScriptDefinitionIds,
     ensureClientTriggerDefinitionIds,
-    watchServerBackedScriptDefinitions,
-  } from 'src/ts/server/scriptDefinitionBridge.svelte'
+  } from 'src/ts/server/scriptDefinitionOwner.svelte'
   import {
     appendFreshModuleAssets,
     beginModuleAssetUpload,
@@ -160,8 +179,9 @@
     type ModuleAssetEntry,
     type ModuleAssetUploadOperation,
   } from 'src/ts/server/moduleAssetUpload'
-  import { getResourceDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { assetListRenderKey } from 'src/ts/media/assetList'
+  import ScriptModelOverrideSelectors from 'src/lib/UI/ScriptModelOverrideSelectors.svelte'
 
   const MODULE_ASSET_EXTENSIONS = [
     'png',
@@ -196,27 +216,6 @@
   let moduleScriptDraftModuleId = $state<string | null>(null)
   let moduleScriptDraftSnapshot = ''
   let suppressModuleScriptDraftDispatch = false
-
-  $effect(() => {
-    // This panel only edits the open module's lorebook, so scope change detection
-    // to it. Reading currentModule.id here re-runs the effect (restarting the
-    // watcher with a fresh baseline) when the user opens a different module.
-    const moduleId = currentModule?.id ?? ''
-    if (draftOnly) return
-    const stopLorebooks = watchServerBackedLorebooks({ scope: { kind: 'module', moduleId } })
-    return () => stopLorebooks()
-  })
-
-  $effect(() => {
-    // This panel only edits the open module's regex/trigger definitions, so
-    // scope change detection to that one module. Reading currentModule.id here
-    // re-runs the effect (restarting the watcher with a fresh baseline) when the
-    // user opens a different module.
-    const moduleId = currentModule?.id ?? ''
-    if (draftOnly) return
-    const stopScripts = watchServerBackedScriptDefinitions({ scope: { kind: 'module', moduleId } })
-    return () => stopScripts()
-  })
 
   function snapshotModuleScriptDraft(moduleId = currentModule?.id ?? null): string {
     return JSON.stringify({
@@ -259,8 +258,12 @@
     })
   })
 
+  const useAdditionalAssetsPreview = $derived(
+    settingsResourceState.groupStatuses.display === 'ready' &&
+      settingsResourceState.value.useAdditionalAssetsPreview === true,
+  )
   const moduleAssetSourceKey = $derived(
-    getResourceDatabase().useAdditionalAssetsPreview
+    useAdditionalAssetsPreview
       ? (currentModule?.assets ?? []).map((asset) => `${asset[1]}:${asset[2] ?? ''}`).join('\n')
       : '',
   )
@@ -270,10 +273,12 @@
     const run = ++assetPreviewRun
     const nextExtensions: Record<string, string | undefined> = {}
     assetFilePath = {}
-    if (getResourceDatabase().useAdditionalAssetsPreview) {
+    if (useAdditionalAssetsPreview) {
       for (const asset of currentModule?.assets ?? []) {
         const assetPath = asset[1]
-        nextExtensions[assetPath] = asset.length > 2 && asset[2] ? asset[2] : assetPath.split('.').pop()
+        nextExtensions[assetPath] = (
+          asset.length > 2 && asset[2] ? asset[2] : assetPath.split('.').pop()
+        )?.toLowerCase()
         getFileSrc(assetPath).then((filePath) => {
           if (run !== assetPreviewRun) return
           assetFilePath[assetPath] = filePath
@@ -719,7 +724,7 @@
           {#each currentModule.assets as assets, i (assetListRenderKey(assets, i))}
             <tr>
               <td class="font-medium truncate">
-                {#if assetFilePath[assets[1]] && getResourceDatabase().useAdditionalAssetsPreview}
+                {#if assetFilePath[assets[1]] && useAdditionalAssetsPreview}
                   {#if assetFileExtensions[assets[1]] === 'mp4'}
                     <!-- svelte-ignore a11y_media_has_caption -->
                     <video controls class="mt-2 px-2 w-full m-1 rounded-md"
@@ -739,6 +744,7 @@
                   aria-label={`${language.remove}: ${assets[0]}`}
                   class="hover:text-green-500"
                   onclick={() => {
+                    if (!confirmSettingsItemRemoval()) return
                     let additionalAssets = currentModule.assets
                     additionalAssets.splice(i, 1)
                     currentModule.assets = additionalAssets
@@ -763,5 +769,9 @@
   <div class="flex items-center mt-4">
     <Check bind:check={currentModule.lowLevelAccess} name={language.lowLevelAccess} />
     <span> <Help key="lowLevelAccess" name={language.lowLevelAccess} /></span>
+  </div>
+
+  <div class="mt-4">
+    <ScriptModelOverrideSelectors bind:value={currentModule.scriptModelOverrides} />
   </div>
 {/if}

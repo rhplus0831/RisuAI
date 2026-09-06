@@ -210,7 +210,7 @@ describe('memory selection service', () => {
     }
   })
 
-  it('K1: empty-query selection keeps embedding diagnostics without reading malformed vectors', () => {
+  it('empty-query selection keeps embedding diagnostics without reading malformed vectors', () => {
     const db = openDatabase(makeDataDir())
     try {
       seedMemory(db, {
@@ -266,7 +266,7 @@ describe('memory selection service', () => {
     }
   })
 
-  it('K1: valid-query selection still fails when a malformed vector must be decoded', () => {
+  it('valid-query selection still fails when a malformed vector must be decoded', () => {
     const db = openDatabase(makeDataDir())
     try {
       seedMemory(db, {
@@ -302,7 +302,7 @@ describe('memory selection service', () => {
     }
   })
 
-  it('L20: selects from a shared summary snapshot without rereading summaries', () => {
+  it('selects from a shared summary snapshot without rereading summaries', () => {
     const db = openDatabase(makeDataDir())
     try {
       seedMemory(db, {

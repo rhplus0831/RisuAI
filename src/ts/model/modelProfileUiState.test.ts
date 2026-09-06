@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Database } from '../storage/database.svelte'
 import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, OpenAIParameters, type LLMModel } from './types'
-import { MODEL_ROLES, type ModelRole } from './modelRoles'
+import { MODEL_ROLES, type ModelRole } from '@risuai/shared-core/model-roles'
 import {
   getModelProfileRoleStatus,
   getModelProfileRolesByStatus,
@@ -128,13 +128,14 @@ describe('resolveModelProfileUiState', () => {
     ) as Database['modelRoleProfiles']
     const state = resolveModelProfileUiState({
       database: db({
+        providerCredentials: [{ id: 'credential-anthropic', name: 'Anthropic', type: 'apiKey', apiKey: 'profile-key' }],
         modelProfiles: [
           {
             id: 'durable-anthropic',
             name: 'Durable Anthropic',
             providerId: 'anthropic',
             modelId: 'claude-3-5-sonnet-latest',
-            providerOptions: { apiKey: 'profile-key' },
+            providerOptions: { credentialId: 'credential-anthropic' },
           },
         ],
         modelRoleProfiles: durableRoleBindings,
@@ -155,13 +156,14 @@ describe('resolveModelProfileUiState', () => {
     const state = resolveModelProfileUiState({
       database: db({
         subModel: 'legacy-anthropic',
+        providerCredentials: [{ id: 'credential-anthropic', name: 'Anthropic', type: 'apiKey', apiKey: 'profile-key' }],
         modelProfiles: [
           {
             id: 'durable-anthropic',
             name: 'Durable Anthropic',
             providerId: 'anthropic',
             modelId: 'claude-3-5-sonnet-latest',
-            providerOptions: { apiKey: 'profile-key' },
+            providerOptions: { credentialId: 'credential-anthropic' },
           },
         ],
         modelRoleProfiles: mixedRoleBindings,
@@ -263,13 +265,14 @@ describe('resolveModelProfileUiState', () => {
   it('exposes role status maps and helpers without changing resolved profile access', () => {
     const state = resolveModelProfileUiState({
       database: db({
+        providerCredentials: [{ id: 'credential-openai', name: 'OpenAI', type: 'apiKey', apiKey: 'profile-key' }],
         modelProfiles: [
           {
             id: 'ready-openai',
             name: 'Ready OpenAI',
             providerId: 'openai',
             modelId: 'gpt-5',
-            providerOptions: { apiKey: 'profile-key' },
+            providerOptions: { credentialId: 'credential-openai' },
           },
           {
             id: 'broken-profile',
@@ -299,13 +302,14 @@ describe('resolveModelProfileUiState', () => {
   it('marks a generally routable Anthropic memory profile unsupported', () => {
     const state = resolveModelProfileUiState({
       database: db({
+        providerCredentials: [{ id: 'credential-anthropic', name: 'Anthropic', type: 'apiKey', apiKey: 'profile-key' }],
         modelProfiles: [
           {
             id: 'anthropic-memory',
             name: 'Anthropic Memory',
             providerId: 'anthropic',
             modelId: 'claude-3-5-sonnet-latest',
-            providerOptions: { apiKey: 'profile-key' },
+            providerOptions: { credentialId: 'credential-anthropic' },
           },
         ],
         modelRoleProfiles: { memory: { mode: 'profile', profileId: 'anthropic-memory' } },

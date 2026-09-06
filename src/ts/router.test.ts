@@ -1,11 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
+import { getResourceDatabase, withTestDatabaseWrite } from './__tests__/resourceDatabaseState'
 
 const routerMocks = vi.hoisted(() => ({
   changeChar: vi.fn<(...args: any[]) => Promise<void> | void>(),
   changeChatTo: vi.fn(),
+  changeUserPersonaWithOutcome: vi.fn(),
   findCharacterIndexbyId: vi.fn<(characterId: string) => number>(() => -1),
   openPlaygroundChat: vi.fn(),
+  finishRouteResources: vi.fn(async () => true),
+  failActiveRouteLoad: vi.fn(),
+  preloadRouteComponents: vi.fn(async () => undefined),
+  prepareRouteResources: vi.fn(async () => true),
+}))
+
+vi.mock('./server/routeResourceLoader', () => ({
+  finishRouteResources: routerMocks.finishRouteResources,
+  failActiveRouteLoad: routerMocks.failActiveRouteLoad,
+  prepareRouteResources: routerMocks.prepareRouteResources,
+}))
+
+vi.mock('./routeComponentPreload', () => ({
+  preloadRouteComponents: routerMocks.preloadRouteComponents,
 }))
 
 vi.mock('./characters', () => ({
@@ -14,11 +30,17 @@ vi.mock('./characters', () => ({
 
 vi.mock('./globalApi.svelte', () => ({
   changeChatTo: routerMocks.changeChatTo,
+  downloadFile: vi.fn(),
+  saveAsset: vi.fn(),
 }))
 
 vi.mock('./playground', () => ({
   PLAYGROUND_CHARACTER_ID: 'playground',
   openPlaygroundChat: routerMocks.openPlaygroundChat,
+}))
+
+vi.mock('./persona', () => ({
+  changeUserPersonaWithOutcome: routerMocks.changeUserPersonaWithOutcome,
 }))
 
 vi.mock('./process/index.svelte', async () => {
@@ -70,9 +92,14 @@ async function importRouterAt(path: string) {
 beforeEach(() => {
   routerMocks.changeChar.mockReset()
   routerMocks.changeChatTo.mockReset()
+  routerMocks.changeUserPersonaWithOutcome.mockReset()
   routerMocks.findCharacterIndexbyId.mockReset()
   routerMocks.findCharacterIndexbyId.mockReturnValue(-1)
   routerMocks.openPlaygroundChat.mockReset()
+  routerMocks.finishRouteResources.mockReset().mockResolvedValue(true)
+  routerMocks.failActiveRouteLoad.mockReset()
+  routerMocks.preloadRouteComponents.mockReset().mockResolvedValue(undefined)
+  routerMocks.prepareRouteResources.mockReset().mockResolvedValue(true)
 })
 
 afterEach(async () => {
@@ -82,6 +109,72 @@ afterEach(async () => {
 })
 
 describe('router initial application', () => {
+  it('keeps route stores unchanged until the target component chunks are ready', async () => {
+    const router = await importRouterAt('/')
+    const stores = await import('./stores.svelte')
+    const componentLoad = deferred()
+    routerMocks.preloadRouteComponents.mockReturnValueOnce(componentLoad.promise)
+    const route = { kind: 'settings', path: '/settings/display', section: 'display', index: 3 } as const
+
+    const applying = router.applyRouteToStores(route)
+    await vi.waitFor(() => expect(routerMocks.preloadRouteComponents).toHaveBeenCalledWith(route))
+
+    expect(get(stores.settingsOpen)).toBe(false)
+    expect(get(stores.SettingsMenuIndex)).toBe(1)
+
+    componentLoad.resolve()
+    await expect(applying).resolves.toBe(true)
+    expect(get(stores.settingsOpen)).toBe(true)
+    expect(get(stores.SettingsMenuIndex)).toBe(3)
+  })
+
+  it('keeps the previous route stores and exposes a local error when a target chunk fails', async () => {
+    const router = await importRouterAt('/')
+    const stores = await import('./stores.svelte')
+    const error = new Error('missing route chunk')
+    routerMocks.preloadRouteComponents.mockRejectedValueOnce(error)
+    const route = { kind: 'grid', path: '/grid' } as const
+    const previousSelection = get(stores.selectedCharID)
+    const previousSettingsOpen = get(stores.settingsOpen)
+
+    await expect(router.applyRouteToStores(route)).resolves.toBe(false)
+
+    expect(get(stores.selectedCharID)).toBe(previousSelection)
+    expect(get(stores.settingsOpen)).toBe(previousSettingsOpen)
+    expect(routerMocks.failActiveRouteLoad).toHaveBeenCalledWith(route, error)
+  })
+
+  it('opens a direct route for a bot left in retired Mood Light metadata', async () => {
+    const router = await importRouterAt('/character/char-private/chat-a')
+    const stores = await import('./stores.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    replaceResourceDatabase({
+      characters: [
+        {
+          chaId: 'char-private',
+          chatPage: 0,
+          chats: [{ id: 'chat-a', name: 'Chat A', message: [] }],
+        },
+      ],
+      characterOrder: ['char-private'],
+      moodLightMembership: { characterIds: ['char-private'], folders: [] },
+    } as any)
+    routerMocks.findCharacterIndexbyId.mockImplementation(
+      (characterId: string) =>
+        getResourceDatabase().characters?.findIndex((character: any) => character?.chaId === characterId) ?? -1,
+    )
+    routerMocks.changeChar.mockImplementation(async (index: number) => {
+      stores.selectedCharID.set(index)
+    })
+
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    expect(window.location.pathname).toBe('/character/char-private/chat-a')
+    expect(get(stores.selectedCharID)).toBe(0)
+    expect(routerMocks.changeChar).toHaveBeenCalledWith(0, expect.objectContaining({ isFresh: expect.any(Function) }))
+  }, 15_000)
+
   it('does not treat initial root load as a pending home navigation', async () => {
     const router = await importRouterAt('/')
 
@@ -139,91 +232,130 @@ describe('router initial application', () => {
     })
   })
 
-  it('routes the agent preset settings section', async () => {
-    const router = await importRouterAt('/settings/agent-presets')
+  it.each(['/settings/other-bots', '/settings/otherbots'])('canonicalizes the legacy Memory route %s', async (path) => {
+    const router = await importRouterAt(path)
+    const stores = await import('./stores.svelte')
+
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    expect(window.location.pathname).toBe('/settings/memory')
+    expect(get(router.currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings/memory',
+      section: 'memory',
+      index: 2,
+    })
+    expect(get(stores.SettingsMenuIndex)).toBe(2)
+  })
+
+  it('routes and serializes the Source Code settings section', async () => {
+    const router = await importRouterAt('/settings/source-code')
     const stores = await import('./stores.svelte')
     const { SettingsMenuIndex, settingsOpen } = stores
 
     expect(get(router.currentRoute)).toMatchObject({
       kind: 'settings',
-      path: '/settings/agent-presets',
-      section: 'agent-presets',
-      index: 19,
+      path: '/settings/source-code',
+      section: 'source-code',
+      index: 22,
     })
 
     await router.applyRouteToStores(get(router.currentRoute))
     await flushMicrotasks()
 
     expect(get(settingsOpen)).toBe(true)
-    expect(get(SettingsMenuIndex)).toBe(19)
+    expect(get(SettingsMenuIndex)).toBe(22)
+
+    router.syncRouteFromState({
+      currentRouteKind: 'settings',
+      settingsOpen: true,
+      settingsMenuIndex: 22,
+      selectedCharID: -1,
+      playgroundStore: 0,
+    })
+
+    expect(window.location.pathname).toBe('/settings/source-code')
   })
 
-  it('routes the Input Hooks settings section', async () => {
-    const router = await importRouterAt('/settings/input-hooks')
+  it('routes a specific persona id and selects it through the persona command path', async () => {
+    const router = await importRouterAt('/settings/persona/persona-b')
     const stores = await import('./stores.svelte')
-    const { SettingsMenuIndex, settingsOpen } = stores
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    replaceResourceDatabase({
+      selectedPersonaId: 'persona-a',
+      selectedPersona: 0,
+      username: 'A',
+      userIcon: '',
+      personaPrompt: '',
+      userNote: '',
+      personas: [
+        { id: 'persona-a', name: 'A', icon: '', personaPrompt: '', note: '' },
+        { id: 'persona-b', name: 'B', icon: '', personaPrompt: '', note: '' },
+      ],
+    } as any)
+    routerMocks.changeUserPersonaWithOutcome.mockResolvedValue('accepted')
 
     expect(get(router.currentRoute)).toMatchObject({
       kind: 'settings',
-      path: '/settings/input-hooks',
-      section: 'input-hooks',
-      index: 20,
+      path: '/settings/persona/persona-b',
+      section: 'persona',
+      index: 12,
+      personaId: 'persona-b',
     })
 
     await router.applyRouteToStores(get(router.currentRoute))
     await flushMicrotasks()
 
-    expect(get(settingsOpen)).toBe(true)
-    expect(get(SettingsMenuIndex)).toBe(20)
+    expect(routerMocks.changeUserPersonaWithOutcome).toHaveBeenCalledWith(1)
+    expect(get(stores.settingsOpen)).toBe(true)
+    expect(get(stores.SettingsMenuIndex)).toBe(12)
   })
 
-  it('does not route the removed context agent settings slug', async () => {
-    const router = await importRouterAt('/settings/context-agent')
-
-    expect(get(router.currentRoute)).toMatchObject({
-      kind: 'not-found',
-      path: '/settings/context-agent',
-    })
-  })
-
-  it('serializes the agent preset settings section', async () => {
-    const router = await importRouterAt('/')
+  it('serializes a selected persona id in the settings route', async () => {
+    const router = await importRouterAt('/settings/persona')
 
     router.syncRouteFromState({
-      currentRouteKind: 'home',
+      currentRouteKind: 'settings',
       settingsOpen: true,
-      settingsMenuIndex: 19,
+      settingsMenuIndex: 12,
       selectedCharID: -1,
       playgroundStore: 0,
+      personaId: 'persona / one',
     })
 
-    expect(window.location.pathname).toBe('/settings/agent-presets')
+    expect(window.location.pathname).toBe('/settings/persona/persona%20%2F%20one')
     expect(get(router.currentRoute)).toMatchObject({
       kind: 'settings',
-      path: '/settings/agent-presets',
-      section: 'agent-presets',
-      index: 19,
+      index: 12,
+      personaId: 'persona / one',
     })
   })
 
-  it('serializes the Input Hooks settings section', async () => {
-    const router = await importRouterAt('/')
+  it('replaces an unknown persona route with the current valid selection', async () => {
+    const router = await importRouterAt('/settings/persona/missing-persona')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    replaceResourceDatabase({
+      selectedPersonaId: 'persona-a',
+      selectedPersona: 0,
+      username: 'A',
+      userIcon: '',
+      personaPrompt: '',
+      userNote: '',
+      personas: [{ id: 'persona-a', name: 'A', icon: '', personaPrompt: '', note: '' }],
+    } as any)
+    const pushState = vi.spyOn(window.history, 'pushState')
+    const replaceState = vi.spyOn(window.history, 'replaceState')
 
-    router.syncRouteFromState({
-      currentRouteKind: 'home',
-      settingsOpen: true,
-      settingsMenuIndex: 20,
-      selectedCharID: -1,
-      playgroundStore: 0,
-    })
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
 
-    expect(window.location.pathname).toBe('/settings/input-hooks')
-    expect(get(router.currentRoute)).toMatchObject({
-      kind: 'settings',
-      path: '/settings/input-hooks',
-      section: 'input-hooks',
-      index: 20,
-    })
+    expect(window.location.pathname).toBe('/settings/persona/persona-a')
+    expect(routerMocks.changeUserPersonaWithOutcome).not.toHaveBeenCalled()
+    expect(pushState).not.toHaveBeenCalled()
+    expect(replaceState).toHaveBeenCalledOnce()
+    replaceState.mockRestore()
+    pushState.mockRestore()
   })
 })
 
@@ -267,6 +399,61 @@ describe('router grid history', () => {
 })
 
 describe('router settings history', () => {
+  it('keeps the current Settings section when an active module editor cancels navigation', async () => {
+    const router = await importRouterAt('/settings/modules')
+    const { registerModuleEditorLeaveGuard } = await import('./moduleEditorLeaveGuard')
+    const guard = vi.fn(() => false)
+    const unregister = registerModuleEditorLeaveGuard(guard)
+
+    try {
+      router.navigate('/settings/display')
+
+      expect(guard).toHaveBeenCalledOnce()
+      expect(window.location.pathname).toBe('/settings/modules')
+      expect(get(router.currentRoute)).toMatchObject({ kind: 'settings', index: 14 })
+    } finally {
+      unregister()
+    }
+  })
+
+  it('does not start Settings history traversal when an active module editor cancels leaving', async () => {
+    const router = await importRouterAt('/character/char-a/chat-a')
+    const { registerModuleEditorLeaveGuard } = await import('./moduleEditorLeaveGuard')
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => {})
+
+    router.openSettingsRoute('/settings/modules')
+    const unregister = registerModuleEditorLeaveGuard(() => false)
+
+    try {
+      router.closeSettingsRoute()
+
+      expect(back).not.toHaveBeenCalled()
+      expect(window.location.pathname).toBe('/settings/modules')
+    } finally {
+      unregister()
+      back.mockRestore()
+    }
+  })
+
+  it('reverses browser history traversal when an active module editor cancels leaving', async () => {
+    const router = await importRouterAt('/settings/modules')
+    const { registerModuleEditorLeaveGuard } = await import('./moduleEditorLeaveGuard')
+    const forward = vi.spyOn(window.history, 'forward').mockImplementation(() => {})
+    const unregister = registerModuleEditorLeaveGuard(() => false)
+    router.installRouter()
+
+    try {
+      window.history.pushState(null, '', '/')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+
+      expect(forward).toHaveBeenCalledOnce()
+      expect(get(router.currentRoute)).toMatchObject({ kind: 'settings', index: 14 })
+    } finally {
+      unregister()
+      forward.mockRestore()
+    }
+  })
+
   it('uses one marked history entry for an in-app Settings session', async () => {
     const router = await importRouterAt('/character/char-a/chat-a')
     const pushState = vi.spyOn(window.history, 'pushState')
@@ -359,13 +546,32 @@ describe('router settings history', () => {
     pushState.mockRestore()
     replaceState.mockRestore()
   })
+
+  it('replaces the current settings entry when navigating between personas', async () => {
+    const router = await importRouterAt('/settings/persona/persona-a')
+    const pushState = vi.spyOn(window.history, 'pushState')
+    const replaceState = vi.spyOn(window.history, 'replaceState')
+
+    router.navigateToPersonaSettings('persona-b')
+
+    expect(window.location.pathname).toBe('/settings/persona/persona-b')
+    expect(get(router.currentRoute)).toMatchObject({
+      kind: 'settings',
+      index: 12,
+      personaId: 'persona-b',
+    })
+    expect(pushState).not.toHaveBeenCalled()
+    expect(replaceState).toHaveBeenCalledOnce()
+    replaceState.mockRestore()
+    pushState.mockRestore()
+  })
 })
 
 describe('router character route freshness', () => {
   it('delivers a queued message jump once after applying its chat route', async () => {
     const router = await importRouterAt('/character/char-a')
     const stores = await import('./stores.svelte')
-    const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
     replaceResourceDatabase({
       characters: [
         {
@@ -398,7 +604,7 @@ describe('router character route freshness', () => {
   it('restores a same-entry character sidebar view without carrying it into same-character route navigation', async () => {
     const router = await importRouterAt('/character/char-a/chat-a')
     const stores = await import('./stores.svelte')
-    const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
     replaceResourceDatabase({
       characters: [
         {
@@ -435,7 +641,58 @@ describe('router character route freshness', () => {
     expect(get(stores.botMakerMode)).toBe(false)
   })
 
-  it('routes character-only navigation to the active generation owner chat', async () => {
+  it.each(['idle', 'loading'] as const)(
+    'does not restore the sidebar while character owners are %s',
+    async (status) => {
+      const router = await importRouterAt('/character/char-a/chat-a')
+      const stores = await import('./stores.svelte')
+      const { charactersResourceState, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+      replaceResourceDatabase({
+        characters: [
+          {
+            chaId: 'char-a',
+            chatPage: 0,
+            chats: [{ id: 'chat-a', name: 'Chat A', message: [] }],
+          },
+        ],
+      } as any)
+      stores.selectedCharID.set(0)
+      routerMocks.findCharacterIndexbyId.mockReturnValue(0)
+      router.setCharacterSidebarViewMode('character')
+      stores.botMakerMode.set(false)
+      charactersResourceState.status = status
+
+      await router.applyRouteToStores(get(router.currentRoute))
+
+      expect(get(stores.botMakerMode)).toBe(false)
+    },
+  )
+
+  it('fails closed instead of restoring a sidebar view from an errored character owner', async () => {
+    const router = await importRouterAt('/character/char-a/chat-a')
+    const stores = await import('./stores.svelte')
+    const { charactersResourceState, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    replaceResourceDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          chatPage: 0,
+          chats: [{ id: 'chat-a', name: 'Chat A', message: [] }],
+        },
+      ],
+    } as any)
+    stores.selectedCharID.set(0)
+    routerMocks.findCharacterIndexbyId.mockReturnValue(0)
+    router.setCharacterSidebarViewMode('character')
+    stores.botMakerMode.set(false)
+    charactersResourceState.status = 'error'
+
+    await router.applyRouteToStores(get(router.currentRoute))
+
+    expect(get(stores.botMakerMode)).toBe(false)
+  })
+
+  it('allows character-only navigation away from an active generation', async () => {
     const router = await importRouterAt('/')
     const { activeGenerationTarget, doingChat } = await import('./process/index.svelte')
     activeGenerationTarget.set({
@@ -448,22 +705,21 @@ describe('router character route freshness', () => {
 
     router.navigate('/character/char-a')
 
-    expect(window.location.pathname).toBe('/character/char-a/chat-owner')
+    expect(window.location.pathname).toBe('/character/char-a')
     expect(get(router.currentRoute)).toMatchObject({
       kind: 'character',
       chaId: 'char-a',
-      chatId: 'chat-owner',
     })
 
     router.navigate('/character/char-b')
-    expect(window.location.pathname).toBe('/character/char-a/chat-owner')
+    expect(window.location.pathname).toBe('/character/char-b')
   })
 
   it('reopens exactly the active generation owner after leaving the chat', async () => {
     const router = await importRouterAt('/settings/model')
     const stores = await import('./stores.svelte')
     const { activeGenerationTarget, doingChat } = await import('./process/index.svelte')
-    const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
     const { selectedCharID } = stores
     replaceResourceDatabase({
       characters: [
@@ -500,7 +756,7 @@ describe('router character route freshness', () => {
 
     router.navigate('/character/char-a/chat-a')
     router.navigate('/character/char-b/chat-b')
-    expect(window.location.pathname).toBe('/settings/model')
+    expect(window.location.pathname).toBe('/character/char-b/chat-b')
 
     router.navigate('/character/char-a/chat-owner')
     expect(window.location.pathname).toBe('/character/char-a/chat-owner')
@@ -509,13 +765,12 @@ describe('router character route freshness', () => {
 
     expect(routerMocks.changeChar).toHaveBeenCalledWith(0, {
       isFresh: expect.any(Function),
-      allowDuringGeneration: expect.any(Function),
     })
     expect(routerMocks.changeChatTo).toHaveBeenCalledWith('chat-owner')
     expect(get(selectedCharID)).toBe(0)
   })
 
-  it('canonicalizes history navigation to another chat back to the active generation owner', async () => {
+  it('applies history navigation to another chat during an active generation', async () => {
     const router = await importRouterAt('/character/char-a/chat-other')
     const stores = await import('./stores.svelte')
     const { activeGenerationTarget, doingChat } = await import('./process/index.svelte')
@@ -548,21 +803,20 @@ describe('router character route freshness', () => {
     await router.applyRouteToStores(get(router.currentRoute))
     await flushMicrotasks()
 
-    expect(window.location.pathname).toBe('/character/char-a/chat-owner')
+    expect(window.location.pathname).toBe('/character/char-a/chat-other')
     expect(get(router.currentRoute)).toMatchObject({
       kind: 'character',
       chaId: 'char-a',
-      chatId: 'chat-owner',
+      chatId: 'chat-other',
     })
     expect(routerMocks.changeChar).toHaveBeenCalledWith(0, {
       isFresh: expect.any(Function),
-      allowDuringGeneration: expect.any(Function),
     })
-    expect(routerMocks.changeChatTo).not.toHaveBeenCalled()
+    expect(routerMocks.changeChatTo).toHaveBeenCalledWith('chat-other')
     expect(get(stores.selectedCharID)).toBe(0)
   })
 
-  it('keeps the selected character route when in-app navigation is attempted during generation', async () => {
+  it('allows in-app navigation to another character during generation', async () => {
     const router = await importRouterAt('/')
     const stores = await import('./stores.svelte')
     const { activeGenerationTarget, doingChat } = await import('./process/index.svelte')
@@ -602,11 +856,11 @@ describe('router character route freshness', () => {
 
     router.navigate('/character/char-b/chat-b')
 
-    expect(window.location.pathname).toBe('/character/char-a/chat-a')
+    expect(window.location.pathname).toBe('/character/char-b/chat-b')
     expect(get(router.currentRoute)).toMatchObject({
       kind: 'character',
-      chaId: 'char-a',
-      chatId: 'chat-a',
+      chaId: 'char-b',
+      chatId: 'chat-b',
     })
     expect(get(selectedCharID)).toBe(0)
     expect(routerMocks.changeChar).not.toHaveBeenCalled()
@@ -615,7 +869,7 @@ describe('router character route freshness', () => {
   it('canonicalizes a deep or history route when character selection is refused', async () => {
     const router = await importRouterAt('/character/char-b/chat-b')
     const stores = await import('./stores.svelte')
-    const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
     const { selectedCharID } = stores
     replaceResourceDatabase({
       characters: [
@@ -686,10 +940,118 @@ describe('router character route freshness', () => {
     expect(router.hasPendingRouteApplication()).toBe(false)
   })
 
+  it('does not persist a reconciled observer route when authoritative character and chat selection already match', async () => {
+    const router = await importRouterAt('/character/char-a/chat-a')
+    const stores = await import('./stores.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    replaceResourceDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          chatPage: 0,
+          chats: [{ id: 'chat-a', name: 'Chat A', message: [] }],
+        },
+      ],
+    } as any)
+    stores.selectedCharID.set(0)
+    routerMocks.findCharacterIndexbyId.mockReturnValue(0)
+
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    expect(routerMocks.changeChar).not.toHaveBeenCalled()
+    expect(routerMocks.changeChatTo).not.toHaveBeenCalled()
+    expect(get(stores.selectedCharID)).toBe(0)
+    expect(window.location.pathname).toBe('/character/char-a/chat-a')
+  })
+
+  it('canonicalizes a missing character to home during generation and preserves back-forward history', async () => {
+    const router = await importRouterAt('/character/char-a/chat-owner')
+    const stores = await import('./stores.svelte')
+    const { activeGenerationTarget, doingChat } = await import('./process/index.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    replaceResourceDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          chatPage: 0,
+          chats: [{ id: 'chat-owner', name: 'Generating chat', message: [] }],
+        },
+      ],
+    } as any)
+    routerMocks.findCharacterIndexbyId.mockImplementation(
+      (characterId: string) =>
+        getResourceDatabase().characters?.findIndex((character: any) => character?.chaId === characterId) ?? -1,
+    )
+    routerMocks.changeChar.mockImplementation(async (index: number) => {
+      stores.selectedCharID.set(index)
+    })
+    stores.selectedCharID.set(0)
+    router.installRouter()
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    const generationTarget = {
+      selectedCharID: 0,
+      chatPage: 0,
+      characterId: 'char-a',
+      chatId: 'chat-owner',
+    }
+    activeGenerationTarget.set(generationTarget)
+    doingChat.set(true)
+    stores.settingsOpen.set(true)
+    stores.PlaygroundStore.set(14)
+    stores.OpenRealmStore.set(true)
+    const replaceState = vi.spyOn(window.history, 'replaceState')
+
+    router.navigate('/character/deleted-id/deleted-chat')
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    expect(window.location.pathname).toBe('/')
+    expect(get(router.currentRoute)).toEqual({ kind: 'home', path: '/' })
+    expect(replaceState).toHaveBeenCalledWith(null, '', '/')
+    expect(get(stores.selectedCharID)).toBe(-1)
+    expect(get(stores.settingsOpen)).toBe(false)
+    expect(get(stores.PlaygroundStore)).toBe(0)
+    expect(get(stores.OpenRealmStore)).toBe(false)
+    expect(get(activeGenerationTarget)).toEqual(generationTarget)
+    expect(get(doingChat)).toBe(true)
+    expect(routerMocks.changeChar).not.toHaveBeenCalled()
+    expect(routerMocks.changeChatTo).not.toHaveBeenCalled()
+    expect(router.consumeStateDrivenRouteUpdate()).toBe(true)
+
+    window.history.back()
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    expect(window.location.pathname).toBe('/character/char-a/chat-owner')
+    expect(get(router.currentRoute)).toMatchObject({
+      kind: 'character',
+      chaId: 'char-a',
+      chatId: 'chat-owner',
+    })
+    expect(get(stores.selectedCharID)).toBe(0)
+    expect(get(activeGenerationTarget)).toEqual(generationTarget)
+    expect(get(doingChat)).toBe(true)
+
+    window.history.forward()
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    expect(window.location.pathname).toBe('/')
+    expect(get(router.currentRoute)).toEqual({ kind: 'home', path: '/' })
+    expect(get(stores.selectedCharID)).toBe(-1)
+    expect(get(activeGenerationTarget)).toEqual(generationTarget)
+    expect(get(doingChat)).toBe(true)
+    expect(routerMocks.changeChatTo).not.toHaveBeenCalled()
+    replaceState.mockRestore()
+  })
+
   it('does not let a stale character route clear a newer pending character route', async () => {
     const router = await importRouterAt('/character/char-a/chat-a')
     const stores = await import('./stores.svelte')
-    const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
     const { selectedCharID } = stores
     replaceResourceDatabase({
       characters: [
@@ -769,7 +1131,7 @@ describe('router character route freshness', () => {
   it('does not let a stale delayed character route select a chat after a newer settings route wins', async () => {
     const router = await importRouterAt('/character/char-a/chat-target')
     const stores = await import('./stores.svelte')
-    const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
     const { PlaygroundStore, SettingsMenuIndex, selectedCharID, settingsOpen } = stores
     replaceResourceDatabase({
       characters: [
@@ -833,8 +1195,7 @@ describe('router character route freshness', () => {
   it('re-resolves the live character index after character selection before selecting the routed chat', async () => {
     const router = await importRouterAt('/')
     const stores = await import('./stores.svelte')
-    const { getResourceDatabase, replaceResourceDatabase, withResourceDatabaseWrite } =
-      await import('./server/resourceState.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
     const { selectedCharID } = stores
     const charA = {
       chaId: 'char-a',
@@ -858,9 +1219,7 @@ describe('router character route freshness', () => {
         getResourceDatabase().characters?.findIndex((character: any) => character?.chaId === characterId) ?? -1,
     )
     routerMocks.changeChar.mockImplementation(async (_index: number) => {
-      withResourceDatabaseWrite((database) => {
-        database.characters = [charB, charA] as any
-      })
+      replaceResourceDatabase({ characters: [charB, charA] } as any)
       selectedCharID.set(1)
     })
 

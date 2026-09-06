@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import type { HypaV3MemoryPlan, HypaV3PlannedWindow } from './memoryPlanner.js'
+import type { PromptMessage } from './prompt/promptMessage.js'
 import {
   createMemoryChunk,
   enqueueMemoryJob,
@@ -30,11 +30,12 @@ export interface HypaV3SummarizeJobPayload {
 export interface PlanHypaV3ChunkJobsInput {
   db: DatabaseSync
   chatId: string
-  chats: readonly OpenAIChat[]
+  chats: readonly PromptMessage[]
   plan: HypaV3MemoryPlan
   model?: string
   maxAttempts?: number
   nextRunAt?: string
+  onJobCreated?: (job: MemoryJob) => void
 }
 
 export interface PlannedHypaV3ChunkJob {
@@ -67,7 +68,7 @@ export function planHypaV3ChunkJobs(input: PlanHypaV3ChunkJobsInput): PlanHypaV3
     throw new ValidationError('server-side memory summarization supports only subModel or memory')
   }
 
-  return withTransaction(input.db, () => {
+  const result = withTransaction(input.db, () => {
     const planned: PlannedHypaV3ChunkJob[] = []
     let chunksCreated = 0
     let jobsCreated = 0
@@ -118,6 +119,10 @@ export function planHypaV3ChunkJobs(input: PlanHypaV3ChunkJobsInput): PlanHypaV3
 
     return { planned, chunksCreated, jobsCreated }
   })
+  for (const item of result.planned) {
+    if (item.jobCreated && item.job) input.onJobCreated?.(item.job)
+  }
+  return result
 }
 
 export function buildSummarizeJobPayload(input: {
@@ -136,7 +141,7 @@ export function buildSummarizeJobPayload(input: {
   }
 }
 
-export function buildChunkText(chats: readonly OpenAIChat[], window: HypaV3PlannedWindow): string {
+export function buildChunkText(chats: readonly PromptMessage[], window: HypaV3PlannedWindow): string {
   return window.messageIndexes
     .map((index) => {
       const chat = chats[index]

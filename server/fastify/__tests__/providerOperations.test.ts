@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ProviderOperationRequest } from '../../../src/ts/server/providerOperationsProtocol.js'
+import type { ProviderOperationRequest } from '@risuai/protocol/provider-operation'
 import { buildApp } from '../src/app.js'
 import {
   executeProviderOperation,
@@ -25,17 +25,21 @@ const storedSettings = {
   deeplXOptions: { token: 'stored-deeplx-token', url: 'http://127.0.0.1:1188/base/' },
   elevenLabKey: 'stored-elevenlabs-key',
   fishSpeechKey: 'stored-fish-key',
+  providerCredentials: [
+    { id: 'credential-openrouter', name: 'OpenRouter', type: 'apiKey', apiKey: 'profile-openrouter-key' },
+    { id: 'credential-google', name: 'Google', type: 'apiKey', apiKey: 'profile-google-key' },
+  ],
   modelProfiles: [
     {
       id: 'openrouter-profile',
       modelId: 'openrouter',
-      providerOptions: { apiKey: 'profile-openrouter-key' },
+      providerOptions: { credentialId: 'credential-openrouter' },
     },
     {
       id: 'google-profile',
       providerId: 'google',
       modelId: 'gemini-2.5-pro',
-      providerOptions: { apiKey: 'profile-google-key' },
+      providerOptions: { credentialId: 'credential-google' },
     },
     {
       id: 'openrouter-global-fallback',
@@ -104,6 +108,16 @@ describe('provider operation allowlist', () => {
       url: 'https://openrouter.ai/api/v1/providers',
       method: 'GET',
       header: ['authorization', 'Bearer stored-openrouter-key'],
+    },
+    {
+      operation: 'llmgateway.models' as const,
+      url: 'https://api.llmgateway.io/v1/models',
+      method: 'GET',
+    },
+    {
+      operation: 'neuralwatt.models' as const,
+      url: 'https://api.neuralwatt.com/v1/models',
+      method: 'GET',
     },
     {
       operation: 'ollama.cloud-models' as const,
@@ -201,6 +215,20 @@ describe('provider operation allowlist', () => {
     expect(nano.url).toBe('https://nano-gpt.com/api/v1/models?detailed=true')
     expect(header(nano.init, 'authorization')).toBeNull()
     expect(header(openrouter.init, 'authorization')).toBeNull()
+
+    const llmGateway = resolveProviderUpstreamRequest(
+      { operation: 'llmgateway.models', credential: { source: 'none' } },
+      storedSettings,
+    )
+    expect(llmGateway.url).toBe('https://api.llmgateway.io/v1/models')
+    expect(header(llmGateway.init, 'authorization')).toBeNull()
+
+    const neuralwatt = resolveProviderUpstreamRequest(
+      { operation: 'neuralwatt.models', credential: { source: 'none' } },
+      storedSettings,
+    )
+    expect(neuralwatt.url).toBe('https://api.neuralwatt.com/v1/models')
+    expect(header(neuralwatt.init, 'authorization')).toBeNull()
   })
 
   it('resolves only matching model-profile secrets and preserves the same-provider flat fallback', () => {

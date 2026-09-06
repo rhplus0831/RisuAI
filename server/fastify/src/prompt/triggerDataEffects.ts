@@ -1,8 +1,8 @@
-import type { Chat, character } from '../../../../src/ts/storage/database.svelte'
-import type { triggerEffect } from '../../../../src/ts/process/triggers'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
-import { calcString } from '../../../../src/ts/process/infunctions'
-import { encodingForModel, tokenize } from './tokens.js'
+import type { FastifyChat as Chat, FastifyCharacter as character, FastifyMessage as Message } from './serverTypes.js'
+import type { PromptMessage } from './promptMessage.js'
+import type { ServerTriggerEffect as triggerEffect } from './triggerDescriptors.js'
+import { calculateString } from '@risuai/shared-core/calculation'
+import { encodingForModel, tokenize, type TokenEncoding } from './tokens.js'
 import {
   assertBoundedRegexHaystack,
   assertBoundedRegexReplacement,
@@ -16,6 +16,7 @@ import {
   triggerReplaceBoundedRegexWithCompatibility,
 } from './boundedRegex.js'
 import type { TriggerVarEngine } from './triggerVars.js'
+import { getChatVar, getGlobalChatVar } from './chatVarBackend.js'
 import {
   getCachedRegexDelimiter,
   getCachedTriggerRegex,
@@ -35,39 +36,38 @@ import {
  * `additonalSysPrompt`, `stopSending`, chat reassignment, or recursion,
  * so they live in their own module dispatched from `runTrigger`'s
  * switch `default` (`applyV2DataEffect` returns `true` when it handled
- * the effect, `false` otherwise).
+ * the effect, `false` otherwise, or `abort-run` for a retained legacy
+ * whole-trigger guard).
  *
  * Covered: message readers, string ops, array helpers (JSON-in-var),
  * dict helpers (JSON-in-var), `v2Random`, `v2Calculate` (via the
  * Svelte-free `calcString`), `v2Tokenize` (via `tokens.ts`),
- * `v2RegexTest`, and `v2QuickSearchChat`.
+ * `v2ExtractRegex`, `v2RegexTest`, and `v2QuickSearchChat`.
  *
- * Divergence from the SPA: `v2MakeArrayVar` / `v2MakeDictVar` /
- * `v2ClearDict` guard a malformed var name with `return`, which in the
- * SPA exits the whole `runTrigger` (almost certainly an unintended
- * bug, and incompatible with our typed return). Here that guard simply
- * returns from this helper as a handled no-op so the trigger run
- * continues.
+ * `v2MakeArrayVar` / `v2MakeDictVar` / `v2ClearDict` retain the SPA's
+ * whole-trigger early return for a malformed literal-container var name.
+ * The helper reports `abort-run` so `runTrigger` can stop before later
+ * effects without conflating the guard with an unsupported effect.
  *
  * Request/display state arms (`v2GetDisplayState` /
  * `v2SetDisplayState` and the five request-state arms). Unlike the data
  * helpers above they also write the per-run display/request state slot,
  * carried through `deps.displayState` (a mutable `{ data }` holder) so
  * `runTrigger` can surface the writes on `result.displayData`. They
- * gate on `deps.displayMode`; see the divergence note below.
+ * gate on `deps.displayMode`; see the retained early-return rule below.
  *
- * Divergence: each SPA state arm does `if (!arg.displayMode) return`, which
- * aborts the *entire* `runTrigger` (returns `undefined`, almost certainly an
- * unintended bug). As with the make-var guard above we instead `return true`
- * here, a handled no-op so the run continues.
+ * Each SPA state arm does `if (!arg.displayMode) return`, aborting the entire
+ * trigger when a display/request-only effect is used in another mode. These
+ * guards report `abort-run` for the same caller-level handling as malformed
+ * container variable names.
  * The request-state arms otherwise match the SPA exactly, including the
  * un-guarded `JSON.parse(displayState.data)`: in `request` mode the
- * caller contractually supplies a valid `OpenAIChat[]` JSON payload.
+ * caller contractually supplies a valid `PromptMessage[]` JSON payload.
  *
  * Unsupported or externally handled effects fall through to `return false`: the
  * persistent character/persona/author-note
  * get+set pairs, the `lowLevelAccess`-gated
- * alert/LLM/image/similarity/extractRegex arms, `command`,
+ * alert/LLM/image/similarity arms, `command`,
  * `v2UpdateGUI` / `v2UpdateChatAt` / `v2Wait`, and the lorebook arms.
  */
 
@@ -81,6 +81,8 @@ export interface V2DataEffectDeps {
   char: character
   /** Model id for `v2Tokenize`'s encoder; defaults to `cl100k_base`. */
   model?: string | null
+  /** Database-resolved tokenizer used by production trigger runs. */
+  tokenizerEncoding?: TokenEncoding
   /** `display` / `request` runs that gate the state arms. */
   displayMode?: boolean
   /** Mutable per-run display/request state slot. */
@@ -90,6 +92,10 @@ export interface V2DataEffectDeps {
   /** Enables isolated-worker fallback for complexity-screened regexes. */
   regexCompatibility?: BoundedRegexCompatibilityOptions
 }
+
+export type V2DataEffectResult = boolean | 'abort-run'
+
+const calculationVariables = { getChatVar, getGlobalChatVar }
 
 function compileTriggerRegexWithCompatibility(deps: V2DataEffectDeps, pattern: string, flags: string, context: string) {
   const options = deps.regexCompatibility
@@ -142,7 +148,7 @@ function compileDelimiterWithCompatibility(deps: V2DataEffectDeps, delimiter: st
   }
 }
 
-export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps): boolean {
+export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps): V2DataEffectResult {
   const { engine, expand, chat, char } = deps
   const resolve = (raw: string, isValue: boolean): string => (isValue ? expand(raw) : engine.getVar(expand(raw)))
 
@@ -165,7 +171,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
       const last = chat.message
         .slice()
         .reverse()
-        .find((v) => v.role === 'user')
+        .find((v: Message) => v.role === 'user')
       engine.setVar(expand(effect.outputVar), last?.data ?? 'null')
       return true
     }
@@ -173,7 +179,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
       const last = chat.message
         .slice()
         .reverse()
-        .find((v) => v.role === 'char')
+        .find((v: Message) => v.role === 'char')
       engine.setVar(expand(effect.outputVar), last?.data ?? 'null')
       return true
     }
@@ -304,7 +310,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
     case 'v2MakeArrayVar': {
       const varName = expand(effect.var)
       if (varName.startsWith('[') && varName.endsWith(']')) {
-        return true
+        return 'abort-run'
       }
       engine.setVar(varName, '[]')
       return true
@@ -457,7 +463,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
     // ---- Dict (JSON-in-var) ----
     case 'v2MakeDictVar': {
       if (effect.var.startsWith('{') && effect.var.endsWith('}')) {
-        return true
+        return 'abort-run'
       }
       engine.setVar(expand(effect.var), '{}')
       return true
@@ -516,7 +522,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
     }
     case 'v2ClearDict': {
       if (effect.var.startsWith('{') && effect.var.endsWith('}')) {
-        return true
+        return 'abort-run'
       }
       engine.setVar(expand(effect.var), '{}')
       return true
@@ -568,7 +574,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
           const parsed = parseFloat(engine.getVar(varName))
           return isNaN(parsed) ? '0' : parsed.toString()
         })
-        engine.setVar(outVar, (calcString(expression) ?? 0).toString())
+        engine.setVar(outVar, (calculateString(expression, calculationVariables) ?? 0).toString())
       } catch {
         engine.setVar(outVar, '0')
       }
@@ -576,7 +582,10 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
     }
     case 'v2Tokenize': {
       const value = resolve(effect.value, effect.valueType === 'value')
-      engine.setVar(expand(effect.outputVar), tokenize(value, encodingForModel(deps.model)).toString())
+      engine.setVar(
+        expand(effect.outputVar),
+        tokenize(value, deps.tokenizerEncoding ?? encodingForModel(deps.model)).toString(),
+      )
       return true
     }
     case 'v2RegexTest': {
@@ -609,7 +618,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
           ? getRecentTranscriptStrictWords(deps.triggerCache, chat, depth).has(value)
           : chat.message
               .slice(0 - depth)
-              .map((v) => v.data)
+              .map((v: Message) => v.data)
               .join(' ')
               .split(' ')
               .includes(value)
@@ -618,7 +627,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
           ? getRecentTranscriptLower(deps.triggerCache, chat, depth).includes(value.toLowerCase())
           : chat.message
               .slice(0 - depth)
-              .map((v) => v.data)
+              .map((v: Message) => v.data)
               .join(' ')
               .toLowerCase()
               .includes(value.toLowerCase())
@@ -627,7 +636,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
           ? getRecentTranscriptRaw(deps.triggerCache, chat, depth)
           : chat.message
               .slice(0 - depth)
-              .map((v) => v.data)
+              .map((v: Message) => v.data)
               .join(' ')
         const regex = deps.triggerCache
           ? getCachedTriggerRegex(deps.triggerCache, value, '', 'trigger v2QuickSearchChat pattern')
@@ -641,14 +650,14 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
     // ---- Display state ----
     case 'v2GetDisplayState': {
       if (!deps.displayMode) {
-        return true
+        return 'abort-run'
       }
       engine.setVar(expand(effect.outputVar), deps.displayState?.data ?? 'null')
       return true
     }
     case 'v2SetDisplayState': {
       if (!deps.displayMode) {
-        return true
+        return 'abort-run'
       }
       if (deps.displayState) {
         deps.displayState.data = resolve(effect.value, effect.valueType === 'value')
@@ -659,18 +668,18 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
     // ---- Request state over JSON.parse(displayState.data) ----
     case 'v2GetRequestState': {
       if (!deps.displayMode) {
-        return true
+        return 'abort-run'
       }
-      const json = JSON.parse(deps.displayState?.data ?? 'null') as OpenAIChat[]
+      const json = JSON.parse(deps.displayState?.data ?? 'null') as PromptMessage[]
       const index = Number(resolve(effect.index, effect.indexType === 'value'))
       engine.setVar(expand(effect.outputVar), json?.[index]?.content ?? 'null')
       return true
     }
     case 'v2SetRequestState': {
       if (!deps.displayMode) {
-        return true
+        return 'abort-run'
       }
-      const json = JSON.parse(deps.displayState?.data ?? 'null') as OpenAIChat[]
+      const json = JSON.parse(deps.displayState?.data ?? 'null') as PromptMessage[]
       const index = Number(resolve(effect.index, effect.indexType === 'value'))
       json[index].content = resolve(effect.value, effect.valueType === 'value')
       if (deps.displayState) {
@@ -680,18 +689,18 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
     }
     case 'v2GetRequestStateRole': {
       if (!deps.displayMode) {
-        return true
+        return 'abort-run'
       }
-      const json = JSON.parse(deps.displayState?.data ?? 'null') as OpenAIChat[]
+      const json = JSON.parse(deps.displayState?.data ?? 'null') as PromptMessage[]
       const index = Number(resolve(effect.index, effect.indexType === 'value'))
       engine.setVar(expand(effect.outputVar), json?.[index]?.role ?? 'null')
       return true
     }
     case 'v2SetRequestStateRole': {
       if (!deps.displayMode) {
-        return true
+        return 'abort-run'
       }
-      const json = JSON.parse(deps.displayState?.data ?? 'null') as OpenAIChat[]
+      const json = JSON.parse(deps.displayState?.data ?? 'null') as PromptMessage[]
       const index = Number(resolve(effect.index, effect.indexType === 'value'))
       const value = resolve(effect.value, effect.valueType === 'value')
       if (value === 'user' || value === 'assistant' || value === 'system') {
@@ -704,9 +713,9 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
     }
     case 'v2GetRequestStateLength': {
       if (!deps.displayMode) {
-        return true
+        return 'abort-run'
       }
-      const json = JSON.parse(deps.displayState?.data ?? 'null') as OpenAIChat[]
+      const json = JSON.parse(deps.displayState?.data ?? 'null') as PromptMessage[]
       engine.setVar(expand(effect.outputVar), json.length.toString())
       return true
     }
@@ -716,10 +725,36 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
   }
 }
 
-export async function applyV2DataEffectAsync(effect: triggerEffect, deps: V2DataEffectDeps): Promise<boolean> {
+export async function applyV2DataEffectAsync(
+  effect: triggerEffect,
+  deps: V2DataEffectDeps,
+): Promise<V2DataEffectResult> {
   const { engine, expand, chat } = deps
   const resolve = (raw: string, isValue: boolean): string => (isValue ? expand(raw) : engine.getVar(expand(raw)))
   const options = deps.regexCompatibility
+
+  if (effect.type === 'v2ExtractRegex') {
+    const value = resolve(effect.value, effect.valueType === 'value')
+    const regexPattern = resolve(effect.regex, effect.regexType === 'value')
+    const flags = resolve(effect.flags, effect.flagsType === 'value')
+    const resultFormat = resolve(effect.result, effect.resultType === 'value')
+    const regex = deps.triggerCache
+      ? getCachedTriggerRegex(deps.triggerCache, regexPattern, flags, 'trigger v2ExtractRegex pattern')
+      : compileBoundedRegex(regexPattern, flags, 'trigger v2ExtractRegex pattern')
+    assertBoundedRegexHaystack(value, 'trigger v2ExtractRegex value')
+    assertBoundedRegexReplacement(resultFormat, 'trigger v2ExtractRegex result template')
+    regex.lastIndex = 0
+    const matched = regex.exec(value)
+    const result = resultFormat
+      .replace(/\$[0-9]+/g, (placeholder) => {
+        const index = Number(placeholder.slice(1))
+        return matched?.[index] || ''
+      })
+      .replace(/\$&/g, matched?.[0] || '')
+      .replace(/\$\$/g, '$')
+    engine.setVar(expand(effect.outputVar), result)
+    return true
+  }
 
   if (effect.type === 'v2SplitString' && effect.delimiterType === 'regex') {
     const source = resolve(effect.source, effect.sourceType === 'value')
@@ -825,7 +860,7 @@ export async function applyV2DataEffectAsync(effect: triggerEffect, deps: V2Data
       ? getRecentTranscriptRaw(deps.triggerCache, chat, depth)
       : chat.message
           .slice(0 - depth)
-          .map((v) => v.data)
+          .map((v: Message) => v.data)
           .join(' ')
     const regex = compileTriggerRegexWithCompatibility(deps, value, '', 'trigger v2QuickSearchChat pattern')
     const pass = options?.enabled

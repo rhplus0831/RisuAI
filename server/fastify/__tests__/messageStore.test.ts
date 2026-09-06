@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
@@ -80,6 +81,27 @@ describe('messageStore CRUD', () => {
     expect(getAllChatIdsWithMessages(db)).toEqual(['chat-1'])
     expect(activeMessageIdExistsInChat(db, 'm2', 'chat-1')).toBe(true)
     expect(activeMessageIdExistsInChat(db, 'm2', 'chat-other')).toBe(false)
+  })
+
+  it('keeps a source-valid Draft-hook translation and clears it after the sent text changes', () => {
+    const db = makeDb(makeDataDir())
+    const data = 'Draft hook output{{inlayed::asset-a}}'
+    const translation = {
+      text: 'Original composer text',
+      source: 'raw',
+      sourceHash: createHash('sha256').update(data).digest('hex'),
+      targetLanguage: 'original',
+      inputLanguage: 'auto',
+      translatorType: 'llm',
+      settingsHash: 'a'.repeat(64),
+      updatedAt: 123,
+    }
+    replaceChatMessages(db, 'chat-1', [msg('m1', 'user', data, { translation })])
+
+    expect(getChatMessages(db, 'chat-1')).toEqual([msg('m1', 'user', data, { translation })])
+
+    expect(updateActiveMessageById(db, 'm1', { data: 'Edited Draft output' })).toMatchObject({ ok: true })
+    expect(getChatMessages(db, 'chat-1')).toEqual([msg('m1', 'user', 'Edited Draft output', { translation: null })])
   })
 
   it('reads ranges by logical row offset even when stored seq values are sparse', () => {
@@ -286,7 +308,7 @@ describe('applyChatMessageDiff surgical writes', () => {
     expect(rowids(db, 'chat-1')).toEqual([before[0]])
   })
 
-  it('L14: append-only tail persistence writes byte-identical rows without prefix diff work', () => {
+  it('append-only tail persistence writes byte-identical rows without generic diff work', () => {
     const expectedDb = makeDb(makeDataDir())
     const db = makeDb(makeDataDir())
     const base = Array.from({ length: 64 }, (_, index) =>
@@ -303,21 +325,52 @@ describe('applyChatMessageDiff surgical writes', () => {
     replaceChatMessages(expectedDb, 'chat-1', next)
     replaceChatMessages(db, 'chat-1', base)
     addAlternateMessage(db, 'chat-1', msg('alt', 'char', 'candidate'))
+    const prefixRowids = rowids(db, 'chat-1').filter(({ seq }) => seq >= 0)
 
     resetChatMessageDiffInstrumentation()
-    const appended = appendActiveChatMessageTail(db, 'chat-1', next, base.length)
+    const appended = appendActiveChatMessageTail(db, 'chat-1', next, base)
 
     expect(appended).toBe(true)
     expect(getChatMessageDiffInstrumentation()).toMatchObject({
+      genericDiffRuns: 0,
       stableEqualCalls: 0,
       stableEqualStringifies: 0,
       appendFastPathRows: 1,
     })
     expect(persistedActiveRows(db, 'chat-1')).toEqual(persistedActiveRows(expectedDb, 'chat-1'))
+    expect(
+      rowids(db, 'chat-1')
+        .filter(({ seq }) => seq >= 0)
+        .slice(0, base.length),
+    ).toEqual(prefixRowids)
     expect(getAlternateMessages(db, 'chat-1')).toEqual([msg('alt', 'char', 'candidate')])
   })
 
-  it('L14: edit and truncate replacements still exercise the generic diff path', () => {
+  it('rejects an append-only tail derived from a stale same-length prefix', () => {
+    const db = makeDb(makeDataDir())
+    const initial = [msg('m1', 'user', 'question'), msg('m2', 'char', 'original answer')]
+    const concurrentlyEdited = [initial[0], msg('m2', 'char', 'concurrent answer')]
+    const desired = [...initial, msg('m3', 'user', 'stale follow-up')]
+    replaceChatMessages(db, 'chat-1', concurrentlyEdited)
+    const beforeRows = persistedActiveRows(db, 'chat-1')
+    const beforeRowids = rowids(db, 'chat-1')
+
+    resetChatMessageDiffInstrumentation()
+    const appended = appendActiveChatMessageTail(db, 'chat-1', desired, initial)
+
+    expect(appended).toBe(false)
+    expect(getChatMessages(db, 'chat-1')).toEqual(concurrentlyEdited)
+    expect(persistedActiveRows(db, 'chat-1')).toEqual(beforeRows)
+    expect(rowids(db, 'chat-1')).toEqual(beforeRowids)
+    expect(getChatMessageDiffInstrumentation()).toMatchObject({
+      genericDiffRuns: 0,
+      stableEqualCalls: 0,
+      stableEqualStringifies: 0,
+      appendFastPathRows: 0,
+    })
+  })
+
+  it('edit and truncate replacements still exercise the generic diff path', () => {
     const editDb = makeDb(makeDataDir())
     const truncateDb = makeDb(makeDataDir())
     const base = Array.from({ length: 32 }, (_, index) =>
@@ -346,7 +399,7 @@ describe('applyChatMessageDiff surgical writes', () => {
   })
 })
 
-describe('chat hypaV3Data store (Phase 4.4)', () => {
+describe('chat hypaV3Data store', () => {
   it('upserts, reads, groups and deletes a chat blob', () => {
     const db = makeDb(makeDataDir())
     setChatHypaV3(db, 'chat-1', { mainChunks: [{ text: 'a' }], lastImportantSummary: 2 })

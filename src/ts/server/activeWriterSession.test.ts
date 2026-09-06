@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'svelte/store'
 
 const STORAGE_KEY = 'risu:active-writer-session-id'
 const takeoverMocks = vi.hoisted(() => ({
@@ -7,8 +8,12 @@ const takeoverMocks = vi.hoisted(() => ({
   stopEvents: vi.fn(),
   stopTranslations: vi.fn(),
   stopReattach: vi.fn(),
+  stopPersistenceRefresh: vi.fn(),
   stopHydration: vi.fn(),
+  invalidateResourceCacheWork: vi.fn(),
 }))
+
+vi.mock('./resourceCache', () => ({ invalidateResourceCacheWork: takeoverMocks.invalidateResourceCacheWork }))
 
 vi.mock('../alert', () => ({
   alertError: takeoverMocks.alertError,
@@ -34,7 +39,13 @@ vi.mock('../storage/fastifyStorage', () => ({
 vi.mock('./messageTranslationJobs', () => ({
   stopActiveMessageTranslationRefresh: takeoverMocks.stopTranslations,
 }))
+vi.mock('./greetingTranslations.svelte', () => ({
+  stopActiveGreetingTranslationRefresh: vi.fn(),
+}))
 vi.mock('../process/reattach', () => ({ stopActiveGenerationReattach: takeoverMocks.stopReattach }))
+vi.mock('../process/generationPersistenceState', () => ({
+  stopGenerationFinalizationPersistenceRefresh: takeoverMocks.stopPersistenceRefresh,
+}))
 vi.mock('./chatMessageHydration.svelte', () => ({ stopChatMessageHydration: takeoverMocks.stopHydration }))
 
 function stubSessionStorage(initial: Record<string, string> = {}) {
@@ -57,7 +68,35 @@ function stubCryptoSessionId(sessionId: string) {
 
 async function importActiveWriterSession() {
   vi.resetModules()
+  const { registerChatHydrationRuntime } = await import('../process/generationRuntimeBridge')
+  registerChatHydrationRuntime({ stopChatMessageHydration: takeoverMocks.stopHydration } as never)
   return await import('./activeWriterSession')
+}
+
+function stubMutationObserver() {
+  let callback: MutationCallback | undefined
+  const observe = vi.fn()
+
+  vi.stubGlobal(
+    'MutationObserver',
+    class {
+      observe = observe
+      disconnect = vi.fn()
+      takeRecords = vi.fn(() => [])
+
+      constructor(nextCallback: MutationCallback) {
+        callback = nextCallback
+      }
+    },
+  )
+
+  return {
+    observe,
+    notify(records: MutationRecord[]) {
+      if (!callback) throw new Error('MutationObserver has not been constructed')
+      callback(records, {} as MutationObserver)
+    },
+  }
 }
 
 beforeEach(() => {
@@ -68,6 +107,7 @@ beforeEach(() => {
   takeoverMocks.stopTranslations.mockReset()
   takeoverMocks.stopReattach.mockReset()
   takeoverMocks.stopHydration.mockReset()
+  takeoverMocks.invalidateResourceCacheWork.mockReset()
   document.body.innerHTML = ''
 })
 
@@ -124,6 +164,21 @@ describe('active writer browser session', () => {
     const reload = vi.fn()
     vi.stubGlobal('location', { reload })
     const activeWriterSession = await importActiveWriterSession()
+    const startupReadiness = await import('../startupReadiness')
+    for (const milestone of [
+      'entry',
+      'shell-mounted',
+      'observer-ready',
+      'writer-ready',
+      'plugins-ready',
+      'chat-ready',
+    ] as const) {
+      startupReadiness.recordStartupMilestone(milestone)
+    }
+    startupReadiness.settleStartupChatReadiness(true)
+    startupReadiness.settleStartupGenerationRecoveryReadiness(true)
+    expect(startupReadiness.canMutate()).toBe(true)
+    expect(startupReadiness.canGenerate()).toBe(true)
 
     document.body.innerHTML = '<div id="app"><button>background action</button></div>'
     expect(
@@ -132,15 +187,42 @@ describe('active writer browser session', () => {
       }),
     ).toBe(true)
     expect(activeWriterSession.isWriterAccessLost()).toBe(true)
+    expect(takeoverMocks.invalidateResourceCacheWork).toHaveBeenCalledOnce()
+    expect(startupReadiness.canRenderShell()).toBe(true)
+    expect(startupReadiness.canMutate()).toBe(false)
+    expect(startupReadiness.canGenerate()).toBe(false)
     expect(document.getElementById('app')?.classList.contains('risu-writer-takeover-pending')).toBe(true)
     const { canUseServerCommands } = await import('./commands')
     const { canUseServerEvents } = await import('./events')
     expect(canUseServerCommands()).toBe(false)
     expect(canUseServerEvents()).toBe(false)
+    const { observerShellLifecycleStore } = await import('../observerShellLifecycle.svelte')
+    expect(get(observerShellLifecycleStore).mode).toBe('writer-lost')
 
     await vi.waitFor(() => expect(takeoverMocks.alertRequiredSelect).toHaveBeenCalledOnce())
     await vi.advanceTimersByTimeAsync(1_000)
     expect(reload).not.toHaveBeenCalled()
+    activeWriterSession.resetWriterAccessLostForTests()
+  })
+
+  it('opens only the recovery transport latch and re-latches it after a failed attempt', async () => {
+    const activeWriterSession = await importActiveWriterSession()
+    const startupReadiness = await import('../startupReadiness')
+    for (const milestone of ['entry', 'shell-mounted', 'observer-ready', 'writer-ready'] as const) {
+      startupReadiness.recordStartupMilestone(milestone)
+    }
+    activeWriterSession.enterWriterTakeoverFlow()
+
+    expect(activeWriterSession.beginWriterAccessRecovery()).toBe(true)
+    expect(takeoverMocks.invalidateResourceCacheWork).toHaveBeenCalledTimes(2)
+    expect(activeWriterSession.isWriterAccessLost()).toBe(false)
+    expect(startupReadiness.canMutate()).toBe(false)
+
+    activeWriterSession.completeWriterAccessRecovery(false)
+    expect(takeoverMocks.invalidateResourceCacheWork).toHaveBeenCalledTimes(3)
+    expect(activeWriterSession.isWriterAccessLost()).toBe(true)
+    expect(startupReadiness.canMutate()).toBe(false)
+
     activeWriterSession.resetWriterAccessLostForTests()
   })
 
@@ -185,6 +267,7 @@ describe('active writer browser session', () => {
 
   it('freezes editable content after the user stays offline', async () => {
     takeoverMocks.alertRequiredSelect.mockResolvedValue('1')
+    const mutationObserver = stubMutationObserver()
     const reload = vi.fn()
     vi.stubGlobal('location', { reload })
     document.body.innerHTML = `
@@ -205,10 +288,36 @@ describe('active writer browser session', () => {
     expect(document.getElementById('risu-offline-frozen-banner')?.textContent).toContain('offline and read-only')
     expect(reload).not.toHaveBeenCalled()
     expect(document.getElementById('app')?.classList.contains('risu-writer-takeover-pending')).toBe(false)
+    const { observerShellLifecycleStore } = await import('../observerShellLifecycle.svelte')
+    expect(get(observerShellLifecycleStore).mode).toBe('offline')
 
     const laterTextarea = document.createElement('textarea')
-    document.getElementById('app')?.appendChild(laterTextarea)
-    await vi.waitFor(() => expect(laterTextarea.readOnly).toBe(true))
+    const appRoot = document.getElementById('app')
+    appRoot?.appendChild(laterTextarea)
+
+    // Mutation delivery is browser behavior. Invoke the registered callback directly so Happy DOM's
+    // timer-based observer emulation cannot make this application-level assertion load-sensitive.
+    mutationObserver.notify([
+      {
+        type: 'childList',
+        target: appRoot,
+        addedNodes: [laterTextarea],
+      } as unknown as MutationRecord,
+    ])
+
+    expect(mutationObserver.observe).toHaveBeenCalledWith(appRoot, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['contenteditable', 'readonly', 'type'],
+    })
+    expect(laterTextarea.readOnly).toBe(true)
+
+    expect(activeWriterSession.beginWriterAccessRecovery()).toBe(true)
+    activeWriterSession.completeWriterAccessRecovery(true)
+    expect(activeWriterSession.isWriterAccessLost()).toBe(false)
+    expect(document.getElementById('risu-offline-frozen-banner')).toBeNull()
+    expect(document.getElementById('app')?.classList.contains('risu-offline-frozen')).toBe(false)
   })
 
   it('notifies once and reloads when a terminal durable predecessor loses its rollback', async () => {

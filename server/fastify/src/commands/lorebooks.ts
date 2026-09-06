@@ -27,6 +27,7 @@ export interface LorebookEntryRecord extends JsonRecord {
   mode: string
   alwaysActive: boolean
   selective: boolean
+  agentOnly?: boolean
   folder?: string
 }
 
@@ -210,6 +211,36 @@ export function readLorebookIdList(input: unknown, label = 'lorebookIds'): strin
   return input.map((id, index) => readLorebookId(id, `${label}[${index}]`))
 }
 
+/**
+ * Read persisted global lorebooks without repairing or reconstructing any row.
+ * Collection identities are validated together so a command can never select
+ * the first of duplicate targets.
+ */
+export function readStrictGlobalLorebookCollection(database: JsonRecord): GlobalLorebookRecord[] {
+  if (!Array.isArray(database.loreBook)) {
+    throw new ValidationError('loreBook must be an array')
+  }
+  const seen = new Set<string>()
+  return database.loreBook.map((raw, index) => {
+    const lorebook = readJsonObject(raw, `loreBook[${index}]`) as GlobalLorebookRecord
+    const id = readLorebookId(lorebook.id, `loreBook[${index}].id`)
+    if (seen.has(id)) {
+      throw new ValidationError(`Duplicate lorebook id: ${id}`)
+    }
+    seen.add(id)
+    return lorebook
+  })
+}
+
+/** Validate one stored global lorebook exactly as represented on disk. */
+export function validateStoredGlobalLorebook(
+  lorebook: GlobalLorebookRecord,
+  label = 'lorebook',
+): LorebookEntryRecord[] {
+  validateGlobalLorebookRecord(lorebook, label)
+  return validateStoredLorebookEntries(lorebook.data, `${label}.data`)
+}
+
 // Command-path entry validator. It must not mint ids directly or transitively.
 export function validateLorebookEntries(input: unknown, label = 'entries'): LorebookEntryRecord[] {
   if (!Array.isArray(input)) {
@@ -226,20 +257,55 @@ export function validateLorebookEntries(input: unknown, label = 'entries'): Lore
   })
 }
 
-export function requireGlobalLorebookIndex(lorebooks: readonly GlobalLorebookRecord[], lorebookId: string): number {
-  const index = lorebooks.findIndex((lorebook) => lorebook.id === lorebookId)
-  if (index === -1) {
-    throw new EntityNotFoundError(`Lorebook not found: ${lorebookId}`)
+/**
+ * Persisted-state validator for ordinary commands. Unlike repair helpers it
+ * never fills entry fields or mints replacement identities.
+ */
+export function validateStoredLorebookEntries(input: unknown, label: string): LorebookEntryRecord[] {
+  if (!Array.isArray(input)) {
+    throw new ValidationError(`${label} must be an array`)
   }
-  return index
+  const seen = new Set<string>()
+  for (let index = 0; index < input.length; index++) {
+    const entryLabel = `${label}[${index}]`
+    const entry = readJsonObject(input[index], entryLabel) as LorebookEntryRecord
+    if (typeof entry.id !== 'string' || entry.id.trim() === '') {
+      throw new ValidationError(`${entryLabel}.id must be a non-empty string`)
+    }
+    validateLorebookEntryRecord(entry, entryLabel, { allowAgentOnlyActivationFields: true })
+    if (seen.has(entry.id)) {
+      throw new ValidationError(`Duplicate lorebook entry id: ${entry.id}`)
+    }
+    seen.add(entry.id)
+  }
+  return input as LorebookEntryRecord[]
 }
 
-export function requireModule(modules: readonly ModuleRecord[], moduleId: string): ModuleRecord {
-  const module = modules.find((candidate) => candidate.id === moduleId && !candidate.mcp)
-  if (!module) {
+export function requireGlobalLorebookIndex(lorebooks: readonly GlobalLorebookRecord[], lorebookId: string): number {
+  const matches = lorebooks
+    .map((lorebook, index) => ({ lorebook, index }))
+    .filter(({ lorebook }) => lorebook.id === lorebookId)
+  if (matches.length === 0) {
+    throw new EntityNotFoundError(`Lorebook not found: ${lorebookId}`)
+  }
+  if (matches.length !== 1) {
+    throw new ValidationError(`Duplicate lorebook id: ${lorebookId}`)
+  }
+  return matches[0].index
+}
+
+export function requireModule<T extends ModuleRecord>(modules: readonly T[], moduleId: string): T {
+  const matches = modules.filter((candidate) => candidate.id === moduleId)
+  if (matches.length === 0) {
     throw new EntityNotFoundError(`Module not found: ${moduleId}`)
   }
-  return module
+  if (matches.length !== 1) {
+    throw new ValidationError(`Duplicate module id: ${moduleId}`)
+  }
+  if (matches[0].mcp) {
+    throw new EntityNotFoundError(`Module not found: ${moduleId}`)
+  }
+  return matches[0]
 }
 
 export function readModuleId(value: unknown, label = 'moduleId'): string {
@@ -287,6 +353,28 @@ export function repairLorebookEntries(input: unknown, label: string): LorebookEn
   })
 }
 
+/** Repair command-create payloads while making unexpected client regressions loud. */
+export function repairCreatedLorebookEntries(input: unknown, label: string): LorebookEntryRecord[] {
+  const mintedIds = lorebookEntryIdsNeedRepair(input)
+  const entries = repairLorebookEntries(input, label)
+  if (mintedIds) {
+    console.warn(`Command create minted missing or duplicate lorebook entry ids in ${label}`)
+  }
+  return entries
+}
+
+function lorebookEntryIdsNeedRepair(input: unknown): boolean {
+  if (!Array.isArray(input)) return false
+  const seen = new Set<string>()
+  for (const candidate of input) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return true
+    const id = (candidate as JsonRecord).id
+    if (typeof id !== 'string' || !id.trim() || seen.has(id)) return true
+    seen.add(id)
+  }
+  return false
+}
+
 export function normalizeSelectedCharacterLorebooks(
   database: unknown,
   characterId: string,
@@ -307,16 +395,22 @@ export function normalizeSelectedCharacterLorebooks(
     throw new ValidationError(`Duplicate character id: ${characterId}`)
   }
   const { character, characterIndex } = matches[0]
-  // Repair only the field this mutation owns. Character defaults, chat rows,
-  // folders, selection pointers, and every other sibling stay untouched.
-  const entries = ensureCharacterLorebooks(character)
+  const entries =
+    character.globalLore === undefined
+      ? []
+      : validateStoredLorebookEntries(character.globalLore, `character ${character.chaId}.globalLore`)
   return { character, characterIndex, entries }
 }
 
 export function normalizeSelectedChatLorebooks(
   database: unknown,
   chatId: string,
-): { character: CharacterRecord; chat: { localLore: LorebookEntryRecord[] }; parentId: string } {
+): {
+  character: CharacterRecord
+  chat: JsonRecord
+  entries: LorebookEntryRecord[]
+  parentId: string
+} {
   const target = readJsonObject(database, 'database')
   const characters = Array.isArray(target.characters) ? target.characters : []
   const matches: Array<{ character: CharacterRecord; chat: JsonRecord }> = []
@@ -336,15 +430,12 @@ export function normalizeSelectedChatLorebooks(
   }
   const { character, chat } = matches[0]
   const parentId = readCharacterId(character.chaId, `chat ${chatId} parent character id`)
-  // The exact chat loader and writer preserve every sibling field. Repair only
-  // the lorebook baseline before applying the requested entry mutation.
-  chat.localLore = repairLorebookEntries(
-    Array.isArray(chat.localLore) ? chat.localLore : [],
-    `chat ${chatId}.localLore`,
-  )
+  const entries =
+    chat.localLore === undefined ? [] : validateStoredLorebookEntries(chat.localLore, `chat ${chatId}.localLore`)
   return {
     character,
-    chat: chat as { localLore: LorebookEntryRecord[] },
+    chat,
+    entries,
     parentId,
   }
 }
@@ -561,7 +652,9 @@ function repairLorebookEntry(input: unknown, label: string): LorebookEntryRecord
   if (typeof entry.id !== 'string' || entry.id.trim() === '') {
     entry.id = randomUUID()
   }
-  validateLorebookEntryRecord(entry, label)
+  // Imported state may retain author activation settings behind the inert
+  // Agent-only flag; command payload validation remains strict by default.
+  validateLorebookEntryRecord(entry, label, { allowAgentOnlyActivationFields: true })
   return entry
 }
 
@@ -580,6 +673,13 @@ function repairLorebookEntryFields(raw: JsonRecord): JsonRecord {
   repaired.mode = readStringLike(raw.mode) ?? 'normal'
   repaired.alwaysActive = readBoolean(raw.alwaysActive ?? raw.constant ?? raw.forceActivation) ?? false
   repaired.selective = readBoolean(raw.selective) ?? false
+  const extensions = readOptionalJsonObject(raw.extentions ?? raw.extensions)
+  const agentOnly = raw.agentOnly === true || extensions.risu_agent_only === true
+  if (agentOnly) {
+    repaired.agentOnly = true
+  } else if (raw.agentOnly !== undefined) {
+    repaired.agentOnly = false
+  }
   if (repaired.folder !== undefined && typeof repaired.folder !== 'string') {
     delete repaired.folder
   }
@@ -623,7 +723,11 @@ function validateGlobalLorebookRecord(record: GlobalLorebookRecord, label: strin
   }
 }
 
-function validateLorebookEntryRecord(record: JsonRecord, label: string): void {
+function validateLorebookEntryRecord(
+  record: JsonRecord,
+  label: string,
+  options: { allowAgentOnlyActivationFields?: boolean } = {},
+): void {
   for (const key of ['id', 'key', 'secondkey', 'comment', 'content', 'mode']) {
     if (typeof record[key] !== 'string') {
       throw new ValidationError(`${label}.${key} must be a string`)
@@ -640,6 +744,22 @@ function validateLorebookEntryRecord(record: JsonRecord, label: string): void {
   }
   if (typeof record.selective !== 'boolean') {
     throw new ValidationError(`${label}.selective must be a boolean`)
+  }
+  if ('agentOnly' in record && record.agentOnly !== undefined && typeof record.agentOnly !== 'boolean') {
+    throw new ValidationError(`${label}.agentOnly must be a boolean`)
+  }
+  const extensions = readOptionalJsonObject(record.extentions ?? record.extensions)
+  const agentOnly = record.agentOnly === true || extensions.risu_agent_only === true
+  if (agentOnly) {
+    if (
+      !options.allowAgentOnlyActivationFields &&
+      (record.alwaysActive !== false || (record.key as string).trim() || (record.secondkey as string).trim())
+    ) {
+      throw new ValidationError(`${label} Agent-only entries must disable Always Active and have no activation keys`)
+    }
+    if (record.mode === 'folder' || record.mode === 'child') {
+      throw new ValidationError(`${label} Agent-only entries must be regular lorebook entries`)
+    }
   }
   if ('folder' in record && record.folder !== undefined && typeof record.folder !== 'string') {
     throw new ValidationError(`${label}.folder must be a string`)

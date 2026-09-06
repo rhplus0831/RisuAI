@@ -88,6 +88,27 @@ describe('resolveBedrockRequest', () => {
     })
     expect(r?.maxTokens).toBe(1024)
   })
+
+  it('normalizes budget and adaptive thinking controls', () => {
+    const r = resolveBedrockRequest({
+      model: 'm',
+      messages: [],
+      credentials: baseCreds,
+      thinkingTokens: 4096,
+      thinkingType: 'adaptive',
+      adaptiveThinkingEffort: 'xhigh',
+      supportsAdaptiveThinking: true,
+      supportsXHighEffort: false,
+      signal: new AbortController().signal,
+    })
+    expect(r).toMatchObject({
+      thinkingTokens: 4096,
+      thinkingType: 'adaptive',
+      adaptiveThinkingEffort: 'xhigh',
+      supportsAdaptiveThinking: true,
+      supportsXHighEffort: false,
+    })
+  })
 })
 
 describe('buildBedrockRequest', () => {
@@ -136,6 +157,51 @@ describe('buildBedrockRequest', () => {
     expect(built.headers['x-amz-date']).toBe('20240101T000000Z')
     expect(built.headers['x-amz-content-sha256']).toMatch(/^[0-9a-f]{64}$/)
   })
+
+  it.each([
+    {
+      label: 'budget',
+      thinking: {
+        thinkingTokens: 4096,
+        thinkingType: 'budget' as const,
+      },
+      expectedThinking: { type: 'enabled', budget_tokens: 4096, display: 'summarized' },
+      expectedOutputConfig: undefined,
+    },
+    {
+      label: 'adaptive',
+      thinking: {
+        thinkingType: 'adaptive' as const,
+        adaptiveThinkingEffort: 'xhigh' as const,
+        supportsAdaptiveThinking: true,
+        supportsXHighEffort: false,
+      },
+      expectedThinking: { type: 'adaptive', display: 'summarized' },
+      expectedOutputConfig: { effort: 'high' },
+    },
+  ])(
+    'sends $label thinking and applies Bedrock sampler rules',
+    ({ thinking, expectedThinking, expectedOutputConfig }) => {
+      const built = buildBedrockRequest({
+        model: 'us.test',
+        messages: [{ role: 'user', content: 'hi' }],
+        credentials: baseCreds,
+        maxTokens: 8192,
+        temperature: 0.25,
+        topP: 0.8,
+        topK: 20,
+        ...thinking,
+        date: fixedDate,
+        signal: new AbortController().signal,
+      })
+      const body = JSON.parse(built.body)
+      expect(body.thinking).toEqual(expectedThinking)
+      expect(body.output_config).toEqual(expectedOutputConfig)
+      expect(body.temperature).toBe(1)
+      expect(body.top_p).toBeUndefined()
+      expect(body.top_k).toBeUndefined()
+    },
+  )
 
   it('lets additionalParams mutate the body and headers before signing', () => {
     const built = buildBedrockRequest({
@@ -205,6 +271,29 @@ describe('runBedrock', () => {
     const body = JSON.parse(captured!.init.body as string)
     expect(body.system).toBe('be brief')
     expect(body.temperature).toBe(0.5)
+  })
+
+  it('preserves thinking and redacted-thinking blocks in the shared envelope', async () => {
+    vi.stubGlobal('fetch', async () =>
+      ok({
+        content: [
+          { type: 'thinking', thinking: 'reasoning' },
+          { type: 'redacted_thinking', data: 'opaque-signature' },
+          { type: 'text', text: 'answer' },
+        ],
+      }),
+    )
+    const resolved = resolveBedrockRequest({
+      model: 'us.test',
+      messages: [{ role: 'user', content: 'hi' }],
+      credentials: baseCreds,
+      signal: new AbortController().signal,
+    })!
+
+    expect(await runBedrock(resolved)).toEqual({
+      type: 'success',
+      result: '<Thoughts>\nreasoning\n{{redacted_thinking}}\n</Thoughts>\n\nanswer',
+    })
   })
 
   it('returns fail with upstream error.message on non-2xx JSON', async () => {

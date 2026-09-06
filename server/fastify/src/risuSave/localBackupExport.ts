@@ -7,6 +7,7 @@ import {
   buildRisuSaveAssetReport,
   summarizeRisuSaveAssetReport,
 } from './assetReferences.js'
+import { createExportAssetIntegrityVerifier, verifyExportAssetFile } from './exportAssetIntegrity.js'
 
 export interface RisuLocalBackupAssetEntry extends PersistedAsset {
   name: string
@@ -52,7 +53,9 @@ const UINT32_MAX = 0xffffffff
 const EMPTY_CHUNK = new Uint8Array()
 const textEncoder = new TextEncoder()
 
-export function buildRepositoryRisuLocalBackupExport(input: RisuLocalBackupExportInput): RisuLocalBackupExport {
+export async function buildRepositoryRisuLocalBackupExport(
+  input: RisuLocalBackupExportInput,
+): Promise<RisuLocalBackupExport> {
   const report = buildRisuSaveAssetReport(input.persisted.database, input.persisted.assets)
   const assetsById = new Map(input.persisted.assets.map((asset) => [asset.id, asset]))
   const includedAssets: RisuLocalBackupAssetEntry[] = []
@@ -80,8 +83,18 @@ export function buildRepositoryRisuLocalBackupExport(input: RisuLocalBackupExpor
     orphanedAssets: report.orphaned,
   }
 
+  const verifiedAssetCandidates: RisuLocalBackupAssetCandidate[] = []
+  for (const candidate of assetCandidates) {
+    if (await verifyExportAssetFile(candidate.asset, candidate.diskPath)) {
+      verifiedAssetCandidates.push(candidate)
+      manifest.includedAssets.push({ ...candidate.asset, name: candidate.recordName })
+    } else {
+      manifest.missingFiles.push({ ...candidate.asset, name: candidate.recordName })
+    }
+  }
+
   const stream = new PassThrough()
-  void writeLocalBackupStream(stream, input.databaseBytes, manifest, assetCandidates)
+  void writeLocalBackupStream(stream, input.databaseBytes, manifest, verifiedAssetCandidates)
 
   return { stream, manifest }
 }
@@ -119,10 +132,9 @@ async function writeLocalBackupStream(
 
   try {
     for (const candidate of assetCandidates) {
-      const included = await addFileRecord(writeBytes, candidate.recordName, candidate.diskPath)
-      if (included) {
-        manifest.includedAssets.push({ ...candidate.asset, name: candidate.recordName })
-      } else {
+      const included = await addFileRecord(writeBytes, candidate.recordName, candidate.diskPath, candidate.asset)
+      if (!included) {
+        removeIncludedAsset(manifest.includedAssets, candidate.asset.id)
         manifest.missingFiles.push({ ...candidate.asset, name: candidate.recordName })
       }
     }
@@ -148,6 +160,7 @@ async function addFileRecord(
   writeBytes: (bytes: Uint8Array) => Promise<void>,
   name: string,
   diskPath: string,
+  asset: PersistedAsset,
 ): Promise<boolean> {
   let file: fs.promises.FileHandle
   try {
@@ -165,13 +178,16 @@ async function addFileRecord(
     throw err
   }
   assertUint32Length(stat.size, `legacy local backup record ${name}`)
+  const verifier = createExportAssetIntegrityVerifier(asset)
   let readStream: fs.ReadStream | null = null
   try {
     await writeRecordHeader(writeBytes, name, stat.size)
     readStream = file.createReadStream()
     for await (const chunk of readStream) {
+      verifier.update(chunk)
       await writeBytes(chunk)
     }
+    verifier.finish()
     await writeBytes(EMPTY_CHUNK)
     return true
   } catch (err) {
@@ -179,6 +195,11 @@ async function addFileRecord(
     else await file.close().catch(() => {})
     throw err
   }
+}
+
+function removeIncludedAsset(includedAssets: RisuLocalBackupAssetEntry[], id: string): void {
+  const index = includedAssets.findIndex((asset) => asset.id === id)
+  if (index >= 0) includedAssets.splice(index, 1)
 }
 
 async function writeRecordHeader(

@@ -13,13 +13,14 @@ import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import {
   COLLECTION_FIELDS,
   insertAssetMetadataBatch,
+  loadCharacterSummariesForRead,
   loadPersisted,
   loadPersistedForAssembly,
   loadPersistedWithMessages,
   type PersistedAsset,
 } from '../src/repository.js'
 import { MASKED_PROVIDER_SECRET, maskProviderSecrets } from '../src/providerSecrets.js'
-import { emitProtocolMetric, protocolMetricsEnabled } from '../src/protocolMetrics.js'
+import { emitProtocolMetric, protocolMetricsEnabled, subscribeProtocolMetrics } from '../src/protocolMetrics.js'
 import {
   appendActiveChatMessageTail,
   applyChatMessageDiff,
@@ -46,7 +47,8 @@ import {
   withServerLoadInstrumentation,
 } from './helpers/loadCostHarness.js'
 import type { GenerationChatRouteOptions } from '../src/routes/generationChat.js'
-import { buildLargeCorpusFixture, type LargeCorpusFixture } from '../../../src/ts/__tests__/largeCorpusFixture.js'
+import { buildLargeCorpusFixture, type LargeCorpusFixture } from '../../../test/fixtures/largeCorpusFixture.js'
+import { isServerCharacterSummary } from '@risuai/protocol/character-summary-resource'
 
 // Prove the server load-count harness can pass a genuinely scoped hot path and
 // fail a path that performs a whole-corpus payload load on the shared
@@ -117,7 +119,7 @@ async function importDatabase(database: unknown): Promise<number> {
     headers: { 'risu-auth': assertion },
     payload: { database },
   })
-  expect(res.statusCode).toBe(200)
+  expect(res.statusCode, res.body).toBe(200)
   const imported = res.json() as { revision: number }
   return configureImportedCurrentChatGenerationSettings(database, imported.revision)
 }
@@ -141,7 +143,7 @@ async function configureImportedCurrentChatGenerationSettings(
       },
     },
   })
-  expect(res.statusCode).toBe(200)
+  expect(res.statusCode, res.body).toBe(200)
   return (res.json() as { revision: number }).revision
 }
 
@@ -484,7 +486,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('H1 guard: hydration of a chat WITHOUT a chat_hypa_v3 row stays scoped', async () => {
+  it('guard: hydration of a chat WITHOUT a chat_hypa_v3 row stays scoped', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
     expect(fixture.noHypa.chatId).not.toBe(fixture.hot.chatId)
@@ -508,7 +510,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('H1 guard keeps the zero-row fallback: a not-yet-extracted chat hydrates from its embedded copy', async () => {
+  it('guard keeps the zero-row fallback: a not-yet-extracted chat hydrates from its embedded copy', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
 
@@ -555,7 +557,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     )
   })
 
-  it('U1: bulk chat hydration performs zero whole-corpus payload reads, missing ids included', async () => {
+  it('bulk chat hydration performs zero whole-corpus payload reads, missing ids included', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
 
@@ -576,21 +578,20 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(body.missing).toEqual(['missing-chat'])
     expect(body.chats).toHaveLength(2)
 
-    // Bulk rows intentionally omit reroll alternates; single-chat hydration keeps
-    // them for active chat reloads.
+    // Bulk rows carry the same requested-chat hydration shape, including the
+    // chat-scoped reroll candidates needed by already-resident clients.
     for (const chat of body.chats) {
       const single = (await hydrationGet(chat.chatId)).json()
-      expect(JSON.stringify({ m: chat.message, h: chat.hypaV3Data })).toBe(
-        JSON.stringify({ m: single.message, h: single.hypaV3Data }),
+      expect(JSON.stringify({ m: chat.message, h: chat.hypaV3Data, a: chat.alternates })).toBe(
+        JSON.stringify({ m: single.message, h: single.hypaV3Data, a: single.alternates }),
       )
-      expect(chat).not.toHaveProperty('alternates')
     }
     expect(body.chats[0].message).toHaveLength(fixture.hot.messageCount)
     expect(body.chats[0].hypaV3Data).toBeDefined()
     expect(body.chats[1].hypaV3Data).toBeUndefined()
   })
 
-  it('H2: chat-create performs zero hydrated message loads and no full-database clone-sized stringify', async () => {
+  it('chat-create performs zero hydrated message loads and no full-database clone-sized stringify', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)
     const fullHydratedDatabaseSize = JSON.stringify(fixture.database).length
@@ -644,7 +645,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect((hydrated.json().message as Array<{ chatId: string }>).map((m) => m.chatId)).toEqual(['h2-load-msg-1'])
   })
 
-  it('L14: append-only message diff cost stays constant with long prefixes', () => {
+  it('append-only message diff cost stays constant with long prefixes', () => {
     const db = openDatabase(harness.dataDir)
     try {
       const base = Array.from({ length: 256 }, (_, index) => ({
@@ -656,7 +657,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
       replaceChatMessages(db, 'l14-chat', base)
 
       resetChatMessageDiffInstrumentation()
-      expect(appendActiveChatMessageTail(db, 'l14-chat', next, base.length)).toBe(true)
+      expect(appendActiveChatMessageTail(db, 'l14-chat', next, base)).toBe(true)
       expect(getChatMessageDiffInstrumentation()).toMatchObject({
         stableEqualCalls: 0,
         stableEqualStringifies: 0,
@@ -679,7 +680,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('L14: single character-lorebook hydration performs zero whole-corpus payload reads', async () => {
+  it('single character-lorebook hydration performs zero whole-corpus payload reads', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase({ ...fixture.database, enableLorebookStubs: true })
 
@@ -716,7 +717,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     })
   })
 
-  it('L14: single character-lorebook hydration keeps the broad pre-extraction fallback', async () => {
+  it('single character-lorebook hydration keeps the broad pre-extraction fallback', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase({ ...fixture.database, enableLorebookStubs: true })
 
@@ -749,7 +750,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(corpusLoadCount).toBeGreaterThan(0)
   })
 
-  it('U1: bulk character-lorebook hydration performs zero whole-corpus payload reads', async () => {
+  it('bulk character-lorebook hydration performs zero whole-corpus payload reads', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase({ ...fixture.database, enableLorebookStubs: true })
 
@@ -776,7 +777,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('U1: bulk hydration serves a legacy embedded-message chat row without the broad walk', async () => {
+  it('bulk hydration serves a legacy embedded-message chat row without the broad walk', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
 
@@ -821,7 +822,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(body.chats[0].message).toEqual(embedded)
   })
 
-  it('U1: bulk hydration keeps the broad fallback on a pre-extraction embedded-characters database', async () => {
+  it('bulk hydration keeps the broad fallback on a pre-extraction embedded-characters database', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
 
@@ -867,7 +868,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(corpusLoadCount).toBeGreaterThan(0)
   })
 
-  it('M1: prompt assembly performs zero whole-corpus message/hypa payload reads', async () => {
+  it('prompt assembly performs zero whole-corpus message/hypa payload reads', async () => {
     const fixture = buildLargeCorpusFixture()
     // The fixture is hydration-oriented; add the assembly settings the prompt
     // path needs (and drop the template so the `chats` history slot renders).
@@ -876,8 +877,8 @@ describe('server load-count harness on the large-corpus fixture', () => {
     // Audit M1 regression: assembly resolved its database through
     // `loadPersistedWithMessages`, paying the whole-table messages +
     // chat_hypa_v3 parse per send/preview. The scoped assembly loader joins
-    // only the target chat; `loadPersisted`'s character/collection reads are
-    // the path's legitimate remaining breadth.
+    // only the target chat. Selected generation now also reads the chosen
+    // character and configuration owners without rebuilding their collections.
     const { result: res, loadCountByTable } = await withServerLoadInstrumentation(() =>
       harness.app.inject({
         method: 'POST',
@@ -886,7 +887,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
         payload: { chatId: fixture.hot.chatId, characterId: fixture.hot.characterId },
       }),
     )
-    expect(res.statusCode).toBe(200)
+    expect(res.statusCode, res.body).toBe(200)
     const body = res.json()
     expect(body.stopSending).toBeUndefined()
     // The target transcript actually hydrated: the hot chat's last message
@@ -897,7 +898,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(loadCountByTable.chat_hypa_v3 ?? 0).toBe(0)
   })
 
-  it('M1: no-var editinput transcript replacement adds zero whole-corpus loads', async () => {
+  it('no-var editinput transcript replacement adds zero whole-corpus loads', async () => {
     const fixture = buildLargeCorpusFixture()
 
     await importDatabase(promptReadyLargeCorpusDatabase(fixture))
@@ -943,7 +944,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(editinputRun.loadCountByTable).toEqual(plainRun.loadCountByTable)
   })
 
-  it('L1: image-bearing chat send performs zero assembly-time readFileSync asset reads', async () => {
+  it('image-bearing chat send performs zero assembly-time readFileSync asset reads', async () => {
     const fixture = buildLargeCorpusFixture({ hotChatMessageCount: 1 })
     const database = promptReadyLargeCorpusDatabase(fixture)
     const assetBytes = Buffer.from('l1-image-bytes')
@@ -996,7 +997,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('L6: image-bearing chat send builds one shared asset table per assembly', async () => {
+  it('image-bearing chat send builds one shared asset table per assembly', async () => {
     const fixture = buildLargeCorpusFixture({ hotChatMessageCount: 2 })
     const database = promptReadyLargeCorpusDatabase(fixture)
     const charAssetBytes = Buffer.from('l6-char-image-bytes')
@@ -1041,6 +1042,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
       },
     ]
     database.modules = [
+      ...(Array.isArray(database.modules) ? database.modules : []),
       {
         id: 'mod-assets',
         name: 'Asset Module',
@@ -1068,7 +1070,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(getPromptAssetTableInstrumentation()).toEqual({ builds: 1 })
   })
 
-  it('L20: prompt memory cleanup and selection share one summary payload read', async () => {
+  it('prompt memory cleanup and selection share one summary payload read', async () => {
     const fixture = buildLargeCorpusFixture({ hotChatMessageCount: 12 })
     await importDatabase({
       ...promptReadyLargeCorpusDatabase(fixture),
@@ -1137,7 +1139,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(observed.reads).toHaveLength(1)
   })
 
-  it('M1: the scoped assembly loader matches the broad loader on the target chat and stubs siblings', async () => {
+  it('the scoped assembly loader matches the broad loader on the target chat and stubs siblings', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
 
@@ -1182,7 +1184,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('M1: the scoped assembly loader keeps the embedded-copy fallback for a not-yet-extracted target chat', async () => {
+  it('the scoped assembly loader keeps the embedded-copy fallback for a not-yet-extracted target chat', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
 
@@ -1243,7 +1245,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('M4: the targeted character read performs zero whole-corpus payload reads', async () => {
+  it('the targeted character read performs zero whole-corpus payload reads', async () => {
     const fixture = buildLargeCorpusFixture()
     // The owned-row mask must still apply on the narrow path: give the target
     // character the one character-scoped secret (`oaiTTSConfig.apiKey`).
@@ -1273,7 +1275,27 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(body.character.oaiTTSConfig.apiKey).toBe(MASKED_PROVIDER_SECRET)
   })
 
-  it('M6: collection reads skip character and chat table payload reads', async () => {
+  it('character summaries project bounded scalars without hydrating raw character or chat payloads', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase(fixture.database)
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const observed = await withServerLoadInstrumentation(() => loadCharacterSummariesForRead(db))
+      expect(observed.loadCountByTable.characters ?? 0).toBe(0)
+      expect(observed.loadCountByTable.chats ?? 0).toBe(0)
+      expect(observed.corpusLoadCount).toBe(0)
+      expect(observed.result).toHaveLength(fixture.characters.length)
+      expect(observed.result.every(isServerCharacterSummary)).toBe(true)
+      expect(JSON.stringify(observed.result)).not.toContain(fixture.characters[0].desc)
+      expect(JSON.stringify(observed.result)).not.toContain('globalLore')
+      expect(JSON.stringify(observed.result)).not.toContain('generationSettings')
+    } finally {
+      db.close()
+    }
+  })
+
+  it('collection reads skip character and chat table payload reads', async () => {
     const fixture = buildLargeCorpusFixture()
     const database = {
       ...fixture.database,
@@ -1282,7 +1304,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
       currentPluginProvider: 'plugin-a',
       enabledModules: ['mod-a'],
       modules: [{ id: 'mod-a', name: 'Module A', description: '' }],
-      plugins: [{ id: 'plugin-a', name: 'Plugin A', enabled: true }],
+      plugins: [{ id: 'plugin-a', name: 'Plugin A', enabled: true, version: '3.0' }],
     }
     const revision = await importDatabase(database)
 
@@ -1293,6 +1315,12 @@ describe('server load-count harness on the large-corpus fixture', () => {
         let expectedCollection = broadDatabase[collection]
         if (collection === 'botPresets') {
           expectedCollection = [{ id: 'preset-a', name: 'Preset A' }]
+        } else if (collection === 'promptTemplate') {
+          expectedCollection = (
+            db.prepare('SELECT data_json FROM prompt_templates ORDER BY position').all() as Array<{
+              data_json: string
+            }>
+          ).map((row) => JSON.parse(row.data_json))
         } else if (collection === 'promptPresets') {
           expectedCollection = (broadDatabase.promptPresets as Array<Record<string, unknown>>).map((preset) => {
             const shell = { ...preset }
@@ -1326,7 +1354,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('L3: server-intent completion performs zero loadPersisted-shaped corpus reads', async () => {
+  it('server-intent completion performs zero loadPersisted-shaped corpus reads', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase({
       ...fixture.database,
@@ -1363,7 +1391,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(loadCountByTable.chats ?? 0).toBe(0)
   })
 
-  it('Phase 7 L3/K3: default chat dispatch performs zero prompt and restoration clones', async () => {
+  it('default chat dispatch performs zero prompt and restoration clones', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase({
       ...promptReadyLargeCorpusDatabase(fixture),
@@ -1394,7 +1422,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.restoration).toBe(0)
   })
 
-  it('Phase 7 L8: no-message input/start/output triggers perform zero full transcript clones', async () => {
+  it('no-message input/start/output triggers perform zero full transcript clones', async () => {
     const fixture = buildLargeCorpusFixture()
     const database = promptReadyLargeCorpusDatabase(fixture)
     const characters = database.characters as Array<Record<string, unknown>>
@@ -1451,7 +1479,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(cloneMetrics.fullTranscriptClones.output).toBe(0)
   })
 
-  it('L13: Realm character append performs zero loadPersisted-shaped corpus reads', async () => {
+  it('Realm character append performs zero loadPersisted-shaped corpus reads', async () => {
     const baseRevision = await importDatabase({
       characters: [],
       characterOrder: [],
@@ -1522,7 +1550,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('K1: message-only generation finalization performs zero loadPersisted-shaped corpus reads', async () => {
+  it('message-only generation finalization performs zero loadPersisted-shaped corpus reads', async () => {
     const fixture = buildLargeCorpusFixture()
     const paused = createPausedProvider('K1 scoped finalization reply')
     await restartHarness(paused.generationChat)
@@ -1540,7 +1568,12 @@ describe('server load-count harness on the large-corpus fixture', () => {
         durable: true,
       },
     })
-    await paused.waitForProvider
+    await Promise.race([
+      paused.waitForProvider,
+      Promise.resolve(request).then((response) => {
+        throw new Error(`Generation ended before provider dispatch: ${response.statusCode} ${response.body}`)
+      }),
+    ])
 
     const {
       result: res,
@@ -1570,7 +1603,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     })
   })
 
-  it('K1: chat-variable generation finalization avoids whole-corpus reads', async () => {
+  it('chat-variable generation finalization avoids whole-corpus reads', async () => {
     const fixture = buildLargeCorpusFixture()
     const database = structuredClone(fixture.database)
     const characters = database.characters as Array<Record<string, unknown>>
@@ -1601,7 +1634,12 @@ describe('server load-count harness on the large-corpus fixture', () => {
         durable: true,
       },
     })
-    await paused.waitForProvider
+    await Promise.race([
+      paused.waitForProvider,
+      Promise.resolve(request).then((response) => {
+        throw new Error(`Generation ended before provider dispatch: ${response.statusCode} ${response.body}`)
+      }),
+    ])
 
     const {
       result: res,
@@ -1630,14 +1668,16 @@ describe('server load-count harness on the large-corpus fixture', () => {
     })
   })
 
-  it('K2: asset GC avoids loadPersisted-shaped corpus reads', async () => {
+  it('asset GC avoids loadPersisted-shaped corpus reads', async () => {
     const settingRef = '1'.repeat(64)
     const collectionRef = '2'.repeat(64)
     const characterRef = '3'.repeat(64)
     const messageRef = '4'.repeat(64)
     const orphan = '5'.repeat(64)
+    const pluginRef = '6'.repeat(64)
     await importDatabase({
       userIcon: settingRef,
+      pluginCustomStorage: { 'gc-plugin': { nested: { asset: pluginRef } } },
       modules: [{ assets: [['module', collectionRef]] }],
       personas: [{ icon: collectionRef }],
       botPresets: [{ image: collectionRef }],
@@ -1669,14 +1709,20 @@ describe('server load-count harness on the large-corpus fixture', () => {
         asset(characterRef),
         asset(messageRef),
         asset(orphan),
+        asset(pluginRef),
       ])
 
       const observed = await withServerLoadInstrumentation(() =>
         runAssetGc(harness.dataDir, { db, graceMs: 0, now: () => Date.now() }),
       )
 
+      expect(observed.result.status).toBe('completed')
       expect(observed.result.deletedAssetIds).toEqual([orphan])
-      expect(observed.loadCountByTable.assets).toBe(1)
+      expect(observed.result.referenceScan?.referenceCount).toBe(5)
+      // Each paged walk reads its data and then an empty terminal page. Raw
+      // metadata/plugin payloads remain visible to the corpus classifier; every
+      // such read must have the bounded LIMIT and advance by its indexed key.
+      expect(observed.loadCountByTable.assets).toBe(2)
       expect(observed.loadCountByTable.characters ?? 0).toBe(0)
       expect(observed.loadCountByTable.chats ?? 0).toBe(0)
       expect(observed.loadCountByTable.modules ?? 0).toBe(0)
@@ -1684,10 +1730,17 @@ describe('server load-count harness on the large-corpus fixture', () => {
       expect(observed.loadCountByTable.bot_presets ?? 0).toBe(0)
       expect(observed.loadCountByTable.messages ?? 0).toBe(0)
       expect(observed.loadCountByTable.chat_hypa_v3 ?? 0).toBe(0)
-      // Plugin storage is the bounded arbitrary-JSON exception: GC must scan
-      // every value_json string candidate, while all structured corpus tables
-      // stay on scalar json_extract projections.
-      expect(observed.loadCountByTable.plugin_custom_storage).toBe(1)
+      // Plugin storage remains the arbitrary-JSON exception; the nested
+      // reference above must survive while structured owners use projections.
+      expect(observed.loadCountByTable.plugin_custom_storage).toBe(2)
+      const assetPages = observed.corpusLoads.filter((load) => load.table === 'assets')
+      const pluginPages = observed.corpusLoads.filter((load) => load.table === 'plugin_custom_storage')
+      for (const load of [...assetPages, ...pluginPages]) {
+        expect(load.sql).toMatch(/ORDER BY (?:id|rowid) LIMIT 64$/i)
+        expect(load.sql).not.toMatch(/\bOFFSET\b/i)
+      }
+      expect(assetPages.every((load) => /WHERE id > \?/i.test(load.sql))).toBe(true)
+      expect(pluginPages[1].sql).toMatch(/WHERE rowid > CAST\(\? AS INTEGER\)/i)
       expect(
         observed.corpusLoads
           .filter((load) => load.table !== 'assets' && load.table !== 'plugin_custom_storage')
@@ -1698,7 +1751,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('M4: settings reads mask provider secrets without mutating persisted state', async () => {
+  it('settings reads mask provider secrets without mutating persisted state', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase({ ...fixture.database, openAIKey: 'sk-settings-secret' })
 
@@ -1720,7 +1773,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('L5: runtime bootstrap skips asset and domain payload reads', async () => {
+  it('runtime bootstrap skips asset and domain payload reads', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)
 
@@ -1749,7 +1802,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(loadCountByTable.chats ?? 0).toBe(0)
   })
 
-  it('L10: a fresh (no-replay) SSE connect performs zero command-event history reads', async () => {
+  it('a fresh (no-replay) SSE connect performs zero command-event history reads', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
     const baseUrl = await listen()
@@ -1779,7 +1832,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('L10: a replay connect still reads the history; so does a fresh connect with metrics on', async () => {
+  it('a replay connect still reads the history; so does a fresh connect with metrics on', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
     const revision = (
@@ -1824,7 +1877,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(metricsRun.loadCountByTable.command_events).toBeGreaterThanOrEqual(1)
   })
 
-  it('M5: metric fields are not built when metrics are off (and are identical when on)', async () => {
+  it('metric fields are not built when metrics are off (and are identical when on)', async () => {
     // Unit guarantee on the real emitter: the thunk only runs after the
     // enabled guard.
     const thunk = vi.fn(() => ({ payloadBytes: 123 }))
@@ -1834,17 +1887,29 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(thunk).not.toHaveBeenCalled()
 
     const logged: Record<string, unknown>[] = []
+    const observed: Readonly<Record<string, unknown>>[] = []
     const logger = { info: (payload: Record<string, unknown>) => logged.push(payload) }
+    const unsubscribe = subscribeProtocolMetrics((metric) => observed.push(metric))
     await withProtocolMetricsEnv('1', async () => {
       emitProtocolMetric('m5_probe', thunk, logger as never)
       emitProtocolMetric('m5_probe_eager', { payloadBytes: 123 }, logger as never)
     })
+    unsubscribe()
     expect(thunk).toHaveBeenCalledTimes(1)
     expect(logged[0]).toEqual({ metric: 'm5_probe', payloadBytes: 123 })
     expect(logged[1]).toEqual({ metric: 'm5_probe_eager', payloadBytes: 123 })
+    expect(observed).toEqual(logged)
+
+    const unsubscribeThrowing = subscribeProtocolMetrics(() => {
+      throw new Error('measurement sink failed')
+    })
+    await withProtocolMetricsEnv('1', async () => {
+      expect(() => emitProtocolMetric('m5_probe_listener_failure', {}, logger as never)).not.toThrow()
+    })
+    unsubscribeThrowing()
   })
 
-  it('M5: resource and bootstrap responses add metric serialization only when enabled', async () => {
+  it('resource and bootstrap responses add metric serialization only when enabled', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
 

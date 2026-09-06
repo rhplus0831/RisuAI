@@ -71,9 +71,11 @@ import {
   type GenerationSettingsPickerMode,
 } from 'src/ts/stores.svelte'
 import { resolveActiveChatGenerationSettings } from 'src/ts/activeChatGenerationSettings'
+import { currentRoute, navigate } from 'src/ts/router'
 import { clearCachedServerCommandRevision, type ServerCommandResult } from 'src/ts/server/commands'
-import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
+import { collectionsResourceState, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import { mergeServerResourceCharacterRow } from 'src/ts/storage/database.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -254,6 +256,7 @@ function seedDb(): void {
   selectedCharID.set(0)
   replaceResourceDatabase({
     username: 'Global User',
+    currentChar: 0,
     selectedPersona: 0,
     modelPresetsId: 0,
     promptPresetsId: 0,
@@ -269,6 +272,42 @@ function seedDb(): void {
     lastLoadedLoadoutName: '',
     hypaV3: false,
     translator: '',
+    translatorType: 'llm',
+    translatorPresetId: 'translator-a',
+    translatorPresets: [
+      {
+        id: 'translator-a',
+        name: 'Translator Alpha',
+        prompt: 'Alpha',
+        maxResponse: 128,
+        steps: [
+          {
+            id: 'translator-a-step',
+            name: 'Step 1',
+            enabled: true,
+            prompt: 'Alpha',
+            maxResponse: 128,
+            model: { mode: 'inheritTranslate' },
+          },
+        ],
+      },
+      {
+        id: 'translator-b',
+        name: 'Translator Beta',
+        prompt: 'Beta',
+        maxResponse: 256,
+        steps: [
+          {
+            id: 'translator-b-step',
+            name: 'Step 1',
+            enabled: true,
+            prompt: 'Beta',
+            maxResponse: 256,
+            model: { mode: 'inheritTranslate' },
+          },
+        ],
+      },
+    ],
     personas: [
       {
         id: 'persona-a',
@@ -393,6 +432,12 @@ function pickerButton(kind: 'model' | 'prompt' | 'persona'): HTMLButtonElement {
 
 function personaNoteLine(): HTMLElement | null {
   return pickerControl('persona').querySelector<HTMLElement>('[data-risu-generation-picker-persona-note]')
+}
+
+function personaSettingsButton(): HTMLButtonElement | null {
+  return pickerControl('persona').querySelector<HTMLButtonElement>(
+    '[data-risu-generation-picker-persona-settings] button',
+  )
 }
 
 function agentPresetSelect(): HTMLSelectElement {
@@ -541,6 +586,7 @@ beforeEach(() => {
   characterCommandSpies.setCharacterSupaMemoryWithOutcome.mockResolvedValue({ status: 'accepted' })
   clearCachedServerCommandRevision()
   seedDb()
+  navigate('/', { replace: true })
 })
 
 afterEach(async () => {
@@ -561,6 +607,7 @@ afterEach(async () => {
   vi.unstubAllGlobals()
   selectedCharID.set(-1)
   replaceResourceDatabase({} as never)
+  navigate('/', { replace: true })
 })
 
 describe('sidebar chat generation settings controls', () => {
@@ -617,8 +664,62 @@ describe('sidebar chat generation settings controls', () => {
     expect(pickerControl('prompt').textContent).toContain('Select prompt preset')
     expect(pickerControl('persona').dataset.risuPickerMode).toBe('active-chat-generation-settings')
     expect(pickerControl('persona').textContent).toContain('Select chat persona')
+    expect(personaSettingsButton()).toBeNull()
     expect(pickerControl('agent-preset').dataset.risuPickerMode).toBe('active-chat-generation-settings')
     expect(pickerControl('agent-preset').textContent).toContain(language.agentPresets.noSelected)
+  })
+
+  it('highlights a model preset that differs from the active prompt recommendation', async () => {
+    testDatabaseState().modelPresets.push({ id: 'model-preset-b', name: 'Recommended Model' } as never)
+    testDatabaseState().promptPresets[0].recommendedModelPresetId = 'model-preset-b'
+
+    mountGenerationSettingsPickerHost()
+    await tick()
+
+    const modelControl = pickerControl('model')
+    expect(modelControl.dataset.risuModelPresetRecommendationState).toBe('mismatch')
+    expect(modelControl.classList.contains('bg-red-900')).toBe(true)
+    expect(pickerButton('model').getAttribute('aria-label')).toBe(
+      language.chatGenerationModelPresetRecommendationMismatch('Recommended Model'),
+    )
+  })
+
+  it('does not highlight a model preset that matches the active prompt recommendation', async () => {
+    testDatabaseState().promptPresets[0].recommendedModelPresetId = 'model-preset-a'
+
+    mountGenerationSettingsPickerHost()
+    await tick()
+
+    const modelControl = pickerControl('model')
+    expect(modelControl.dataset.risuModelPresetRecommendationState).toBe('matched')
+    expect(modelControl.classList.contains('bg-red-900')).toBe(false)
+  })
+
+  it('opens the selected chat persona directly in persona settings', async () => {
+    navigate('/character/char-a/chat-a', { replace: true })
+    mountGenerationSettingsPickerHost()
+    await tick()
+
+    const settingsButton = personaSettingsButton()
+    expect(settingsButton).toBeTruthy()
+    expect(settingsButton?.getAttribute('aria-label')).toBe(`${language.edit} Persona Alpha`)
+    expect(settingsButton?.querySelector('.lucide-arrow-up-right')).toBeTruthy()
+
+    settingsButton?.click()
+    await tick()
+
+    expect(window.location.pathname).toBe('/settings/persona/persona-a')
+    expect(get(currentRoute)).toMatchObject({
+      kind: 'settings',
+      index: 12,
+      personaId: 'persona-a',
+    })
+    expect(window.history.state).toEqual({
+      __risuSettingsNavigation: {
+        originPath: '/character/char-a/chat-a',
+        version: 1,
+      },
+    })
   })
 
   it('shows the global Agent Preset default until the chat explicitly opts out', async () => {
@@ -1004,6 +1105,53 @@ describe('sidebar chat generation settings controls', () => {
     expect(toggleControl('flag').dataset.risuSelected).toBe('false')
     expect(toggleCheckbox('moduleFlag').checked).toBe(false)
     expect(toggleControl('moduleFlag').dataset.risuSelected).toBe('false')
+  })
+
+  it('waits for module hydration before filling defaults and preserves Persona-module values', async () => {
+    const calls = stubCommandFetch()
+    testDatabaseState().enabledModules = []
+    testDatabaseState().personas[0].modules = ['module-a']
+    activeChat().generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mood: '1',
+        note: 'alpha-note',
+        moduleFlag: '1',
+      },
+    }
+    collectionsResourceState.statuses.modules = 'loading'
+
+    mountToggles()
+    await tick()
+    await flushAsyncWork()
+
+    expect(generationSettingsSaves(calls)).toHaveLength(0)
+    expect(activeChat().generationSettings?.sidebarToggles).toEqual({
+      mood: '1',
+      note: 'alpha-note',
+      moduleFlag: '1',
+    })
+    expect(target.querySelector('[data-risu-toggle-key="moduleFlag"]')).toBeNull()
+
+    collectionsResourceState.statuses.modules = 'ready'
+    await tick()
+    await waitForGenerationSettingsSaveCount(calls, 1)
+
+    expect(activeChat().generationSettings?.sidebarToggles).toEqual({
+      mood: '1',
+      flag: '0',
+      note: 'alpha-note',
+      moduleFlag: '1',
+    })
+    expect(toggleCheckbox('moduleFlag').checked).toBe(true)
+    expect(generationSettingsSaves(calls)[0].body).toMatchObject({
+      patch: { sidebarToggles: { flag: '0' } },
+    })
+    expect(generationSettingsSaves(calls)[0].body).not.toHaveProperty('sidebarToggleDeleteKeys')
   })
 
   it('renders preset-owned toggles from bootstrap-shaped preset stubs', async () => {
@@ -1686,7 +1834,7 @@ describe('sidebar chat generation settings controls', () => {
     })
   })
 
-  it('shows and persists the three active-chat translation settings only when translation is configured', async () => {
+  it('shows and persists the active-chat translation settings only when translation is configured', async () => {
     const calls = stubCommandFetch()
     mountToggles()
     await tick()
@@ -1702,7 +1850,7 @@ describe('sidebar chat generation settings controls', () => {
       '[data-risu-chat-translation-settings]',
       'chat translation settings',
     )
-    expect(settings.querySelectorAll('[data-risu-chat-translation-setting]')).toHaveLength(3)
+    expect(settings.querySelectorAll('[data-risu-chat-translation-setting]')).toHaveLength(4)
     const autoTranslate = elementBySelector<HTMLElement>(
       '[data-risu-chat-translation-setting="autoTranslate"]',
       'auto-translate setting',
@@ -1720,6 +1868,41 @@ describe('sidebar chat generation settings controls', () => {
       },
     })
     await vi.waitFor(() => expect(autoTranslate.dataset.risuPersistenceStatus).toBe('idle'))
+  })
+
+  it('binds and clears an LLM translator preset for the active chat', async () => {
+    const calls = stubCommandFetch()
+    testDatabaseState().translator = 'ko'
+    mountToggles()
+    await tick()
+
+    const control = elementBySelector<HTMLElement>(
+      '[data-risu-chat-translation-setting="translatorPresetId"]',
+      'chat translator preset setting',
+    )
+    const select = control.querySelector<HTMLSelectElement>('select')!
+    expect(select.value).toBe('')
+    expect(select.options[0].textContent).toContain(`${language.useGlobalSettings} (Translator Alpha)`)
+
+    select.value = 'translator-b'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    await vi.waitFor(() => expect(activeChat().translatorPresetId).toBe('translator-b'))
+    await waitForFetchCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a',
+      method: 'PATCH',
+      body: { patch: { translatorPresetId: 'translator-b' }, select: false },
+    })
+
+    select.value = ''
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    await vi.waitFor(() => expect(activeChat()).not.toHaveProperty('translatorPresetId'))
+    await waitForFetchCount(calls, 3)
+    expect(calls[2]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a',
+      method: 'PATCH',
+      body: { patch: { translatorPresetId: null }, select: false },
+    })
   })
 
   it('derives the Saved Toggles button label with unlinked and mismatch precedence', async () => {
@@ -1932,6 +2115,59 @@ describe('sidebar chat generation settings controls', () => {
     expect(generationSettingsSaves(calls)[0].body).toMatchObject({
       patch: { sidebarToggles: { moduleFlag: '0' } },
     })
+  })
+
+  it('lists namespaced Agent toggles as their own Pick source', async () => {
+    const database = testDatabaseState()
+    database.agents = [
+      {
+        id: 'agent-a',
+        name: 'Research Helper',
+        version: 1,
+        instruction: 'Tone: {{agentToggle::tone}}',
+        modelDefaults: { mode: 'inheritMain' },
+        runtimeDefaults: {},
+        inputScopes: [],
+        toggles: [{ key: 'tone', label: 'Tone', kind: 'select', options: ['Warm', 'Formal'] }],
+        outputFormat: 'text',
+      },
+    ]
+    database.agentPresets[0].agentUses = [
+      {
+        id: 'use-agent-a',
+        agentId: 'agent-a',
+        enabled: true,
+        phase: 'beforeMain',
+        dependencies: [],
+        outputKey: 'research',
+        destination: 'intermediate',
+        failurePolicy: { mode: 'required' },
+      },
+    ]
+    activeChat().generationSettings!.agentPresetId = 'agent-preset-a'
+    activeChat().generationSettings!.sidebarToggles!['agent:agent-a:tone'] = '1'
+    database.chatGenerationTogglePresets = [
+      {
+        id: 'agent-values',
+        name: 'Agent Values',
+        createdAt: 1,
+        updatedAt: 1,
+        sidebarToggles: { 'agent:agent-a:tone': '0' },
+        sidebarToggleKinds: { 'agent:agent-a:tone': 'select' },
+      },
+    ]
+
+    mountGenerationSettingsPickerHost()
+    await tick()
+    await openTogglePresetDialog()
+    togglePresetAction(3).click()
+    await tick()
+
+    const source = elementBySelector<HTMLButtonElement>(
+      '[data-risu-toggle-preset-source-row][data-risu-source-id="agent:agent-a"]',
+      'Agent Pick source',
+    )
+    expect(source.textContent).toContain(language.chatGenerationTogglePresetPickAgentSource('Research Helper'))
   })
 
   it('writes jailbreak and sidebar toggles to active chat settings without touching global state', async () => {

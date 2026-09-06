@@ -46,6 +46,18 @@ export function beginActiveMessageTranslation(job: ActiveMessageTranslation & { 
   return started
 }
 
+/** Publish a terminal server-owned job unless a different, newer job is running for the row. */
+export function publishSettledMessageTranslation(
+  job: ActiveMessageTranslation & { status: 'succeeded' | 'failed' },
+): void {
+  activeMessageTranslations.update((jobs) => {
+    const current = jobs.find((candidate) => candidate.messageId === job.messageId)
+    if (current?.status === 'running' && current.jobId !== job.jobId) return jobs
+    locallyStartedTranslationJobIds.delete(job.jobId)
+    return [...jobs.filter((candidate) => candidate.messageId !== job.messageId), job]
+  })
+}
+
 export function isCurrentMessageTranslationJob(messageId: string, jobId: string): boolean {
   return get(activeMessageTranslations).some(
     (job) => job.messageId === messageId && job.jobId === jobId && job.status === 'running',

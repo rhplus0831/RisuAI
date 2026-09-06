@@ -1,14 +1,17 @@
 <script lang="ts">
   import { onDestroy, onMount, untrack } from 'svelte'
   import { closePopupEditorSession, popUpEditorStore } from '../../ts/stores.svelte'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import type MonacoEditorType from './MonacoEditor.svelte'
   import { language } from 'src/lang'
   import { risuChatParser } from 'src/ts/parser/parser.svelte'
   import { tokenize } from 'src/ts/tokenizer'
   import Toggles from '../SideBars/Toggles.svelte'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { isMobile } from 'src/ts/platform'
+  import Check from 'src/lib/UI/GUI/CheckInput.svelte'
+  import { applyServerBackedSetting } from 'src/ts/server/settingsOwner.svelte'
 
   let languageMode = $state(popUpEditorStore.language || 'markdown')
   let previewing = $state(false)
@@ -16,10 +19,31 @@
   let MonacoComponent: typeof MonacoEditorType | null = $state(null)
   let showToggles = $state(false)
   let tokenCountRun = 0
+  let monacoLoadPromise: Promise<void> | null = null
+  let destroyed = false
   const sessionId = untrack(() => popUpEditorStore.sessionId)
-  const useMonacoEditor = untrack(() =>
-    isMobile ? getDatabase().useMonacoEditorOnMobile !== false : getDatabase().useMonacoEditorOnDesktop !== false,
+  const monacoSettingKey = isMobile ? 'useMonacoEditorOnMobile' : 'useMonacoEditorOnDesktop'
+  let useMonacoEditor = $state(
+    untrack(() => {
+      if (settingsResourceState.groupStatuses.sidebar !== 'ready') return false
+      return isMobile
+        ? (settingsResourceState.value.useMonacoEditorOnMobile ?? false)
+        : (settingsResourceState.value.useMonacoEditorOnDesktop ?? false)
+    }),
   )
+
+  function loadMonacoEditor(): void {
+    if (MonacoComponent || monacoLoadPromise) return
+    monacoLoadPromise = import('./MonacoEditor.svelte').then((module) => {
+      if (!destroyed) MonacoComponent = module.default
+    })
+  }
+
+  function setUseMonacoEditor(enabled: boolean): void {
+    useMonacoEditor = enabled
+    applyServerBackedSetting(monacoSettingKey, enabled)
+    if (enabled) loadMonacoEditor()
+  }
 
   function close(): void {
     closePopupEditorSession(sessionId)
@@ -38,7 +62,9 @@
     }
 
     try {
-      $state.snapshot(getDatabase().globalChatVariables)
+      if (settingsResourceState.groupStatuses.sidebar === 'ready') {
+        $state.snapshot(settingsResourceState.value.globalChatVariables)
+      }
     } catch (error) {}
     return risuChatParser(popUpEditorStore.value)
   })
@@ -61,13 +87,11 @@
   })
 
   onMount(() => {
-    if (!useMonacoEditor) return
-    import('./MonacoEditor.svelte').then((module) => {
-      MonacoComponent = module.default
-    })
+    if (useMonacoEditor) loadMonacoEditor()
   })
 
   onDestroy(() => {
+    destroyed = true
     tokenCountRun += 1
   })
 </script>
@@ -75,9 +99,9 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  use:modalBackdropDismiss={close}
   data-modal-root
-  class="fixed top-0 left-0 w-full h-full bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-  onclick={close}>
+  class="fixed top-0 left-0 w-full h-full bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
   <div
     use:modalFocusTrap
     class="bg-darkbg rounded-lg p-4 w-11/12 h-11/12 flex flex-col gap-2"
@@ -87,9 +111,17 @@
     tabindex="-1"
     onkeydown={handleDialogKeydown}
     onclick={(e) => e.stopPropagation()}>
-    <div class="flex items-center justify-between">
-      <h2 id="risu-popup-editor-title" class="text-xl font-bold">Popup Editor</h2>
-      <div class="flex items-center gap-2">
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <h2 id="risu-popup-editor-title" class="text-xl font-bold">{language.hotkeyDesc.popupEditor}</h2>
+      <div class="flex flex-wrap items-center gap-2 sm:justify-end">
+        {#if !previewing}
+          <Check
+            check={useMonacoEditor}
+            name={language.monacoEditor}
+            margin={false}
+            className="rounded bg-bgcolor px-2 py-1 text-sm"
+            onChange={setUseMonacoEditor} />
+        {/if}
         {#if ['markdown', 'cbs'].includes(languageMode)}
           {#if !previewing}
             <select bind:value={languageMode} class="bg-bgcolor border-none rounded px-2 py-1 text-sm">
@@ -146,6 +178,7 @@
       {:else if !useMonacoEditor}
         <textarea
           bind:value={popUpEditorStore.value}
+          aria-label={language.plainTextEditor}
           class="w-full h-full resize-none bg-bgcolor text-textcolor font-mono p-4 border-none focus:outline-hidden"
         ></textarea>
       {:else if MonacoComponent}

@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store'
-import type { ScopedLorebookMutationOperation } from './lorebookBridge.svelte'
+import type { ScopedLorebookMutationOperation } from './lorebookOwner.svelte'
 
 export type ScopedLorebookMutationUiStatus = 'pending' | 'queued' | 'failed'
 export type ScopedLorebookMutationUiKind = 'collection' | 'local-activation'

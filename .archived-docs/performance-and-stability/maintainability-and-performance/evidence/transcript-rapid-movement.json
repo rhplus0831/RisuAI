@@ -1,0 +1,553 @@
+{
+  "source": "4154dade91f65b79dec7922ea6cd6a86ee41d547",
+  "movement": [
+    {
+      "frame": 2,
+      "index": 98,
+      "id": "residency-message-98",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 3,
+      "index": 91,
+      "id": "residency-message-91",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 4,
+      "index": 85,
+      "id": "residency-message-85",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 5,
+      "index": 82,
+      "id": "residency-message-82",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 6,
+      "index": 80,
+      "id": "residency-message-80",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 7,
+      "index": 82,
+      "id": "residency-message-82",
+      "text": "Residency row 82. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n ",
+      "busy": true
+    },
+    {
+      "frame": 7,
+      "index": 81,
+      "id": "residency-message-81",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 7,
+      "index": 80,
+      "id": "residency-message-80",
+      "text": "Residency row 80. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n ",
+      "busy": true
+    },
+    {
+      "frame": 8,
+      "index": 84,
+      "id": "residency-message-84",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 8,
+      "index": 82,
+      "id": "residency-message-82",
+      "text": "Residency row 82. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n ",
+      "busy": true
+    },
+    {
+      "frame": 9,
+      "index": 89,
+      "id": "residency-message-89",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 10,
+      "index": 95,
+      "id": "residency-message-95",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 11,
+      "index": 102,
+      "id": "residency-message-102",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 12,
+      "index": 111,
+      "id": "residency-message-111",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 13,
+      "index": 120,
+      "id": "residency-message-120",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 14,
+      "index": 129,
+      "id": "residency-message-129",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 15,
+      "index": 137,
+      "id": "residency-message-137",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 17,
+      "index": 149,
+      "id": "residency-message-149",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 18,
+      "index": 151,
+      "id": "residency-message-151",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 19,
+      "index": 152,
+      "id": "residency-message-152",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 19,
+      "index": 151,
+      "id": "residency-message-151",
+      "text": "Residency row 151. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n ",
+      "busy": true
+    },
+    {
+      "frame": 20,
+      "index": 151,
+      "id": "residency-message-151",
+      "text": "Residency row 151. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n ",
+      "busy": true
+    },
+    {
+      "frame": 20,
+      "index": 150,
+      "id": "residency-message-150",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 20,
+      "index": 149,
+      "id": "residency-message-149",
+      "text": "Residency row 149. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n ",
+      "busy": true
+    },
+    {
+      "frame": 21,
+      "index": 146,
+      "id": "residency-message-146",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 22,
+      "index": 141,
+      "id": "residency-message-141",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 23,
+      "index": 134,
+      "id": "residency-message-134",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 24,
+      "index": 126,
+      "id": "residency-message-126",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 26,
+      "index": 109,
+      "id": "residency-message-109",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 26,
+      "index": 108,
+      "id": "residency-message-108",
+      "text": "Residency row 108. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n\nFirst list item\nSecond list item\n\n\nA quoted paragraph.\n\n ",
+      "busy": true
+    },
+    {
+      "frame": 27,
+      "index": 100,
+      "id": "residency-message-100",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 28,
+      "index": 93,
+      "id": "residency-message-93",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 30,
+      "index": 84,
+      "id": "residency-message-84",
+      "text": "Residency row 84. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n\nFirst list item\nSecond list item\n\n\nA quoted paragraph.\n\n ",
+      "busy": true
+    },
+    {
+      "frame": 30,
+      "index": 83,
+      "id": "residency-message-83",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 30,
+      "index": 82,
+      "id": "residency-message-82",
+      "text": "Residency row 82. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n ",
+      "busy": true
+    },
+    {
+      "frame": 31,
+      "index": 81,
+      "id": "residency-message-81",
+      "text": "Residency row 81. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n\nFirst list item\nSecond list item\n\n\nA quoted paragraph.\n\n ",
+      "busy": true
+    },
+    {
+      "frame": 31,
+      "index": 80,
+      "id": "residency-message-80",
+      "text": "Residency row 80. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n ",
+      "busy": true
+    },
+    {
+      "frame": 31,
+      "index": 79,
+      "id": "residency-message-79",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 32,
+      "index": 82,
+      "id": "residency-message-82",
+      "text": "Residency row 82. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n ",
+      "busy": true
+    },
+    {
+      "frame": 32,
+      "index": 81,
+      "id": "residency-message-81",
+      "text": "Residency row 81. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n\nFirst list item\nSecond list item\n\n\nA quoted paragraph.\n\n ",
+      "busy": true
+    },
+    {
+      "frame": 32,
+      "index": 80,
+      "id": "residency-message-80",
+      "text": "Residency row 80. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n ",
+      "busy": true
+    },
+    {
+      "frame": 33,
+      "index": 84,
+      "id": "residency-message-84",
+      "text": "Residency row 84. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n\nFirst list item\nSecond list item\n\n\nA quoted paragraph.\n\n ",
+      "busy": true
+    },
+    {
+      "frame": 33,
+      "index": 83,
+      "id": "residency-message-83",
+      "text": "Residency row 83. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n ",
+      "busy": true
+    },
+    {
+      "frame": 34,
+      "index": 89,
+      "id": "residency-message-89",
+      "text": "Residency row 89. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n ",
+      "busy": true
+    },
+    {
+      "frame": 34,
+      "index": 88,
+      "id": "residency-message-88",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 34,
+      "index": 87,
+      "id": "residency-message-87",
+      "text": "Residency row 87. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n\nFirst list item\nSecond list item\n\n\nA quoted paragraph.\n\n ",
+      "busy": true
+    },
+    {
+      "frame": 35,
+      "index": 95,
+      "id": "residency-message-95",
+      "text": "Residency row 95. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n ",
+      "busy": true
+    },
+    {
+      "frame": 35,
+      "index": 94,
+      "id": "residency-message-94",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 35,
+      "index": 93,
+      "id": "residency-message-93",
+      "text": "Residency row 93. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n\nFirst list item\nSecond list item\n\n\nA quoted paragraph.\n\n ",
+      "busy": true
+    },
+    {
+      "frame": 36,
+      "index": 102,
+      "id": "residency-message-102",
+      "text": "Residency row 102. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n\nFirst list item\nSecond list item\n\n\nA quoted paragraph.\n\n ",
+      "busy": true
+    },
+    {
+      "frame": 37,
+      "index": 111,
+      "id": "residency-message-111",
+      "text": "Residency row 111. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n\nFirst list item\nSecond list item\n\n\nA quoted paragraph.\n\n ",
+      "busy": true
+    },
+    {
+      "frame": 37,
+      "index": 110,
+      "id": "residency-message-110",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 37,
+      "index": 109,
+      "id": "residency-message-109",
+      "text": "Residency row 109. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n ",
+      "busy": true
+    },
+    {
+      "frame": 38,
+      "index": 120,
+      "id": "residency-message-120",
+      "text": "Residency row 120. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n\nFirst list item\nSecond list item\n\n\nA quoted paragraph.\n\n ",
+      "busy": true
+    },
+    {
+      "frame": 38,
+      "index": 119,
+      "id": "residency-message-119",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 39,
+      "index": 129,
+      "id": "residency-message-129",
+      "text": "Residency row 129. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n\nFirst list item\nSecond list item\n\n\nA quoted paragraph.\n\n ",
+      "busy": true
+    },
+    {
+      "frame": 39,
+      "index": 127,
+      "id": "residency-message-127",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 39,
+      "index": 126,
+      "id": "residency-message-126",
+      "text": "Residency row 126. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n\nFirst list item\nSecond list item\n\n\nA quoted paragraph.\n\n ",
+      "busy": true
+    },
+    {
+      "frame": 40,
+      "index": 137,
+      "id": "residency-message-137",
+      "text": "Residency row 137. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n ",
+      "busy": true
+    },
+    {
+      "frame": 40,
+      "index": 136,
+      "id": "residency-message-136",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 41,
+      "index": 143,
+      "id": "residency-message-143",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 41,
+      "index": 141,
+      "id": "residency-message-141",
+      "text": "Residency row 141. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n\nFirst list item\nSecond list item\n\n\nA quoted paragraph.\n\n ",
+      "busy": true
+    },
+    {
+      "frame": 42,
+      "index": 148,
+      "id": "residency-message-148",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 43,
+      "index": 151,
+      "id": "residency-message-151",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 44,
+      "index": 152,
+      "id": "residency-message-152",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 44,
+      "index": 151,
+      "id": "residency-message-151",
+      "text": "Residency row 151. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n ",
+      "busy": true
+    },
+    {
+      "frame": 45,
+      "index": 151,
+      "id": "residency-message-151",
+      "text": "Residency row 151. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n ",
+      "busy": true
+    },
+    {
+      "frame": 45,
+      "index": 150,
+      "id": "residency-message-150",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 46,
+      "index": 148,
+      "id": "residency-message-148",
+      "text": "Residency row 148. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n ",
+      "busy": true
+    },
+    {
+      "frame": 46,
+      "index": 147,
+      "id": "residency-message-147",
+      "text": " ",
+      "busy": true
+    },
+    {
+      "frame": 47,
+      "index": 143,
+      "id": "residency-message-143",
+      "text": "Residency row 143. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n ",
+      "busy": true
+    },
+    {
+      "frame": 47,
+      "index": 142,
+      "id": "residency-message-142",
+      "text": " ",
+      "busy": true
+    }
+  ],
+  "settlement": {
+    "name": "rapid-movement-scroll-settlement",
+    "startedAtMs": 7617,
+    "mountedRows": 61,
+    "windowRows": 180,
+    "residencyMode": "bounded",
+    "transcriptElements": 2181,
+    "documentElements": 2346,
+    "rowHeightRange": {
+      "min": 258.296875,
+      "max": 788.1875
+    },
+    "elapsedMs": 1036.1000000238419,
+    "resources": [],
+    "responseEndToSettledMs": null,
+    "anchorDeltaPx": null,
+    "heapUsedBytes": 35388420,
+    "domNodes": 30244,
+    "layoutMs": 32.64700000000001,
+    "styleMs": 26.96700000000002,
+    "scriptMs": 242.48000000000002,
+    "taskMs": 700.0729999999998,
+    "viewport": {
+      "height": 784,
+      "coveredPixels": 784,
+      "spacerPixels": 0,
+      "visibleRows": [
+        {
+          "id": "residency-message-141",
+          "index": 141,
+          "text": "Residency row 141. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n\nFirst list item\nSecond list item\n\n\nA quoted paragraph.\n\n ",
+          "top": 0,
+          "bottom": 350.125
+        },
+        {
+          "id": "residency-message-142",
+          "index": 142,
+          "text": "Residency row 142. Bold text and inline code.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\nVariable-height Markdown paragraph with enough words to wrap on a narrow mobile display.\n ",
+          "top": 350.125,
+          "bottom": 784
+        }
+      ]
+    }
+  }
+}

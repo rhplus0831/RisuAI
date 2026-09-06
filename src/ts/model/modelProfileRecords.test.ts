@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { MODEL_ROLES } from './modelRoles'
+import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
 import { LLMFlags, LLMFormat, LLMTokenizer } from './types'
 import {
   createDefaultModelRoleProfiles,
+  modelProfileListItems,
+  normalizeModelProfileOrder,
   normalizeModelRuntimeDefaults,
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
+  readModelProfileOrder,
   readModelRuntimeDefaults,
   readModelProfiles,
   readModelRoleProfiles,
@@ -18,6 +21,78 @@ describe('model profile records', () => {
     )
   })
 
+  it('normalizes mixed profile and divider ordering without turning dividers into profiles', () => {
+    const profiles = [
+      { id: 'profile-a', name: 'A' },
+      { id: 'profile-b', name: 'B' },
+    ]
+    const order = normalizeModelProfileOrder(
+      [
+        { kind: 'profile', profileId: 'profile-b' },
+        { kind: 'divider', id: ' divider-a ' },
+        { kind: 'divider', id: 'divider-a' },
+        { kind: 'profile', profileId: 'missing' },
+        { kind: 'unknown', id: 'drop' },
+      ],
+      profiles,
+    )
+
+    expect(order).toEqual([
+      { kind: 'profile', profileId: 'profile-b' },
+      { kind: 'divider', id: 'divider-a' },
+      { kind: 'profile', profileId: 'profile-a' },
+    ])
+    expect(modelProfileListItems(profiles, order)).toEqual([
+      { kind: 'profile', profile: profiles[1] },
+      { kind: 'divider', id: 'divider-a' },
+      { kind: 'profile', profile: profiles[0] },
+    ])
+  })
+
+  it('strictly validates complete model profile ordering', () => {
+    const profiles = [
+      { id: 'profile-a', name: 'A' },
+      { id: 'profile-b', name: 'B' },
+    ]
+    expect(
+      readModelProfileOrder(
+        [
+          { kind: 'profile', profileId: 'profile-a' },
+          { kind: 'divider', id: 'divider-a' },
+          { kind: 'profile', profileId: 'profile-b' },
+        ],
+        profiles,
+      ),
+    ).toEqual([
+      { kind: 'profile', profileId: 'profile-a' },
+      { kind: 'divider', id: 'divider-a' },
+      { kind: 'profile', profileId: 'profile-b' },
+    ])
+    expect(() => readModelProfileOrder([{ kind: 'profile', profileId: 'profile-a' }], profiles)).toThrow(
+      'modelProfileOrder must include every model profile exactly once',
+    )
+    expect(() =>
+      readModelProfileOrder(
+        [
+          { kind: 'profile', profileId: 'profile-a' },
+          { kind: 'divider', id: 'divider-a' },
+          { kind: 'divider', id: 'divider-a' },
+          { kind: 'profile', profileId: 'profile-b' },
+        ],
+        profiles,
+      ),
+    ).toThrow('modelProfileOrder[2].id must not duplicate divider-a')
+    expect(() =>
+      readModelProfileOrder(
+        [
+          { kind: 'profile', profileId: 'profile-a' },
+          { kind: 'profile', profileId: 'missing' },
+        ],
+        profiles,
+      ),
+    ).toThrow('modelProfileOrder[1].profileId references an unknown model profile')
+  })
+
   it('leniently normalizes missing and old persisted profile shapes', () => {
     expect(normalizeModelProfiles(undefined)).toEqual([])
     expect(
@@ -28,6 +103,7 @@ describe('model profile records', () => {
           providerId: ' openai ',
           modelId: ' gpt-5 ',
           providerOptions: {
+            credentialId: ' cred-primary ',
             requestModel: ' wire-model ',
             baseUrl: ' risu::https://proxy.example.com ',
             extraHeaders: { ' X-Key ': ' value ', '   ': 'drop', 'X-Bad': 7 },
@@ -141,7 +217,7 @@ describe('model profile records', () => {
         providerId: 'openai',
         modelId: 'gpt-5',
         providerOptions: {
-          apiKey: 'profile-api-key',
+          credentialId: 'cred-primary',
           requestModel: 'wire-model',
           baseUrl: 'risu::https://proxy.example.com',
           extraHeaders: { 'X-Key': 'value' },
@@ -176,8 +252,6 @@ describe('model profile records', () => {
           vertex: {
             projectId: 'project-a',
             region: 'us-central1',
-            clientEmail: 'svc@example.iam.gserviceaccount.com',
-            privateKey: '-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----',
           },
           customApi: {
             tokenizer: LLMTokenizer.Mistral,
@@ -236,8 +310,8 @@ describe('model profile records', () => {
           providerId: ' vertex ',
           modelId: ' gpt-5 ',
           providerOptions: {
+            credentialId: ' cred-vertex ',
             requestModel: ' wire ',
-            apiKey: ' profile-api-key ',
             baseUrl: ' https://proxy.example.com/v1 ',
             extraHeaders: { 'X-Test': ' yes ' },
             additionalParams: [[' header::X-Test ', ' true ']],
@@ -252,6 +326,12 @@ describe('model profile records', () => {
               useSubscriptionEndpoint: true,
               subscriptionState: ' active ',
             },
+            llmGateway: {
+              reasoningEffort: 'max',
+              verbosity: 'high',
+              serviceTier: 'priority',
+              routing: 'throughput',
+            },
             ollama: {
               url: ' http://localhost:11434 ',
               requestFormat: LLMFormat.Anthropic,
@@ -261,8 +341,6 @@ describe('model profile records', () => {
             vertex: {
               projectId: ' project-a ',
               region: ' us-central1 ',
-              clientEmail: ' svc@example.iam.gserviceaccount.com ',
-              privateKey: ' private-key ',
             },
             customApi: {
               tokenizer: LLMTokenizer.Cohere,
@@ -297,7 +375,7 @@ describe('model profile records', () => {
         providerId: 'vertex',
         modelId: 'gpt-5',
         providerOptions: {
-          apiKey: 'profile-api-key',
+          credentialId: 'cred-vertex',
           requestModel: 'wire',
           baseUrl: 'https://proxy.example.com/v1',
           extraHeaders: { 'X-Test': 'yes' },
@@ -313,6 +391,12 @@ describe('model profile records', () => {
             useSubscriptionEndpoint: true,
             subscriptionState: 'active',
           },
+          llmGateway: {
+            reasoningEffort: 'max',
+            verbosity: 'high',
+            serviceTier: 'priority',
+            routing: 'throughput',
+          },
           ollama: {
             url: 'http://localhost:11434',
             requestFormat: LLMFormat.Anthropic,
@@ -322,8 +406,6 @@ describe('model profile records', () => {
           vertex: {
             projectId: 'project-a',
             region: 'us-central1',
-            clientEmail: 'svc@example.iam.gserviceaccount.com',
-            privateKey: 'private-key',
           },
           customApi: {
             tokenizer: LLMTokenizer.Cohere,
@@ -392,9 +474,15 @@ describe('model profile records', () => {
       ).toThrow(`modelProfiles[0].providerOptions.${field} is not supported`)
     }
 
-    expect(() => readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { apiKey: 123 } }])).toThrow(
-      'modelProfiles[0].providerOptions.apiKey must be a string when present',
+    expect(() =>
+      readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { apiKey: 'legacy-secret' } }]),
+    ).toThrow(
+      'modelProfiles[0].providerOptions.apiKey is no longer supported; reference a credential via modelProfiles[0].providerOptions.credentialId',
     )
+
+    expect(() =>
+      readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { credentialId: '   ' } }]),
+    ).toThrow('modelProfiles[0].providerOptions.credentialId must be a non-empty string when present')
 
     expect(() => readModelProfiles([{ id: 'profile-a', name: '' }])).toThrow(
       'modelProfiles[0].name must be a non-empty string',
@@ -563,6 +651,42 @@ describe('model profile records', () => {
         {
           id: 'profile-a',
           name: 'Primary',
+          providerOptions: { llmGateway: { reasoningEffort: 'extreme' } },
+        },
+      ]),
+    ).toThrow(
+      'modelProfiles[0].providerOptions.llmGateway.reasoningEffort must be one of none, minimal, low, medium, high, xhigh, max when present',
+    )
+
+    expect(() =>
+      readModelProfiles([
+        {
+          id: 'profile-a',
+          name: 'Primary',
+          providerOptions: { llmGateway: { serviceTier: 'turbo' } },
+        },
+      ]),
+    ).toThrow(
+      'modelProfiles[0].providerOptions.llmGateway.serviceTier must be one of auto, default, flex, priority when present',
+    )
+
+    expect(() =>
+      readModelProfiles([
+        {
+          id: 'profile-a',
+          name: 'Primary',
+          providerOptions: { llmGateway: { routing: 'random' } },
+        },
+      ]),
+    ).toThrow(
+      'modelProfiles[0].providerOptions.llmGateway.routing must be one of auto, price, throughput, latency when present',
+    )
+
+    expect(() =>
+      readModelProfiles([
+        {
+          id: 'profile-a',
+          name: 'Primary',
           providerOptions: { ollama: { requestFormat: 'Ollama' } },
         },
       ]),
@@ -586,7 +710,21 @@ describe('model profile records', () => {
           providerOptions: { vertex: { privateKey: 42 } },
         },
       ]),
-    ).toThrow('modelProfiles[0].providerOptions.vertex.privateKey must be a string when present')
+    ).toThrow(
+      'modelProfiles[0].providerOptions.vertex.privateKey is no longer supported; reference a credential via providerOptions.credentialId',
+    )
+
+    expect(() =>
+      readModelProfiles([
+        {
+          id: 'profile-a',
+          name: 'Primary',
+          providerOptions: { vertex: { clientEmail: 'service@example.com' } },
+        },
+      ]),
+    ).toThrow(
+      'modelProfiles[0].providerOptions.vertex.clientEmail is no longer supported; reference a credential via providerOptions.credentialId',
+    )
 
     expect(() =>
       readModelProfiles([
@@ -629,6 +767,7 @@ describe('model profile records', () => {
         temperature: 55,
         extractJson: ' object ',
         useStreaming: false,
+        stripCoT: true,
         modelTools: [' tool-a ', '', 7],
         customFlags: [LLMFlags.hasStreaming, 999, 'bad'],
         unsupportedRuntimeField: true,
@@ -638,6 +777,7 @@ describe('model profile records', () => {
       temperature: 55,
       extractJson: 'object',
       useStreaming: false,
+      stripCoT: true,
       modelTools: ['tool-a'],
       customFlags: [LLMFlags.hasStreaming],
     })
@@ -647,12 +787,14 @@ describe('model profile records', () => {
         topP: 0.8,
         customTokenizer: ' cl100k_base ',
         enableCustomFlags: true,
+        stripCoT: false,
         customFlags: [LLMFlags.hasImageInput],
       }),
     ).toEqual({
       topP: 0.8,
       customTokenizer: 'cl100k_base',
       enableCustomFlags: true,
+      stripCoT: false,
       customFlags: [LLMFlags.hasImageInput],
     })
 

@@ -7,6 +7,10 @@ export interface CommandEvent {
   resource: string
   id?: string
   parentId?: string
+  databaseLineage?: string
+  operationId?: string
+  sourceMessageId?: string
+  jobId?: string
   origin?: CommandEventOrigin
 }
 
@@ -100,8 +104,11 @@ export function persistCommandEvent(
   // events that never had an origin.
   db.prepare(
     `
-      INSERT INTO command_events (revision, type, resource, id, parent_id, origin_writer_session_id)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO command_events (
+        revision, type, resource, id, parent_id, origin_writer_session_id,
+        database_lineage, operation_id, source_message_id, job_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
   ).run(
     event.revision,
@@ -110,6 +117,10 @@ export function persistCommandEvent(
     event.id ?? null,
     event.parentId ?? null,
     event.origin?.writerSessionId ?? null,
+    event.databaseLineage ?? null,
+    event.operationId ?? null,
+    event.sourceMessageId ?? null,
+    event.jobId ?? null,
   )
   pruneCommandEventHistory(db, historyLimit, event.revision)
 }
@@ -130,7 +141,11 @@ export function listPersistedCommandEventHistory(db: DatabaseSync): readonly Com
     .prepare(
       `
         SELECT revision, type, resource, id, parent_id AS parentId,
-               origin_writer_session_id AS originWriterSessionId
+               origin_writer_session_id AS originWriterSessionId,
+               database_lineage AS databaseLineage,
+               operation_id AS operationId,
+               source_message_id AS sourceMessageId,
+               job_id AS jobId
         FROM command_events
         ORDER BY revision ASC
       `,
@@ -166,6 +181,10 @@ interface PersistedCommandEventRow {
   id: string | null
   parentId: string | null
   originWriterSessionId: string | null
+  databaseLineage: string | null
+  operationId: string | null
+  sourceMessageId: string | null
+  jobId: string | null
 }
 
 function commandEventFromRow(row: PersistedCommandEventRow): CommandEvent {
@@ -175,6 +194,10 @@ function commandEventFromRow(row: PersistedCommandEventRow): CommandEvent {
     resource: row.resource,
     ...(row.id !== null ? { id: row.id } : {}),
     ...(row.parentId !== null ? { parentId: row.parentId } : {}),
+    ...(row.databaseLineage !== null ? { databaseLineage: row.databaseLineage } : {}),
+    ...(row.operationId !== null ? { operationId: row.operationId } : {}),
+    ...(row.sourceMessageId !== null ? { sourceMessageId: row.sourceMessageId } : {}),
+    ...(row.jobId !== null ? { jobId: row.jobId } : {}),
     ...(row.originWriterSessionId !== null ? { origin: { writerSessionId: row.originWriterSessionId } } : {}),
   }
 }
@@ -186,6 +209,46 @@ function validateCommandEventForPersistence(event: CommandEvent): void {
 }
 
 export const COMMAND_EVENT_CATALOG = {
+  bardWikiConfirmationQueued: {
+    type: 'bardwiki.confirmation.queued',
+    resource: 'bardWikiChat',
+  },
+  bardWikiSettingsUpdated: {
+    type: 'bardwiki.settings.updated',
+    resource: 'bardWikiChat',
+  },
+  bardWikiDocumentCreated: {
+    type: 'bardwiki.document.created',
+    resource: 'bardWikiDocument',
+  },
+  bardWikiDocumentUpdated: {
+    type: 'bardwiki.document.updated',
+    resource: 'bardWikiDocument',
+  },
+  bardWikiDocumentDeleted: {
+    type: 'bardwiki.document.deleted',
+    resource: 'bardWikiDocument',
+  },
+  bardWikiChangeSetApplied: {
+    type: 'bardwiki.change_set.applied',
+    resource: 'bardWikiChat',
+  },
+  bardWikiReconciliationCompleted: {
+    type: 'bardwiki.reconciliation.completed',
+    resource: 'bardWikiChat',
+  },
+  bardWikiVaultImported: {
+    type: 'bardwiki.vault.imported',
+    resource: 'bardWikiChat',
+  },
+  bardWikiRebuildQueued: {
+    type: 'bardwiki.rebuild.queued',
+    resource: 'bardWikiChat',
+  },
+  bardWikiRebuildCompleted: {
+    type: 'bardwiki.rebuild.completed',
+    resource: 'bardWikiChat',
+  },
   settingsUpdated: {
     type: 'settings.updated',
     resource: 'settings',
@@ -318,6 +381,10 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'modelProfile.duplicated',
     resource: 'modelProfile',
   },
+  modelProfilesReordered: {
+    type: 'modelProfile.reordered',
+    resource: 'modelProfile',
+  },
   modelProfileDeleted: {
     type: 'modelProfile.deleted',
     resource: 'modelProfile',
@@ -333,6 +400,18 @@ export const COMMAND_EVENT_CATALOG = {
   modelRuntimeDefaultsUpdated: {
     type: 'modelProfile.runtimeDefaults.updated',
     resource: 'modelProfile',
+  },
+  providerCredentialCreated: {
+    type: 'providerCredential.created',
+    resource: 'providerCredential',
+  },
+  providerCredentialUpdated: {
+    type: 'providerCredential.updated',
+    resource: 'providerCredential',
+  },
+  providerCredentialDeleted: {
+    type: 'providerCredential.deleted',
+    resource: 'providerCredential',
   },
   agentPresetCreated: {
     type: 'agentPreset.created',
@@ -356,6 +435,42 @@ export const COMMAND_EVENT_CATALOG = {
   },
   agentPresetDefaultUpdated: {
     type: 'agentPreset.default.updated',
+    resource: 'agentPreset',
+  },
+  agentCreated: {
+    type: 'agent.created',
+    resource: 'agentPreset',
+  },
+  agentUpdated: {
+    type: 'agent.updated',
+    resource: 'agentPreset',
+  },
+  agentDuplicated: {
+    type: 'agent.duplicated',
+    resource: 'agentPreset',
+  },
+  agentDeleted: {
+    type: 'agent.deleted',
+    resource: 'agentPreset',
+  },
+  agentReordered: {
+    type: 'agent.reordered',
+    resource: 'agentPreset',
+  },
+  agentPresetUseCreated: {
+    type: 'agentPreset.use.created',
+    resource: 'agentPreset',
+  },
+  agentPresetUseUpdated: {
+    type: 'agentPreset.use.updated',
+    resource: 'agentPreset',
+  },
+  agentPresetUseDeleted: {
+    type: 'agentPreset.use.deleted',
+    resource: 'agentPreset',
+  },
+  agentPresetUseReordered: {
+    type: 'agentPreset.use.reordered',
     resource: 'agentPreset',
   },
   agentPresetStepCreated: {
@@ -456,6 +571,10 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'character.alternateGreetings.updated',
     resource: 'characterRow',
   },
+  greetingTranslationUpdated: {
+    type: 'character.greetingTranslation.updated',
+    resource: 'greetingTranslation',
+  },
   coldStorageCharacterRecovered: {
     type: 'coldStorage.characterRecovered',
     // Recovery replaces one character row and its chat rows. Message bodies
@@ -504,6 +623,10 @@ export const COMMAND_EVENT_CATALOG = {
   },
   chatDeleted: {
     type: 'chat.deleted',
+    resource: 'characterRow',
+  },
+  chatsReset: {
+    type: 'chats.reset',
     resource: 'characterRow',
   },
   chatForked: {
@@ -626,7 +749,7 @@ export const COMMAND_EVENT_CATALOG = {
   },
   moduleDeleted: {
     type: 'module.deleted',
-    // Deletion cross-writes characters/chats/loadouts via removeModuleReferences,
+    // Deletion cross-writes personas/characters/chats/loadouts via removeModuleReferences,
     // so it keeps the broad `module` resource.
     resource: 'module',
   },
@@ -639,6 +762,22 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'module.reordered',
     // Reorder rewrites only the `modules` table.
     resource: 'moduleReordered',
+  },
+  moduleFolderCreated: {
+    type: 'moduleFolder.created',
+    resource: 'moduleFolders',
+  },
+  moduleFolderUpdated: {
+    type: 'moduleFolder.updated',
+    resource: 'moduleFolders',
+  },
+  moduleFolderDeleted: {
+    type: 'moduleFolder.deleted',
+    resource: 'moduleOrganization',
+  },
+  moduleFolderReordered: {
+    type: 'moduleFolder.reordered',
+    resource: 'moduleFolders',
   },
   characterModulesReordered: {
     type: 'character.modules.reordered',

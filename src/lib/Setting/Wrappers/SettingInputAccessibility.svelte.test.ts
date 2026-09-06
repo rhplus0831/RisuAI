@@ -33,6 +33,7 @@ vi.mock('src/ts/setting/inputDraft.svelte', () => ({
 
 import SettingNumber from './SettingNumber.svelte'
 import SettingColor from './SettingColor.svelte'
+import SettingCheck from './SettingCheck.svelte'
 import SettingSelect from './SettingSelect.svelte'
 import SettingSlider from './SettingSlider.svelte'
 import SettingText from './SettingText.svelte'
@@ -86,6 +87,18 @@ async function resetMountedSetting(): Promise<void> {
 }
 
 describe('data-driven setting input labels', () => {
+  it('marks deprecated check settings visibly', async () => {
+    await mountSetting(
+      SettingCheck,
+      { id: 'deprecated.check', type: 'check', fallbackLabel: 'Legacy setting', deprecated: true },
+      false,
+    )
+
+    expect(target.querySelector('[data-setting-deprecated]')?.textContent).toBe(
+      `(${language.triggerCategories.Deprecated})`,
+    )
+  })
+
   it('restores a transiently empty number without dispatching a null setting write', async () => {
     await mountSetting(SettingNumber, { id: 'empty.number', type: 'number', fallbackLabel: 'Number setting' }, 2)
 

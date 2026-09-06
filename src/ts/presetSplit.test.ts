@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest'
+import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
 import {
   applyEffectivePresetComposition,
+  clearPromptPresetRecommendedModelPresetReferences,
   composeEffectivePresetSettings,
   createExtractedModelPreset,
   createExtractedPromptPreset,
+  extractPromptPresetFields,
   findEquivalentModelPreset,
-  hasModelPresetOnlyFields,
   modelPresetFingerprint,
+  PROMPT_PRESET_FIELDS,
+  PROMPT_PRESET_METADATA_FIELDS,
   promptPresetExportPayload,
+  repairPromptPresetRecommendedModelPresetReferences,
   resolvePromptPresetRegexField,
 } from './presetSplit'
 
@@ -26,7 +31,7 @@ describe('preset split helpers', () => {
     mainPrompt: 'Prompt text',
     jailbreak: 'Jailbreak text',
     customPromptTemplateToggle: 'mode=Mode',
-    promptTemplate: [{ type: 'plain', text: 'Template row' }],
+    promptTemplate: [{ type: 'plain', text: 'Template row', role: 'system' }],
     proxyKey: 'secret',
   }
 
@@ -56,7 +61,7 @@ describe('preset split helpers', () => {
       mainPrompt: 'Prompt text',
       jailbreak: 'Jailbreak text',
       customPromptTemplateToggle: 'mode=Mode',
-      promptTemplate: [{ type: 'plain', text: 'Template row' }],
+      promptTemplate: [{ type: 'plain', text: 'Template row', role: 'system' }],
       temperature: 0.7,
       maxContext: 16000,
       additionalParams: [['temperature', '{{none}}']],
@@ -66,6 +71,60 @@ describe('preset split helpers', () => {
     expect(promptPreset).not.toHaveProperty('aiModel')
     expect(promptPreset).not.toHaveProperty('proxyKey')
     expect(promptPreset).not.toHaveProperty('modelRuntimeDefaults')
+  })
+
+  it('normalizes prompt-template roles through extract, export, and composition', () => {
+    const source = {
+      promptTemplate: [
+        { type: 'persona', role2: 'assistant' },
+        { type: 'cache', role: 'char', name: '', depth: 1 },
+      ],
+    }
+    const extracted = createExtractedPromptPreset(source, { id: 'prompt-role', name: 'Role preset' })
+    expect(extracted.promptTemplate).toEqual([
+      { type: 'persona', role2: 'bot' },
+      { type: 'cache', role: 'assistant', name: '', depth: 1 },
+    ])
+    expect(promptPresetExportPayload(source).promptTemplate).toEqual(extracted.promptTemplate)
+
+    const target: Record<string, unknown> = {}
+    applyEffectivePresetComposition(target, { promptPreset: source })
+    expect(target.promptTemplate).toEqual(extracted.promptTemplate)
+  })
+
+  it('keeps null prompt templates null through split-preset helpers', () => {
+    const extracted = createExtractedPromptPreset({ promptTemplate: null }, { id: 'disabled', name: 'Disabled' })
+    expect(extracted.promptTemplate).toBeNull()
+    expect(promptPresetExportPayload(extracted).promptTemplate).toBeNull()
+    expect(composeEffectivePresetSettings({ base: {}, promptPreset: extracted }).promptTemplate).toBeNull()
+  })
+
+  it('keeps groupTemplate and groupOtherBotRole on prompt presets through split and composition', () => {
+    const source = {
+      ...legacyPreset,
+      groupTemplate: '[{{user}} -> {{char}}]\n{{slot}}',
+      groupOtherBotRole: 'system',
+    }
+
+    const promptPreset = createExtractedPromptPreset(source, { id: 'prompt-a', name: 'Prompt A' })
+    expect(promptPreset).toMatchObject({
+      groupTemplate: '[{{user}} -> {{char}}]\n{{slot}}',
+      groupOtherBotRole: 'system',
+    })
+
+    const modelPreset = createExtractedModelPreset(source, { id: 'model-a', name: 'Model A' })
+    expect(modelPreset).not.toHaveProperty('groupTemplate')
+    expect(modelPreset).not.toHaveProperty('groupOtherBotRole')
+
+    const effective = composeEffectivePresetSettings({
+      base: { groupTemplate: 'BASE TEMPLATE', groupOtherBotRole: 'user' },
+      promptPreset,
+      scope: 'full-generation',
+    })
+    expect(effective).toMatchObject({
+      groupTemplate: '[{{user}} -> {{char}}]\n{{slot}}',
+      groupOtherBotRole: 'system',
+    })
   })
 
   it('dedupes model presets by model fields rather than identity', () => {
@@ -126,6 +185,7 @@ describe('preset split helpers', () => {
     expect(
       promptPresetExportPayload({
         ...legacyPreset,
+        archived: true,
         overrideModelParameters: true,
       }),
     ).toEqual({
@@ -134,32 +194,57 @@ describe('preset split helpers', () => {
       mainPrompt: 'Prompt text',
       jailbreak: 'Jailbreak text',
       customPromptTemplateToggle: 'mode=Mode',
-      promptTemplate: [{ type: 'plain', text: 'Template row' }],
+      promptTemplate: [{ type: 'plain', text: 'Template row', role: 'system' }],
       overrideModelParameters: true,
       temperature: 0.7,
       maxContext: 16000,
       additionalParams: [['temperature', '{{none}}']],
       enableCustomFlags: true,
       customFlags: [8],
+      archived: true,
     })
   })
 
-  it('distinguishes full legacy presets from modern prompt-only payloads', () => {
-    expect(hasModelPresetOnlyFields(legacyPreset)).toBe(true)
-    expect(
-      hasModelPresetOnlyFields({
-        name: 'Prompt only',
-        mainPrompt: 'Prompt text',
-        temperature: 70,
-        overrideModelParameters: true,
-        additionalParams: [['temperature', '{{none}}']],
-        openAIKey: '',
-        forceReplaceUrl: '   ',
-        proxyKey: '',
-        textgenWebUIStreamURL: '',
-        textgenWebUIBlockingURL: '',
-      }),
-    ).toBe(false)
+  it('normalizes standalone archive metadata without making it an applied prompt field', () => {
+    expect(PROMPT_PRESET_FIELDS).not.toContain('archived')
+    expect(promptPresetExportPayload({ name: 'Active', archived: false })).toMatchObject({ archived: false })
+    expect(promptPresetExportPayload({ name: 'Legacy active' })).toMatchObject({ archived: false })
+    expect(promptPresetExportPayload({ name: 'Invalid', archived: 'true' })).toMatchObject({ archived: false })
+  })
+
+  it('persists recommendation metadata without applying it as generation settings', () => {
+    const promptPreset = {
+      id: 'prompt-a',
+      name: 'Prompt A',
+      mainPrompt: 'Prompt text',
+      recommendedModelPresetId: 'model-a',
+    }
+
+    expect(PROMPT_PRESET_FIELDS).not.toContain('recommendedModelPresetId')
+    expect(PROMPT_PRESET_METADATA_FIELDS).toContain('recommendedModelPresetId')
+    expect(promptPresetExportPayload(promptPreset)).toMatchObject({
+      id: 'prompt-a',
+      recommendedModelPresetId: 'model-a',
+    })
+    expect(extractPromptPresetFields(promptPreset)).not.toHaveProperty('recommendedModelPresetId')
+    expect(composeEffectivePresetSettings({ base: {}, promptPreset })).not.toHaveProperty('recommendedModelPresetId')
+  })
+
+  it('repairs and clears prompt recommendation references by stable model-preset id', () => {
+    const promptPresets = [
+      { id: 'prompt-valid', recommendedModelPresetId: 'model-a' },
+      { id: 'prompt-missing', recommendedModelPresetId: 'model-missing' },
+      { id: 'prompt-blank', recommendedModelPresetId: '' },
+    ]
+
+    expect(repairPromptPresetRecommendedModelPresetReferences([{ id: 'model-a' }], promptPresets)).toBe(2)
+    expect(promptPresets).toEqual([
+      { id: 'prompt-valid', recommendedModelPresetId: 'model-a' },
+      { id: 'prompt-missing', recommendedModelPresetId: null },
+      { id: 'prompt-blank', recommendedModelPresetId: null },
+    ])
+    expect(clearPromptPresetRecommendedModelPresetReferences(promptPresets, 'model-a')).toBe(1)
+    expect(promptPresets[0].recommendedModelPresetId).toBeNull()
   })
 
   it('resolves prompt preset regex aliases as one logical field', () => {
@@ -186,6 +271,106 @@ describe('preset split helpers', () => {
 })
 
 describe('effective preset composition', () => {
+  it('keeps legacy model preset selection on the effective clone without changing durable bindings', () => {
+    const durableBindings = Object.fromEntries(
+      MODEL_ROLES.map((role) => [role, { mode: 'profile', profileId: `profile-${role}` }]),
+    )
+    const base = {
+      aiModel: 'base-model',
+      openAIKey: 'base-key',
+      modelRoleProfiles: durableBindings,
+    }
+    const modelPreset = {
+      id: 'legacy-model-preset',
+      aiModel: 'preset-model',
+      openAIKey: 'preset-inline-key',
+    }
+
+    const effective = composeEffectivePresetSettings({ base, modelPreset, scope: 'model-runtime' })
+
+    expect(effective).toMatchObject({
+      aiModel: 'preset-model',
+      openAIKey: 'preset-inline-key',
+      modelRoleProfiles: Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
+    })
+    expect(base.modelRoleProfiles).toBe(durableBindings)
+    expect(base.modelRoleProfiles).toEqual(durableBindings)
+    expect(modelPreset).not.toHaveProperty('modelRoleProfiles')
+  })
+
+  it('keeps legacy role-specific model selection on the effective clone', () => {
+    const effective = composeEffectivePresetSettings({
+      base: {
+        modelRoles: { memory: 'base-memory' },
+        modelRoleProfiles: { memory: { mode: 'profile', profileId: 'durable-memory' } },
+      },
+      modelPreset: { id: 'legacy-roles', modelRoles: { memory: 'preset-memory' } },
+      scope: 'model-runtime',
+    })
+
+    expect(effective.modelRoles).toEqual({ memory: 'preset-memory' })
+    expect(effective.modelRoleProfiles).toMatchObject({ memory: { mode: 'legacy' } })
+  })
+
+  it('lets canonical model preset ownership win over stale legacy fields', () => {
+    const effective = composeEffectivePresetSettings({
+      base: {
+        aiModel: 'base-model',
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'base-profile' } },
+      },
+      modelPreset: {
+        id: 'canonical-model-preset',
+        aiModel: 'stale-flat-model',
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'preset-profile' } },
+      },
+      scope: 'model-runtime',
+    })
+
+    expect(effective.modelRoleProfiles).toEqual({
+      chatMain: { mode: 'profile', profileId: 'preset-profile' },
+    })
+  })
+
+  it.each(['modelProfiles', 'modelProfileOrder', 'modelRuntimeDefaults'] as const)(
+    'does not activate legacy compatibility when %s is present',
+    (canonicalField) => {
+      const baseBindings = { chatMain: { mode: 'profile', profileId: 'base-profile' } }
+      const effective = composeEffectivePresetSettings({
+        base: { modelRoleProfiles: baseBindings },
+        modelPreset: { aiModel: 'stale-flat-model', [canonicalField]: [] },
+        scope: 'model-runtime',
+      })
+
+      expect(effective.modelRoleProfiles).toEqual(baseBindings)
+    },
+  )
+
+  it('does not treat an empty model preset row as legacy compatibility', () => {
+    const baseBindings = { chatMain: { mode: 'profile', profileId: 'base-profile' } }
+    const effective = composeEffectivePresetSettings({
+      base: { modelRoleProfiles: baseBindings },
+      modelPreset: { id: 'empty-row', aiModel: '   ', openAIKey: null },
+      scope: 'model-runtime',
+    })
+
+    expect(effective.modelRoleProfiles).toEqual(baseBindings)
+  })
+
+  it('does not treat a parameter-only model preset as legacy model selection', () => {
+    const baseBindings = { chatMain: { mode: 'profile', profileId: 'base-profile' } }
+    const effective = composeEffectivePresetSettings({
+      base: { modelRoleProfiles: baseBindings },
+      modelPreset: { id: 'parameters-only', maxContext: 8192, temperature: 70 },
+      scope: 'model-runtime',
+    })
+
+    expect(effective).toMatchObject({
+      maxContext: 8192,
+      temperature: 70,
+      modelRoleProfiles: baseBindings,
+    })
+  })
+
   it('composes base, model preset, then prompt preset overrides for full generation', () => {
     const base = {
       apiType: 'base-api',

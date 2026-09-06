@@ -66,15 +66,16 @@ afterEach(() => {
 })
 
 describe('internal MCP tool schemas', () => {
-  it('L55: FileSystem and Google Search return mutation-safe copies of static tool schemas', async () => {
+  it('FileSystem and Google Search return mutation-safe copies of static tool schemas', async () => {
     const fsClient = new FileSystemClient()
     const firstFsTools = await fsClient.getToolList()
     const secondFsTools = await fsClient.getToolList()
     const recreatedFsTools = await new FileSystemClient().getToolList()
 
-    expect(firstFsTools).toHaveLength(12)
-    expect(secondFsTools).toHaveLength(12)
-    expect(recreatedFsTools).toHaveLength(12)
+    expect(firstFsTools).toHaveLength(11)
+    expect(secondFsTools).toHaveLength(11)
+    expect(recreatedFsTools).toHaveLength(11)
+    expect(firstFsTools.map((tool) => tool.name)).not.toContain('fs_watch_directory')
     expect(firstFsTools).not.toBe(secondFsTools)
     expect(firstFsTools[0]).not.toBe(secondFsTools[0])
     firstFsTools[0].inputSchema.properties.path.description = 'mutated by caller'
@@ -107,7 +108,7 @@ describe('internal MCP tool schemas', () => {
 })
 
 describe('FileSystem MCP directory handle reuse', () => {
-  it('L56: reuses a valid directory handle across FileSystem client recreation', async () => {
+  it('reuses a valid directory handle across FileSystem client recreation', async () => {
     const handle = createDirectoryHandle('workspace')
     const picker = vi.fn(async () => handle)
     vi.stubGlobal('showDirectoryPicker', picker)
@@ -119,7 +120,7 @@ describe('FileSystem MCP directory handle reuse', () => {
     expect(handle.queryPermission).toHaveBeenCalledTimes(2)
   })
 
-  it('L56: prompts again only after the stored directory handle becomes invalid', async () => {
+  it('prompts again only after the stored directory handle becomes invalid', async () => {
     const firstHandle = createDirectoryHandle('old-workspace')
     const secondHandle = createDirectoryHandle('new-workspace')
     const picker = vi.fn().mockResolvedValueOnce(firstHandle).mockResolvedValueOnce(secondHandle)

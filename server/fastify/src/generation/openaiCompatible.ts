@@ -36,12 +36,14 @@ export interface NanoGPTOptions {
   useSubscription?: unknown
   maxTokens?: unknown
   temperature?: unknown
+  additionalParams?: unknown
 }
 
 export interface OpenRouterOptions {
   apiKey?: unknown
   maxTokens?: unknown
   temperature?: unknown
+  additionalParams?: unknown
 }
 
 export interface OpenAICompatibleOptions {
@@ -97,18 +99,23 @@ export function resolveNanoGPTVariant(o: NanoGPTOptions): OpenAICompatibleVarian
   if (typeof o.providerHint === 'string' && o.providerHint.length > 0) {
     extraHeaders['X-Provider'] = o.providerHint
   }
-  return {
+  const variant: OpenAICompatibleVariant = {
     apiKey: o.apiKey,
     baseUrl,
     maxTokens: o.maxTokens,
     temperature: o.temperature,
     extraHeaders,
   }
+  if (o.additionalParams !== undefined) {
+    const coerced = coerceAdditionalParams(o.additionalParams)
+    if (coerced !== null && coerced.length > 0) variant.additionalParams = coerced
+  }
+  return variant
 }
 
 export function resolveOpenRouterVariant(o: OpenRouterOptions): OpenAICompatibleVariant | null {
   if (typeof o.apiKey !== 'string' || o.apiKey.length === 0) return null
-  return {
+  const variant: OpenAICompatibleVariant = {
     apiKey: o.apiKey,
     baseUrl: OPENROUTER_BASE_URL,
     maxTokens: o.maxTokens,
@@ -118,6 +125,11 @@ export function resolveOpenRouterVariant(o: OpenRouterOptions): OpenAICompatible
       'HTTP-Referer': 'https://risuai.xyz',
     },
   }
+  if (o.additionalParams !== undefined) {
+    const coerced = coerceAdditionalParams(o.additionalParams)
+    if (coerced !== null && coerced.length > 0) variant.additionalParams = coerced
+  }
+  return variant
 }
 
 export function resolveOpenAICompatibleVariant(

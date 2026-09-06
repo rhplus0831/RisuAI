@@ -1,6 +1,7 @@
 import { isMaskedProviderSecret } from '../providerSecretMask'
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import type {
+  ContextualRemoteEmbeddingModel,
   CustomEmbeddingConfiguration,
   EmbeddingGroupsOperationSuccess,
   EmbeddingInputType,
@@ -8,7 +9,7 @@ import type {
   EmbeddingOperationRequest,
   EmbeddingTextsOperationSuccess,
   RemoteEmbeddingModel,
-} from './embeddingOperationsProtocol'
+} from '@risuai/protocol/embedding-operation'
 
 const EMBEDDING_OPERATIONS_ENDPOINT = '/api/v1/embedding-operations'
 
@@ -18,13 +19,14 @@ export interface RemoteEmbeddingRequestOptions {
 }
 
 export interface RemoteEmbeddingTextsRequestOptions extends RemoteEmbeddingRequestOptions {
-  model: Exclude<RemoteEmbeddingModel, 'voyageContext3'>
+  model: Exclude<RemoteEmbeddingModel, ContextualRemoteEmbeddingModel>
   inputType: EmbeddingInputType
   input: string[]
   custom?: CustomEmbeddingConfiguration
 }
 
 export interface RemoteEmbeddingGroupsRequestOptions extends RemoteEmbeddingRequestOptions {
+  model: ContextualRemoteEmbeddingModel
   inputType: EmbeddingInputType
   groups: string[][]
 }
@@ -58,7 +60,7 @@ export async function requestRemoteEmbeddingGroups(
 ): Promise<number[][][]> {
   const request: EmbeddingOperationRequest = {
     operation: 'groups',
-    model: 'voyageContext3',
+    model: options.model,
     inputType: options.inputType,
     groups: options.groups,
     credential: options.credential,

@@ -3,7 +3,7 @@
   import Accordion from 'src/lib/UI/Accordion.svelte'
   import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
   import AllSeperateParameters from 'src/lib/Others/AllSeperateParameters.svelte'
-  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsOwner.svelte'
   import { createPromptPresetModelOverrideDraft } from 'src/ts/promptPresetModelOverrides.svelte'
   import type { SeparateParameters } from 'src/ts/storage/database.svelte'
 

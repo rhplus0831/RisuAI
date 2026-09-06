@@ -1,6 +1,7 @@
+import { decodeMemoryGenerationSettings } from './prompt/generationInputDecoder.js'
 import { createHash } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
-import type { Database } from '../../../src/ts/storage/database.svelte'
+import type { GenerationPreflightChat as Chat, MemoryGenerationSettings as Database } from './prompt/serverTypes.js'
 import { buildHypaV3SummaryPrompt } from './memorySummaryPrompt.js'
 import { normalizeHypaV3Settings, type HypaV3Settings } from './memoryPlanner.js'
 import {
@@ -15,8 +16,17 @@ import { isMemorySummaryCompatibleWithModel } from './memorySummaryCompatibility
 import { summarizeOnce, type SummaryAdapterResult } from './memorySummaryAdapter.js'
 import { resolveMemorySummaryModel, type MemorySummaryModelRequest } from './memorySummaryModel.js'
 import { loadPersistedDatabaseForMemoryJob } from './repository.js'
-import { MEMORY_JOB_BATCH_MAX_JOBS, type MemoryJobBatchHandler } from './memoryWorker.js'
-import { armMemoryProviderFetchDeadline } from './memoryProviderDeadline.js'
+import { MEMORY_JOB_BATCH_MAX_JOBS, type MemoryJobBatchHandler, type MemoryJobHandlerContext } from './memoryWorker.js'
+import { createMemoryProviderAbortScope, throwIfMemoryProviderAborted } from './memoryProviderDeadline.js'
+import { resolveModelProfile } from '@risuai/shared-core/model-profile-resolver'
+import {
+  completeRequestHistory,
+  requestHistoryProfileSnapshot,
+  tryBeginRequestHistory,
+  type RequestHistoryContext,
+} from './requestHistory.js'
+import { applyEffectivePresetComposition } from '@risuai/shared-core/preset-split'
+import { hypaV3PresetIndexFromStableId } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 
 export interface SummarizeMemoryJobHandlerOptions {
   db: DatabaseSync
@@ -42,29 +52,18 @@ interface HypaV3SummarizeJobPayload {
   chatMemos: string[]
 }
 
-interface DatabaseLike {
-  hypaV3Presets?: unknown
-  hypaV3PresetId?: unknown
-  hypaV3Settings?: unknown
-  characters?: unknown
-}
-
-interface ChatLike {
-  id?: unknown
-}
-
 export function createSummarizeMemoryJobHandler(
   opts: SummarizeMemoryJobHandlerOptions,
-): (job: MemoryJob) => Promise<void> {
+): (job: MemoryJob, context?: MemoryJobHandlerContext) => Promise<void> {
   const summarize = opts.summarize ?? summarizeOnce
   const acquireRateLimit = createSummaryRateLimiter(opts)
 
-  return async (job: MemoryJob): Promise<void> => {
+  return async (job: MemoryJob, context?: MemoryJobHandlerContext): Promise<void> => {
     if (job.kind !== 'summarize') {
       throw new Error(`summarize handler received ${job.kind} job`)
     }
 
-    const database = loadDatabase(opts)
+    const database = resolveChatBoundMemoryDatabase(loadDatabase(opts, job.chatId), job.chatId)
     const settings = resolveHypaV3Settings(database)
     const result = await executeSummarizeJob({
       opts,
@@ -73,8 +72,11 @@ export function createSummarizeMemoryJobHandler(
       settings,
       summarize,
       acquireRateLimit,
+      signal: context?.signal,
     })
     if (result.kind === 'existing') return
+    const currentJob = getMemoryJob(opts.db, job.id)
+    if (currentJob?.status !== 'pending' && currentJob?.status !== 'running') return
     persistSummary(opts.db, result)
   }
 }
@@ -84,7 +86,7 @@ export function createSummarizeMemoryJobBatchHandler(opts: SummarizeMemoryJobHan
   const acquireRateLimit = createSummaryRateLimiter(opts)
 
   return async (firstJob, context): Promise<void> => {
-    const database = loadDatabase(opts)
+    const database = resolveChatBoundMemoryDatabase(loadDatabase(opts, firstJob.chatId), firstJob.chatId)
     const settings = resolveHypaV3Settings(database)
     const maxConcurrent = Math.max(1, settings.summarizationMaxConcurrent)
     const jobs = [firstJob]
@@ -98,53 +100,30 @@ export function createSummarizeMemoryJobBatchHandler(opts: SummarizeMemoryJobHan
     }
 
     const orderedJobs = [...jobs].sort(compareSummarizeJobs)
-    const results = await runWithConcurrency(orderedJobs, maxConcurrent, async (job) => {
+    await runWithConcurrency(orderedJobs, maxConcurrent, async (job) => {
       try {
-        return {
+        const result = await executeSummarizeJob({
+          opts,
           job,
-          result: await executeSummarizeJob({
-            opts,
-            job,
-            database,
-            settings,
-            summarize,
-            acquireRateLimit,
-          }),
-        } satisfies BatchJobResult
+          database,
+          settings,
+          summarize,
+          acquireRateLimit,
+          signal: context.signalFor(job.id),
+        })
+        if (getMemoryJob(opts.db, job.id)?.status !== 'running') {
+          return
+        }
+        // Persist and publish each completion while other requests are still running.
+        if (result.kind === 'summary') {
+          persistSummary(opts.db, result)
+        }
+        context.complete(job.id)
       } catch (error) {
-        return {
-          job,
-          error: error instanceof Error && error.message ? error.message : String(error),
-        } satisfies BatchJobResult
+        const message = error instanceof Error && error.message ? error.message : String(error)
+        context.retryOrFail(job.id, message || 'summarize job failed')
       }
     })
-
-    let blockedByCommitFailure: string | null = null
-    for (const item of results) {
-      if (blockedByCommitFailure !== null) {
-        context.retryOrFail(item.job.id, blockedByCommitFailure)
-        continue
-      }
-
-      if ('error' in item) {
-        context.retryOrFail(item.job.id, item.error || 'summarize job failed')
-        continue
-      }
-
-      try {
-        if (getMemoryJob(opts.db, item.job.id)?.status !== 'running') {
-          blockedByCommitFailure = `summarize job ${item.job.id} is no longer running`
-          continue
-        }
-        if (item.result.kind === 'summary') {
-          persistSummary(opts.db, item.result)
-        }
-        context.complete(item.job.id)
-      } catch (error) {
-        blockedByCommitFailure = error instanceof Error && error.message ? error.message : String(error)
-        context.retryOrFail(item.job.id, blockedByCommitFailure)
-      }
-    }
   }
 }
 
@@ -166,8 +145,6 @@ type SummarizeExecutionResult =
       tokens: number
     }
 
-type BatchJobResult = { job: MemoryJob; result: SummarizeExecutionResult } | { job: MemoryJob; error: string }
-
 async function executeSummarizeJob(input: {
   opts: SummarizeMemoryJobHandlerOptions
   job: MemoryJob
@@ -175,6 +152,7 @@ async function executeSummarizeJob(input: {
   settings: HypaV3Settings
   summarize: NonNullable<SummarizeMemoryJobHandlerOptions['summarize']>
   acquireRateLimit: SummaryRateLimiter
+  signal?: AbortSignal
 }): Promise<SummarizeExecutionResult> {
   const payload = parseSummarizePayload(input.job.payload)
   const chunk = getMemoryChunk(input.opts.db, payload.chunkId)
@@ -209,19 +187,59 @@ async function executeSummarizeJob(input: {
     settings: input.settings,
     isResummarize: false,
   })
-  const controller = new AbortController()
   await input.acquireRateLimit(input.settings)
+  if (input.signal?.aborted) {
+    throw input.signal.reason instanceof Error ? input.signal.reason : new Error('memory job cancelled')
+  }
+  const abortScope = createMemoryProviderAbortScope(input.signal, input.opts.providerFetchDeadlineMs)
   let summary: SummaryAdapterResult
-  const clearDeadline = armMemoryProviderFetchDeadline(controller, input.opts.providerFetchDeadlineMs)
+  const historyScope = memoryRequestHistoryScope(input.database, input.job.chatId)
+  const historyHandle = tryBeginRequestHistory({
+    db: input.opts.db,
+    limit: input.database.requestHistoryLimit,
+    source: 'memory-summary',
+    profile: requestHistoryProfileSnapshot(resolveModelProfile({ database: input.database, role: 'memory' })),
+    prompt: prompt.messages,
+    context: historyScope.context,
+    toggles: historyScope.toggles,
+    metadata: {
+      memoryJobId: input.job.id,
+      memoryChunkId: chunk.id,
+      rangeStartSeq: chunk.rangeStartSeq,
+      rangeEndSeq: chunk.rangeEndSeq,
+      responseBudget: prompt.options.maxTokens,
+      provider: modelRequest.request.provider,
+      requestModel: modelRequest.request.model,
+    },
+  })
   try {
+    throwIfMemoryProviderAborted(abortScope.signal)
     summary = await input.summarize(prompt.messages, {
       ...modelRequest.request,
       maxTokens: prompt.options.maxTokens,
       temperature: prompt.options.temperature,
-      signal: controller.signal,
+      signal: abortScope.signal,
     })
+    if ('error' in summary) {
+      completeRequestHistory(historyHandle, {
+        status: abortScope.signal.aborted ? 'cancelled' : 'error',
+        error: summary.error,
+      })
+    } else {
+      completeRequestHistory(historyHandle, {
+        status: 'success',
+        response: summary.text,
+        metadata: { outputTokens: summary.tokens },
+      })
+    }
+  } catch (error) {
+    completeRequestHistory(historyHandle, {
+      status: abortScope.signal.aborted ? 'cancelled' : 'error',
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw error
   } finally {
-    clearDeadline()
+    abortScope.dispose()
   }
   if ('error' in summary) {
     markChunkFailed(input.opts.db, chunk.id)
@@ -236,6 +254,26 @@ async function executeSummarizeJob(input: {
     text: summary.text,
     tokens: summary.tokens,
   }
+}
+
+function memoryRequestHistoryScope(
+  database: Database,
+  chatId: string,
+): { context: RequestHistoryContext; toggles?: Record<string, string> } {
+  for (const character of database.characters ?? []) {
+    const chat = character.chats?.find((candidate: Chat) => candidate.id === chatId)
+    if (!chat) continue
+    return {
+      context: {
+        characterId: character.chaId,
+        characterName: character.name,
+        chatId,
+        ...(chat.name ? { chatName: chat.name } : {}),
+      },
+      ...(chat.generationSettings?.sidebarToggles ? { toggles: { ...chat.generationSettings.sidebarToggles } } : {}),
+    }
+  }
+  return { context: { chatId } }
 }
 
 function createSummaryRateLimiter(opts: SummarizeMemoryJobHandlerOptions): SummaryRateLimiter {
@@ -259,22 +297,20 @@ function defaultSleep(ms: number): Promise<void> {
   })
 }
 
-async function runWithConcurrency<T, R>(
+async function runWithConcurrency<T>(
   items: readonly T[],
   limit: number,
-  run: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length)
+  run: (item: T) => Promise<void>,
+): Promise<void> {
   let nextIndex = 0
   const workers = Array.from({ length: Math.min(Math.max(1, limit), items.length) }, async () => {
     while (nextIndex < items.length) {
       const index = nextIndex
       nextIndex += 1
-      results[index] = await run(items[index])
+      await run(items[index])
     }
   })
   await Promise.all(workers)
-  return results
 }
 
 function compareSummarizeJobs(left: MemoryJob, right: MemoryJob): number {
@@ -334,43 +370,61 @@ function parseSummarizePayload(payload: unknown): HypaV3SummarizeJobPayload {
   }
 }
 
-function loadDatabase(opts: SummarizeMemoryJobHandlerOptions): Database {
-  // Memory-job-scoped read settings + hypa presets + chat-id
-  // stubs only — `assertChatExists` needs chat ids, never chat payloads.
+function loadDatabase(opts: SummarizeMemoryJobHandlerOptions, chatId: string): Database {
+  // The default scoped read keeps only the target chat's generation settings
+  // and bound model/prompt preset rows; sibling chats remain id-only stubs.
   const database = opts.loadDatabase
     ? opts.loadDatabase()
     : opts.dataDir
-      ? loadPersistedDatabaseForMemoryJob(opts.db, opts.dataDir)
+      ? loadPersistedDatabaseForMemoryJob(opts.db, opts.dataDir, chatId)
       : null
   if (!isRecord(database)) {
     throw new Error('persisted database is missing')
   }
-  return database as unknown as Database
+  return decodeMemoryGenerationSettings(database)
+}
+
+function resolveChatBoundMemoryDatabase(database: Database, chatId: string): Database {
+  const chat = findChatById(database, chatId)
+  const modelPresetId = chat?.generationSettings?.modelPresetId?.trim()
+  if (!modelPresetId) return database
+
+  const modelPreset = database.modelPresets?.find((preset) => preset?.id === modelPresetId)
+  if (!modelPreset) {
+    throw new Error(`model preset ${modelPresetId} bound to chat ${chatId} was not found`)
+  }
+
+  const promptPresetId = chat?.generationSettings?.promptPresetId?.trim()
+  const promptPreset = promptPresetId
+    ? database.promptPresets?.find((preset) => preset?.id === promptPresetId)
+    : undefined
+  if (promptPresetId && !promptPreset) {
+    throw new Error(`prompt preset ${promptPresetId} bound to chat ${chatId} was not found`)
+  }
+  const effectiveDatabase: Database = { ...database }
+  applyEffectivePresetComposition(effectiveDatabase, {
+    modelPreset,
+    promptPreset,
+    scope: 'model-runtime',
+  })
+  return effectiveDatabase
+}
+
+function findChatById(database: Database, chatId: string): Chat | undefined {
+  for (const character of database.characters ?? []) {
+    const chat = character.chats?.find((candidate: Chat) => candidate.id === chatId)
+    if (chat) return chat
+  }
+  return undefined
 }
 
 function resolveHypaV3Settings(database: Database): HypaV3Settings {
-  const db = database as DatabaseLike
-  let rawSettings: unknown = db.hypaV3Settings
-  const presetId = typeof db.hypaV3PresetId === 'number' ? db.hypaV3PresetId : 0
-  if (Array.isArray(db.hypaV3Presets)) {
-    const preset = db.hypaV3Presets[presetId]
-    if (isRecord(preset)) rawSettings = preset.settings
-  }
-  return normalizeHypaV3Settings(isRecord(rawSettings) ? rawSettings : null).settings
+  const presetIndex = hypaV3PresetIndexFromStableId(database)
+  return normalizeHypaV3Settings(database.hypaV3Presets?.[presetIndex]?.settings).settings
 }
 
 function assertChatExists(database: Database, chatId: string): void {
-  const db = database as DatabaseLike
-  if (!Array.isArray(db.characters)) {
-    throw new Error(`chat data not found for chat ${chatId}`)
-  }
-  for (const character of db.characters) {
-    if (!isRecord(character) || !Array.isArray(character.chats)) continue
-    for (const chat of character.chats as ChatLike[]) {
-      if (chat?.id === chatId) return
-    }
-  }
-  throw new Error(`chat data not found for chat ${chatId}`)
+  if (!findChatById(database, chatId)) throw new Error(`chat data not found for chat ${chatId}`)
 }
 
 function persistSummary(

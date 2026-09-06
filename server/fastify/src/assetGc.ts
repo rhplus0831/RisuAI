@@ -1,14 +1,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { setImmediate as yieldTurn } from 'node:timers/promises'
+import { scanAssetReferences, type AssetReferenceMarks, type AssetReferenceScanStats } from './assetReferenceScan.js'
+import { getDatabaseLineage } from './databaseLineage.js'
+import { getMaintenanceCoordinator } from './maintenanceCoordinator.js'
 import type { DatabaseSync } from 'node:sqlite'
-import {
-  assetPath,
-  assetsDir,
-  deleteAssetMetadataByIds,
-  getAllAssetMetadata,
-  isValidAssetId,
-  type PersistedAsset,
-} from './repository.js'
+import { assetPath, assetsDir, deleteAssetMetadataByIds, isValidAssetId, type PersistedAsset } from './repository.js'
 import {
   type RisuSaveAssetReport,
   type RisuSaveAssetReferenceSource,
@@ -17,8 +14,8 @@ import {
   collectMessageInlayReferences,
 } from './risuSave/assetReferences.js'
 
-// How often the periodic sweep runs. Asset GC is cheap but can delete metadata
-// and files when it reclaims, so it runs well outside the request hot path.
+// Periodic discovery yields to requests; reclamation keeps short synchronous
+// transactions/turns so no new reference can enter a check/delete gap.
 export const ASSET_GC_INTERVAL_MS = 15 * 60_000
 
 // An unreferenced asset must have been on disk (by file mtime) for at least this
@@ -26,6 +23,10 @@ export const ASSET_GC_INTERVAL_MS = 15 * 60_000
 // race: an asset is uploaded by one request and referenced by a later mutation,
 // so a sweep that runs in between must not reclaim the freshly-written bytes.
 export const ASSET_GC_GRACE_MS = 60 * 60_000
+export const ASSET_GC_RECLAIM_BATCH = 16
+export const ASSET_GC_RESULT_LIMIT = 1024
+export const ASSET_GC_FILE_READ_CONCURRENCY = 4
+const ASSET_GC_SCAN_PAGE = 64
 
 export interface AssetGcOptions {
   /** SQLite connection used to project all durable reference surfaces. */
@@ -34,6 +35,9 @@ export interface AssetGcOptions {
   graceMs?: number
   /** Injectable clock (ms epoch) for tests. */
   now?: () => number
+  signal?: AbortSignal
+  /** Diagnostic/interleaving seam; production has no phase callback. */
+  onPhase?: (phase: 'discovered' | 'before-reclaim' | 'after-reclaim') => void | Promise<void>
 }
 
 export interface AssetGcResult {
@@ -45,6 +49,11 @@ export interface AssetGcResult {
   skippedByGrace: number
   /** total orphaned metadata entries considered this run. */
   scannedOrphans: number
+  deletedAssetCount: number
+  deletedStrayFileCount: number
+  resultsTruncated: boolean
+  status: 'completed' | 'skipped' | 'cancelled' | 'stale'
+  referenceScan?: AssetReferenceScanStats
 }
 
 type JsonRecord = Record<string, unknown>
@@ -336,102 +345,244 @@ function collectPendingFinalizationInlayReferences(db: DatabaseSync): RisuSaveAs
   ]
 }
 
-/**
- * Reference-counted, server-side asset garbage collection.
- *
- * Walks a minimal reference projection to compute the referenced
- * asset set (via the same walker `risuSave` uses for its orphan report), then
- * deletes content-addressed assets that nothing references — reference-counting
- * across the whole corpus, so a `sha256`-shared asset is only reclaimed at zero
- * references. A grace window (by file mtime) protects just-uploaded bytes.
- *
- * The metadata read-modify-write is fully synchronous (no `await`), so it is
- * atomic with respect to every other request handler in this single-threaded
- * process — the same property the command mutation path relies on. No revision
- * bump and no command event: an orphaned asset is by definition unreferenced by
- * the complete reference corpus, so no client-visible state changes.
- */
-export function runAssetGc(dataDir: string, opts: AssetGcOptions = {}): AssetGcResult {
-  const graceMs = opts.graceMs ?? ASSET_GC_GRACE_MS
-  const now = opts.now ? opts.now() : Date.now()
+class StaleAssetDiscoveryError extends Error {}
 
+async function* assetFiles(directory: string): AsyncGenerator<string> {
+  let handle: fs.Dir
+  try {
+    handle = await fs.promises.opendir(directory, { bufferSize: ASSET_GC_SCAN_PAGE })
+  } catch {
+    return
+  }
+  for await (const entry of handle) yield entry.name
+}
+
+async function asyncFileAgeMs(file: string, now: number): Promise<number | null> {
+  try {
+    return now - (await fs.promises.stat(file)).mtimeMs
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Mark references in bounded yielding scans, then reclaim under a current
+ * authoritative fence. A stale scan retains candidates for a later sweep.
+ * Metadata commits before canonical unlink, with no await between them: failed
+ * COMMIT never loses bytes and a new upload cannot enter the unlink interval.
+ */
+export async function runAssetGc(dataDir: string, opts: AssetGcOptions = {}): Promise<AssetGcResult> {
   const result: AssetGcResult = {
     deletedAssetIds: [],
     deletedStrayFiles: [],
     skippedByGrace: 0,
     scannedOrphans: 0,
+    deletedAssetCount: 0,
+    deletedStrayFileCount: 0,
+    resultsTruncated: false,
+    status: 'skipped',
   }
-
   if (!opts.db) return result
-
-  // Message and pending-finalization inlays come from column-only SQL token
-  // scans — no whole-corpus message hydrate / per-row body JSON.parse on this
-  // periodic synchronous sweep. The scoped reference projection covers every
-  // other shared-walker field without loading assets twice or hydrating the
-  // character/chat corpus into a persisted Database.
-  const assets = getAllAssetMetadata(opts.db)
-  const report = buildAssetGcRisuSaveAssetReport(opts.db, assets)
-  result.scannedOrphans = report.orphaned.length
-
-  const referencedIds = new Set(report.referenced.map((reference) => reference.id))
-  const deletedIds = new Set<string>()
-  const filesToDelete: string[] = []
-
-  for (const orphan of report.orphaned) {
-    const file = assetPath(dataDir, orphan)
-    const age = fileAgeMs(file, now)
-    if (age === null) {
-      deletedIds.add(orphan.id)
-      result.deletedAssetIds.push(orphan.id)
-      continue
-    }
-    if (age < graceMs) {
-      result.skippedByGrace++
-      continue
-    }
-    deletedIds.add(orphan.id)
-    result.deletedAssetIds.push(orphan.id)
-    filesToDelete.push(file)
-  }
-
-  if (deletedIds.size > 0) {
-    deleteAssetMetadataByIds(opts.db, [...deletedIds])
-  }
-
-  for (const file of filesToDelete) {
-    try {
-      fs.rmSync(file, { force: true })
-    } catch {
-      // ignore
-    }
-  }
-
-  const storedIds = new Set(assets.map((asset) => asset.id))
-  const dir = assetsDir(dataDir)
-  let entries: string[] = []
+  if (opts.signal?.aborted) return { ...result, status: 'cancelled' }
+  const db = opts.db
+  const coordinator = getMaintenanceCoordinator(dataDir)
+  const lease = coordinator.beginGc(opts.signal)
+  if (!lease) return result
+  let marks: AssetReferenceMarks | undefined
   try {
-    entries = fs.readdirSync(dir)
-  } catch {
-    entries = []
-  }
-  for (const name of entries) {
-    const id = name.replace(/\.[^.]+$/, '')
-    if (!isValidAssetId(id)) continue
-    if (storedIds.has(id) || referencedIds.has(id) || deletedIds.has(id)) continue
-    const file = path.join(dir, name)
-    const age = fileAgeMs(file, now)
-    if (age === null) continue
-    if (age < graceMs) {
-      result.skippedByGrace++
-      continue
+    const changes = db.prepare('SELECT total_changes() AS value')
+    const dataVersion = db.prepare('PRAGMA data_version')
+    const readChanges = () => Number(changes.get()?.value)
+    let expectedChanges = readChanges()
+    const expectedDataVersion = dataVersion.get()?.data_version
+    const expectedLineage = getDatabaseLineage(db)
+    const protectionVersion = coordinator.protectionVersion
+    const activityVersion = coordinator.activityVersion
+    const graceMs = opts.graceMs ?? ASSET_GC_GRACE_MS
+    const now = opts.now ? opts.now() : Date.now()
+    const directory = assetsDir(dataDir)
+    const assertCurrent = (): void => {
+      lease.signal.throwIfAborted()
+      if (
+        coordinator.isReclamationBlocked() ||
+        coordinator.protectionVersion !== protectionVersion ||
+        coordinator.activityVersion !== activityVersion ||
+        readChanges() !== expectedChanges ||
+        dataVersion.get()?.data_version !== expectedDataVersion ||
+        getDatabaseLineage(db) !== expectedLineage
+      ) {
+        throw new StaleAssetDiscoveryError()
+      }
     }
-    try {
-      fs.rmSync(file, { force: true })
-      result.deletedStrayFiles.push(name)
-    } catch {
-      // ignore
+    const recordDeletion = (kind: 'asset' | 'stray', value: string): void => {
+      if (kind === 'asset') result.deletedAssetCount++
+      else result.deletedStrayFileCount++
+      if (result.deletedAssetIds.length + result.deletedStrayFiles.length < ASSET_GC_RESULT_LIMIT) {
+        ;(kind === 'asset' ? result.deletedAssetIds : result.deletedStrayFiles).push(value)
+      } else result.resultsTruncated = true
     }
-  }
+    const phase = async (name: 'discovered' | 'before-reclaim' | 'after-reclaim'): Promise<void> => {
+      if (opts.onPhase) await opts.onPhase(name)
+      assertCurrent()
+    }
+    marks = await scanAssetReferences(db, {
+      scratchPath: path.join(dataDir, '.asset-gc-references.sqlite'),
+      signal: lease.signal,
+      checkpoint: assertCurrent,
+    })
+    result.referenceScan = marks.stats
 
-  return result
+    // Preserve the global upload/import grace policy without retaining a
+    // directory-sized array. Recent activity defers all orphan/stray removal.
+    let uploadActive = false
+    let ageFiles: string[] = []
+    const checkFileAges = async (): Promise<void> => {
+      if (ageFiles.length === 0) return
+      const files = ageFiles
+      ageFiles = []
+      // stat errors retain their previous unreadable/missing policy. All four
+      // reads settle before cancellation or a changed authority fence is used.
+      const ages = await Promise.all(files.map((file) => asyncFileAgeMs(file, now)))
+      assertCurrent()
+      uploadActive = ages.some((age) => age !== null && age < graceMs)
+    }
+    for await (const name of assetFiles(directory)) {
+      assertCurrent()
+      const id = name.replace(/\.[^.]+$/, '')
+      if (!isValidAssetId(id)) continue
+      ageFiles.push(path.join(directory, name))
+      if (ageFiles.length >= ASSET_GC_FILE_READ_CONCURRENCY) {
+        await checkFileAges()
+        if (uploadActive) break
+      }
+    }
+    await checkFileAges()
+    await phase('discovered')
+    const assetPage = db.prepare(
+      'SELECT id, ext, size, content_type AS contentType FROM assets WHERE id > ? ORDER BY id LIMIT 64',
+    )
+    const currentAsset = db.prepare('SELECT id, ext FROM assets WHERE id = ?')
+    let cursor = ''
+    while (true) {
+      assertCurrent()
+      const assets = assetPage.all(cursor) as unknown as PersistedAsset[]
+      if (assets.length === 0) break
+      cursor = assets[assets.length - 1].id
+      for (let start = 0; start < assets.length; start += ASSET_GC_RECLAIM_BATCH) {
+        const candidates = assets.slice(start, start + ASSET_GC_RECLAIM_BATCH).filter((asset) => !marks!.has(asset.id))
+        result.scannedOrphans += candidates.length
+        if (uploadActive) {
+          result.skippedByGrace += candidates.length
+          continue
+        }
+        if (candidates.length === 0) continue
+        await phase('before-reclaim')
+        const reclaimed: Array<{ id: string; file: string | null }> = []
+        db.exec('BEGIN IMMEDIATE')
+        try {
+          assertCurrent()
+          for (const asset of candidates) {
+            const current = currentAsset.get(asset.id)
+            if (!current || current.ext !== asset.ext || marks.has(asset.id)) continue
+            const file = assetPath(dataDir, asset)
+            const age = fileAgeMs(file, now)
+            if (age !== null && age < graceMs) {
+              result.skippedByGrace++
+              continue
+            }
+            reclaimed.push({ id: asset.id, file: age === null ? null : file })
+          }
+          deleteAssetMetadataByIds(
+            db,
+            reclaimed.map((asset) => asset.id),
+          )
+          db.exec('COMMIT')
+        } catch (error) {
+          if (db.isTransaction) db.exec('ROLLBACK')
+          throw error
+        }
+        // This is the same JS turn as COMMIT; only unique canonical paths from
+        // that committed batch can be removed, never a later asynchronous tail.
+        for (const asset of reclaimed) {
+          if (asset.file) {
+            try {
+              fs.rmSync(asset.file, { force: true })
+            } catch {
+              /* retry as a stray later */
+            }
+          }
+          recordDeletion('asset', asset.id)
+        }
+        expectedChanges = readChanges()
+        await phase('after-reclaim')
+        await yieldTurn()
+      }
+      await yieldTurn()
+    }
+
+    // Reopen the directory for strays instead of retaining names across awaits.
+    let strayBatch: Array<{ id: string; name: string }> = []
+    const reclaimStrays = async (): Promise<void> => {
+      const candidates = strayBatch
+      strayBatch = []
+      if (candidates.length === 0) return
+      if (uploadActive) {
+        result.skippedByGrace += candidates.length
+        return
+      }
+      await phase('before-reclaim')
+      const files: Array<{ name: string; file: string }> = []
+      db.exec('BEGIN IMMEDIATE')
+      try {
+        assertCurrent()
+        for (const entry of candidates) {
+          if (currentAsset.get(entry.id) || marks!.has(entry.id)) continue
+          const file = path.join(directory, entry.name)
+          const age = fileAgeMs(file, now)
+          if (age === null) continue
+          if (age < graceMs) {
+            result.skippedByGrace++
+            continue
+          }
+          files.push({ name: entry.name, file })
+        }
+        db.exec('COMMIT')
+      } catch (error) {
+        if (db.isTransaction) db.exec('ROLLBACK')
+        throw error
+      }
+      for (const { name, file } of files) {
+        try {
+          fs.rmSync(file, { force: true })
+          recordDeletion('stray', name)
+        } catch {
+          /* retry later */
+        }
+      }
+      expectedChanges = readChanges()
+      await phase('after-reclaim')
+      await yieldTurn()
+    }
+    for await (const name of assetFiles(directory)) {
+      assertCurrent()
+      const id = name.replace(/\.[^.]+$/, '')
+      if (!isValidAssetId(id) || currentAsset.get(id) || marks.has(id)) continue
+      strayBatch.push({ id, name })
+      if (strayBatch.length >= ASSET_GC_RECLAIM_BATCH) await reclaimStrays()
+    }
+    await reclaimStrays()
+    assertCurrent()
+    result.status = 'completed'
+    return result
+  } catch (error) {
+    if (lease.signal.aborted) return { ...result, status: 'cancelled' }
+    if (error instanceof StaleAssetDiscoveryError) return { ...result, status: 'stale' }
+    throw error
+  } finally {
+    try {
+      await marks?.close()
+    } finally {
+      lease.release()
+    }
+  }
 }

@@ -1,6 +1,6 @@
 <script lang="ts" module>
   import { getCharacterDisplayInfo } from 'src/ts/characterDisplayName'
-  import { type Database } from '../../ts/storage/database.svelte'
+  import type { Database } from '../../ts/storage/database.svelte'
 
   export interface GridCatalogCharacter {
     chaId?: string
@@ -20,11 +20,18 @@
   }
 
   export function formatGridCatalogCharacterLists(db: Database, normalizedSearch: string): GridCatalogCharacterLists {
+    return formatGridCatalogCharacterListsFromCharacters(db.characters, normalizedSearch)
+  }
+
+  export function formatGridCatalogCharacterListsFromCharacters(
+    characters: readonly Database['characters'][number][],
+    normalizedSearch: string,
+  ): GridCatalogCharacterLists {
     const active: GridCatalogCharacter[] = []
     const trash: GridCatalogCharacter[] = []
 
-    for (let i = 0; i < db.characters.length; i++) {
-      const c = db.characters[i]
+    for (let i = 0; i < characters.length; i++) {
+      const c = characters[i]
       const displayInfo = getCharacterDisplayInfo(c)
       if (!normalizeGridCatalogSearch(displayInfo.searchText).includes(normalizedSearch)) {
         continue
@@ -49,16 +56,19 @@
   }
 
   function gridCatalogCharacterKey(char: GridCatalogCharacter) {
-    return char.chaId || `legacy-${char.index}`
+    return char.chaId ?? `legacy-${char.index}`
   }
 </script>
 
 <script lang="ts">
   import { changeChar, getCharImage, removeChar } from '../../ts/characters'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import {
+    charactersResourceState,
+    getCharacterResourceOwner,
+    settingsResourceState,
+  } from 'src/ts/server/resourceState.svelte'
   import BarIcon from '../SideBars/BarIcon.svelte'
   import { ArrowLeft, User, SquareMousePointer, TrashIcon, Undo2Icon } from '@lucide/svelte'
-  import { selectedCharID } from '../../ts/stores.svelte'
   import TextInput from '../UI/GUI/TextInput.svelte'
   import Button from '../UI/GUI/Button.svelte'
   import { language } from 'src/lang'
@@ -69,9 +79,10 @@
     dispatchUpdateCharacterScopedWithOutcome,
     type CharacterMutationOutcome,
   } from 'src/ts/characterCommands'
-  import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { characterRoutePath, navigate } from 'src/ts/router'
+  import { prefetchCharacterRouteResource } from 'src/ts/server/routeResourceLoader'
   import { alertError, alertNormal } from 'src/ts/alert'
+  import { onDestroy } from 'svelte'
   interface Props {
     endGrid?: any
   }
@@ -80,7 +91,12 @@
   let search = $state('')
   let selected = $state(3)
   let normalizedSearch = $derived(normalizeGridCatalogSearch(search))
-  let catalogCharacters = $derived(formatGridCatalogCharacterLists(getDatabase(), normalizedSearch))
+  let catalogCharacters = $derived(
+    formatGridCatalogCharacterListsFromCharacters(readCharacterOwners(), normalizedSearch),
+  )
+  let selectedCharacterIndex = $derived(
+    charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : -1,
+  )
   let selectedListKind = $derived(
     selected === 0 ? 'grid' : selected === 1 ? 'list' : selected === 2 ? 'trash' : 'simple',
   )
@@ -95,6 +111,11 @@
     reason?: string
   }
   let characterCatalogActions = $state<Record<string, CharacterCatalogActionState>>({})
+  let mounted = true
+
+  onDestroy(() => {
+    mounted = false
+  })
 
   function characterCatalogActionMessage(state: CharacterCatalogActionState): string {
     if (state.kind === 'restore') {
@@ -123,6 +144,7 @@
     characterCatalogActions[actionId] = { kind, name: char.name, status: 'pending' }
     try {
       const outcome = await action()
+      if (!mounted) return
       if (!outcome) {
         delete characterCatalogActions[actionId]
         return
@@ -141,6 +163,7 @@
       if (outcome.status === 'queued') alertNormal(message)
       else alertError(message)
     } catch {
+      if (!mounted) return
       characterCatalogActions[actionId] = { kind, name: char.name, status: 'failed' }
       alertError(characterCatalogActionMessage(characterCatalogActions[actionId]))
     }
@@ -166,38 +189,87 @@
     return fallback
   }
 
-  function openCharacterRoute(index: number) {
-    const character = getDatabase().characters?.[index]
-    if (!character?.chaId) {
+  function readCharacterOwners(): readonly Database['characters'][number][] {
+    if (charactersResourceState.status === 'ready') {
+      for (const character of charactersResourceState.characters) {
+        if (!character?.chaId || getCharacterResourceOwner(character.chaId) !== character) return []
+      }
+      return charactersResourceState.characters
+    }
+    return []
+  }
+
+  function readCatalogLanguage(): string | undefined {
+    if (settingsResourceState.status === 'error') return undefined
+    const status = settingsResourceState.groupStatuses.language ?? 'idle'
+    if (status === 'ready') return settingsResourceState.value.language as string | undefined
+    return undefined
+  }
+
+  function uniqueCharacterOwner(characterId: string) {
+    if (charactersResourceState.status !== 'ready') return undefined
+    const character = getCharacterResourceOwner(characterId)
+    const index = character ? charactersResourceState.characters.indexOf(character) : -1
+    return character && index >= 0 ? { character, index } : undefined
+  }
+
+  function resolveCatalogCharacterOwner(char: GridCatalogCharacter) {
+    if (char.chaId) return uniqueCharacterOwner(char.chaId)
+    const character = readCharacterOwners()[char.index]
+    return character && !character.chaId ? { character, index: char.index } : undefined
+  }
+
+  function gridCatalogRenderKey(char: GridCatalogCharacter): string {
+    if (charactersResourceState.status === 'ready') return gridCatalogCharacterKey(char)
+    return char.chaId ? `${char.chaId}:${char.index}` : gridCatalogCharacterKey(char)
+  }
+
+  function isSelectedCatalogCharacter(char: GridCatalogCharacter): boolean {
+    if (char.index !== selectedCharacterIndex) return false
+    return !char.chaId || uniqueCharacterOwner(char.chaId)?.index === char.index
+  }
+
+  function prefetchCatalogCharacter(char: GridCatalogCharacter): void {
+    const characterId = resolveCatalogCharacterOwner(char)?.character.chaId
+    if (characterId) prefetchCharacterRouteResource(characterId)
+  }
+
+  function openCharacterRoute(char: GridCatalogCharacter) {
+    const owner = resolveCatalogCharacterOwner(char)
+    if (!owner) return
+    const { character, index } = owner
+    if (!character.chaId) {
       changeChar(index)
       return
     }
     navigate(characterRoutePath(character.chaId, character.chats?.[character.chatPage]?.id))
   }
 
-  async function restoreTrashedCharacter(index: number): Promise<CharacterMutationOutcome | null> {
-    const character = getDatabase().characters?.[index]
-    if (!character) return null
+  async function removeCatalogCharacter(
+    char: GridCatalogCharacter,
+    type: 'normal' | 'permanent' = 'normal',
+  ): Promise<CharacterMutationOutcome | null> {
+    const owner = resolveCatalogCharacterOwner(char)
+    if (!owner) return null
+    return removeChar(owner.index, char.name, type)
+  }
+
+  async function restoreTrashedCharacter(char: GridCatalogCharacter): Promise<CharacterMutationOutcome | null> {
+    const owner = resolveCatalogCharacterOwner(char)
+    if (!owner) return null
+    const { character, index } = owner
 
     const characterId = character.chaId
     if (!characterId) {
       return { status: 'failed', result: { status: 'error', error: 'missing-character-id' } }
     }
     const previous = currentCharacterRowSnapshot(index)
-    let applied = false
-    withTrustedResourceWrite(() => {
-      const liveIndex = getDatabase().characters.findIndex((candidate) => candidate.chaId === characterId)
-      const liveCharacter = getDatabase().characters?.[liveIndex] as
-        | (typeof character & { trashTime?: number | null })
-        | undefined
-      if (!liveCharacter) return
-      liveCharacter.trashTime = null
-      applied = true
-    })
-    if (applied) {
-      return (await dispatchUpdateCharacterScopedWithOutcome(characterId, { trashTime: null }, previous)) ?? null
-    }
-    return null
+    const liveCharacter = uniqueCharacterOwner(characterId)?.character as
+      | (typeof character & { trashTime?: number | null })
+      | undefined
+    if (!liveCharacter) return null
+    liveCharacter.trashTime = null
+    return (await dispatchUpdateCharacterScopedWithOutcome(characterId, { trashTime: null }, previous)) ?? null
   }
 </script>
 
@@ -223,7 +295,7 @@
             fullwidth={true} />
         </div>
       </div>
-      {#each Object.entries(characterCatalogActions) as [actionId, state] (actionId)}
+      {#each Object.entries(characterCatalogActions).filter(([, state]) => state.status === 'failed') as [actionId, state] (actionId)}
         <p
           class="mt-2 text-sm text-textcolor2"
           data-risu-character-action-status={state.status}
@@ -288,21 +360,24 @@
     {#if selected === 0}
       <div class="w-full flex justify-center" data-risu-grid-list data-risu-list-kind="grid">
         <div class="flex flex-wrap gap-2 w-full justify-center">
-          {#each catalogCharacters.active as char (gridCatalogCharacterKey(char))}
+          {#each catalogCharacters.active as char (gridCatalogRenderKey(char))}
             <div
               class="flex items-center text-textcolor"
               data-risu-grid-character-row
               data-risu-row-id={char.chaId ?? ''}
               data-risu-row-index={char.index}
               data-risu-list-kind="grid"
-              data-risu-selected={char.index === $selectedCharID ? 'true' : 'false'}
-              aria-current={char.index === $selectedCharID ? 'true' : undefined}>
+              data-risu-selected={isSelectedCatalogCharacter(char) ? 'true' : 'false'}
+              onpointerenter={() => prefetchCatalogCharacter(char)}
+              onfocusin={() => prefetchCatalogCharacter(char)}
+              role="group"
+              aria-current={isSelectedCatalogCharacter(char) ? 'true' : undefined}>
               {#if char.image}
                 <span data-risu-grid-action="open">
                   <BarIcon
                     ariaLabel={language.openCharacter(char.name)}
                     onClick={() => {
-                      openCharacterRoute(char.index)
+                      openCharacterRoute(char)
                     }}
                     additionalStyle={getCharImage(char.image, 'css')}></BarIcon>
                 </span>
@@ -311,9 +386,9 @@
                   <BarIcon
                     ariaLabel={language.openCharacter(char.name)}
                     onClick={() => {
-                      openCharacterRoute(char.index)
+                      openCharacterRoute(char)
                     }}
-                    additionalStyle={char.index === $selectedCharID ? 'background:var(--risu-theme-selected)' : ''}>
+                    additionalStyle={isSelectedCatalogCharacter(char) ? 'background:var(--risu-theme-selected)' : ''}>
                     <User />
                   </BarIcon>
                 </span>
@@ -329,20 +404,23 @@
       </div>
     {:else if selected === 1}
       <div class="contents" data-risu-grid-list data-risu-list-kind="list">
-        {#each catalogCharacters.active as char (gridCatalogCharacterKey(char))}
+        {#each catalogCharacters.active as char (gridCatalogRenderKey(char))}
           <div
             class="flex p-2 border border-darkborderc rounded-md mb-2"
             data-risu-grid-character-row
             data-risu-row-id={char.chaId ?? ''}
             data-risu-row-index={char.index}
             data-risu-list-kind="list"
-            data-risu-selected={char.index === $selectedCharID ? 'true' : 'false'}
-            aria-current={char.index === $selectedCharID ? 'true' : undefined}>
+            data-risu-selected={isSelectedCatalogCharacter(char) ? 'true' : 'false'}
+            onpointerenter={() => prefetchCatalogCharacter(char)}
+            onfocusin={() => prefetchCatalogCharacter(char)}
+            role="group"
+            aria-current={isSelectedCatalogCharacter(char) ? 'true' : undefined}>
             <span data-risu-grid-action="open">
               <BarIcon
                 ariaLabel={language.openCharacter(char.name)}
                 onClick={() => {
-                  openCharacterRoute(char.index)
+                  openCharacterRoute(char)
                 }}
                 additionalStyle={getCharImage(char.image, 'css')}></BarIcon>
             </span>
@@ -351,14 +429,14 @@
                 {char.name || 'Unnamed'}
               </h4>
               <span class="text-textcolor2" data-risu-character-description
-                >{resolveGridCatalogDescription(char.desc, getDatabase().language)}</span>
+                >{resolveGridCatalogDescription(char.desc, readCatalogLanguage())}</span>
               <div class="flex gap-2 justify-end">
                 <button
                   data-risu-grid-action="open"
                   aria-label={language.openCharacter(char.name)}
                   class="hover:text-textcolor text-textcolor2"
                   onclick={() => {
-                    openCharacterRoute(char.index)
+                    openCharacterRoute(char)
                   }}>
                   <SquareMousePointer />
                 </button>
@@ -370,7 +448,7 @@
                   disabled={characterCatalogActions[gridCatalogCharacterKey(char)]?.status === 'pending'}
                   class="hover:text-textcolor text-textcolor2"
                   onclick={() => {
-                    void runCharacterCatalogAction(char, 'remove', () => removeChar(char.index, char.name))
+                    void runCharacterCatalogAction(char, 'remove', () => removeCatalogCharacter(char))
                   }}>
                   <TrashIcon />
                 </button>
@@ -387,20 +465,20 @@
     {:else if selected === 2}
       <div class="contents" data-risu-grid-list data-risu-list-kind="trash">
         <span class="text-textcolor2 text-sm mb-2">{language.trashDesc}</span>
-        {#each catalogCharacters.trash as char (gridCatalogCharacterKey(char))}
+        {#each catalogCharacters.trash as char (gridCatalogRenderKey(char))}
           <div
             class="flex p-2 border border-darkborderc rounded-md mb-2"
             data-risu-grid-character-row
             data-risu-row-id={char.chaId ?? ''}
             data-risu-row-index={char.index}
             data-risu-list-kind="trash"
-            data-risu-selected={char.index === $selectedCharID ? 'true' : 'false'}
-            aria-current={char.index === $selectedCharID ? 'true' : undefined}>
+            data-risu-selected={isSelectedCatalogCharacter(char) ? 'true' : 'false'}
+            aria-current={isSelectedCatalogCharacter(char) ? 'true' : undefined}>
             <span data-risu-grid-action="open">
               <BarIcon
                 ariaLabel={language.openCharacter(char.name)}
                 onClick={() => {
-                  openCharacterRoute(char.index)
+                  openCharacterRoute(char)
                 }}
                 additionalStyle={getCharImage(char.image, 'css')}></BarIcon>
             </span>
@@ -409,7 +487,7 @@
                 {char.name || 'Unnamed'}
               </h4>
               <span class="text-textcolor2" data-risu-character-description
-                >{resolveGridCatalogDescription(char.desc, getDatabase().language)}</span>
+                >{resolveGridCatalogDescription(char.desc, readCatalogLanguage())}</span>
               <div class="flex gap-2 justify-end">
                 <button
                   data-risu-grid-action="restore"
@@ -419,7 +497,7 @@
                   disabled={characterCatalogActions[gridCatalogCharacterKey(char)]?.status === 'pending'}
                   class="hover:text-textcolor text-textcolor2"
                   onclick={() => {
-                    void runCharacterCatalogAction(char, 'restore', () => restoreTrashedCharacter(char.index))
+                    void runCharacterCatalogAction(char, 'restore', () => restoreTrashedCharacter(char))
                   }}>
                   <Undo2Icon />
                 </button>
@@ -432,7 +510,7 @@
                   class="hover:text-textcolor text-textcolor2"
                   onclick={() => {
                     void runCharacterCatalogAction(char, 'delete-permanent', () =>
-                      removeChar(char.index, char.name, 'permanent'),
+                      removeCatalogCharacter(char, 'permanent'),
                     )
                   }}>
                   <TrashIcon />

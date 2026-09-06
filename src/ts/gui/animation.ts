@@ -1,14 +1,15 @@
-import { getDatabase } from '../storage/database.svelte'
+import { runtimeDisplaySettingsOwner } from './displaySettings'
+import { applyDisplayStyles } from './displaySettingsCache'
 
 export function updateAnimationSpeed() {
-  const db = getDatabase()
-  document.documentElement.style.setProperty(
-    '--risu-animation-speed',
-    db.reducedMotion ? '0.01ms' : db.animationSpeed + 's',
+  const db = runtimeDisplaySettingsOwner()
+  if (!db) return
+  applyDisplayStyles(
+    { '--risu-animation-speed': db.reducedMotion ? '0.01ms' : (db.animationSpeed ?? 0.4) + 's' },
+    db.reducedMotion === true,
   )
 }
 
 export function updateReducedMotion() {
-  document.documentElement.classList.toggle('risu-reduced-motion', getDatabase().reducedMotion === true)
   updateAnimationSpeed()
 }

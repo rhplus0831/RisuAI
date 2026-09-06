@@ -28,6 +28,14 @@ export const accessibilitySettingsItems: SettingItem[] = [
     keywords: ['reduced', 'motion', 'animation', 'accessibility'],
   },
   {
+    id: 'acc.hypaV3ProgressOpenChatOnly',
+    type: 'check',
+    labelKey: 'hypaV3ProgressOpenChatOnly',
+    helpKey: 'hypaV3ProgressOpenChatOnly',
+    bindKey: 'hypaV3ProgressOpenChatOnly',
+    keywords: ['hypa', 'memory', 'progress', 'chat', 'accessibility'],
+  },
+  {
     id: 'acc.askRemoval',
     type: 'check',
     labelKey: 'askRemoval',
@@ -60,7 +68,16 @@ export const accessibilitySettingsItems: SettingItem[] = [
     type: 'check',
     labelKey: 'fixedChatTextarea',
     bindKey: 'fixedChatTextarea',
-    keywords: ['fixed', 'chat', 'textarea', 'input'],
+    keywords: ['fixed', 'chat', 'textarea', 'input', 'composer', 'dock'],
+  },
+  {
+    id: 'acc.floatingChatInput',
+    type: 'check',
+    labelKey: 'floatingChatInput',
+    helpKey: 'floatingChatInput',
+    bindKey: 'floatingChatInput',
+    getValue: (db) => db.floatingChatInput ?? true,
+    keywords: ['floating', 'chat', 'input', 'composer', 'accessibility'],
   },
   {
     id: 'acc.clickToEdit',
@@ -175,6 +192,14 @@ export const accessibilitySettingsItems: SettingItem[] = [
     keywords: ['bulk', 'enable', 'multiple'],
   },
   {
+    id: 'acc.applyAdditionalParamsToAll',
+    type: 'check',
+    labelKey: 'applyAdditionalParamsToAll',
+    bindKey: 'applyAdditionalParamsToAll',
+    getValue: (db) => db.applyAdditionalParamsToAll === true,
+    keywords: ['apply', 'additional', 'parameters', 'all', 'models'],
+  },
+  {
     id: 'acc.showTranslationLoading',
     type: 'check',
     labelKey: 'showTranslationLoading',
@@ -226,13 +251,6 @@ export const accessibilitySettingsItems: SettingItem[] = [
     labelKey: 'hamburgerButtonBottom',
     bindKey: 'hamburgerButtonBottom',
     keywords: ['hamburger', 'button', 'bottom', 'menu', 'sidebar', 'accessibility'],
-  },
-  {
-    id: 'acc.enableRisuaiProTools',
-    type: 'check',
-    labelKey: 'enableRisuaiProTools',
-    bindKey: 'enableRisuaiProTools',
-    keywords: ['pro', 'tools', 'accessibility'],
   },
   { type: 'custom', id: 'acc.customSidebarConfig', componentId: 'CustomSidebarConfig' },
 ]

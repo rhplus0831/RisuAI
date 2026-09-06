@@ -1,26 +1,35 @@
 <script>
-  import { alertConfirm } from '../../ts/alert'
+  import { alertConfirm, alertError, alertNormal } from '../../ts/alert'
   import { language } from '../../lang'
 
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { collectionsResourceState } from 'src/ts/server/resourceState.svelte'
   import { SquarePenIcon, PlusIcon, TrashIcon, XIcon } from '@lucide/svelte'
   import TextInput from '../UI/GUI/TextInput.svelte'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import {
     createGlobalLorebook,
     deleteGlobalLorebookByIdWithOutcome,
-    deleteGlobalLorebookWithOutcome,
-    renameGlobalLorebook,
     renameGlobalLorebookById,
-    selectGlobalLorebook,
     subscribeGlobalLorebookDeleteStates,
-    watchServerBackedLorebooks,
-  } from 'src/ts/server/lorebookBridge.svelte'
+  } from 'src/ts/server/lorebookOwner.svelte'
+  import {
+    lorebookPageIndexFromSnapshot,
+    lorebookPageOwner,
+    lorebookPageOwnerState,
+  } from 'src/ts/server/lorebookPageOwner.svelte'
   let editMode = $state(false)
-  /** @type {Map<string, import('src/ts/server/lorebookBridge.svelte').GlobalLorebookDeleteState>} */
+  /** @type {Map<string, import('src/ts/server/lorebookOwner.svelte').GlobalLorebookDeleteState>} */
   let globalLorebookDeleteStates = $state(new Map())
   /** @type {{close?: any}} */
   let { close = () => {} } = $props()
+
+  function globalLorebookOwners() {
+    if (collectionsResourceState.statuses.loreBook !== 'ready') return []
+    const lorebooks = collectionsResourceState.values.loreBook
+    return Array.isArray(lorebooks) ? lorebooks : []
+  }
+
+  let globalLorebooks = $derived(globalLorebookOwners())
 
   /** @param {unknown} value */
   function stableLorebookId(value) {
@@ -29,18 +38,58 @@
 
   /** @param {{id?: unknown}} lorebook */
   function lorebookRenderKey(lorebook) {
-    const lorebookId = stableLorebookId(lorebook.id)
-    if (!lorebookId) return lorebook
-    const matches = getDatabase().loreBook.filter((candidate) => candidate.id === lorebookId)
-    return matches.length === 1 ? lorebookId : lorebook
+    return selectableLorebookId(lorebook) ?? lorebook
   }
 
-  /** @param {import('src/ts/server/lorebookBridge.svelte').GlobalLorebookDeleteState | undefined} state */
+  function selectedLorebookPage() {
+    return lorebookPageIndexFromSnapshot($lorebookPageOwnerState) ?? 0
+  }
+
+  /** @param {{id?: unknown}} lorebook */
+  function selectableLorebookId(lorebook) {
+    const lorebookId = stableLorebookId(lorebook.id)
+    if (!lorebookId) return null
+    return globalLorebookOwners().filter((candidate) => candidate.id === lorebookId).length === 1 ? lorebookId : null
+  }
+
+  /** @param {{id?: unknown}} lorebook @param {number} index */
+  async function selectLorebook(lorebook, index) {
+    const lorebookId = selectableLorebookId(lorebook)
+    if (!lorebookId) {
+      alertError(language.globalLorebookSelection.invalid)
+      return
+    }
+
+    const result = await lorebookPageOwner.select({ lorebookId, index })
+    if (result.status === 'failed') {
+      alertError(language.globalLorebookSelection.failed(result.error))
+      return
+    }
+    if (result.status !== 'queued') return
+
+    alertNormal(language.globalLorebookSelection.queued)
+    const settlement = await result.settlement
+    if (settlement === 'failed') {
+      alertError(language.globalLorebookSelection.failed(''))
+      return
+    }
+    const reload = await lorebookPageOwner.retry()
+    if (reload.status !== 'ok') {
+      alertError(language.globalLorebookSelection.reloadFailed)
+    }
+  }
+
+  function selectionStatus(lorebookId) {
+    const mutation = $lorebookPageOwnerState.mutation
+    return mutation.status !== 'idle' && mutation.lorebookId === lorebookId ? mutation.status : undefined
+  }
+
+  /** @param {import('src/ts/server/lorebookOwner.svelte').GlobalLorebookDeleteState | undefined} state */
   function isDeletePending(state) {
     return state?.status === 'deleting' || state?.status === 'queued'
   }
 
-  /** @param {import('src/ts/server/lorebookBridge.svelte').GlobalLorebookDeleteState} state */
+  /** @param {import('src/ts/server/lorebookOwner.svelte').GlobalLorebookDeleteState} state */
   function deleteStatusText(state) {
     if (state.status === 'deleting') return language.globalLorebookDelete.deleting
     if (state.status === 'queued') return language.globalLorebookDelete.queued
@@ -59,13 +108,6 @@
     return subscribeGlobalLorebookDeleteStates((states) => {
       globalLorebookDeleteStates = new Map(states.map((state) => [state.lorebookId, state]))
     })
-  })
-
-  $effect(() => {
-    // This modal only edits the global lorebook list, so scope change detection
-    // to it instead of scanning every character/chat/module per keystroke.
-    const stopLorebooks = watchServerBackedLorebooks({ scope: { kind: 'global' } })
-    return () => stopLorebooks()
   })
 </script>
 
@@ -90,26 +132,27 @@
         </button>
       </div>
     </div>
-    {#each getDatabase().loreBook as lore, ind (lorebookRenderKey(lore))}
-      {@const lorebookId = stableLorebookId(lore.id)}
+    {#each globalLorebooks as lore, ind (lorebookRenderKey(lore))}
+      {@const lorebookId = selectableLorebookId(lore)}
       {@const deleteState = lorebookId ? globalLorebookDeleteStates.get(lorebookId) : undefined}
       {@const deletePending = isDeletePending(deleteState)}
+      {@const pageSelectionStatus = lorebookId ? selectionStatus(lorebookId) : undefined}
+      {@const pageSelectionPending = pageSelectionStatus === 'pending' || pageSelectionStatus === 'queued'}
       <div
         class="flex flex-col items-stretch text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2"
-        class:bg-selected={ind === getDatabase().loreBookPage}
-        class:opacity-70={deletePending}
-        aria-busy={deletePending}
-        data-risu-global-lorebook-delete-status={deleteState?.status}>
+        class:bg-selected={ind === selectedLorebookPage()}
+        class:opacity-70={deletePending || pageSelectionPending}
+        aria-busy={deletePending || pageSelectionPending}
+        data-risu-global-lorebook-delete-status={deleteState?.status}
+        data-risu-global-lorebook-selection-status={pageSelectionStatus}>
         <div class="flex items-center gap-2">
-          {#if editMode && !deletePending}
+          {#if editMode && lorebookId && !deletePending}
             <TextInput
               bind:value={
                 () => lore.name,
                 (value) => {
                   if (lorebookId) {
                     renameGlobalLorebookById(lorebookId, value)
-                  } else if (getDatabase().loreBook[ind] === lore) {
-                    renameGlobalLorebook(ind, value)
                   }
                 }
               }
@@ -118,33 +161,29 @@
           {:else}
             <button
               class="grow text-left disabled:cursor-not-allowed"
-              disabled={deletePending}
-              onclick={() => selectGlobalLorebook(ind)}>{lore.name}</button>
+              disabled={deletePending || pageSelectionPending}
+              onclick={() => selectLorebook(lore, ind)}>{lore.name}</button>
           {/if}
           <div class="grow flex justify-end">
             <button
               type="button"
               class="text-textcolor2 hover:text-green-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
               aria-label={`${language.remove}: ${lore.name}`}
-              disabled={deletePending}
+              disabled={deletePending || !lorebookId || globalLorebooks.length === 1}
               onclick={async () => {
-                if (deletePending || getDatabase().loreBook.length === 1) {
+                if (deletePending || !lorebookId || globalLorebooks.length === 1) {
                   return
                 }
-                const lorebookReference = lore
+                const targetLorebookId = lorebookId
                 const d = await alertConfirm(`${language.removeConfirm}${lore.name}`)
                 if (!d) return
-                if (lorebookId) {
-                  await deleteGlobalLorebookByIdWithOutcome(lorebookId)
-                } else if (getDatabase().loreBook[ind] === lorebookReference) {
-                  await deleteGlobalLorebookWithOutcome(ind)
-                }
+                await deleteGlobalLorebookByIdWithOutcome(targetLorebookId)
               }}>
               <TrashIcon size={18} />
             </button>
           </div>
         </div>
-        {#if deleteState}
+        {#if deleteState?.status === 'failed'}
           <p
             class="m-0 mt-1 text-xs"
             class:text-red-400={deleteState.status === 'failed'}
@@ -154,11 +193,26 @@
             {deleteStatusText(deleteState)}
           </p>
         {/if}
+        {#if pageSelectionStatus}
+          <p
+            class="m-0 mt-1 text-xs"
+            class:text-red-400={pageSelectionStatus === 'failed'}
+            class:text-textcolor2={pageSelectionStatus !== 'failed'}
+            role={pageSelectionStatus === 'failed' ? 'alert' : 'status'}
+            aria-live={pageSelectionStatus === 'failed' ? 'assertive' : 'polite'}>
+            {pageSelectionStatus === 'pending'
+              ? language.globalLorebookSelection.selecting
+              : pageSelectionStatus === 'queued'
+                ? language.globalLorebookSelection.queued
+                : language.globalLorebookSelection.failed($lorebookPageOwnerState.mutation.error)}
+          </p>
+        {/if}
       </div>
     {/each}
     <div class="flex mt-2 items-center">
       <button
         aria-label={language.add}
+        disabled={collectionsResourceState.statuses.loreBook !== 'ready'}
         class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1"
         onclick={() => {
           createGlobalLorebook()
@@ -167,6 +221,7 @@
       </button>
       <button
         aria-label={language.edit}
+        disabled={collectionsResourceState.statuses.loreBook !== 'ready'}
         class="text-textcolor2 hover:text-green-500 cursor-pointer"
         onclick={() => {
           editMode = !editMode

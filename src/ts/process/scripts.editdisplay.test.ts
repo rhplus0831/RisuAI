@@ -28,9 +28,11 @@ import { safeStructuredClone } from '../polyfill'
 import { selectedCharID } from '../stores.svelte'
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 import type { character } from '../storage/database.svelte'
-import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
-import { clearCachedServerCommandRevision } from '../server/commands'
+import { collectionsResourceState, settingsResourceState } from '../server/resourceState.svelte'
 
+import { clearCachedServerCommandRevision } from '../server/commands'
+import { setClientRegexWorkerFactoryForTesting } from './clientRegexWorker'
+import { CLIENT_REGEX_LIMITS, executeRegexWorkerRequest, type RegexWorkerRequest } from './regexWorkerRuntime'
 interface CapturedFetch {
   url: string
   method: string
@@ -86,6 +88,7 @@ function seedDb(messageChatId: string | null = 'm-0'): character {
     ...(messageChatId !== null ? { chatId: messageChatId } : {}),
   }
   testDatabaseState.db = {
+    currentChar: 0,
     characters: [
       {
         chaId: 'char-a',
@@ -125,6 +128,12 @@ function seedDb(messageChatId: string | null = 'm-0'): character {
       },
     ],
     characterOrder: [],
+    modules: [],
+    promptPresets: [],
+    personas: [],
+    agentPresets: [],
+    enabledModules: [],
+    moduleIntergration: '',
     presetRegex: [],
     templateDefaultVariables: '',
   } as any
@@ -135,18 +144,151 @@ beforeEach(() => {
   ;(globalThis as Record<string, unknown>).safeStructuredClone = safeStructuredClone
   clearCachedServerCommandRevision()
   resetScriptCache()
-  setResourceWriteGuardEnabled(false)
+  setClientRegexWorkerFactoryForTesting(null)
 })
 
 afterEach(() => {
   vi.unstubAllGlobals()
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
+  setClientRegexWorkerFactoryForTesting(null)
   selectedCharID.set(-1)
 })
 
-describe('editdisplay render path logging (L38)', () => {
-  it('L38: a display-trigger render pass writes nothing to console.log', async () => {
+class FakeRegexWorker {
+  readonly messageListeners: Array<(event: MessageEvent<unknown>) => void> = []
+  readonly errorListeners: Array<(event: ErrorEvent) => void> = []
+  terminated = false
+
+  addEventListener(type: 'message' | 'error', listener: (event: MessageEvent<unknown> & ErrorEvent) => void): void {
+    if (type === 'message') this.messageListeners.push(listener)
+    else this.errorListeners.push(listener)
+  }
+
+  postMessage(message: unknown): void {
+    const envelope = message as { id: number; request: RegexWorkerRequest }
+    queueMicrotask(() => {
+      if (this.terminated) return
+      try {
+        const result = executeRegexWorkerRequest(envelope.request)
+        for (const listener of this.messageListeners) {
+          listener({ data: { id: envelope.id, ok: true, result } } as MessageEvent<unknown>)
+        }
+      } catch (error) {
+        for (const listener of this.messageListeners) {
+          listener({
+            data: {
+              id: envelope.id,
+              ok: false,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          } as MessageEvent<unknown>)
+        }
+      }
+    })
+  }
+
+  terminate(): void {
+    this.terminated = true
+  }
+}
+
+class HangingRegexWorker extends FakeRegexWorker {
+  override postMessage(): void {}
+}
+
+describe('editdisplay render path logging', () => {
+  it('preserves native replacement semantics across the regex worker boundary', async () => {
+    const worker = new FakeRegexWorker()
+    setClientRegexWorkerFactoryForTesting(() => worker)
+    const char = seedDb()
+    char.customscript = [
+      {
+        comment: 'worker replacement parity',
+        type: 'editdisplay',
+        in: '(a)(b)',
+        out: '[$2$1][$&][$$]',
+        flag: 'g',
+        ableFlag: true,
+      },
+    ] as any
+
+    await expect(processScriptFull(char, 'ab ab', 'editdisplay', 0)).resolves.toMatchObject({
+      data: '[ba][ab][$] [ba][ab][$]',
+    })
+    expect(worker.terminated).toBe(false)
+  })
+
+  it('terminates a non-responsive regex worker at the configured display timeout', async () => {
+    const worker = new HangingRegexWorker()
+    setClientRegexWorkerFactoryForTesting(() => worker)
+    const char = seedDb()
+    ;(testDatabaseState.db as any).complexRegexDisplayTimeoutMs = 5
+    char.customscript = [
+      {
+        comment: 'catastrophic worker regex',
+        type: 'editdisplay',
+        in: '(a+)+$',
+        out: 'blocked',
+        flag: 'g',
+        ableFlag: true,
+      },
+    ] as any
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    try {
+      await expect(processScriptFull(char, `${'a'.repeat(256)}!`, 'editdisplay', 0)).resolves.toMatchObject({
+        data: `${'a'.repeat(256)}!`,
+      })
+      expect(worker.terminated).toBe(true)
+      expect(errorSpy).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('timed out') }))
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
+  it('preflights replacement and move amplification inside the regex worker runtime', () => {
+    expect(CLIENT_REGEX_LIMITS).toMatchObject({ replacement: 16 * 1024 * 1024, output: 16 * 1024 * 1024 })
+    const sizeLimit = 128 * 1024
+    const replacement = 'x'.repeat(sizeLimit)
+    expect(() =>
+      executeRegexWorkerRequest({
+        operation: 'replace',
+        pattern: '(a)',
+        flags: 'g',
+        source: 'a a a a',
+        replacement,
+        sizeLimit,
+      }),
+    ).toThrow(/output length .* exceeds cap 131072/)
+
+    expect(() =>
+      executeRegexWorkerRequest({
+        operation: 'testMove',
+        pattern: '(a)',
+        flags: 'g',
+        source: 'a a a a',
+        replacement: `@@move_bottom ${'x'.repeat(sizeLimit - '@@move_bottom '.length)}`,
+        toTop: false,
+        sizeLimit,
+      }),
+    ).toThrow(/output length .* exceeds cap 131072/)
+  })
+
+  it('allows browser regex OUT values above the former 128 KiB ceiling by default', () => {
+    const replacement = 'x'.repeat(256 * 1024)
+
+    expect(
+      executeRegexWorkerRequest({
+        operation: 'replace',
+        pattern: 'a',
+        flags: 'g',
+        source: 'a',
+        replacement,
+      }),
+    ).toEqual({ operation: 'replace', result: replacement })
+  })
+
+  it('a display-trigger render pass writes nothing to console.log', async () => {
     const char = seedDb()
     const logSpy = vi.spyOn(console, 'log')
 
@@ -161,7 +303,7 @@ describe('editdisplay render path logging (L38)', () => {
     }
   })
 
-  it('I20: @@inject display action runs under the resource guard without durable persistence', async () => {
+  it('@@inject display action stays transient without durable persistence', async () => {
     const char = seedDb()
     char.customscript = [
       {
@@ -173,11 +315,6 @@ describe('editdisplay render path logging (L38)', () => {
         ableFlag: true,
       },
     ] as any
-    setResourceWriteGuardEnabled(true)
-    expect(() => {
-      testDatabaseState.db.characters[0].chats[0].message[0].data = 'raw'
-    }).toThrow(/resource database compatibility view is read-only/)
-
     const result = await processScriptFull(char, 'keep REMOVE after', 'editdisplay', 0)
 
     expect(result.data).toBe('keep  after')
@@ -204,6 +341,36 @@ describe('editdisplay render path logging (L38)', () => {
     await expect(processScriptFull(char, 'CHOICE', 'editdisplay', -1)).resolves.toMatchObject({ data: 'second' })
   })
 
+  it('does not reuse script output across delimiter-shaped definition identities', async () => {
+    const char = seedDb()
+    char.customscript = [
+      {
+        comment: 'whole delimiter pattern',
+        type: 'editprocess',
+        in: 'x|||y',
+        out: 'A',
+        flag: 'g',
+        ableFlag: true,
+      },
+    ] as any
+
+    const first = await processScriptFull(char, 'x|||y', 'editprocess')
+
+    char.customscript = [
+      {
+        comment: 'prefix pattern',
+        type: 'editprocess',
+        in: 'x',
+        out: 'y|||A',
+        flag: 'g',
+        ableFlag: true,
+      },
+    ] as any
+
+    expect(first.data).not.toBe('y|||A|||y')
+    await expect(processScriptFull(char, 'x|||y', 'editprocess')).resolves.toMatchObject({ data: 'y|||A|||y' })
+  })
+
   it('server-mode non-display @@inject optimistically updates and dispatches a message patch', async () => {
     const calls = stubCommandFetch()
     const char = seedDb()
@@ -217,8 +384,6 @@ describe('editdisplay render path logging (L38)', () => {
         ableFlag: true,
       },
     ] as any
-    setResourceWriteGuardEnabled(true)
-
     const result = await processScriptFull(char, 'keep REMOVE after', 'editprocess', 0)
 
     expect(result.data).toBe('keep  after')
@@ -248,8 +413,6 @@ describe('editdisplay render path logging (L38)', () => {
         ableFlag: true,
       },
     ] as any
-    setResourceWriteGuardEnabled(true)
-
     const result = await processScriptFull(char, 'keep REMOVE after', 'editprocess', 0)
 
     expect(result.data).toBe('keep  after')
@@ -272,8 +435,6 @@ describe('editdisplay render path logging (L38)', () => {
         ableFlag: true,
       },
     ] as any
-    setResourceWriteGuardEnabled(true)
-
     const result = await processScriptFull(char, 'keep REMOVE after', 'editprocess', 0)
     await new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -375,6 +536,158 @@ describe('editdisplay render path logging (L38)', () => {
 
     expect(result.data).toBe('chat global')
   })
+
+  it('fails closed for an errored global-script settings owner', async () => {
+    const char = seedDb()
+    ;(settingsResourceState.value as any).globalscript = [
+      {
+        comment: 'stale-global-regex',
+        type: 'editdisplay',
+        in: 'GLOBAL',
+        out: 'stale',
+        flag: 'g',
+        ableFlag: true,
+      },
+    ]
+    settingsResourceState.groupStatuses.advanced = 'error'
+
+    const result = await processScriptFull(char, 'GLOBAL', 'editdisplay', 0)
+
+    expect(result.data).toBe('GLOBAL')
+  })
+
+  it.each(['idle', 'loading'] as const)(
+    'does not read retained global scripts while the settings owner is %s',
+    async (status) => {
+      const char = seedDb()
+      ;(settingsResourceState.value as any).globalscript = [
+        {
+          comment: 'retained-global-regex',
+          type: 'editdisplay',
+          in: 'GLOBAL',
+          out: 'stale',
+          flag: 'g',
+          ableFlag: true,
+        },
+      ]
+      settingsResourceState.groupStatuses.advanced = status
+
+      const result = await processScriptFull(char, 'GLOBAL', 'editdisplay', 0)
+
+      expect(result.data).toBe('GLOBAL')
+    },
+  )
+
+  it('fails closed for an errored prompt-preset collection owner', async () => {
+    const char = seedDb()
+    ;(char.chats[0] as any).generationSettings = { promptPresetId: 'prompt-stale' }
+    collectionsResourceState.values.promptPresets = [
+      {
+        id: 'prompt-stale',
+        presetRegex: [
+          {
+            comment: 'stale-prompt-regex',
+            type: 'editdisplay',
+            in: 'PROMPT',
+            out: 'stale',
+            flag: 'g',
+            ableFlag: true,
+          },
+        ],
+      },
+    ] as any
+    collectionsResourceState.statuses.promptPresets = 'error'
+
+    const result = await processScriptFull(char, 'PROMPT', 'editdisplay', 0)
+
+    expect(result.data).toBe('PROMPT')
+  })
+
+  it.each(['idle', 'loading'] as const)(
+    'does not read retained prompt presets while the collection owner is %s',
+    async (status) => {
+      const char = seedDb()
+      ;(char.chats[0] as any).generationSettings = { promptPresetId: 'prompt-retained' }
+      collectionsResourceState.values.promptPresets = [
+        {
+          id: 'prompt-retained',
+          presetRegex: [
+            {
+              comment: 'retained-prompt-regex',
+              type: 'editdisplay',
+              in: 'PROMPT',
+              out: 'stale',
+              flag: 'g',
+              ableFlag: true,
+            },
+          ],
+        },
+      ] as any
+      collectionsResourceState.statuses.promptPresets = status
+
+      const result = await processScriptFull(char, 'PROMPT', 'editdisplay', 0)
+
+      expect(result.data).toBe('PROMPT')
+    },
+  )
+
+  it('resolves module regex from the explicit owner projection', async () => {
+    const char = seedDb()
+    char.modules = ['module-owner']
+    collectionsResourceState.values.modules = [
+      {
+        id: 'module-owner',
+        name: 'Owner module',
+        description: '',
+        regex: [
+          {
+            comment: 'owner-module-regex',
+            type: 'editdisplay',
+            in: 'MODULE',
+            out: 'module',
+            flag: 'g',
+            ableFlag: true,
+          },
+        ],
+      },
+    ]
+    collectionsResourceState.statuses.modules = 'ready'
+
+    const result = await processScriptFull(char, 'MODULE', 'editdisplay', 0)
+
+    expect(result.data).toBe('module')
+  })
+
+  it.each(['idle', 'loading'] as const)(
+    'does not activate modules while the selected-persona owner is %s',
+    async (status) => {
+      const char = seedDb()
+      char.modules = ['module-retained']
+      collectionsResourceState.values.modules = [
+        {
+          id: 'module-retained',
+          name: 'Retained module',
+          description: '',
+          regex: [
+            {
+              comment: 'retained-module-regex',
+              type: 'editdisplay',
+              in: 'MODULE',
+              out: 'stale',
+              flag: 'g',
+              ableFlag: true,
+            },
+          ],
+        },
+      ]
+      collectionsResourceState.statuses.modules = 'ready'
+      settingsResourceState.standaloneStatuses.selectedPersonaId = status
+
+      const result = await processScriptFull(char, 'MODULE', 'editdisplay', 0)
+
+      expect(result.data).toBe('MODULE')
+    },
+  )
 
   it('does not fall back to global regex when the active chat selected prompt has none', async () => {
     const char = seedDb()

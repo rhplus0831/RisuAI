@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { PROMPT_SETTINGS_KEYS } from '../../../../src/ts/promptSettings.js'
+import { PROMPT_SETTINGS_KEYS } from '@risuai/shared-core/prompt-settings'
+import { normalizePromptTemplate } from '@risuai/shared-core/prompt-template-normalization'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 
-export { PROMPT_SETTINGS_KEYS } from '../../../../src/ts/promptSettings.js'
+export { PROMPT_SETTINGS_KEYS } from '@risuai/shared-core/prompt-settings'
 
 type JsonRecord = Record<string, unknown>
 
@@ -18,22 +19,16 @@ export interface PromptItemPatch {
 
 const PROMPT_SETTINGS_KEY_SET = new Set<string>(PROMPT_SETTINGS_KEYS)
 
-export function ensurePromptTemplateCollection(database: JsonRecord): PromptItemRecord[] {
-  if (!Array.isArray(database.promptTemplate)) {
-    database.promptTemplate = []
-  }
-
-  const promptTemplate = normalizePromptTemplateValue(database.promptTemplate)
-  database.promptTemplate = promptTemplate
-  return promptTemplate
-}
-
-export function normalizePromptTemplateValue(value: unknown): PromptItemRecord[] {
-  if (!Array.isArray(value)) return []
+export function normalizePromptTemplateValue(value: unknown[]): PromptItemRecord[]
+export function normalizePromptTemplateValue(value: unknown): PromptItemRecord[] | null
+export function normalizePromptTemplateValue(value: unknown): PromptItemRecord[] | null {
+  // Browser assembly treats null as disabled, while an empty array is an active template.
+  const normalized = normalizePromptTemplate(value)
+  if (!normalized) return null
 
   const seen = new Set<string>()
-  return value.map((raw) => {
-    const item = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as JsonRecord) : {}
+  return normalized.map((raw) => {
+    const item = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as unknown as JsonRecord) : {}
     const rawId = typeof item.id === 'string' && item.id.trim() ? item.id : randomUUID()
     const id = seen.has(rawId) ? randomUUID() : rawId
     seen.add(id)
@@ -46,7 +41,7 @@ export function normalizePromptTemplateCollection(database: unknown): void {
   if (!database || typeof database !== 'object' || Array.isArray(database)) return
   const target = database as JsonRecord
   if ('promptTemplate' in target) {
-    ensurePromptTemplateCollection(target)
+    target.promptTemplate = normalizePromptTemplateValue(target.promptTemplate)
   }
 }
 
@@ -55,7 +50,12 @@ export function createPromptItemRecord(input: unknown): PromptItemRecord {
   if (typeof item.id !== 'string' || item.id.trim() === '') {
     throw new ValidationError('promptItem.id must be a non-empty string')
   }
-  return item
+  return normalizePromptItemRecord(item)
+}
+
+export function normalizePromptItemRecord(input: PromptItemRecord): PromptItemRecord {
+  const normalized = normalizePromptTemplate([input])?.[0]
+  return (normalized && typeof normalized === 'object' ? normalized : input) as PromptItemRecord
 }
 
 export function readPromptItemId(value: unknown, label = 'itemId'): string {

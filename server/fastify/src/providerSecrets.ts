@@ -5,7 +5,7 @@ import {
   PROVIDER_SECRET_PATH_WILDCARD,
   maskRegisteredProviderSecretsInPlace,
   type ProviderSecretPathSegment,
-} from '../../../src/ts/providerSecretMask.js'
+} from '@risuai/shared-core/provider-secret-mask'
 
 export { MASKED_PROVIDER_SECRET }
 
@@ -19,8 +19,8 @@ const ARRAY_ROW_IDENTITY_KEYS: Record<string, string> = {
   botPresets: 'id',
   characters: 'chaId',
   customModels: 'id',
-  modelProfiles: 'id',
   modelPresets: 'id',
+  providerCredentials: 'id',
 }
 
 export function maskProviderSecrets<T>(database: T): T {

@@ -4,7 +4,7 @@ import type { OutgoingHttpHeaders } from 'node:http'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { gunzipSync } from 'node:zlib'
-import { STATIC_ASSET_CACHE_CONTROL, buildApp } from '../src/app.js'
+import { STATIC_ASSET_CACHE_CONTROL, STATIC_TOKENIZER_CACHE_CONTROL, buildApp } from '../src/app.js'
 import type { FastifyInstance } from 'fastify'
 
 const STATIC_APP_JS =
@@ -15,6 +15,7 @@ const STATIC_INDEX_HTML =
   '<main data-test="spa-root">' +
   'static spa entry '.repeat(120) +
   '</main></body></html>'
+const STATIC_TOKENIZER_JSON = JSON.stringify({ model: { vocab: { hello: 1, world: 2 } } })
 
 interface Harness {
   app: FastifyInstance
@@ -43,6 +44,8 @@ async function startHarness(opts: { withStatic: boolean }): Promise<Harness> {
     writeFileSync(path.join(staticRoot, 'index.html'), STATIC_INDEX_HTML)
     mkdirSync(path.join(staticRoot, 'assets'))
     writeFileSync(path.join(staticRoot, 'assets', 'app.js'), STATIC_APP_JS)
+    mkdirSync(path.join(staticRoot, 'token', 'llama'), { recursive: true })
+    writeFileSync(path.join(staticRoot, 'token', 'llama', 'llama3.json'), STATIC_TOKENIZER_JSON)
   }
   const { app } = await buildApp({
     config: {
@@ -65,7 +68,7 @@ async function stopHarness(h: Harness): Promise<void> {
   if (h.staticRoot) rmSync(h.staticRoot, { recursive: true, force: true })
 }
 
-describe('Phase 2E static serving', () => {
+describe('static serving', () => {
   describe('with staticRoot present', () => {
     let harness: Harness
 
@@ -77,7 +80,7 @@ describe('Phase 2E static serving', () => {
       await stopHarness(harness)
     })
 
-    it('L20: keeps GET / outside immutable chunk caching', async () => {
+    it('keeps GET / outside immutable chunk caching', async () => {
       const res = await harness.app.inject({ method: 'GET', url: '/' })
       expect(res.statusCode).toBe(200)
       expect(res.body).toContain('<title>spa</title>')
@@ -108,20 +111,23 @@ describe('Phase 2E static serving', () => {
       expect(spa.body).not.toContain('globalThis.__FASTIFY__')
     })
 
-    it('serves nested static files', async () => {
-      const res = await harness.app.inject({ method: 'GET', url: '/assets/app.js' })
-      expect(res.statusCode).toBe(200)
-      expect(res.body).toContain('console.log("app")')
-    })
-
-    it('L20: immutable-caches SPA assets under /assets', async () => {
+    it('immutable-caches SPA assets under /assets', async () => {
       const res = await harness.app.inject({ method: 'GET', url: '/assets/app.js' })
       expect(res.statusCode).toBe(200)
       expect(cacheControl(res)).toBe(STATIC_ASSET_CACHE_CONTROL)
       expect(res.body).toBe(STATIC_APP_JS)
     })
 
-    it('L19: gzip-compresses large static assets without changing the bytes', async () => {
+    it('long-caches tokenizer vocab files under /token without immutable', async () => {
+      const res = await harness.app.inject({ method: 'GET', url: '/token/llama/llama3.json' })
+      expect(res.statusCode).toBe(200)
+      expect(res.body).toBe(STATIC_TOKENIZER_JSON)
+      expect(cacheControl(res)).toBe(STATIC_TOKENIZER_CACHE_CONTROL)
+      expect(cacheControl(res)).not.toContain('immutable')
+      expect(cacheControl(res)).not.toContain('max-age=0')
+    })
+
+    it('gzip-compresses large static assets without changing the bytes', async () => {
       const uncompressed = await harness.app.inject({ method: 'GET', url: '/assets/app.js' })
       expect(uncompressed.statusCode).toBe(200)
       expect(uncompressed.headers['content-encoding']).toBeUndefined()
@@ -139,7 +145,7 @@ describe('Phase 2E static serving', () => {
       expect(compressedBytes.length).toBeLessThan(Buffer.byteLength(STATIC_APP_JS) * 0.7)
     })
 
-    it('L19: leaves small API responses below the compression threshold uncompressed', async () => {
+    it('leaves small API responses below the compression threshold uncompressed', async () => {
       const res = await harness.app.inject({
         method: 'GET',
         url: '/api/v1/health',
@@ -151,7 +157,7 @@ describe('Phase 2E static serving', () => {
       expect(Buffer.byteLength(res.body)).toBeLessThan(1024)
     })
 
-    it('L20: keeps SPA fallback outside immutable chunk caching', async () => {
+    it('keeps SPA fallback outside immutable chunk caching', async () => {
       const res = await harness.app.inject({ method: 'GET', url: '/character/123' })
       expect(res.statusCode).toBe(200)
       expect(res.headers['content-type']).toContain('text/html')
@@ -172,24 +178,18 @@ describe('Phase 2E static serving', () => {
       expectNotImmutableCached(res)
     })
 
-    it('L20: preserves API 404 outside SPA fallback', async () => {
+    it('preserves API 404 outside SPA fallback', async () => {
       const res = await harness.app.inject({ method: 'GET', url: '/api/v1/does-not-exist' })
       expect(res.statusCode).toBe(404)
       expect(res.body).not.toContain('<title>spa</title>')
       expectNotImmutableCached(res)
     })
 
-    it('L20: preserves non-GET SPA fallback rejection', async () => {
+    it('preserves non-GET SPA fallback rejection', async () => {
       const res = await harness.app.inject({ method: 'POST', url: '/character/123' })
       expect(res.statusCode).toBe(404)
       expect(res.body).not.toContain('<title>spa</title>')
       expectNotImmutableCached(res)
-    })
-
-    it('still serves the API', async () => {
-      const res = await harness.app.inject({ method: 'GET', url: '/api/v1/health' })
-      expect(res.statusCode).toBe(200)
-      expect(res.json().status).toBe('ok')
     })
   })
 
@@ -202,12 +202,6 @@ describe('Phase 2E static serving', () => {
 
     afterEach(async () => {
       await stopHarness(harness)
-    })
-
-    it('still serves the API', async () => {
-      const res = await harness.app.inject({ method: 'GET', url: '/api/v1/health' })
-      expect(res.statusCode).toBe(200)
-      expect(res.json().status).toBe('ok')
     })
 
     it('returns Fastify default 404 for non-API routes', async () => {

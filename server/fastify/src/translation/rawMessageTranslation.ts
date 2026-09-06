@@ -1,20 +1,24 @@
+import { decodeProviderGenerationSettings } from '../prompt/generationInputDecoder.js'
 import { createHash } from 'node:crypto'
-import type { Database } from '../../../../src/ts/storage/database.svelte'
+import type { ProviderGenerationSettings as Database } from '../prompt/serverTypes.js'
 import {
   resolveModelProfile,
   resolveModelProfileByProfileId,
   assertModelProfileGenerationReady,
-} from '../../../../src/ts/model/modelProfileResolver.js'
+} from '@risuai/shared-core/model-profile-resolver'
 import {
   resolveTranslatorPipeline,
   runTranslatorPipeline,
   translatorPipelineSignature,
   type TranslatorHistoryResolver,
-} from '../../../../src/ts/translator/pipeline.js'
-import { dispatchChatProvider } from '../prompt/chatDispatch.js'
+} from '@risuai/shared-core/translator-pipeline'
+import { dispatchChatProvider, type ChatDispatchHistoryInput } from '../prompt/chatDispatch.js'
 import { tokenize } from '../prompt/tokens.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import { ValidationError } from '../repository.js'
+import { stripInternalReasoning } from '@risuai/shared-core/internal-reasoning'
+import { createHistorySlotResolver, type HistorySlotContext } from '@risuai/shared-core/history-slots'
+import { applyProfileBoundGenerationFields } from '../prompt/effectiveGenerationConfig.js'
 
 export type RawMessageTranslatorType = 'google' | 'deepl' | 'deeplX' | 'llm'
 
@@ -32,15 +36,20 @@ export interface RawMessageTranslation {
 export interface RawMessageTranslationInput {
   settings: Record<string, unknown>
   character?: Record<string, unknown>
+  chat?: Record<string, unknown>
   text: string
   historyContext?: RawMessageTranslationHistoryContext
   signal: AbortSignal
+  requestHistory?: Omit<ChatDispatchHistoryInput, 'source'>
 }
 
-export interface RawMessageTranslationHistoryContext {
-  messages: readonly Record<string, unknown>[]
-  messageIndex: number
-  greeting: string
+export type RawMessageTranslationHistoryContext = HistorySlotContext
+
+export interface RawMessageTranslatorIdentity {
+  translatorType: RawMessageTranslatorType
+  targetLanguage: string
+  inputLanguage: string
+  settingsHash: string
 }
 
 const SUPPORTED_TRANSLATORS = new Set<RawMessageTranslatorType>(['google', 'deepl', 'deeplX', 'llm'])
@@ -98,6 +107,11 @@ function translatorNote(character: Record<string, unknown> | undefined): string 
   return stringValue(character?.translatorNote)
 }
 
+function boundTranslatorPresetId(chat: Record<string, unknown> | undefined): string | null {
+  const presetId = chat?.translatorPresetId
+  return typeof presetId === 'string' && presetId.trim() ? presetId : null
+}
+
 function translatorHistoryMaxTokens(settings: Record<string, unknown>): number {
   const value = settings.translatorHistoryMaxTokens ?? DEFAULT_TRANSLATOR_HISTORY_MAX_TOKENS
   return typeof value === 'number' && Number.isFinite(value) && value > 0
@@ -105,9 +119,53 @@ function translatorHistoryMaxTokens(settings: Record<string, unknown>): number {
     : DEFAULT_TRANSLATOR_HISTORY_MAX_TOKENS
 }
 
+function translateProfileCacheIdentity(
+  settings: Record<string, unknown>,
+  chat: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const database = decodeProviderGenerationSettings({
+    ...settings,
+    characters: [],
+    halfStreaming: false,
+    useStreaming: false,
+  })
+  let profile = resolveModelProfile({ database, role: 'translate' })
+  if (profile.modelId.length === 0) {
+    profile = resolveModelProfile({ database, role: 'translate', staticModel: 'echo_model' })
+  }
+  return {
+    profileId: profile.profileId,
+    source: {
+      kind: profile.source.kind,
+      role: profile.source.role,
+      field: profile.source.field ?? null,
+      legacyMode: profile.source.legacyMode,
+    },
+    modelId: profile.modelId,
+    requestModel: profile.requestModel,
+    model: {
+      id: profile.modelInfo.id,
+      internalID: profile.modelInfo.internalID ?? null,
+      provider: profile.modelInfo.provider,
+      format: profile.modelInfo.format,
+      tokenizer: profile.modelInfo.tokenizer,
+      keyIdentifier: profile.modelInfo.keyIdentifier ?? null,
+    },
+    provider: {
+      id:
+        profile.providerOptions.provider ??
+        (profile.providerCapability.routable ? profile.providerCapability.provider : null),
+      keyIdentifier: profile.providerOptions.keyIdentifier ?? profile.modelInfo.keyIdentifier ?? null,
+    },
+    runtimeOptions: profile.runtimeOptions,
+    boundPresetId: boundTranslatorPresetId(chat),
+  }
+}
+
 function translatorSettingsHash(input: {
   settings: Record<string, unknown>
   character?: Record<string, unknown>
+  chat?: Record<string, unknown>
   translatorType: RawMessageTranslatorType
   targetLanguage: string
   inputLanguage: string
@@ -117,11 +175,16 @@ function translatorSettingsHash(input: {
       translatorType: input.translatorType,
       targetLanguage: input.targetLanguage,
       inputLanguage: input.inputLanguage,
-      translatorPipeline: translatorPipelineSignature(resolveTranslatorPipeline(input.settings)),
+      translatorPipeline: translatorPipelineSignature(
+        resolveTranslatorPipeline(input.settings, boundTranslatorPresetId(input.chat)),
+      ),
       translatorSendTextAsIs: input.settings.translatorSendTextAsIs === true,
+      translatorExcludeThoughts:
+        input.settings.translatorSendTextAsIs === true && input.settings.translatorExcludeThoughts === true,
       translatorHistoryMaxTokens: translatorHistoryMaxTokens(input.settings),
       translatorNote: translatorNote(input.character),
-      aiModel: stringValue(input.settings.aiModel),
+      translateProfile: translateProfileCacheIdentity(input.settings, input.chat),
+      providerCredentials: input.settings.providerCredentials ?? null,
       modelProfiles: input.settings.modelProfiles ?? null,
       modelRoleProfiles: input.settings.modelRoleProfiles ?? null,
       modelRuntimeDefaults: input.settings.modelRuntimeDefaults ?? null,
@@ -136,78 +199,44 @@ function translatorSettingsHash(input: {
   )
 }
 
-interface TranslatorHistoryEntry {
-  role: 'user' | 'char'
-  source: string
-  translated?: string
+/** Resolve cache identity without invoking a translation provider. */
+export function resolveRawMessageTranslatorIdentity(input: {
+  settings: Record<string, unknown>
+  character?: Record<string, unknown>
+  chat?: Record<string, unknown>
+}): RawMessageTranslatorIdentity {
+  const translatorType = translatorTypeFromSettings(input.settings)
+  const { targetLanguage, inputLanguage } = translationLanguages(input.settings)
+  return {
+    translatorType,
+    targetLanguage,
+    inputLanguage,
+    settingsHash: translatorSettingsHash({
+      settings: input.settings,
+      character: input.character,
+      chat: input.chat,
+      translatorType,
+      targetLanguage,
+      inputLanguage,
+    }),
+  }
 }
 
-interface RenderedTranslatorHistory {
-  source: string
-  translated: string
-}
-
-function translatorHistoryBlock(role: TranslatorHistoryEntry['role'], body: string): string {
-  return `${role}: ${body}\n\n---\n\n`
+function translatorInputText(settings: Record<string, unknown>, text: string): string {
+  if (settings.translatorSendTextAsIs !== true || settings.translatorExcludeThoughts !== true) return text
+  return stripInternalReasoning(text, { preserveUnchanged: true })
 }
 
 function createTranslatorHistoryResolver(
   settings: Record<string, unknown>,
   context: RawMessageTranslationHistoryContext,
 ): TranslatorHistoryResolver {
-  const cache = new Map<number, RenderedTranslatorHistory>()
-  const maxTokens = translatorHistoryMaxTokens(settings)
-
-  const resolveWindow = (count: number): RenderedTranslatorHistory => {
-    const cached = cache.get(count)
-    if (cached) return cached
-
-    const newestFirst: TranslatorHistoryEntry[] = []
-    let exhaustedHistory = true
-    for (let index = Math.min(context.messageIndex - 1, context.messages.length - 1); index >= 0; index--) {
-      const message = context.messages[index]
-      if (message.disabled === 'allBefore') {
-        exhaustedHistory = false
-        break
-      }
-      if (message.disabled === true || message.isComment === true) continue
-
-      const translation = recordValue(message.translation)
-      newestFirst.push({
-        role: message.role === 'user' ? 'user' : 'char',
-        source: stringValue(message.data),
-        ...(typeof translation.text === 'string' ? { translated: translation.text } : {}),
-      })
-      if (newestFirst.length === count) break
-    }
-
-    if (newestFirst.length < count && exhaustedHistory && context.greeting.length > 0) {
-      newestFirst.push({ role: 'char', source: context.greeting })
-    }
-
-    const entries = newestFirst.reverse()
-    let totalTokens = entries.reduce((total, entry) => {
-      const sourceBlock = translatorHistoryBlock(entry.role, entry.source)
-      const translatedBlock = entry.translated === undefined ? '' : translatorHistoryBlock(entry.role, entry.translated)
-      return total + tokenize(sourceBlock) + tokenize(translatedBlock)
-    }, 0)
-    while (entries.length > 0 && totalTokens > maxTokens) {
-      const entry = entries.shift()!
-      totalTokens -= tokenize(translatorHistoryBlock(entry.role, entry.source))
-      if (entry.translated !== undefined) {
-        totalTokens -= tokenize(translatorHistoryBlock(entry.role, entry.translated))
-      }
-    }
-
-    const rendered = {
-      source: entries.map((entry) => translatorHistoryBlock(entry.role, entry.source)).join(''),
-      translated: entries.map((entry) => translatorHistoryBlock(entry.role, entry.translated ?? '')).join(''),
-    }
-    cache.set(count, rendered)
-    return rendered
-  }
-
-  return (kind, count) => resolveWindow(count)[kind]
+  return createHistorySlotResolver({
+    context,
+    maxTokens: translatorHistoryMaxTokens(settings),
+    countTokens: tokenize,
+    transformText: (text) => translatorInputText(settings, text),
+  })
 }
 
 function isProtectedRawLine(line: string): boolean {
@@ -376,18 +405,21 @@ async function collectFrames(frames: AsyncIterable<CompletionStreamFrame>): Prom
 async function translateWithLlm(
   settings: Record<string, unknown>,
   character: Record<string, unknown> | undefined,
+  chat: Record<string, unknown> | undefined,
   text: string,
   inputLanguage: string,
   targetLanguage: string,
   signal: AbortSignal,
   historyResolver?: TranslatorHistoryResolver,
+  requestHistory?: Omit<ChatDispatchHistoryInput, 'source'>,
 ) {
-  const database = {
+  const database = decodeProviderGenerationSettings({
     ...settings,
     characters: character ? [character] : [],
+    halfStreaming: false,
     useStreaming: false,
-  } as unknown as Database
-  const steps = resolveTranslatorPipeline(settings)
+  })
+  const steps = resolveTranslatorPipeline(settings, boundTranslatorPresetId(chat))
   return runTranslatorPipeline(
     {
       steps,
@@ -408,11 +440,14 @@ async function translateWithLlm(
         profile = resolveModelProfile({ database, role: 'translate', staticModel: 'echo_model' })
       }
       assertModelProfileGenerationReady(profile)
-      const dispatchDatabase = {
-        ...database,
-        aiModel: profile.modelId,
-        maxResponse,
-      } as Database
+      const dispatchDatabase: Database = { ...database }
+      applyProfileBoundGenerationFields(dispatchDatabase, profile)
+      // A translator step owns its response budget and always uses buffered
+      // dispatch, while the profile still owns output-affecting samplers.
+      dispatchDatabase.aiModel = profile.modelId
+      dispatchDatabase.maxResponse = maxResponse
+      dispatchDatabase.halfStreaming = false
+      dispatchDatabase.useStreaming = false
       return collectFrames(
         await dispatchChatProvider({
           database: dispatchDatabase,
@@ -420,6 +455,19 @@ async function translateWithLlm(
           outputTokens: maxResponse,
           profile,
           signal: stepSignal ?? signal,
+          ...(requestHistory
+            ? {
+                history: {
+                  ...requestHistory,
+                  source: 'translation',
+                  metadata: {
+                    targetLanguage,
+                    inputLanguage,
+                    ...(requestHistory.metadata ?? {}),
+                  },
+                },
+              }
+            : {}),
         }),
       )
     },
@@ -427,15 +475,24 @@ async function translateWithLlm(
 }
 
 export async function translateRawMessageData(input: RawMessageTranslationInput): Promise<RawMessageTranslation> {
-  const translatorType = translatorTypeFromSettings(input.settings)
-  const { targetLanguage, inputLanguage } = translationLanguages(input.settings)
+  const { translatorType, targetLanguage, inputLanguage, settingsHash } = resolveRawMessageTranslatorIdentity(input)
   const translateChunk = async (chunk: string): Promise<string> => {
     if (translatorType === 'google') return translateWithGoogle(chunk, inputLanguage, targetLanguage, input.signal)
     if (translatorType === 'deepl') return translateWithDeepL(input.settings, chunk, targetLanguage, input.signal)
     if (translatorType === 'deeplX') {
       return translateWithDeepLX(input.settings, chunk, inputLanguage, targetLanguage, input.signal)
     }
-    return translateWithLlm(input.settings, input.character, chunk, inputLanguage, targetLanguage, input.signal)
+    return translateWithLlm(
+      input.settings,
+      input.character,
+      input.chat,
+      chunk,
+      inputLanguage,
+      targetLanguage,
+      input.signal,
+      undefined,
+      input.requestHistory,
+    )
   }
   const historyResolver =
     translatorType === 'llm' && input.settings.translatorSendTextAsIs === true && input.historyContext
@@ -446,11 +503,13 @@ export async function translateRawMessageData(input: RawMessageTranslationInput)
       ? await translateWithLlm(
           input.settings,
           input.character,
-          input.text,
+          input.chat,
+          translatorInputText(input.settings, input.text),
           inputLanguage,
           targetLanguage,
           input.signal,
           historyResolver,
+          input.requestHistory,
         )
       : await translatePreservingRawBlocks(input.text, translateChunk)
 
@@ -461,13 +520,7 @@ export async function translateRawMessageData(input: RawMessageTranslationInput)
     targetLanguage,
     inputLanguage,
     translatorType,
-    settingsHash: translatorSettingsHash({
-      settings: input.settings,
-      character: input.character,
-      translatorType,
-      targetLanguage,
-      inputLanguage,
-    }),
+    settingsHash,
     updatedAt: Date.now(),
   }
 }

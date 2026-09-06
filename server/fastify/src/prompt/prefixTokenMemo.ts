@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type { PromptMessage } from './promptMessage.js'
 import { tokenizeChat, type TokenEncoding, type TokenizeChatOptions } from './tokens.js'
 
 const DEFAULT_HYPA_V3_PREFIX_TOKEN_MEMO_ENTRIES = 4096
@@ -8,6 +8,8 @@ interface NormalizedTokenizeChatOptions {
   chatAdditionalTokens: number
   useName: 'name' | 'noName'
   countThoughts: boolean
+  supportsInlayImage: boolean
+  visionQuality: string
 }
 
 export interface HypaV3PrefixTokenMemoStats {
@@ -17,11 +19,15 @@ export interface HypaV3PrefixTokenMemoStats {
   evictions: number
 }
 
-export type HypaV3RawTokenizeChat = (chat: OpenAIChat, encoding: TokenEncoding, options: TokenizeChatOptions) => number
+export type HypaV3RawTokenizeChat = (
+  chat: PromptMessage,
+  encoding: TokenEncoding,
+  options: TokenizeChatOptions,
+) => number
 
 export interface HypaV3PrefixTokenMemo {
   tokenize(
-    chat: OpenAIChat,
+    chat: PromptMessage,
     encoding?: TokenEncoding,
     options?: TokenizeChatOptions,
     rawTokenizeChat?: HypaV3RawTokenizeChat,
@@ -83,7 +89,7 @@ export function createHypaV3PrefixTokenMemo(
 export const sharedHypaV3PrefixTokenMemo = createHypaV3PrefixTokenMemo()
 
 export function tokenizeHypaV3PrefixChat(
-  chat: OpenAIChat,
+  chat: PromptMessage,
   encoding?: TokenEncoding,
   options?: TokenizeChatOptions,
 ): number {
@@ -99,22 +105,29 @@ export function getHypaV3PrefixTokenMemoStatsForTests(): HypaV3PrefixTokenMemoSt
 }
 
 function createHypaV3PrefixTokenMemoKey(
-  chat: OpenAIChat,
+  chat: PromptMessage,
   encoding: TokenEncoding,
   options: TokenizeChatOptions,
 ): string {
   const normalizedOptions = normalizeTokenizeChatOptions(options)
   const thoughts = Array.isArray(chat.thoughts) ? chat.thoughts : []
   return JSON.stringify([
-    'hypa-v3-prefix-token-v1',
+    'hypa-v3-prefix-token-v2',
     encoding,
     normalizedOptions.chatAdditionalTokens,
     normalizedOptions.useName,
     normalizedOptions.countThoughts,
+    normalizedOptions.supportsInlayImage,
+    normalizedOptions.visionQuality,
     chat.role,
     hashText(chat.content ?? ''),
     chat.name === undefined ? null : hashText(chat.name),
     thoughts.map(hashText),
+    (chat.multimodals ?? []).map((multimodal) => [
+      multimodal.type,
+      multimodal.width ?? null,
+      multimodal.height ?? null,
+    ]),
     chat.memo ?? null,
   ])
 }
@@ -124,6 +137,8 @@ function normalizeTokenizeChatOptions(options: TokenizeChatOptions): NormalizedT
     chatAdditionalTokens: options.chatAdditionalTokens ?? 4,
     useName: options.useName ?? 'name',
     countThoughts: options.countThoughts === true,
+    supportsInlayImage: options.supportsInlayImage === true,
+    visionQuality: options.visionQuality ?? 'low',
   }
 }
 

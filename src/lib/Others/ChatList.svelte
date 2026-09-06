@@ -4,8 +4,12 @@
   import { alertConfirm, alertError, alertNormal } from '../../ts/alert'
   import { language } from '../../lang'
 
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
-  import { selectedCharID } from '../../ts/stores.svelte'
+  import {
+    applyChatMetadataOwnerPatch,
+    charactersResourceState,
+    getCharacterResourceOwner,
+  } from 'src/ts/server/resourceState.svelte'
+  import { isServerCharacterShell } from 'src/ts/storage/database.svelte'
   import { DownloadIcon, SquarePenIcon, HardDriveUploadIcon, PlusIcon, TrashIcon, XIcon } from '@lucide/svelte'
   import { v4 } from 'uuid'
   import { exportChat, importChat } from '../../ts/characters'
@@ -14,20 +18,18 @@
   import {
     applyOptimisticCreatedChat,
     applyOptimisticDeletedChat,
-    currentChatStateSnapshot,
+    captureChatCreateSnapshot,
+    captureChatDeleteSnapshot,
+    captureChatMetadataPatch,
     dispatchCreateChatWithOutcome,
     dispatchDeleteChatWithOutcome,
-    dispatchUpdateChatWithOutcome,
+    dispatchChatMetadataPatchWithOutcome,
+    restoreChatRowMetadata,
   } from 'src/ts/chatCommands'
   import { reportWriterAccessLostMutation } from 'src/ts/server/activeWriterSession'
   import { canUseServerCommands } from 'src/ts/server/commands'
-  import {
-    rollbackServerBackedChatRowMetadata,
-    syncServerBackedChatMetadataBaselines,
-    watchServerBackedChatMetadata,
-  } from 'src/ts/server/chatBridge.svelte'
-  import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
+  import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   let editMode = $state(false)
@@ -39,23 +41,46 @@
   let nextMutationRun = 0
   /** @type {{close?: any}} */
   let { close = () => {} } = $props()
-  const ownerSelectedCharIndex = $selectedCharID
-  const ownerCharacterReference = getDatabase().characters?.[ownerSelectedCharIndex]
+  function readCharacterOwners() {
+    return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
+  }
+
+  function uniqueCharacterOwner(characterId) {
+    if (!characterId) return undefined
+    if (charactersResourceState.status !== 'ready') return undefined
+    if (charactersResourceState.rowStatuses[characterId] === 'error') return undefined
+    return getCharacterResourceOwner(characterId)
+  }
+
+  function selectedCharacterOwner() {
+    const selectedIndex = selectedCharacterIndex()
+    const owners = readCharacterOwners()
+    const candidate = owners[selectedIndex]
+    if (candidate?.chaId) return uniqueCharacterOwner(candidate.chaId)
+    return undefined
+  }
+
+  function selectedCharacterIndex() {
+    return charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : -1
+  }
+
+  const ownerSelectedCharIndex = selectedCharacterIndex()
+  const ownerCharacterReference = selectedCharacterOwner()
   const ownerCharacterId = ownerCharacterReference?.chaId
   let invalidated = $state(false)
 
   function resolveOriginCharacter(originCharacterId, originSelectedCharIndex, originCharacterReference) {
     if (originCharacterId) {
-      return getDatabase().characters?.find((candidate) => candidate.chaId === originCharacterId)
+      return uniqueCharacterOwner(originCharacterId)
     }
 
-    const byIndex = getDatabase().characters?.[originSelectedCharIndex]
+    const byIndex = readCharacterOwners()[originSelectedCharIndex]
     if (originCharacterReference && byIndex !== originCharacterReference) return undefined
     return byIndex
   }
 
   function isOriginCharacterSelected(originCharacter, originCharacterId) {
-    const selectedCharacter = getDatabase().characters?.[$selectedCharID]
+    const selectedCharacter = selectedCharacterOwner()
     return (
       selectedCharacter === originCharacter || (originCharacterId && selectedCharacter?.chaId === originCharacterId)
     )
@@ -64,8 +89,35 @@
   let modalCharacter = $derived.by(() => {
     if (invalidated) return undefined
     const character = resolveOriginCharacter(ownerCharacterId, ownerSelectedCharIndex, ownerCharacterReference)
-    if (!character || !isOriginCharacterSelected(character, ownerCharacterId)) return undefined
+    if (
+      !character ||
+      !isOriginCharacterSelected(character, ownerCharacterId) ||
+      !characterChatIdsAreUnique(character)
+    ) {
+      return undefined
+    }
     return character
+  })
+
+  function characterChatIdsAreUnique(character) {
+    const stableChatIds = (character.chats ?? []).map((chat) => chat?.id)
+    if (stableChatIds.some((chatId) => typeof chatId !== 'string' || chatId.length === 0)) return false
+    if (new Set(stableChatIds).size !== stableChatIds.length) return false
+    const rows = readCharacterOwners()
+    return stableChatIds.every(
+      (chatId) =>
+        rows.reduce(
+          (count, candidate) => count + (candidate.chats ?? []).filter((chat) => chat?.id === chatId).length,
+          0,
+        ) === 1,
+    )
+  }
+
+  // The hydrated owner detail is authoritative; a shell remains visible until
+  // its owner row is hydrated.
+  let renderedCharacter = $derived.by(() => {
+    const owner = ownerCharacterId ? uniqueCharacterOwner(ownerCharacterId) : undefined
+    return owner && !isServerCharacterShell(owner) ? owner : modalCharacter
   })
 
   function invalidateModal() {
@@ -82,11 +134,6 @@
     }
     return character
   }
-
-  $effect(() => {
-    const stop = untrack(() => watchServerBackedChatMetadata())
-    return stop
-  })
 
   $effect(() => {
     if (!modalCharacter) {
@@ -138,12 +185,33 @@
     return `chat-order:${ownerCharacterId ?? `index:${ownerSelectedCharIndex}`}`
   }
 
-  function hasConflictingMutation(conflictKeys) {
-    return Object.values(chatMutations).some(
-      (mutation) =>
+  function hasConflictingMutation(conflictKeys, ignoredMutationKey) {
+    return Object.entries(chatMutations).some(
+      ([key, mutation]) =>
+        (!ignoredMutationKey || (key !== ignoredMutationKey && !key.startsWith(`${ignoredMutationKey}:`))) &&
         mutation.status === 'pending' &&
         mutation.conflictKeys.some((conflictKey) => conflictKeys.includes(conflictKey)),
     )
+  }
+
+  function mutationKeyBelongsToGroup(key, groupKey) {
+    return key === groupKey || key.startsWith(`${groupKey}:`)
+  }
+
+  function clearFailedMutations(groupKey) {
+    for (const [key, mutation] of Object.entries(chatMutations)) {
+      if (mutationKeyBelongsToGroup(key, groupKey) && mutation.status === 'failed') delete chatMutations[key]
+    }
+  }
+
+  function clearAcceptedMutation(key, run, groupKey) {
+    if (!groupKey) {
+      clearMutation(key, run)
+      return
+    }
+    for (const [candidateKey, mutation] of Object.entries(chatMutations)) {
+      if (mutationKeyBelongsToGroup(candidateKey, groupKey) && mutation.run <= run) delete chatMutations[candidateKey]
+    }
   }
 
   function isChatMutationPending(chatId) {
@@ -173,18 +241,18 @@
   function recoverRejectedProvisionalChatRoute(characterId, provisionalChatId) {
     const route = get(currentRoute)
     if (route.kind !== 'character' || route.chaId !== characterId || route.chatId !== provisionalChatId) return
-    const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+    const character = uniqueCharacterOwner(characterId)
     if (!character || character.chats?.some((chat) => chat.id === provisionalChatId)) return
     const replacementChatId = character.chats?.[character.chatPage]?.id
     navigate(characterRoutePath(characterId, replacementChatId), { replace: true })
   }
 
-  function settleQueuedMutation(key, run, targetId, action, conflictKeys, settlement, onFinal) {
+  function settleQueuedMutation(key, run, targetId, action, conflictKeys, settlement, onFinal, mutationGroupKey) {
     void settlement.then(
       (finalOutcome) => {
         if (!isCurrentMutation(key, run)) return
         if (finalOutcome.status === 'accepted') {
-          clearMutation(key, run)
+          clearAcceptedMutation(key, run, mutationGroupKey)
           onFinal?.(finalOutcome)
           return
         }
@@ -207,7 +275,16 @@
     return language.chatStructureFailed(mutation.action)
   }
 
-  async function settleMutation(key, targetId, action, conflictKeys, dispatch, queuedMessage, onFinal) {
+  async function settleMutation(
+    key,
+    targetId,
+    action,
+    conflictKeys,
+    dispatch,
+    queuedMessage,
+    onFinal,
+    mutationGroupKey,
+  ) {
     const run = ++nextMutationRun
     setMutation(key, targetId, action, conflictKeys, run, 'pending')
     try {
@@ -221,10 +298,10 @@
       if (outcome.status === 'queued') {
         setMutation(key, targetId, action, conflictKeys, run, 'queued')
         alertNormal(queuedMessage ?? language.chatStructureQueued(action))
-        settleQueuedMutation(key, run, targetId, action, conflictKeys, outcome.settlement, onFinal)
+        settleQueuedMutation(key, run, targetId, action, conflictKeys, outcome.settlement, onFinal, mutationGroupKey)
         return 'queued'
       }
-      clearMutation(key, run)
+      clearAcceptedMutation(key, run, mutationGroupKey)
       return 'accepted'
     } catch {
       if (isCurrentMutation(key, run)) {
@@ -252,35 +329,28 @@
   async function updateChatName(chat, name) {
     const character = resolveActiveOwnerCharacter()
     const liveTargetChat = character?.chats?.find((candidate) => candidate.id === chat?.id)
-    if (!character || !liveTargetChat?.id || liveTargetChat.name === name || isChatMutationPending(liveTargetChat.id))
-      return
+    if (!character || !liveTargetChat?.id || liveTargetChat.name === name) return
+    const key = mutationKey('rename', liveTargetChat.id)
+    if (hasConflictingMutation([chatConflictKey(liveTargetChat.id)], key)) return
     if (reportWriterAccessLostMutation()) return
     if (!canUseServerCommands()) {
       liveTargetChat.name = name
       return
     }
 
-    const previous = currentChatStateSnapshot()
-    const previousCharacter = ownerCharacterId
-      ? previous.characters.find((candidate) => candidate.chaId === ownerCharacterId)
-      : previous.characters[ownerSelectedCharIndex]
-    const previousChat = previousCharacter?.chats?.find((candidate) => candidate.id === liveTargetChat.id)
-    let applied = false
-    withTrustedResourceWrite(() => {
-      const liveCharacter = previousCharacter?.chaId
-        ? getDatabase().characters?.find((candidate) => candidate.chaId === previousCharacter.chaId)
-        : resolveOriginCharacter(undefined, ownerSelectedCharIndex, ownerCharacterReference)
-      const liveChat = liveCharacter?.chats?.find((candidate) => candidate.id === liveTargetChat.id)
-      if (!liveChat || liveChat.name !== previousChat?.name) return
-      liveChat.name = name
-      applied = true
-    })
-    if (!applied) return
-    syncServerBackedChatMetadataBaselines()
+    const previous = captureChatMetadataPatch(liveTargetChat.id, { name }, character.chaId)
+    if (!previous || !applyChatMetadataOwnerPatch(previous.characterId, liveTargetChat.id, { name })) return
+    clearFailedMutations(key)
     const action = `${language.edit}: ${name}`
-    const key = mutationKey('rename', liveTargetChat.id)
-    await settleMutation(key, liveTargetChat.id, action, [chatConflictKey(liveTargetChat.id)], () =>
-      dispatchUpdateChatWithOutcome(liveTargetChat.id, { name }, previous, false, rollbackServerBackedChatRowMetadata),
+    await settleMutation(
+      `${key}:${v4()}`,
+      liveTargetChat.id,
+      action,
+      [chatConflictKey(liveTargetChat.id)],
+      () => dispatchChatMetadataPatchWithOutcome(previous, restoreChatRowMetadata),
+      undefined,
+      undefined,
+      key,
     )
   }
 
@@ -323,16 +393,12 @@
     const liveChatIndex = resolvedOriginCharacter?.chats?.findIndex((candidate) => candidate.id === targetChatId) ?? -1
     if (!resolvedOriginCharacter || liveChatIndex < 0 || resolvedOriginCharacter.chats.length <= 1) return
 
-    const previous = currentChatStateSnapshot()
-    const previousOwnerIndex = originCharacterId
-      ? previous.characters.findIndex((candidate) => candidate.chaId === originCharacterId)
-      : originSelectedCharIndex
-    if (previousOwnerIndex < 0) return
-    previous.selectedCharID = previousOwnerIndex
     const originStillSelected = isOriginCharacterSelected(resolvedOriginCharacter, originCharacterId)
     const originRoute = currentRouteIdentity()
 
     if (canUseServerCommands()) {
+      const previous = captureChatDeleteSnapshot(targetChatId, originCharacterId)
+      if (!previous) return
       const result = applyOptimisticDeletedChat(originCharacterId, targetChatId, previous)
       if (!result.applied) return
       const action = `${language.remove}: ${targetChatName}`
@@ -377,7 +443,6 @@
     const character = resolveActiveOwnerCharacter()
     if (!character || isOrderMutationPending()) return
 
-    const previous = currentChatStateSnapshot()
     const chat = {
       message: [],
       note: '',
@@ -393,6 +458,8 @@
       return
     }
 
+    const previous = captureChatCreateSnapshot(character.chaId, chat)
+    if (!previous) return
     const applied = applyOptimisticCreatedChat(character.chaId, chat, previous)
     if (!applied || !character.chaId || !chat.id) return
     const originRoute = currentRouteIdentity()
@@ -436,21 +503,16 @@
     event.stopPropagation()
     close()
   }
-
-  /** @param {MouseEvent} event */
-  function handleBackdropClick(event) {
-    if (event.target === event.currentTarget) close()
-  }
 </script>
 
 {#if modalCharacter}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
+    use:modalBackdropDismiss={close}
     data-modal-root
     data-risu-chat-list="modal"
-    class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center"
-    onclick={handleBackdropClick}>
+    class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
     <div
       use:modalFocusTrap
       class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-72 max-h-full overflow-y-auto"
@@ -473,7 +535,7 @@
         </div>
       </div>
       <div aria-live="polite">
-        {#each Object.entries(chatMutations) as [key, mutation] (key)}
+        {#each Object.entries(chatMutations).filter(([, mutation]) => mutation.status === 'failed') as [key, mutation] (key)}
           <div
             data-risu-chat-mutation={key}
             data-risu-chat-mutation-status={mutation.status}
@@ -483,20 +545,19 @@
           </div>
         {/each}
       </div>
-      {#each modalCharacter.chats as chat, i}
+      {#each renderedCharacter?.chats ?? [] as chat, i (chat.id)}
         <div
           data-risu-chat-id={chat.id ?? ''}
           data-risu-chat-idx={i}
-          data-risu-chat-selected={i === modalCharacter.chatPage ? 'true' : 'false'}
+          data-risu-chat-selected={i === renderedCharacter?.chatPage ? 'true' : 'false'}
           data-risu-chat-mutation-status={mutationForChat(chat.id)?.status ?? ''}
           aria-busy={isChatMutationPending(chat.id)}
           class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
-          class:bg-selected={i === modalCharacter.chatPage}>
+          class:bg-selected={i === renderedCharacter?.chatPage}>
           {#if editMode}
             <TextInput
               bind:value={chatNameDrafts[chat.id]}
               padding={false}
-              disabled={isChatMutationPending(chat.id)}
               onchange={() => {
                 void updateChatName(chat, chatNameDrafts[chat.id])
               }} />

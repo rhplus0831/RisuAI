@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from '../../ts/storage/database.svelte'
 
 const backgroundParserMocks = vi.hoisted(() => ({
-  getDatabase: vi.fn(),
   ParseMarkdown: vi.fn(async (html: string) => `markdown:${html}`),
   risuChatParser: vi.fn(
     (
@@ -30,7 +29,6 @@ vi.mock('src/ts/parser/parser.svelte', () => ({
 }))
 
 vi.mock('src/ts/storage/database.svelte', () => ({
-  getDatabase: backgroundParserMocks.getDatabase,
   reapplyPendingPresetProjections: () => {},
 }))
 
@@ -49,7 +47,7 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import BackgroundDom from './BackgroundDom.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
+import { charactersResourceState, replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
 import {
   ReloadGUIPointer,
   VariableReloadGUIPointer,
@@ -58,9 +56,7 @@ import {
   selectedCharID,
 } from '../../ts/stores.svelte'
 import { RegexDisplayReloadPointer } from '../../ts/process/regexDisplayReload'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../../ts/server/resourceWriteGuard.svelte'
-
-backgroundParserMocks.getDatabase.mockImplementation(() => getResourceDatabase())
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -114,11 +110,11 @@ function seedDatabase(backgroundHTML = '<section>background one</section>') {
         type: 'character',
       },
     ],
+    currentChar: 0,
     enabledModules: [],
     moduleIntergration: '',
     modules: [],
   } as unknown as Database)
-  setResourceWriteGuardEnabled(true)
 }
 
 async function settle() {
@@ -150,7 +146,6 @@ afterEach(() => {
     unmount(component)
     component = undefined
   }
-  setResourceWriteGuardEnabled(false)
   replaceResourceDatabase(previousDb)
   selectedCharID.set(previousSelectedChar)
   selIdState.selId = previousSelectedChar
@@ -163,13 +158,103 @@ afterEach(() => {
 })
 
 describe('BackgroundDom parser dependencies', () => {
-  it('does not re-run background parsing on unrelated guarded projection writes', async () => {
+  it('does not render the retained character background when the home screen has no visible selection', async () => {
+    seedDatabase('Popup Editor\n\nMonaco editor\n\nMarkdown\nPreview\nX')
+    moduleBackgroundEmbedding.set('<section>Module background</section>')
+    selectedCharID.set(-1)
+    component = mount(BackgroundDom, { target })
+    await settle()
+
+    expect(charactersResourceState.currentChar).toBe(0)
+    expect(backgroundParserMocks.risuChatParser).not.toHaveBeenCalled()
+    expect(target.textContent).toBe('')
+  })
+
+  it('clears the background on deselection even when a reparse finishes later', async () => {
+    seedDatabase()
+    component = mount(BackgroundDom, { target })
+    await waitForParserCalls(1)
+    expect(target.textContent).toContain('background one')
+
+    let resolveReparse!: (value: string) => void
+    backgroundParserMocks.ParseMarkdown.mockImplementationOnce(
+      () => new Promise<string>((resolve) => (resolveReparse = resolve)),
+    )
+    ReloadGUIPointer.update((value) => value + 1)
+    await waitForParserCalls(2)
+
+    selectedCharID.set(-1)
+    await settle()
+    expect(target.textContent).toBe('')
+
+    resolveReparse('<section>Late character background</section>')
+    await settle()
+    expect(target.textContent).toBe('')
+
+    selectedCharID.set(0)
+    await waitForParserCalls(3)
+    expect(target.textContent).toContain('background one')
+    expect(target.textContent).not.toContain('Late character background')
+  })
+
+  it('fails closed when a ready projection has no selected owner', async () => {
+    seedDatabase()
+    charactersResourceState.currentChar = 99
+    component = mount(BackgroundDom, { target })
+    await settle()
+
+    expect(backgroundParserMocks.risuChatParser).not.toHaveBeenCalled()
+    expect(target.textContent).toBe('')
+  })
+
+  it('fails closed when a ready projection has duplicate selected owners', async () => {
+    seedDatabase()
+    charactersResourceState.characters = [
+      charactersResourceState.characters[0],
+      { ...charactersResourceState.characters[0] },
+    ]
+    component = mount(BackgroundDom, { target })
+    await settle()
+
+    expect(backgroundParserMocks.risuChatParser).not.toHaveBeenCalled()
+    expect(target.textContent).toBe('')
+  })
+
+  it('fails closed when the character owner or selected row enters error', async () => {
+    seedDatabase()
+    charactersResourceState.status = 'error'
+    component = mount(BackgroundDom, { target })
+    await settle()
+
+    expect(backgroundParserMocks.risuChatParser).not.toHaveBeenCalled()
+    expect(target.textContent).toBe('')
+
+    unmount(component)
+    component = undefined
+    seedDatabase()
+    charactersResourceState.rowStatuses['background-dom-character'] = 'error'
+    component = mount(BackgroundDom, { target })
+    await settle()
+
+    expect(backgroundParserMocks.risuChatParser).not.toHaveBeenCalled()
+    expect(target.textContent).toBe('')
+  })
+
+  it('does not re-run background parsing on unrelated owner writes', async () => {
     seedDatabase()
     component = mount(BackgroundDom, { target })
     await waitForParserCalls(1)
     expect(backgroundParserMocks.ParseMarkdown).toHaveBeenCalledTimes(1)
+    expect(backgroundParserMocks.ParseMarkdown).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ chaId: 'background-dom-character' }),
+      'back',
+      -1,
+      {},
+      { chatId: 'background-dom-chat' },
+    )
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].chats[0].message[0].data = 'unrelated stream frame'
     })
     await settle()
@@ -190,7 +275,7 @@ describe('BackgroundDom parser dependencies', () => {
     backgroundParserMocks.risuChatParser.mockClear()
     backgroundParserMocks.ParseMarkdown.mockClear()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].personality = 'updated background personality'
     })
     await waitForParserCalls(1)
@@ -204,7 +289,7 @@ describe('BackgroundDom parser dependencies', () => {
     backgroundParserMocks.risuChatParser.mockClear()
     backgroundParserMocks.ParseMarkdown.mockClear()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].chats[0].message[0].data = 'unrelated stream frame after signature'
     })
     await settle()
@@ -220,7 +305,7 @@ describe('BackgroundDom parser dependencies', () => {
     backgroundParserMocks.risuChatParser.mockClear()
     backgroundParserMocks.ParseMarkdown.mockClear()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].backgroundHTML = '<section>background two</section>'
     })
     await waitForParserCalls(1)
@@ -256,7 +341,7 @@ describe('BackgroundDom parser dependencies', () => {
     backgroundParserMocks.risuChatParser.mockClear()
     backgroundParserMocks.ParseMarkdown.mockClear()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].customscript = [
         {
           id: 'background-display-script',
@@ -276,5 +361,32 @@ describe('BackgroundDom parser dependencies', () => {
     await waitForParserCalls(1)
 
     expect(backgroundParserMocks.ParseMarkdown).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the rendered background visible while a same-character reparse is pending', async () => {
+    seedDatabase()
+    component = mount(BackgroundDom, { target })
+    await waitForParserCalls(1)
+    expect(target.textContent).toContain('markdown:parsed:background one')
+
+    let resolveReparse: ((value: string) => void) | undefined
+    backgroundParserMocks.ParseMarkdown.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveReparse = resolve
+        }),
+    )
+
+    ReloadGUIPointer.update((value) => value + 1)
+    await waitForParserCalls(2)
+
+    expect(resolveReparse).toBeTypeOf('function')
+    expect(target.textContent).toContain('markdown:parsed:background one')
+
+    resolveReparse?.('markdown:<section>background after chat selection</section>')
+    await settle()
+
+    expect(target.textContent).toContain('markdown:background after chat selection')
+    expect(target.textContent).not.toContain('background one')
   })
 })

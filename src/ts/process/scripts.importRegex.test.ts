@@ -46,7 +46,7 @@ beforeEach(() => {
 })
 
 describe('importRegexRows', () => {
-  it('I-10: returns null without alerting when selectSingleFile is canceled', async () => {
+  it('returns null without alerting when selectSingleFile is canceled', async () => {
     const selectFile = vi.fn<typeof selectSingleFile>()
     selectFile.mockResolvedValue(null)
 
@@ -56,7 +56,7 @@ describe('importRegexRows', () => {
     expect(importRegexMocks.alertError).not.toHaveBeenCalled()
   })
 
-  it('I-10: compatibility importRegex returns the original rows without throwing on cancel', async () => {
+  it('compatibility importRegex returns the original rows without throwing on cancel', async () => {
     const original = [script('existing')]
     const selectFile = vi.fn<typeof selectSingleFile>()
     selectFile.mockResolvedValue(null)

@@ -1,12 +1,12 @@
 import { get, writable } from 'svelte/store'
-import { getDatabase, setDatabase } from '../storage/database.svelte'
+import type { Database } from '../storage/database.svelte'
 import { downloadFile } from '../globalApi.svelte'
 import { BufferToText } from '../util'
 import { selectSingleFile } from '../filePicker'
 import { alertError } from '../alert'
 import { isLite } from '../lite'
 import { CustomCSSStore, SafeModeStore } from '../stores.svelte'
-import { applyServerBackedSettingsPatch } from '../server/settingsBridge.svelte'
+import { applyServerBackedSettingsPatch } from '../server/settingsOwner.svelte'
 import {
   beginColorSchemeImport,
   captureColorSchemeImportTarget,
@@ -18,6 +18,15 @@ import {
   type ColorSchemeImportOperation,
 } from '../server/colorSchemeImport'
 import { language } from 'src/lang'
+import { settingsResourceState } from '../server/resourceState.svelte'
+import { cacheCustomCSS } from './customCSSCache'
+import { runtimeDisplaySettingsOwner } from './displaySettings'
+import {
+  applyDisplayStyles,
+  cacheDisplaySettings,
+  readDisplaySettingsCache,
+  type DisplayStyleProperties,
+} from './displaySettingsCache'
 
 export interface ColorScheme {
   bgcolor: string
@@ -107,6 +116,42 @@ export const builtInColorSchemes = {
     darkbutton: '#2d6a4f',
     type: 'dark',
   },
+  ocean: {
+    bgcolor: '#0b1f2a',
+    darkbg: '#08202b',
+    borderc: '#38bdf8',
+    selected: '#164e63',
+    draculared: '#fb7185',
+    textcolor: '#e6f6fb',
+    textcolor2: '#8fc7d5',
+    darkBorderc: '#155e75',
+    darkbutton: '#0f3a4a',
+    type: 'dark',
+  },
+  aurora: {
+    bgcolor: '#10201c',
+    darkbg: '#152a24',
+    borderc: '#5eead4',
+    selected: '#315c52',
+    draculared: '#fb7185',
+    textcolor: '#ecfdf5',
+    textcolor2: '#a7f3d0',
+    darkBorderc: '#2f6f63',
+    darkbutton: '#21443c',
+    type: 'dark',
+  },
+  twilight: {
+    bgcolor: '#171324',
+    darkbg: '#201936',
+    borderc: '#c084fc',
+    selected: '#3b2a5a',
+    draculared: '#f43f5e',
+    textcolor: '#f8f5ff',
+    textcolor2: '#c4b5fd',
+    darkBorderc: '#4c3575',
+    darkbutton: '#2e2348',
+    type: 'dark',
+  },
   realblack: {
     bgcolor: '#000000',
     darkbg: '#000000',
@@ -142,6 +187,54 @@ export const builtInColorSchemes = {
     darkBorderc: '#3e3d32',
     darkbutton: '#3e3d32',
     type: 'dark',
+  },
+  'sky-light': {
+    bgcolor: '#f6fbff',
+    darkbg: '#e8f3fb',
+    borderc: '#0284c7',
+    selected: '#d7ecf8',
+    draculared: '#e11d48',
+    textcolor: '#0f172a',
+    textcolor2: '#516174',
+    darkBorderc: '#b7d7ea',
+    darkbutton: '#dbeafe',
+    type: 'light',
+  },
+  'sage-light': {
+    bgcolor: '#f7faf5',
+    darkbg: '#e8f0e6',
+    borderc: '#3f6212',
+    selected: '#d9e8d3',
+    draculared: '#dc2626',
+    textcolor: '#1f2933',
+    textcolor2: '#586a52',
+    darkBorderc: '#b7c9ad',
+    darkbutton: '#dce8d6',
+    type: 'light',
+  },
+  'lavender-light': {
+    bgcolor: '#f8f7ff',
+    darkbg: '#ede9fe',
+    borderc: '#6d28d9',
+    selected: '#ddd6fe',
+    draculared: '#e11d48',
+    textcolor: '#1e1b4b',
+    textcolor2: '#5b5680',
+    darkBorderc: '#c4b5fd',
+    darkbutton: '#e0e7ff',
+    type: 'light',
+  },
+  'slate-light': {
+    bgcolor: '#f8fafc',
+    darkbg: '#e2e8f0',
+    borderc: '#334155',
+    selected: '#cbd5e1',
+    draculared: '#dc2626',
+    textcolor: '#020617',
+    textcolor2: '#475569',
+    darkBorderc: '#94a3b8',
+    darkbutton: '#cbd5e1',
+    type: 'light',
   },
   lite: {
     bgcolor: '#1f2937',
@@ -182,14 +275,28 @@ export function migrateLegacyBuiltInColorScheme(name: unknown, scheme: ColorSche
   return unchangedFields ? ({ ...current } as ColorScheme) : scheme
 }
 
-export const ColorSchemeTypeStore = writable('dark' as 'dark' | 'light')
+export const ColorSchemeTypeStore = writable<'dark' | 'light'>(
+  readDisplaySettingsCache().styles['--risu-theme-color-scheme'] === 'light' ? 'light' : 'dark',
+)
+
+export const colorSchemePresets = builtInColorSchemes
 
 export const colorSchemeList = Object.keys(builtInColorSchemes) as (keyof typeof builtInColorSchemes)[]
+
+function displaySettingsOwner(): Partial<Database> | undefined {
+  const status = settingsResourceState.groupStatuses.display ?? 'idle'
+  if (status === 'ready') return settingsResourceState.value as Partial<Database>
+  return undefined
+}
 
 export function changeColorScheme(colorScheme: string) {
   try {
     const patch: Record<string, unknown> = { colorSchemeName: colorScheme }
-    if (colorScheme !== 'custom') {
+    if (colorScheme === 'custom') {
+      const settings = displaySettingsOwner()
+      if (!settings) return
+      patch.colorScheme = safeStructuredClone(settings.customColorScheme ?? defaultColorScheme)
+    } else {
       patch.colorScheme = safeStructuredClone(builtInColorSchemes[colorScheme])
     }
     applyServerBackedSettingsPatch(patch)
@@ -197,9 +304,24 @@ export function changeColorScheme(colorScheme: string) {
   } catch (error) {}
 }
 
+export function updateCustomColorScheme(customColorScheme?: ColorScheme) {
+  try {
+    const settings = customColorScheme ? undefined : displaySettingsOwner()
+    if (!customColorScheme && !settings) return
+    const scheme = safeStructuredClone(customColorScheme ?? settings?.customColorScheme ?? defaultColorScheme)
+    applyServerBackedSettingsPatch({
+      customColorScheme: scheme,
+      colorScheme: safeStructuredClone(scheme),
+      colorSchemeName: 'custom',
+    })
+    updateColorScheme()
+  } catch (error) {}
+}
+
 export function updateColorScheme() {
   try {
-    let db = getDatabase()
+    const db = runtimeDisplaySettingsOwner()
+    if (!db) return
 
     let colorScheme = db.colorScheme
 
@@ -217,48 +339,55 @@ export function updateColorScheme() {
       colorScheme = safeStructuredClone(builtInColorSchemes.lite)
     }
 
-    //set css variables
-    document.documentElement.style.setProperty('--risu-theme-bgcolor', colorScheme.bgcolor)
-    document.documentElement.style.setProperty('--risu-theme-darkbg', colorScheme.darkbg)
-    document.documentElement.style.setProperty('--risu-theme-borderc', colorScheme.borderc)
-    document.documentElement.style.setProperty('--risu-theme-selected', colorScheme.selected)
-    document.documentElement.style.setProperty('--risu-theme-draculared', colorScheme.draculared)
-    document.documentElement.style.setProperty('--risu-theme-textcolor', colorScheme.textcolor)
-    document.documentElement.style.setProperty('--risu-theme-textcolor2', colorScheme.textcolor2)
-    document.documentElement.style.setProperty('--risu-theme-darkborderc', colorScheme.darkBorderc)
-    document.documentElement.style.setProperty('--risu-theme-darkbutton', colorScheme.darkbutton)
+    applyDisplayStyles({
+      '--risu-theme-bgcolor': colorScheme.bgcolor,
+      '--risu-theme-darkbg': colorScheme.darkbg,
+      '--risu-theme-borderc': colorScheme.borderc,
+      '--risu-theme-selected': colorScheme.selected,
+      '--risu-theme-draculared': colorScheme.draculared,
+      '--risu-theme-textcolor': colorScheme.textcolor,
+      '--risu-theme-textcolor2': colorScheme.textcolor2,
+      '--risu-theme-darkborderc': colorScheme.darkBorderc,
+      '--risu-theme-darkbutton': colorScheme.darkbutton,
+      '--risu-theme-color-scheme': colorScheme.type,
+    })
     ColorSchemeTypeStore.set(colorScheme.type)
   } catch (error) {}
 }
 
 export function changeColorSchemeType(type: 'light' | 'dark') {
   try {
-    applyServerBackedSettingsPatch({
-      colorScheme: {
-        ...getDatabase().colorScheme,
-        type,
-      },
+    const settings = displaySettingsOwner()
+    if (!settings) return
+    updateCustomColorScheme({
+      ...settings.customColorScheme,
+      type,
     })
-    updateColorScheme()
     updateTextThemeAndCSS()
   } catch (error) {}
 }
 
 export function exportColorScheme() {
-  const json = JSON.stringify(getDatabase().colorScheme)
+  const settings = displaySettingsOwner()
+  if (!settings) return
+  const json = JSON.stringify(settings.customColorScheme)
   downloadFile('colorScheme.json', json)
 }
 
-function currentColorSchemeImportFreshness(): ColorSchemeImportFreshness {
-  const db = getDatabase()
+function currentColorSchemeImportFreshness(): ColorSchemeImportFreshness | undefined {
+  const db = displaySettingsOwner()
+  if (!db) return undefined
   return {
     colorSchemeName: db.colorSchemeName,
     colorScheme: db.colorScheme,
+    customColorScheme: db.customColorScheme,
   }
 }
 
 export async function importColorScheme() {
-  const target = captureColorSchemeImportTarget(currentColorSchemeImportFreshness())
+  const initialFreshness = currentColorSchemeImportFreshness()
+  if (!initialFreshness) return
+  const target = captureColorSchemeImportTarget(initialFreshness)
   let operation: ColorSchemeImportOperation | null = null
   const beginImport = () => {
     operation ??= beginColorSchemeImport(target)
@@ -282,9 +411,11 @@ export async function importColorScheme() {
       return
     }
 
+    const freshness = currentColorSchemeImportFreshness()
+    if (!freshness) return
     const patch = resolveFreshColorSchemeImportPatch({
       operation,
-      freshness: currentColorSchemeImportFreshness(),
+      freshness,
       colorScheme,
     })
     if (!patch) {
@@ -295,7 +426,8 @@ export async function importColorScheme() {
     applyServerBackedSettingsPatch(patch)
     updateColorScheme()
   } catch (e) {
-    if (operation && isFreshColorSchemeImport(operation, currentColorSchemeImportFreshness())) {
+    const freshness = currentColorSchemeImportFreshness()
+    if (operation && freshness && isFreshColorSchemeImport(operation, freshness)) {
       alertError('Invalid color scheme')
     }
     return
@@ -307,79 +439,61 @@ export async function importColorScheme() {
 }
 
 export function updateTextThemeAndCSS() {
-  const db = getDatabase()
-  const root = document.querySelector(':root') as HTMLElement
-  if (!root) {
-    return
-  }
-  let textTheme = get(isLite) ? 'standard' : db.textTheme
-  let colorScheme = get(isLite) ? 'dark' : db.colorScheme.type
+  const db = runtimeDisplaySettingsOwner()
+  if (!db) return
+
+  const customCSS = db.customCSS ?? ''
+  cacheCustomCSS(customCSS)
+  const displayedCustomCSS = get(SafeModeStore) ? '' : customCSS
+  if (get(CustomCSSStore) !== displayedCustomCSS) CustomCSSStore.set(displayedCustomCSS)
+
+  const styles: DisplayStyleProperties = {}
+  const textTheme = get(isLite) ? 'standard' : db.textTheme
+  const colorScheme = get(isLite) ? 'dark' : db.colorScheme?.type
   switch (textTheme) {
     case 'standard': {
-      if (colorScheme === 'dark') {
-        root.style.setProperty('--FontColorStandard', '#fafafa')
-        root.style.setProperty('--FontColorItalic', '#8C8D93')
-        root.style.setProperty('--FontColorBold', '#fafafa')
-        root.style.setProperty('--FontColorItalicBold', '#8C8D93')
-        root.style.setProperty('--FontColorQuote1', '#8BE9FD')
-        root.style.setProperty('--FontColorQuote2', '#FFB86C')
-      } else {
-        root.style.setProperty('--FontColorStandard', '#0f172a')
-        root.style.setProperty('--FontColorItalic', '#8C8D93')
-        root.style.setProperty('--FontColorBold', '#0f172a')
-        root.style.setProperty('--FontColorItalicBold', '#8C8D93')
-        root.style.setProperty('--FontColorQuote1', '#8BE9FD')
-        root.style.setProperty('--FontColorQuote2', '#FFB86C')
-      }
+      styles['--FontColorStandard'] = colorScheme === 'dark' ? '#fafafa' : '#0f172a'
+      styles['--FontColorItalic'] = '#8C8D93'
+      styles['--FontColorBold'] = styles['--FontColorStandard']
+      styles['--FontColorItalicBold'] = '#8C8D93'
+      styles['--FontColorQuote1'] = '#8BE9FD'
+      styles['--FontColorQuote2'] = '#FFB86C'
       break
     }
     case 'highcontrast': {
-      if (colorScheme === 'dark') {
-        root.style.setProperty('--FontColorStandard', '#f8f8f2')
-        root.style.setProperty('--FontColorItalic', '#F1FA8C')
-        root.style.setProperty('--FontColorBold', '#8BE9FD')
-        root.style.setProperty('--FontColorItalicBold', '#FFB86C')
-        root.style.setProperty('--FontColorQuote1', '#8BE9FD')
-        root.style.setProperty('--FontColorQuote2', '#FFB86C')
-      } else {
-        root.style.setProperty('--FontColorStandard', '#0f172a')
-        root.style.setProperty('--FontColorItalic', '#F1FA8C')
-        root.style.setProperty('--FontColorBold', '#8BE9FD')
-        root.style.setProperty('--FontColorItalicBold', '#FFB86C')
-        root.style.setProperty('--FontColorQuote1', '#8BE9FD')
-        root.style.setProperty('--FontColorQuote2', '#FFB86C')
-      }
+      styles['--FontColorStandard'] = colorScheme === 'dark' ? '#f8f8f2' : '#0f172a'
+      styles['--FontColorItalic'] = '#F1FA8C'
+      styles['--FontColorBold'] = '#8BE9FD'
+      styles['--FontColorItalicBold'] = '#FFB86C'
+      styles['--FontColorQuote1'] = '#8BE9FD'
+      styles['--FontColorQuote2'] = '#FFB86C'
       break
     }
     case 'custom': {
-      root.style.setProperty('--FontColorStandard', db.customTextTheme.FontColorStandard)
-      root.style.setProperty('--FontColorItalic', db.customTextTheme.FontColorItalic)
-      root.style.setProperty('--FontColorBold', db.customTextTheme.FontColorBold)
-      root.style.setProperty('--FontColorItalicBold', db.customTextTheme.FontColorItalicBold)
-      root.style.setProperty('--FontColorQuote1', db.customTextTheme.FontColorQuote1 ?? '#8BE9FD')
-      root.style.setProperty('--FontColorQuote2', db.customTextTheme.FontColorQuote2 ?? '#FFB86C')
+      styles['--FontColorStandard'] = db.customTextTheme?.FontColorStandard
+      styles['--FontColorItalic'] = db.customTextTheme?.FontColorItalic
+      styles['--FontColorBold'] = db.customTextTheme?.FontColorBold
+      styles['--FontColorItalicBold'] = db.customTextTheme?.FontColorItalicBold
+      styles['--FontColorQuote1'] = db.customTextTheme?.FontColorQuote1 ?? '#8BE9FD'
+      styles['--FontColorQuote2'] = db.customTextTheme?.FontColorQuote2 ?? '#FFB86C'
       break
     }
   }
 
   switch (db.font) {
     case 'default': {
-      root.style.setProperty('--risu-font-family', 'Arial, sans-serif')
+      styles['--risu-font-family'] = 'Arial, sans-serif'
       break
     }
     case 'timesnewroman': {
-      root.style.setProperty('--risu-font-family', 'Times New Roman, serif')
+      styles['--risu-font-family'] = 'Times New Roman, serif'
       break
     }
     case 'custom': {
-      root.style.setProperty('--risu-font-family', db.customFont)
+      styles['--risu-font-family'] = db.customFont
       break
     }
   }
-
-  if (!get(SafeModeStore)) {
-    CustomCSSStore.set(db.customCSS ?? '')
-  } else {
-    CustomCSSStore.set('')
-  }
+  applyDisplayStyles(styles)
+  cacheDisplaySettings(db, ['textTheme', 'customTextTheme', 'font', 'customFont'])
 }

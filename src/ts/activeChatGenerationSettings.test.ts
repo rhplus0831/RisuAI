@@ -13,14 +13,23 @@ vi.mock('./storage/fastifyStorage', () => ({
 }))
 
 import { clearCachedServerCommandRevision } from './server/commands'
-import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+
+import {
+  charactersResourceState,
+  collectionsResourceState,
+  replaceResourceDatabase,
+} from './server/resourceState.svelte'
 import type { Database } from './storage/database.svelte'
 import { selectedCharID } from './stores.svelte'
 import {
+  activeChatModelPresetRecommendationState,
   createActiveChatGenerationSettingsPatch,
   createActiveChatGenerationSettingsDefaultValuesPatch,
   createActiveChatGenerationSettingsSelectionPatch,
+  createActiveChatPersonaSelectionPatch,
+  createManualModelPresetSelection,
+  createPromptPresetSelection,
+  ensureActiveChatSidebarToggleDefaults,
   fillMissingActiveChatSidebarToggleDefaults,
   guardActiveChatGenerationSettingsForSend,
   resolveActiveChatGenerationSettings,
@@ -30,6 +39,7 @@ import {
   saveActiveChatGenerationSettingsSelection,
 } from './activeChatGenerationSettings'
 import { captureActiveChatTarget } from './chatCommands'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {
@@ -150,6 +160,7 @@ function seedDb(): void {
     ],
     enabledModules: ['global-module'],
     moduleIntergration: 'global-integrated-space',
+    currentChar: 0,
     characters: [
       {
         chaId: 'char-a',
@@ -188,16 +199,54 @@ function seedDb(): void {
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
   seedDb()
 })
 
 afterEach(() => {
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
 describe('active chat generation settings helper', () => {
+  it('auto-applies a prompt recommendation until the chat has a manual model selection', () => {
+    testDatabaseState.db.modelPresets.push({ id: 'model-preset-b', name: 'Model Preset B' } as never)
+    testDatabaseState.db.promptPresets[0].recommendedModelPresetId = 'model-preset-b'
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-b',
+    }
+
+    let state = resolveActiveChatGenerationSettings()
+    expect(createPromptPresetSelection('preset-a', testDatabaseState.db.promptPresets[0], state)).toEqual({
+      promptPresetId: 'preset-a',
+      modelPresetId: 'model-preset-b',
+      modelPresetSelectionSource: 'prompt-recommendation',
+    })
+
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
+      ...testDatabaseState.db.characters[0].chats[0].generationSettings,
+      ...createManualModelPresetSelection('model-preset-a'),
+    }
+    state = resolveActiveChatGenerationSettings()
+    expect(createPromptPresetSelection('preset-a', testDatabaseState.db.promptPresets[0], state)).toEqual({
+      promptPresetId: 'preset-a',
+    })
+  })
+
+  it('reports matched and mismatched prompt recommendations but ignores stale references', () => {
+    testDatabaseState.db.modelPresets.push({ id: 'model-preset-b', name: 'Model Preset B' } as never)
+    testDatabaseState.db.promptPresets[0].recommendedModelPresetId = 'model-preset-b'
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
+    }
+
+    expect(activeChatModelPresetRecommendationState()).toBe('mismatch')
+    testDatabaseState.db.characters[0].chats[0].generationSettings.modelPresetId = 'model-preset-b'
+    expect(activeChatModelPresetRecommendationState()).toBe('matched')
+    testDatabaseState.db.promptPresets[0].recommendedModelPresetId = 'missing-model'
+    expect(activeChatModelPresetRecommendationState()).toBe('none')
+  })
+
   it('resolves unconfigured active-chat state, required toggles, and missing labels', () => {
     testDatabaseState.db.characters[0].chats[0].generationSettings = {
       personaId: 'persona-a',
@@ -358,6 +407,25 @@ describe('active chat generation settings helper', () => {
     expect(testDatabaseState.db.promptPresetsId).toBe(0)
   })
 
+  it('fails closed when the active chat prompt owner is duplicated', () => {
+    testDatabaseState.db.promptPresets = [
+      { id: 'preset-a', name: 'Preset A' },
+      { id: 'preset-a', name: 'Duplicate Preset A' },
+    ] as any
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    }
+
+    const state = resolveActiveChatGenerationSettings()
+
+    expect(state.promptPreset).toBeUndefined()
+  })
+
   it('ignores global moduleIntergration when the selected preset does not link integrated modules', () => {
     testDatabaseState.db.characters[0].chats[0].generationSettings = {
       configured: true,
@@ -396,9 +464,12 @@ describe('active chat generation settings helper', () => {
   })
 
   it('saves first-time persona/preset selections with an explicit jailbreak toggle off', async () => {
+    testDatabaseState.db.personas[0].modules = ['persona-module']
+    testDatabaseState.db.modules.push({
+      id: 'persona-module',
+      customModuleToggle: 'persona=Persona module',
+    } as never)
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const nextSettings = createActiveChatGenerationSettingsSelectionPatch({
       personaId: 'persona-a',
       promptPresetId: 'preset-b',
@@ -412,6 +483,7 @@ describe('active chat generation settings helper', () => {
         global: '0',
         chat: '0',
         character: '0',
+        persona: '0',
       },
     })
 
@@ -434,14 +506,43 @@ describe('active chat generation settings helper', () => {
     })
   })
 
+  it('clears only the authoritative persona id when unbinding a configured chat', () => {
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        mode: 'warm',
+        global: '1',
+        chat: '1',
+        character: '1',
+        integrated: '1',
+      },
+    }
+
+    expect(createActiveChatPersonaSelectionPatch(null)).toEqual({
+      configured: true,
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        mode: 'warm',
+        global: '1',
+        chat: '1',
+        character: '1',
+        integrated: '1',
+      },
+    })
+  })
+
   it('prefills missing sidebar toggle defaults when selecting a preset', async () => {
     testDatabaseState.db.globalChatVariables = {
       toggle_mode: '1',
       toggle_global: '1',
     } as any
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const nextSettings = createActiveChatGenerationSettingsSelectionPatch({
       promptPresetId: 'preset-a',
     })
@@ -559,6 +660,46 @@ describe('active chat generation settings helper', () => {
     expect(state.readiness.missing.map((reason) => reason.code)).not.toContain('sidebar_toggle_missing')
   })
 
+  it('does not reconcile or prune toggle values until every definition owner is ready', () => {
+    testDatabaseState.db.enabledModules = []
+    testDatabaseState.db.characters[0].modules = []
+    testDatabaseState.db.characters[0].chats[0].modules = []
+    testDatabaseState.db.personas[0].modules = ['persona-module']
+    testDatabaseState.db.modules.push({
+      id: 'persona-module',
+      customModuleToggle: 'personaFlag=Persona flag',
+    } as never)
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-b',
+      jailbreakToggle: false,
+      sidebarToggles: { personaFlag: '1' },
+    }
+    const calls = stubCommandFetch()
+    collectionsResourceState.statuses.modules = 'loading'
+
+    const loadingState = resolveActiveChatGenerationSettings()
+
+    expect(loadingState.sidebarToggleDefinitionsReady).toBe(false)
+    expect(loadingState.staleSidebarToggleKeys).toEqual(['personaFlag'])
+    expect(fillMissingActiveChatSidebarToggleDefaults(loadingState)?.sidebarToggles).toEqual({ personaFlag: '1' })
+    expect(ensureActiveChatSidebarToggleDefaults(loadingState)).toBe(false)
+    expect(calls).toEqual([])
+    expect(testDatabaseState.db.characters[0].chats[0].generationSettings?.sidebarToggles).toEqual({
+      personaFlag: '1',
+    })
+
+    collectionsResourceState.statuses.modules = 'ready'
+    const readyState = resolveActiveChatGenerationSettings()
+
+    expect(readyState.sidebarToggleDefinitionsReady).toBe(true)
+    expect(readyState.staleSidebarToggleKeys).toEqual([])
+    expect(ensureActiveChatSidebarToggleDefaults(readyState)).toBe(false)
+    expect(calls).toEqual([])
+  })
+
   it('automatically saves defaults when active toggle requirements gain new keys', async () => {
     testDatabaseState.db.characters[0].chats[0].generationSettings = {
       configured: true,
@@ -579,8 +720,6 @@ describe('active chat generation settings helper', () => {
       'newMemo=New memo=textarea',
     ].join('\n')
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const state = resolveActiveChatGenerationSettings()
     expect(state.readiness.missing.map((reason) => reason.code)).toContain('sidebar_toggle_missing')
     expect(guardActiveChatGenerationSettingsForSend(state).status).toBe('ok')
@@ -643,8 +782,6 @@ describe('active chat generation settings helper', () => {
       },
     }
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const nextSettings = createActiveChatGenerationSettingsDefaultValuesPatch()
     expect(nextSettings).toEqual({
       configured: true,
@@ -684,8 +821,6 @@ describe('active chat generation settings helper', () => {
 
   it('normalizes direct full saves with an explicit jailbreak toggle off', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     expect(
       saveActiveChatGenerationSettings({
         personaId: 'persona-a',
@@ -730,8 +865,6 @@ describe('active chat generation settings helper', () => {
       },
     }
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const nextSettings = createActiveChatGenerationSettingsSelectionPatch({
       personaId: 'persona-b',
       promptPresetId: 'preset-a',
@@ -800,8 +933,6 @@ describe('active chat generation settings helper', () => {
       },
     }
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const before = resolveActiveChatGenerationSettings()
     expect(before.staleSidebarToggleKeys).toEqual(['stale'])
 
@@ -884,11 +1015,131 @@ describe('active chat generation settings helper', () => {
     })
   })
 
+  it('uses the revisioned character selection owner instead of the compatibility store', () => {
+    const database = clonePlain(testDatabaseState.db)
+    database.characters.push({
+      ...clonePlain(database.characters[0]),
+      chaId: 'char-b',
+      name: 'Character B',
+      chats: [
+        {
+          ...clonePlain(database.characters[0].chats[1]),
+          id: 'chat-c',
+          name: 'Chat C',
+        },
+      ],
+    })
+    testDatabaseState.db = database
+    charactersResourceState.currentChar = 0
+    charactersResourceState.selectionRevision = 1
+    selectedCharID.set(1)
+
+    expect(resolveActiveChatGenerationSettings().identity).toMatchObject({
+      selectedCharIndex: 0,
+      characterId: 'char-a',
+      chatId: 'chat-a',
+    })
+  })
+
+  it('fails closed when selected character or chat stable ids are duplicated', () => {
+    const duplicateCharacterDatabase = clonePlain(testDatabaseState.db)
+    duplicateCharacterDatabase.characters.push({
+      ...clonePlain(duplicateCharacterDatabase.characters[0]),
+      chats: [
+        {
+          ...clonePlain(duplicateCharacterDatabase.characters[0].chats[0]),
+          id: 'chat-other',
+        },
+      ],
+    })
+    testDatabaseState.db = duplicateCharacterDatabase
+
+    expect(resolveActiveChatGenerationSettings()).toMatchObject({
+      character: undefined,
+      chat: undefined,
+      identity: { characterIndex: -1, chatIndex: -1 },
+    })
+
+    seedDb()
+    testDatabaseState.db.characters[0].chats.push({
+      ...clonePlain(testDatabaseState.db.characters[0].chats[0]),
+      name: 'Duplicate Chat A',
+    })
+
+    expect(resolveActiveChatGenerationSettings()).toMatchObject({
+      character: { chaId: 'char-a' },
+      chat: undefined,
+      identity: { characterIndex: 0, chatIndex: -1 },
+    })
+  })
+
+  it('does not fall back to stale persona rows after the ready owner errors', () => {
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-b',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        global: '0',
+        chat: '0',
+        character: '0',
+      },
+    }
+    collectionsResourceState.statuses.personas = 'error'
+    collectionsResourceState.errors.personas = 'forced persona owner failure'
+
+    const state = resolveActiveChatGenerationSettings()
+
+    expect(state.persona).toBeUndefined()
+    expect(state.readiness.ready).toBe(false)
+    expect(state.readiness.missing).toContainEqual({
+      code: 'persona_missing',
+      field: 'generationSettings.personaId',
+      personaId: 'persona-a',
+    })
+  })
+
+  it.each(['idle', 'loading'] as const)(
+    'does not resolve retained persona rows while the collection owner is %s',
+    (status) => {
+      testDatabaseState.db.characters[0].chats[0].generationSettings = {
+        configured: true,
+        personaId: 'persona-a',
+        modelPresetId: 'model-preset-a',
+        promptPresetId: 'preset-b',
+        jailbreakToggle: false,
+        sidebarToggles: { global: '0', chat: '0', character: '0' },
+      }
+      collectionsResourceState.statuses.personas = status
+
+      const state = resolveActiveChatGenerationSettings()
+
+      expect(state.persona).toBeUndefined()
+      expect(state.readiness.missing).toContainEqual({
+        code: 'persona_missing',
+        field: 'generationSettings.personaId',
+        personaId: 'persona-a',
+      })
+    },
+  )
+
+  it.each(['idle', 'loading', 'error'] as const)(
+    'does not resolve retained active chat rows while the character owner is %s',
+    (status) => {
+      charactersResourceState.status = status
+
+      expect(resolveActiveChatGenerationSettings()).toMatchObject({
+        character: undefined,
+        chat: undefined,
+        identity: { selectedCharIndex: -1, characterIndex: -1, chatIndex: -1 },
+      })
+    },
+  )
+
   it('does not dispatch or save when the active chat has no id', () => {
     delete testDatabaseState.db.characters[0].chats[0].id
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     expect(
       saveActiveChatGenerationSettingsPatch({
         personaId: 'persona-a',
@@ -930,8 +1181,6 @@ describe('active chat generation settings helper', () => {
     const calls = stubCommandFetch()
 
     testDatabaseState.db.characters[0].chatPage = 1
-    setResourceWriteGuardEnabled(true)
-
     expect(
       saveActiveChatGenerationSettingsSelection(
         {

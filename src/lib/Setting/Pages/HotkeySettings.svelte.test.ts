@@ -1,26 +1,9 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const hotkeyMocks = vi.hoisted(() => ({
-  db: {
-    hotkeys: [
-      {
-        action: 'send',
-        key: 'Enter',
-        ctrl: true,
-        shift: false,
-        alt: true,
-      },
-    ],
-  },
-  applyServerBackedSetting: vi.fn(),
-}))
+const hotkeyMocks = vi.hoisted(() => ({ applyServerBackedSetting: vi.fn() }))
 
-vi.mock('src/ts/server/resourceState.svelte', () => ({
-  getResourceDatabase: () => hotkeyMocks.db,
-}))
-
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
+vi.mock('src/ts/server/settingsOwner.svelte', () => ({
   applyServerBackedSetting: hotkeyMocks.applyServerBackedSetting,
 }))
 
@@ -34,6 +17,7 @@ vi.mock('src/ts/process/modules', () => ({
 
 import HotkeySettings from './HotkeySettings.svelte'
 import { language } from 'src/lang'
+import { replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -57,6 +41,9 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   hotkeyMocks.applyServerBackedSetting.mockReset()
+  replaceResourceDatabase({
+    hotkeys: [{ action: 'send', key: 'Enter', ctrl: true, shift: false, alt: true }],
+  } as any)
   component = mount(HotkeySettings, { target })
 })
 
@@ -84,6 +71,27 @@ describe('HotkeySettings recorder keyboard behavior', () => {
       `${language.hotkeyDesc.send}: Ctrl`,
       `${language.hotkeyDesc.send}: Shift`,
       `${language.hotkeyDesc.send}: Alt`,
+    ])
+  })
+
+  it.each([
+    ['Ctrl', { ctrl: false, shift: false, alt: true }],
+    ['Shift', { ctrl: true, shift: true, alt: true }],
+    ['Alt', { ctrl: true, shift: false, alt: false }],
+  ])('persists the toggled %s modifier without changing its siblings', (name, expectedModifiers) => {
+    const button = Array.from(target.querySelectorAll('button')).find(
+      (candidate) => candidate.textContent?.trim() === name,
+    )
+    if (!button) throw new Error(`${name} modifier button was not rendered`)
+
+    button.click()
+
+    expect(hotkeyMocks.applyServerBackedSetting).toHaveBeenCalledWith('hotkeys', [
+      {
+        action: 'send',
+        key: 'Enter',
+        ...expectedModifiers,
+      },
     ])
   })
 

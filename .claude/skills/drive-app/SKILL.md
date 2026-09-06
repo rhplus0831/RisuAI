@@ -29,3 +29,9 @@ History-based router on `location.pathname` (`src/ts/router.ts`):
 - **Sliders are custom `[role="slider"]` divs**, not `<input type="range">`. Drive them by `.focus()` + `ArrowRight`/`ArrowLeft` (one step per press); read state from `aria-valuenow` / `aria-valuetext`.
 - **Settings writes need the active-writer lease.** Each new browser session registers itself as active writer (`risu-writer-session`); a bare `curl PATCH /api/v1/commands/settings/<group>` afterwards gets `active_writer_stale`. To change a persisted setting during verification, do it through a browser session (and restore the original value the same way before finishing).
 - After UI-visible source edits, a fresh `page.goto` picks up Vite HMR-served code — but *boot-time* state (hydration, migrations) only re-runs on a fresh page load, so always re-navigate rather than reuse a stale page when testing boot behavior.
+
+## Driving gotchas (learned 2026-07-30, Mood Light dialog session)
+
+- **`waitForLoadState('networkidle')` never resolves** — the app holds SSE connections open. Wait for a concrete element instead (e.g. the Mood Light toggle `button[aria-label="Enable Mood Light mode"]`).
+- **`alertConfirm` dialogs render literal `YES` / `NO` buttons** (AlertComp `ask` branch) — not OK/Cancel, and not localized.
+- **The Grid catalog opens from the Menu flyout**: click `button[aria-label="Menu"]` first, then the `Grid` BarIcon; there is no always-visible grid button in the sidebar rail.

@@ -38,11 +38,16 @@ vi.mock('../memory/hypav3', async (importActual) => {
 
 import { setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
 import { clearCachedServerCommandRevision } from '../../server/commands'
-import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
+import { replaceResourceDatabase } from '../../server/resourceState.svelte'
 import type { ChatTokenizer } from '../../tokenizer'
 import type { OpenAIChat } from '../index.svelte'
-import { buildMemoryWindow, type BuildMemoryWindowResult } from '../promptAssembly/buildMemoryWindow'
+import {
+  buildMemoryWindow as buildMemoryWindowWithDatabase,
+  type BuildMemoryWindowArgs,
+  type BuildMemoryWindowResult,
+} from '../promptAssembly/buildMemoryWindow'
 import type { PromptItem } from '../prompt'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {
@@ -51,6 +56,10 @@ const testDatabaseState = {
   set db(value: ReturnType<typeof getResourceDatabase>) {
     replaceResourceDatabase(value)
   },
+}
+
+function buildMemoryWindow(args: Omit<BuildMemoryWindowArgs, 'database'>) {
+  return buildMemoryWindowWithDatabase({ ...args, database: testDatabaseState.db })
 }
 
 type NonStop = Exclude<BuildMemoryWindowResult, { stopSending: true }>
@@ -407,7 +416,7 @@ describe('buildMemoryWindow - fallback budget trim', () => {
 
     assertNotStopped(result)
     expect(testDatabaseState.db.characters[0].chats[0].lastMemory).toBe('leadingMemo')
-    expect(result.currentChat).toBe(testDatabaseState.db.characters[0].chats[0])
+    expect(result.currentChat).toEqual(testDatabaseState.db.characters[0].chats[0])
     expect(result.currentChat.lastMemory).toBe('leadingMemo')
 
     const command = await waitForCommand(

@@ -1,16 +1,20 @@
 <script lang="ts">
+  import { ArrowUpRight } from '@lucide/svelte'
   import { openPersonaListModal, openPresetListModal, selectedCharID } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
   import { alertError, alertNormal } from 'src/ts/alert'
   import {
+    activeChatModelPresetRecommendationState,
     resolveActiveChatGenerationSettings,
     saveActiveChatGenerationSettingsSelectionWithOutcome,
   } from 'src/ts/activeChatGenerationSettings'
   import { captureActiveChatTarget } from 'src/ts/chatCommands'
+  import { openSettingsRoute, personaSettingsRoutePath } from 'src/ts/router'
   import Button from '../UI/GUI/Button.svelte'
   import SelectInput from '../UI/GUI/SelectInput.svelte'
 
   type NamedGenerationReference = {
+    id?: string
     name?: string
     note?: string
   }
@@ -27,6 +31,17 @@
       language.chatGenerationModelPresetUnconfigured,
   )
 
+  let modelPresetRecommendationState = $derived(activeChatModelPresetRecommendationState(activeGenerationSettings))
+  let modelPresetRecommendationMismatch = $derived(modelPresetRecommendationState === 'mismatch')
+  let recommendedModelPresetName = $derived.by(() => {
+    const recommendedModelPresetId = activeGenerationSettings.promptPreset?.recommendedModelPresetId
+    if (typeof recommendedModelPresetId !== 'string' || recommendedModelPresetId.trim().length === 0) return ''
+    const preset = activeGenerationSettings.db.modelPresets?.find(
+      (candidate) => candidate.id === recommendedModelPresetId,
+    )
+    return preset?.name?.trim() || recommendedModelPresetId
+  })
+
   let promptPresetName = $derived.by(
     () =>
       (activeGenerationSettings.promptPreset as NamedGenerationReference | undefined)?.name ||
@@ -38,6 +53,11 @@
       (activeGenerationSettings.persona as NamedGenerationReference | undefined)?.name ||
       language.chatGenerationPersonaUnconfigured,
   )
+
+  let personaId = $derived.by(() => {
+    const id = (activeGenerationSettings.persona as NamedGenerationReference | undefined)?.id
+    return typeof id === 'string' && id.trim().length > 0 ? id : ''
+  })
 
   let personaNote = $derived.by(() => {
     const note = (activeGenerationSettings.persona as NamedGenerationReference | undefined)?.note
@@ -101,9 +121,15 @@
     data-risu-generation-picker-control
     data-risu-picker-kind="model"
     data-risu-picker-mode="active-chat-generation-settings"
-    data-risu-picker-selected-id={activeGenerationSettings.settings?.modelPresetId ?? ''}>
+    data-risu-picker-selected-id={activeGenerationSettings.settings?.modelPresetId ?? ''}
+    data-risu-model-preset-recommendation-state={modelPresetRecommendationState}
+    class:bg-red-900={modelPresetRecommendationMismatch}
+    class:rounded-sm={modelPresetRecommendationMismatch}>
     <Button
       className="flex w-full min-w-0 justify-start text-left"
+      ariaLabel={modelPresetRecommendationMismatch
+        ? language.chatGenerationModelPresetRecommendationMismatch(recommendedModelPresetName)
+        : modelPresetName}
       onclick={() => {
         openPresetListModal('active-chat-generation-settings', 'model', captureActiveChatTarget())
       }}>
@@ -165,15 +191,30 @@
     data-risu-picker-kind="persona"
     data-risu-picker-mode="active-chat-generation-settings"
     data-risu-picker-selected-id={activeGenerationSettings.settings?.personaId ?? ''}>
-    <Button
-      className="flex w-full min-w-0 justify-start text-left"
-      onclick={() => {
-        openPersonaListModal('active-chat-generation-settings', captureActiveChatTarget())
-      }}>
-      <div class="flex-1 flex-col flex text-left min-w-0">
-        <span class="truncate">{personaName}</span>
-      </div>
-    </Button>
+    <div class="flex w-full min-w-0 items-stretch gap-1">
+      <Button
+        className="flex min-w-0 flex-1 justify-start text-left"
+        onclick={() => {
+          openPersonaListModal('active-chat-generation-settings', captureActiveChatTarget())
+        }}>
+        <div class="flex-1 flex-col flex text-left min-w-0">
+          <span class="truncate">{personaName}</span>
+        </div>
+      </Button>
+      {#if personaId}
+        <div class="flex shrink-0" data-risu-generation-picker-persona-settings>
+          <Button
+            size="sm"
+            className="flex h-full items-center justify-center"
+            ariaLabel={`${language.edit} ${personaName}`}
+            onclick={() => {
+              openSettingsRoute(personaSettingsRoutePath(personaId))
+            }}>
+            <ArrowUpRight aria-hidden="true" size={18} />
+          </Button>
+        </div>
+      {/if}
+    </div>
     {#if personaNote}
       <div class="mt-1 flex flex-col gap-0.5 rounded-md border border-darkborderc bg-darkbg/50 px-2 py-1.5">
         <span class="text-xs font-medium text-textcolor2">{language.personaNote}</span>

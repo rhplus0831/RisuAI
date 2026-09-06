@@ -10,7 +10,7 @@ import {
   verifyAssertion,
 } from '../src/auth.js'
 
-describe('auth.knownKeyHashes (A4EC5 / B6 bounded accumulator)', () => {
+describe('auth.knownKeyHashes (bounded accumulator)', () => {
   let tmpDir: string
 
   beforeEach(() => {
@@ -124,9 +124,92 @@ describe('agent dev auth bypass', () => {
       fs.rmSync(dataDir, { recursive: true, force: true })
     }
   })
+
+  it('refuses an explicit non-loopback app configuration before opening the data directory', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-auth-agent-bypass-bind-'))
+    try {
+      const { buildApp } = await import('../src/app.js')
+      await expect(
+        buildApp({
+          config: {
+            host: '0.0.0.0',
+            port: 0,
+            dataDir,
+            bodyLimit: 1024 * 1024,
+            importMaxBytes: Infinity,
+            trustProxy: false,
+            hubUrl: 'https://sv.risuai.xyz',
+            agentDevAuthBypass: true,
+          },
+          assetGc: false,
+          memoryWorker: false,
+        }),
+      ).rejects.toThrow(/requires a loopback/)
+      expect(fs.readdirSync(dataDir)).toEqual([])
+    } finally {
+      fs.rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('password setup', () => {
+  it('rejects a whitespace-only password without creating auth state', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-auth-password-setup-'))
+    try {
+      const { buildApp } = await import('../src/app.js')
+      const { app } = await buildApp({
+        config: {
+          host: '127.0.0.1',
+          port: 0,
+          dataDir,
+          bodyLimit: 1024 * 1024,
+          importMaxBytes: Infinity,
+          trustProxy: false,
+          hubUrl: 'https://sv.risuai.xyz',
+        },
+        assetGc: false,
+        memoryWorker: false,
+      })
+
+      try {
+        const rejected = await app.inject({
+          method: 'POST',
+          url: '/api/v1/auth/setup',
+          payload: { password: '   ' },
+        })
+        expect(rejected.statusCode).toBe(400)
+        expect(rejected.json()).toEqual({ error: 'Password required' })
+        expect(fs.existsSync(path.join(dataDir, '__password'))).toBe(false)
+
+        const accepted = await app.inject({
+          method: 'POST',
+          url: '/api/v1/auth/setup',
+          payload: { password: 'hunter2' },
+        })
+        expect(accepted.statusCode).toBe(200)
+      } finally {
+        await app.close()
+      }
+    } finally {
+      fs.rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('fallback session authentication', () => {
+  it('accepts an unexpired fallback token after reopening persisted auth state', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-auth-session-reopen-'))
+    try {
+      const token = registerSessionToken(createAuthState(dataDir))
+      const reopenedState = createAuthState(dataDir)
+
+      await expect(verifyAssertion(reopenedState, token)).resolves.toEqual({ ok: true })
+      expect(reopenedState.knownSessionTokenHashes.size).toBe(1)
+    } finally {
+      fs.rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+
   it('expires server-issued fallback tokens and removes their stored hash', async () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-auth-session-'))
     const now = Date.UTC(2026, 0, 1)
@@ -147,7 +230,7 @@ describe('fallback session authentication', () => {
   })
 })
 
-describe('resource bulk route auth (L16)', () => {
+describe('resource bulk route auth', () => {
   it('rejects unauthenticated requests and verifies authenticated requests exactly once', async () => {
     vi.resetModules()
     let verifyCount = 0
@@ -216,8 +299,8 @@ describe('resource bulk route auth (L16)', () => {
   })
 })
 
-describe('proxy and hub route auth (K2)', () => {
-  it('K2: proxy and hub route auth verifies exactly once when protected', async () => {
+describe('proxy and hub route auth', () => {
+  it('proxy and hub route auth verifies exactly once when protected', async () => {
     vi.resetModules()
     let verifyCount = 0
     vi.doMock('../src/auth.js', async () => {
@@ -315,7 +398,7 @@ describe('proxy and hub route auth (K2)', () => {
     }
   })
 
-  it('K2: unauthenticated proxy and hub requests stop before body parsing or forwarding', async () => {
+  it('unauthenticated proxy and hub requests stop before body parsing or forwarding', async () => {
     vi.resetModules()
     let verifyCount = 0
     vi.doMock('../src/auth.js', async () => {

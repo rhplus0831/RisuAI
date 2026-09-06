@@ -14,7 +14,7 @@
   import { isMobile } from 'src/ts/platform'
   import { hotkeyMatches } from 'src/ts/hotkey'
   import { language } from 'src/lang'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
 
   type PopupEditorAvailability = boolean | 'auto'
 
@@ -74,13 +74,24 @@
   let popupEditorRun = 0
   let popupEditorContextRevision = 0
   let activePopupEditorSessionId: number | null = null
+  let sidebarSettingsReady = $derived(settingsResourceState.groupStatuses.sidebar === 'ready')
+  let popupEditorHotkey = $derived(
+    sidebarSettingsReady
+      ? settingsResourceState.value.hotkeys?.find((hotkey) => hotkey.action === 'popupEditor')
+      : undefined,
+  )
+  let longPressToPopupEditor = $derived(
+    sidebarSettingsReady && Boolean(settingsResourceState.value.longPressToPopupEditor),
+  )
+
+  const isInteractionDisabled = () => disabled || Boolean(inputDom?.closest('fieldset[disabled]'))
 
   const isPopupEditorEnabled = () =>
     popupEditor === true ||
     (popupEditor === 'auto' && (['32', '36', 'full'].includes(height) || (height === 'default' && $textAreaSize >= -2)))
 
   const openPopupEditor = async () => {
-    if (disabled || !isPopupEditorEnabled()) {
+    if (isInteractionDisabled() || !isPopupEditorEnabled()) {
       return
     }
 
@@ -233,7 +244,8 @@
   }
 
   const autoComplete = () => {
-    if (isMobile) {
+    if (isInteractionDisabled() || isMobile) {
+      hideAutoComplete()
       return
     }
     selectingAutoComplete = 0
@@ -273,6 +285,10 @@
   }
 
   const insertContent = (insertContent: string, type: 'autoComplete' | 'paste' = 'autoComplete') => {
+    if (isInteractionDisabled()) {
+      hideAutoComplete()
+      return
+    }
     console.log(insertContent)
     if (replaceSelectionText(insertContent, type)) {
       hideAutoComplete()
@@ -344,6 +360,14 @@
       e.preventDefault()
       insertTextAtSelection('\n')
     }
+  }
+
+  const blockDisabledInteraction = (event: Event) => {
+    if (!isInteractionDisabled()) return false
+
+    event.preventDefault()
+    hideAutoComplete()
+    return true
   }
 
   function insertTextAtSelection(txt: string) {
@@ -440,18 +464,16 @@
       onkeydown={async (e) => {
         if (
           isPopupEditorEnabled() &&
+          popupEditorHotkey &&
           (e.ctrlKey || e.shiftKey || e.altKey) &&
-          hotkeyMatches(
-            getDatabase().hotkeys.find((hk) => hk.action === 'popupEditor'),
-            e,
-          )
+          hotkeyMatches(popupEditorHotkey, e)
         ) {
           e.preventDefault()
           await openPopupEditor()
         }
       }}
       oncontextmenu={(e) => {
-        if (isPopupEditorEnabled() && getDatabase().longPressToPopupEditor) {
+        if (isPopupEditorEnabled() && longPressToPopupEditor) {
           e.preventDefault()
           void openPopupEditor()
         }
@@ -464,18 +486,38 @@
       contenteditable="true"
       bind:textContent={value}
       onkeydown={(e) => {
+        if (blockDisabledInteraction(e)) return
         handleKeyDown(e)
+      }}
+      onbeforeinput={(e) => {
+        blockDisabledInteraction(e)
+      }}
+      onpaste={(e) => {
+        blockDisabledInteraction(e)
+      }}
+      ondrop={(e) => {
+        blockDisabledInteraction(e)
+      }}
+      oncompositionstart={(e) => {
+        blockDisabledInteraction(e)
       }}
       role="textbox"
       aria-label={ariaLabel}
       aria-disabled={disabled}
       tabindex={disabled ? -1 : 0}
       oninput={(e) => {
+        if (isInteractionDisabled()) {
+          value = optiValue
+          e.currentTarget.textContent = optiValue
+          hideAutoComplete()
+          return
+        }
         value = e.currentTarget.textContent ?? ''
         onInput(value)
         autoComplete()
       }}
       onchange={(e) => {
+        if (isInteractionDisabled()) return
         onchange()
       }}
       bind:this={inputDom}

@@ -2,39 +2,13 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const suggestionMocks = vi.hoisted(() => {
-  function makeStore<T>(initial: T) {
-    let value = initial
-    const subscribers = new Set<(value: T) => void>()
-    return {
-      subscribe(callback: (value: T) => void) {
-        callback(value)
-        subscribers.add(callback)
-        return () => subscribers.delete(callback)
-      },
-      set(next: T) {
-        value = next
-        for (const callback of subscribers) {
-          callback(value)
-        }
-      },
-    }
-  }
-
   return {
-    doingChat: makeStore(false),
     requestChatData: vi.fn(),
     translate: vi.fn(),
     alertConfirm: vi.fn(async () => false),
     dispatchUpdateChatRow: vi.fn(),
-    rollbackServerBackedChatRowMetadata: vi.fn(),
-    syncServerBackedChatMetadataBaselines: vi.fn(),
-    withTrustedResourceWrite: vi.fn((callback: () => void) => callback()),
   }
 })
-
-vi.mock('../../ts/process/index.svelte', () => ({
-  doingChat: suggestionMocks.doingChat,
-}))
 
 vi.mock('src/ts/process/request/request', () => ({
   requestChatData: suggestionMocks.requestChatData,
@@ -52,17 +26,9 @@ vi.mock('src/ts/parser/parser.svelte', () => ({
   ParseMarkdown: vi.fn(async (text: string) => text),
 }))
 
-vi.mock('src/ts/chatCommands', () => ({
+vi.mock('src/ts/chatCommands', async (importActual) => ({
+  ...(await importActual<typeof import('src/ts/chatCommands')>()),
   dispatchUpdateChatRow: suggestionMocks.dispatchUpdateChatRow,
-}))
-
-vi.mock('src/ts/server/chatBridge.svelte', () => ({
-  rollbackServerBackedChatRowMetadata: suggestionMocks.rollbackServerBackedChatRowMetadata,
-  syncServerBackedChatMetadataBaselines: suggestionMocks.syncServerBackedChatMetadataBaselines,
-}))
-
-vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
-  withTrustedResourceWrite: suggestionMocks.withTrustedResourceWrite,
 }))
 
 vi.mock('src/ts/process/modules', () => ({
@@ -80,10 +46,21 @@ vi.mock('src/ts/process/scripts', () => ({
 import Suggestion, { runSuggestionTranslation } from './Suggestion.svelte'
 import { language } from 'src/lang'
 import { selectedCharID } from 'src/ts/stores.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
+import {
+  charactersResourceState,
+  replaceResourceDatabase,
+  settingsResourceState,
+} from 'src/ts/server/resourceState.svelte'
 import type { Database } from 'src/ts/storage/database.svelte'
 import { defaultAutoSuggestPrompt } from 'src/ts/storage/defaultPrompts'
 import { replacePlaceholders } from 'src/ts/utilState'
+import {
+  activeChatGenerations,
+  beginChatGenerationActivity,
+  finishChatGenerationActivity,
+  resetChatGenerationActivitiesForTests,
+} from 'src/ts/process/generationActivity.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -121,6 +98,7 @@ function seedSuggestionDatabase(suggestMessages: string[] = ['Take the lead'], t
   replaceResourceDatabase({
     autoSuggestClean: false,
     autoSuggestPrompt: '',
+    currentChar: 0,
     characters: [
       {
         chaId: 'character-a',
@@ -147,6 +125,7 @@ function seedSuggestionDatabaseWithTwoChats() {
   replaceResourceDatabase({
     autoSuggestClean: false,
     autoSuggestPrompt: '',
+    currentChar: 0,
     characters: [
       {
         chaId: 'character-a',
@@ -174,14 +153,96 @@ function seedSuggestionDatabaseWithTwoChats() {
   } as unknown as Database)
 }
 
+function seedBackgroundSuggestionDatabase(options: { shell?: boolean } = {}) {
+  seedSuggestionDatabaseWithTwoChats()
+  const character = getResourceDatabase().characters[0]
+  character.chats[0].message = options.shell
+    ? []
+    : [{ role: 'char', data: 'Resident reply from A', chatId: 'message-a' }]
+  character.chats[0].suggestMessages = []
+  character.chats[1].suggestMessages = ['Keep B suggestion']
+}
+
+function beginChatAGeneration() {
+  return beginChatGenerationActivity({
+    target: {
+      selectedCharID: 0,
+      chatPage: 0,
+      characterId: 'character-a',
+      chatId: 'chat-a',
+    },
+    kind: 'message',
+  })!
+}
+
 afterEach(() => {
-  suggestionMocks.doingChat.set(false)
+  resetChatGenerationActivitiesForTests()
   selectedCharID.set(-1)
   replaceResourceDatabase({} as Database)
   vi.clearAllMocks()
 })
 
 describe('Suggestion controls', () => {
+  it('fails closed when the ready character owner is ambiguous', async () => {
+    seedSuggestionDatabase(['Aggregate suggestion'])
+    const duplicate = JSON.parse(JSON.stringify(charactersResourceState.characters[0]))
+    charactersResourceState.characters = [charactersResourceState.characters[0], duplicate]
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(Suggestion, { target, props: { send: vi.fn(), messageInput: vi.fn() } })
+
+    try {
+      await settle()
+      expect(target.querySelector('button[aria-label="Aggregate suggestion"]')).toBeNull()
+      expect(suggestionMocks.requestChatData).not.toHaveBeenCalled()
+      expect(suggestionMocks.dispatchUpdateChatRow).not.toHaveBeenCalled()
+    } finally {
+      unmount(component)
+      target.remove()
+    }
+  })
+
+  it('fails closed when the ready chat stable ID is duplicated', async () => {
+    seedSuggestionDatabase(['Ambiguous suggestion'])
+    const character = charactersResourceState.characters[0]
+    character.chats.push({ ...JSON.parse(JSON.stringify(character.chats[0])), name: 'Duplicate chat' })
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(Suggestion, { target, props: { send: vi.fn(), messageInput: vi.fn() } })
+
+    try {
+      await settle()
+      expect(target.querySelector('button[aria-label="Ambiguous suggestion"]')).toBeNull()
+      expect(suggestionMocks.requestChatData).not.toHaveBeenCalled()
+      expect(suggestionMocks.dispatchUpdateChatRow).not.toHaveBeenCalled()
+    } finally {
+      unmount(component)
+      target.remove()
+    }
+  })
+
+  it('waits for the selected character owner before rendering suggestions', async () => {
+    seedSuggestionDatabase(['Bootstrap suggestion'])
+    charactersResourceState.currentChar = 0
+    charactersResourceState.status = 'loading'
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(Suggestion, { target, props: { send: vi.fn(), messageInput: vi.fn() } })
+
+    try {
+      await settle()
+      expect(target.querySelector('button[aria-label="Bootstrap suggestion"]')).toBeNull()
+      expect(suggestionMocks.dispatchUpdateChatRow).not.toHaveBeenCalled()
+
+      charactersResourceState.status = 'ready'
+      await settle()
+      expect(target.querySelector('button[aria-label="Bootstrap suggestion"]')).toBeTruthy()
+    } finally {
+      unmount(component)
+      target.remove()
+    }
+  })
+
   it('names icon actions and exposes the translation toggle state', async () => {
     seedSuggestionDatabase(['Take the lead'], 'google')
     const target = document.createElement('div')
@@ -196,6 +257,24 @@ describe('Suggestion controls', () => {
       expect(target.querySelector(`button[aria-label="${language.reroll}"]`)).toBeTruthy()
       expect(target.querySelector('button[aria-label="Take the lead"]')).toBeTruthy()
       expect(target.querySelector(`button[aria-label="${language.copy}: Take the lead"]`)).toBeTruthy()
+    } finally {
+      unmount(component)
+      target.remove()
+    }
+  })
+
+  it('fails closed instead of reading a stale translator value after the language owner errors', async () => {
+    seedSuggestionDatabase(['Take the lead'], 'google')
+    charactersResourceState.status = 'ready'
+    settingsResourceState.groupStatuses.language = 'error'
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(Suggestion, { target, props: { send: vi.fn(), messageInput: vi.fn() } })
+
+    try {
+      await settle()
+      expect(target.querySelector(`button[aria-label="${language.translate}"]`)).toBeNull()
+      expect(suggestionMocks.translate).not.toHaveBeenCalled()
     } finally {
       unmount(component)
       target.remove()
@@ -219,10 +298,34 @@ describe('Suggestion controls', () => {
       target.remove()
     }
   })
+
+  it('prefers owner chat metadata when the aggregate auto-translate flag is stale', async () => {
+    seedSuggestionDatabase(['Take the lead'], 'google')
+    const aggregate = getResourceDatabase().characters[0]
+    charactersResourceState.characters = [
+      {
+        ...aggregate,
+        chats: aggregate.chats.map((chat) => (chat.id === 'chat-a' ? { ...chat, autoTranslate: true } : chat)),
+      },
+    ]
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(Suggestion, { target, props: { send: vi.fn(), messageInput: vi.fn() } })
+
+    try {
+      await settle()
+      expect(target.querySelector(`button[aria-label="${language.translate}"]`)?.getAttribute('aria-pressed')).toBe(
+        'true',
+      )
+    } finally {
+      unmount(component)
+      target.remove()
+    }
+  })
 })
 
 describe('runSuggestionTranslation', () => {
-  it('L58: keeps only the newest overlapping translated suggestion run', async () => {
+  it('keeps only the newest overlapping translated suggestion run', async () => {
     const slowFirstMessage = deferred<string>()
     const commits: string[][] = []
     let currentRunId = 1
@@ -267,7 +370,7 @@ describe('runSuggestionTranslation', () => {
     expect(commits).toEqual([['translated:fast']])
   })
 
-  it('L58: snapshots source messages and refuses a mutated-source commit', async () => {
+  it('snapshots source messages and refuses a mutated-source commit', async () => {
     const sourceMessages = ['one', 'two']
     const translatedInputs: string[] = []
     const commits: string[][] = []
@@ -324,7 +427,7 @@ describe('runSuggestionTranslation', () => {
     expect(commit).not.toHaveBeenCalled()
   })
 
-  it('L58: clears translated suggestions when translation is disabled', async () => {
+  it('clears translated suggestions when translation is disabled', async () => {
     const clear = vi.fn()
     const translateMessage = vi.fn(async (message: string) => `translated:${message}`)
 
@@ -349,12 +452,29 @@ describe('runSuggestionTranslation', () => {
 })
 
 describe('Suggestion component persistence', () => {
+  it('does not shape a request while a required settings owner is unavailable', async () => {
+    seedSuggestionDatabase([])
+    settingsResourceState.groupStatuses.models = 'error'
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(Suggestion, { target, props: { send: vi.fn(), messageInput: vi.fn() } })
+
+    try {
+      await settle()
+      expect(suggestionMocks.requestChatData).not.toHaveBeenCalled()
+      expect(suggestionMocks.dispatchUpdateChatRow).not.toHaveBeenCalled()
+    } finally {
+      unmount(component)
+      target.remove()
+    }
+  })
+
   it('keeps an in-flight generation lease while reroll confirmation settles', async () => {
     seedSuggestionDatabase(['Take the lead'])
     const confirmation = deferred<boolean>()
     suggestionMocks.alertConfirm.mockReturnValueOnce(confirmation.promise)
-    const observedDoingChat: boolean[] = []
-    const unsubscribe = suggestionMocks.doingChat.subscribe((value) => observedDoingChat.push(value))
+    const observedActivityCounts: number[] = []
+    const unsubscribe = activeChatGenerations.subscribe((activities) => observedActivityCounts.push(activities.length))
     const target = document.createElement('div')
     document.body.appendChild(target)
     let component: MountedComponent | undefined
@@ -369,11 +489,11 @@ describe('Suggestion component persistence', () => {
       })
 
       target.querySelector<HTMLButtonElement>(`button[aria-label="${language.reroll}"]`)!.click()
-      suggestionMocks.doingChat.set(true)
+      beginChatAGeneration()
       confirmation.resolve(true)
       await settle()
 
-      expect(observedDoingChat).toEqual([false, true])
+      expect(observedActivityCounts).toEqual([0, 1])
       expect(suggestionMocks.requestChatData).not.toHaveBeenCalled()
     } finally {
       unsubscribe()
@@ -386,8 +506,8 @@ describe('Suggestion component persistence', () => {
     seedSuggestionDatabase(['Take the lead'])
     suggestionMocks.alertConfirm.mockResolvedValueOnce(true)
     suggestionMocks.requestChatData.mockResolvedValue({ type: 'success', result: '- Follow the new path' })
-    const observedDoingChat: boolean[] = []
-    const unsubscribe = suggestionMocks.doingChat.subscribe((value) => observedDoingChat.push(value))
+    const observedActivityCounts: number[] = []
+    const unsubscribe = activeChatGenerations.subscribe((activities) => observedActivityCounts.push(activities.length))
     const target = document.createElement('div')
     document.body.appendChild(target)
     let component: MountedComponent | undefined
@@ -406,7 +526,7 @@ describe('Suggestion component persistence', () => {
         expect(target.textContent).toContain('Follow the new path')
       })
 
-      expect(observedDoingChat).toEqual([false])
+      expect(observedActivityCounts).toEqual([0])
       expect(suggestionMocks.requestChatData).toHaveBeenCalledOnce()
     } finally {
       unsubscribe()
@@ -449,6 +569,202 @@ describe('Suggestion component persistence', () => {
     } finally {
       if (component) unmount(component)
       target.remove()
+    }
+  })
+
+  it('requests suggestions once after a resident chat completes in the background and is reopened', async () => {
+    seedBackgroundSuggestionDatabase()
+    const generation = beginChatAGeneration()
+    const request = deferred<{ type: 'success'; result: string }>()
+    suggestionMocks.requestChatData.mockReturnValue(request.promise)
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | undefined
+
+    try {
+      component = mount(Suggestion, {
+        target,
+        props: { send: vi.fn(), messageInput: vi.fn() },
+      })
+      await settle()
+
+      getResourceDatabase().characters[0].chatPage = 1
+      await settle()
+      finishChatGenerationActivity(generation.id)
+      await settle()
+
+      expect(suggestionMocks.requestChatData).not.toHaveBeenCalled()
+      expect(target.textContent).toContain('Keep B suggestion')
+
+      getResourceDatabase().characters[0].chatPage = 0
+      await waitFor(() => expect(suggestionMocks.requestChatData).toHaveBeenCalledOnce())
+      const [requestArg] = suggestionMocks.requestChatData.mock.calls[0]
+      expect(requestArg.currentChar.chaId).toBe('character-a')
+
+      request.resolve({ type: 'success', result: '- Return to A' })
+      await waitFor(() => {
+        expect(target.textContent).toContain('Return to A')
+        expect(getResourceDatabase().characters[0].chats[0].suggestMessages).toEqual(['Return to A'])
+      })
+      expect(getResourceDatabase().characters[0].chats[1].suggestMessages).toEqual(['Keep B suggestion'])
+      expect(suggestionMocks.dispatchUpdateChatRow).toHaveBeenCalledOnce()
+      expect(suggestionMocks.dispatchUpdateChatRow).toHaveBeenCalledWith(
+        'chat-a',
+        { suggestMessages: ['Return to A'] },
+        expect.objectContaining({ characterId: 'character-a', chatId: 'chat-a' }),
+        {},
+        expect.any(Function),
+      )
+    } finally {
+      if (component) unmount(component)
+      target.remove()
+    }
+  })
+
+  it('waits for a background-completed chat shell to hydrate before requesting suggestions once', async () => {
+    seedBackgroundSuggestionDatabase({ shell: true })
+    const generation = beginChatAGeneration()
+    const request = deferred<{ type: 'success'; result: string }>()
+    suggestionMocks.requestChatData.mockReturnValue(request.promise)
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | undefined
+
+    try {
+      component = mount(Suggestion, {
+        target,
+        props: { send: vi.fn(), messageInput: vi.fn() },
+      })
+      await settle()
+
+      getResourceDatabase().characters[0].chatPage = 1
+      await settle()
+      finishChatGenerationActivity(generation.id)
+      await settle()
+
+      getResourceDatabase().characters[0].chatPage = 0
+      await settle()
+      expect(suggestionMocks.requestChatData).not.toHaveBeenCalled()
+
+      getResourceDatabase().characters[0].chats[0].message = [
+        { role: 'char', data: 'Hydrated background reply', chatId: 'hydrated-message-a' },
+      ]
+      await waitFor(() => expect(suggestionMocks.requestChatData).toHaveBeenCalledOnce())
+
+      request.resolve({ type: 'success', result: '- Hydrated return to A' })
+      await waitFor(() => {
+        expect(target.textContent).toContain('Hydrated return to A')
+        expect(getResourceDatabase().characters[0].chats[0].suggestMessages).toEqual(['Hydrated return to A'])
+      })
+      expect(getResourceDatabase().characters[0].chats[1].suggestMessages).toEqual(['Keep B suggestion'])
+      expect(suggestionMocks.dispatchUpdateChatRow).toHaveBeenCalledOnce()
+    } finally {
+      if (component) unmount(component)
+      target.remove()
+    }
+  })
+
+  it('uses persisted suggestions for a background completion without issuing a duplicate request', async () => {
+    seedBackgroundSuggestionDatabase()
+    const generation = beginChatAGeneration()
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | undefined
+
+    try {
+      component = mount(Suggestion, {
+        target,
+        props: { send: vi.fn(), messageInput: vi.fn() },
+      })
+      await settle()
+
+      getResourceDatabase().characters[0].chatPage = 1
+      await settle()
+      finishChatGenerationActivity(generation.id)
+      getResourceDatabase().characters[0].chats[0].suggestMessages = ['Persisted background suggestion']
+      await settle()
+
+      getResourceDatabase().characters[0].chatPage = 0
+      await waitFor(() => {
+        expect(target.textContent).toContain('Persisted background suggestion')
+      })
+
+      expect(suggestionMocks.requestChatData).not.toHaveBeenCalled()
+      expect(getResourceDatabase().characters[0].chats[1].suggestMessages).toEqual(['Keep B suggestion'])
+      expect(suggestionMocks.dispatchUpdateChatRow).not.toHaveBeenCalled()
+    } finally {
+      if (component) unmount(component)
+      target.remove()
+    }
+  })
+
+  it('does not persist a background suggestion response after its chat becomes stale', async () => {
+    seedBackgroundSuggestionDatabase()
+    const generation = beginChatAGeneration()
+    const request = deferred<{ type: 'success'; result: string }>()
+    suggestionMocks.requestChatData.mockReturnValue(request.promise)
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | undefined
+
+    try {
+      component = mount(Suggestion, {
+        target,
+        props: { send: vi.fn(), messageInput: vi.fn() },
+      })
+      await settle()
+
+      getResourceDatabase().characters[0].chatPage = 1
+      await settle()
+      finishChatGenerationActivity(generation.id)
+      getResourceDatabase().characters[0].chatPage = 0
+      await waitFor(() => expect(suggestionMocks.requestChatData).toHaveBeenCalledOnce())
+
+      const requestSignal = suggestionMocks.requestChatData.mock.calls[0][2] as AbortSignal
+      getResourceDatabase().characters[0].chatPage = 1
+      await waitFor(() => expect(requestSignal.aborted).toBe(true))
+
+      request.resolve({ type: 'success', result: '- Stale response for A' })
+      await settle()
+
+      expect(getResourceDatabase().characters[0].chats[0].suggestMessages).toEqual([])
+      expect(getResourceDatabase().characters[0].chats[1].suggestMessages).toEqual(['Keep B suggestion'])
+      expect(target.textContent).not.toContain('Stale response for A')
+      expect(suggestionMocks.dispatchUpdateChatRow).not.toHaveBeenCalled()
+    } finally {
+      if (component) unmount(component)
+      target.remove()
+    }
+  })
+
+  it('deduplicates automatic suggestion requests already in flight for the same chat', async () => {
+    seedSuggestionDatabase([])
+    const request = deferred<{ type: 'success'; result: string }>()
+    suggestionMocks.requestChatData.mockReturnValue(request.promise)
+    const firstTarget = document.createElement('div')
+    const secondTarget = document.createElement('div')
+    document.body.append(firstTarget, secondTarget)
+    let firstComponent: MountedComponent | undefined
+    let secondComponent: MountedComponent | undefined
+
+    try {
+      firstComponent = mount(Suggestion, {
+        target: firstTarget,
+        props: { send: vi.fn(), messageInput: vi.fn() },
+      })
+      secondComponent = mount(Suggestion, {
+        target: secondTarget,
+        props: { send: vi.fn(), messageInput: vi.fn() },
+      })
+
+      await waitFor(() => expect(suggestionMocks.requestChatData).toHaveBeenCalledOnce())
+      await settle()
+      expect(suggestionMocks.requestChatData).toHaveBeenCalledOnce()
+    } finally {
+      if (firstComponent) unmount(firstComponent)
+      if (secondComponent) unmount(secondComponent)
+      firstTarget.remove()
+      secondTarget.remove()
     }
   })
 
@@ -500,7 +816,6 @@ describe('Suggestion component persistence', () => {
 
       expect(target.textContent).not.toContain('Abandoned suggestion')
       expect(getResourceDatabase().characters[0].chats[0].suggestMessages).toEqual([])
-      expect(suggestionMocks.syncServerBackedChatMetadataBaselines).not.toHaveBeenCalled()
       expect(suggestionMocks.dispatchUpdateChatRow).not.toHaveBeenCalled()
 
       currentRequest.resolve({ type: 'success', result: '- Current suggestion' })
@@ -577,6 +892,14 @@ describe('Suggestion component persistence', () => {
 
       const [requestArg, requestMode] = suggestionMocks.requestChatData.mock.calls[0]
       expect(requestMode).toBe('otherAx')
+      expect(requestArg.database).toMatchObject({
+        autoSuggestPrompt: 'Suggest next lines for {{char}}',
+        currentChar: 0,
+        seperateModelsForAxModels: true,
+        seperateModels: { otherAx: 'local_test' },
+      })
+      expect(requestArg.database.characters).not.toBe(charactersResourceState.characters)
+      expect(requestArg.database.characters[0]).toMatchObject({ chaId: 'character-a', name: 'Character A' })
       expect(requestArg.formated).toEqual([
         { role: 'system', content: 'Suggest next lines for Character A' },
         { role: 'assistant', content: 'Hello' },
@@ -654,8 +977,6 @@ describe('Suggestion component persistence', () => {
       expect(send).toHaveBeenCalledTimes(1)
       expect(getResourceDatabase().characters[0].chats[0].suggestMessages).toEqual([])
       expect(target.textContent).not.toContain('Take the lead')
-      expect(suggestionMocks.withTrustedResourceWrite).toHaveBeenCalledOnce()
-      expect(suggestionMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
       expect(suggestionMocks.dispatchUpdateChatRow).toHaveBeenCalledWith(
         'chat-a',
         { suggestMessages: [] },
@@ -666,7 +987,7 @@ describe('Suggestion component persistence', () => {
           metadata: { suggestMessages: ['Take the lead'] },
         },
         {},
-        suggestionMocks.rollbackServerBackedChatRowMetadata,
+        expect.any(Function),
       )
 
       getResourceDatabase().characters[0].chatPage = 1
@@ -674,6 +995,34 @@ describe('Suggestion component persistence', () => {
       getResourceDatabase().characters[0].chatPage = 0
       await settle()
       expect(target.textContent).not.toContain('Take the lead')
+    } finally {
+      if (component) unmount(component)
+      target.remove()
+    }
+  })
+
+  it('restores only the attempted ready-owner suggestion patch on failure', async () => {
+    seedSuggestionDatabaseWithTwoChats()
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | undefined
+
+    try {
+      component = mount(Suggestion, { target, props: { send: vi.fn(), messageInput: vi.fn() } })
+      await waitFor(() => expect(target.textContent).toContain('Take the lead'))
+
+      Array.from(target.querySelectorAll<HTMLButtonElement>('button'))
+        .find((button) => button.textContent?.includes('Take the lead'))!
+        .click()
+      await settle()
+
+      const [, , snapshot, , rollback] = suggestionMocks.dispatchUpdateChatRow.mock.calls[0]
+      rollback({ ...snapshot, attempted: { suggestMessages: [] } })
+      await settle()
+
+      expect(getResourceDatabase().characters[0].chats[0].suggestMessages).toEqual(['Take the lead'])
+      expect(getResourceDatabase().characters[0].chats[1].suggestMessages).toEqual([])
+      expect(target.textContent).toContain('Take the lead')
     } finally {
       if (component) unmount(component)
       target.remove()
@@ -700,13 +1049,13 @@ describe('Suggestion component persistence', () => {
         expect(target.textContent).toContain('Take the lead')
       })
 
-      suggestionMocks.doingChat.set(true)
+      const generation = beginChatAGeneration()
       await settle()
 
       expect(getResourceDatabase().characters[0].chats[0].suggestMessages).toEqual([])
       expect(target.textContent).not.toContain('Take the lead')
 
-      suggestionMocks.doingChat.set(false)
+      finishChatGenerationActivity(generation.id)
       await waitFor(() => {
         expect(target.textContent).toContain('Follow the new path')
         expect(getResourceDatabase().characters[0].chats[0].suggestMessages).toEqual(['Follow the new path'])
@@ -730,7 +1079,7 @@ describe('Suggestion component persistence', () => {
           metadata: { suggestMessages: ['Take the lead'] },
         },
         {},
-        suggestionMocks.rollbackServerBackedChatRowMetadata,
+        expect.any(Function),
       )
       expect(suggestionMocks.dispatchUpdateChatRow).toHaveBeenNthCalledWith(
         2,
@@ -743,7 +1092,7 @@ describe('Suggestion component persistence', () => {
           metadata: { suggestMessages: [] },
         },
         {},
-        suggestionMocks.rollbackServerBackedChatRowMetadata,
+        expect.any(Function),
       )
     } finally {
       if (component) unmount(component)

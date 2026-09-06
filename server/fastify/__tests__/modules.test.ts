@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import type { Chat, Database, character, customscript, loreBook } from '../../../src/ts/storage/database.svelte'
-import type { RisuModule } from '../../../src/ts/process/modules'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyCustomScript as customscript,
+  FastifyDatabase as Database,
+  FastifyLoreBook as loreBook,
+} from '../src/prompt/serverTypes.js'
+import type { ServerModule as RisuModule } from '../src/prompt/moduleDescriptors.js'
 import { getActiveModules, getModuleLorebooks, getModuleRegexScripts } from '../src/prompt/modules.js'
 
 function makeModule(overrides: Partial<RisuModule> = {}): RisuModule {
@@ -60,7 +66,24 @@ function makeChat(overrides: Partial<Chat> = {}): Chat {
   } as unknown as Chat
 }
 
-describe('Phase 7-6d getActiveModules', () => {
+describe('getActiveModules', () => {
+  it('ignores module folder metadata during activation and content assembly', () => {
+    const a = makeModule({ id: 'a', lorebook: [lore({ id: 'lore-a', content: 'A' })] } as Partial<RisuModule>)
+    const b = makeModule({ id: 'b', lorebook: [lore({ id: 'lore-b', content: 'B' })] } as Partial<RisuModule>)
+    const database = makeDb({ modules: [a, b], enabledModules: ['a', 'b'] })
+    const activeBefore = getActiveModules(database, undefined, undefined)
+    const contentBefore = getModuleLorebooks(activeBefore)
+
+    ;(database as unknown as Record<string, unknown>).moduleFolders = [{ id: 'folder-a', name: 'Folder A' }]
+    ;(a as unknown as Record<string, unknown>).folderId = 'folder-a'
+    ;(b as unknown as Record<string, unknown>).folderId = 'missing'
+
+    expect(getActiveModules(database, undefined, undefined).map((module) => module.id)).toEqual(
+      activeBefore.map((module) => module.id),
+    )
+    expect(getModuleLorebooks(getActiveModules(database, undefined, undefined))).toEqual(contentBefore)
+  })
+
   it('returns [] when nothing is enabled', () => {
     const db = makeDb({
       modules: [makeModule({ id: 'a' })],
@@ -92,6 +115,48 @@ describe('Phase 7-6d getActiveModules', () => {
     expect(getActiveModules(db, char, undefined)).toEqual([a])
   })
 
+  it('adds modules linked to the Persona selected for the chat', () => {
+    const linked = makeModule({ id: 'persona-module' })
+    const db = makeDb({
+      modules: [linked],
+      selectedPersona: 0,
+      personas: [
+        { id: 'persona-global', name: 'Global', icon: '', personaPrompt: '', modules: [] },
+        {
+          id: 'persona-chat',
+          name: 'Chat',
+          icon: '',
+          personaPrompt: '',
+          modules: ['persona-module'],
+        },
+      ],
+    })
+    const currentChat = makeChat({ generationSettings: { personaId: 'persona-chat' } })
+
+    expect(getActiveModules(db, undefined, currentChat)).toEqual([linked])
+  })
+
+  it('uses stable global persona selection instead of the numeric compatibility pointer', () => {
+    const linked = makeModule({ id: 'persona-module' })
+    const db = makeDb({
+      modules: [linked],
+      selectedPersonaId: 'persona-stable',
+      selectedPersona: 0,
+      personas: [
+        { id: 'persona-numeric', name: 'Numeric', icon: '', personaPrompt: '', modules: [] },
+        {
+          id: 'persona-stable',
+          name: 'Stable',
+          icon: '',
+          personaPrompt: '',
+          modules: ['persona-module'],
+        },
+      ],
+    })
+
+    expect(getActiveModules(db, undefined, undefined)).toEqual([linked])
+  })
+
   it('parses db.moduleIntergration as a comma-separated list', () => {
     const a = makeModule({ id: 'a' })
     const b = makeModule({ id: 'b' })
@@ -119,9 +184,24 @@ describe('Phase 7-6d getActiveModules', () => {
     })
     expect(getActiveModules(db, undefined, undefined)).toEqual([m])
   })
+
+  it.each(['missing', 'duplicate'])('fails closed for a %s chat-selected prompt owner', (kind) => {
+    const linked = makeModule({ id: 'linked', namespace: 'prompt-space' })
+    const promptPresets =
+      kind === 'missing'
+        ? [{ id: 'other', moduleIntergration: 'prompt-space' }]
+        : [
+            { id: 'prompt-a', moduleIntergration: 'prompt-space' },
+            { id: 'prompt-a', moduleIntergration: 'prompt-space' },
+          ]
+    const db = makeDb({ modules: [linked], promptPresets })
+    const currentChat = makeChat({ generationSettings: { promptPresetId: 'prompt-a' } })
+
+    expect(getActiveModules(db, undefined, currentChat)).toEqual([])
+  })
 })
 
-describe('Phase 7-6d getModuleRegexScripts', () => {
+describe('getModuleRegexScripts', () => {
   it('returns [] when no module has regex', () => {
     const m = makeModule({ id: 'm' })
     expect(getModuleRegexScripts([m])).toEqual([])

@@ -4,13 +4,12 @@ import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { get } from 'svelte/store'
 import type { FastifyInstance } from 'fastify'
 
 // Server-backed sendChat sweep. Unlike sendChat.fixtures.test.ts, this file does
-// NOT vi.mock('../request/request'): supported Fastify sends go through
-// `/api/v1/generate/chat`, so the browser-local assembler is never used in
-// server-backed mode.
+// Supported Fastify sends go through `/api/v1/generate/chat`, so the
+// browser-local assembler never consumes the request mock. The mock is kept for
+// the browser-owned IGP call that intentionally runs after terminal replay.
 
 vi.mock('../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../platform')>()
@@ -29,6 +28,26 @@ vi.mock('../inlayScreen', () => import('../__fixtures__/mocks/inlayScreen'))
 vi.mock('../stableDiff', () => import('../__fixtures__/mocks/stableDiff'))
 vi.mock('../prereroll', () => import('../__fixtures__/mocks/prereroll'))
 vi.mock('../files/inlays', () => import('../__fixtures__/mocks/inlays'))
+vi.mock('../request/request', () => import('../__fixtures__/mocks/request'))
+
+const terminalEffectMocks = vi.hoisted(() => ({
+  notify: vi.fn(async () => {}),
+  embedding: vi.fn(async () => {}),
+  completionSound: vi.fn(),
+}))
+
+vi.mock('../postGeneration/notification', async (importActual) => {
+  const actual = await importActual<typeof import('../postGeneration/notification')>()
+  return { ...actual, fireDesktopNotification: terminalEffectMocks.notify }
+})
+
+vi.mock('../postGeneration/emotionFallbackEmbedding', () => ({
+  runEmotionEmbeddingFallback: terminalEffectMocks.embedding,
+}))
+
+vi.mock('../messageCompletionSound', () => ({
+  playMessageCompletionSoundIfEnabled: terminalEffectMocks.completionSound,
+}))
 
 vi.mock('../memory/hypav3', async (importActual) => {
   const actual = await importActual<typeof import('../memory/hypav3')>()
@@ -100,14 +119,15 @@ import {
 } from '../__fixtures__/mocks/serverChatFetch'
 import { isTokenizerUrl, serveTokenizerFetch } from '../__fixtures__/mocks/tokenizerFetch'
 import { getSideEffectCalls, resetSideEffectCalls } from '../__fixtures__/sideEffects'
-import { resetProviderState } from '../__fixtures__/providerFake'
+import { getProviderCalls, installProviderScript, resetProviderState } from '../__fixtures__/providerFake'
 import { type FixtureSnapshot, captureSnapshot, recordStages } from '../__fixtures__/snapshot'
-import { hypaV3ProgressStore } from '../../stores.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
+import { replaceResourceDatabase } from '../../server/resourceState.svelte'
 import type { Chat } from '../../storage/database.svelte'
-import { setResourceWriteGuardEnabled } from '../../server/resourceWriteGuard.svelte'
+
 import { defaultMainPrompt } from '../../storage/defaultPrompts'
 import { abortChat, chatProcessStage, doingChat, previewBody, previewFormated, sendChat } from '../index.svelte'
+import { addChatOutputListener, chatOutputListeners } from '../../plugins/chatOutputListeners'
+import { _setPluginRuntimePhaseForTesting } from '../../plugins/plugins.svelte'
 import { buildApp } from '../../../../server/fastify/src/app'
 import { setupAuthedClient } from '../../../../server/fastify/__tests__/helpers/auth'
 import type {
@@ -116,9 +136,11 @@ import type {
 } from '../../../../server/fastify/src/routes/generationChat'
 import {
   clearCachedServerCommandRevision,
+  drainServerCommandExecutionForTests,
   getServerCommandBaseRevision,
   setCachedServerCommandRevision,
 } from '../../server/commands'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {
@@ -193,7 +215,7 @@ async function persistedCharacterResources(harness: RouteBackedHarness): Promise
 }> {
   const res = await harness.app.inject({
     method: 'GET',
-    url: '/api/v1/characters',
+    url: '/api/v1/characters/aggregate',
     headers: { 'risu-auth': harness.authAssertion },
   })
   expect(res.statusCode).toBe(200)
@@ -265,6 +287,30 @@ async function createRouteBackedHarness(): Promise<RouteBackedHarness> {
     }
     if (url.startsWith('/api/v1/commands/')) {
       commandCalls.push({ url, method, body: (payload ?? {}) as Record<string, unknown> })
+      const messageMatch = url.match(/^\/api\/v1\/commands\/messages\/([^/]+)$/)
+      if (messageMatch && method === 'PATCH') {
+        const messageId = decodeURIComponent(messageMatch[1])
+        const baseRevision =
+          payload && typeof payload === 'object' && typeof payload.baseRevision === 'number'
+            ? payload.baseRevision
+            : currentRevision
+        const revision = baseRevision + 1
+        return new Response(
+          JSON.stringify({
+            revision,
+            event: {
+              type: 'message.updated',
+              revision,
+              resource: 'message',
+              id: messageId,
+              parentId: 'chat-route-backed',
+            },
+            chatId: 'chat-route-backed',
+            messageId,
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }
       return new Response(
         JSON.stringify({
           revision: 2,
@@ -364,6 +410,7 @@ function prepareRouteBackedFixture(name: (typeof ROUTE_BACKED_CHAT_FIXTURES)[num
   chat.id = 'chat-route-backed'
   ;(testDatabaseState.db as typeof testDatabaseState.db & { currentChar: number }).currentChar = 0
   testDatabaseState.db.mainPrompt = defaultMainPrompt
+  if (name === 'continue') testDatabaseState.db.useSayNothing = false
   testDatabaseState.db.formatingOrder = [
     'main',
     'description',
@@ -391,15 +438,11 @@ function prepareRouteBackedFixture(name: (typeof ROUTE_BACKED_CHAT_FIXTURES)[num
       saying: char.chaId,
     })
   }
-  markFixtureActiveChatGenerationSettingsReady()
+  markFixtureActiveChatGenerationSettingsReady({ canonicalOpenAiProfile: true })
 }
 
 async function drainRouteBackedCommands(): Promise<void> {
-  await Promise.resolve()
-  await Promise.resolve()
-  await Promise.resolve()
-  await new Promise<void>((resolve) => setImmediate(resolve))
-  await new Promise<void>((resolve) => setImmediate(resolve))
+  await drainServerCommandExecutionForTests()
 }
 
 function messageTexts(snapshot: FixtureSnapshot): Array<{ role: string; data: string; saying?: string }> {
@@ -408,6 +451,17 @@ function messageTexts(snapshot: FixtureSnapshot): Array<{ role: string; data: st
     data: message.data,
     ...(message.saying ? { saying: message.saying } : {}),
   }))
+}
+
+function semanticPromptRows(rows: unknown): unknown {
+  if (!Array.isArray(rows)) return rows
+  return rows.map((row) => {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return row
+    const normalized = { ...(row as Record<string, unknown>) }
+    if (Array.isArray(normalized.attr) && normalized.attr.length === 0) delete normalized.attr
+    if (Array.isArray(normalized.thoughts) && normalized.thoughts.length === 0) delete normalized.thoughts
+    return normalized
+  })
 }
 
 function firstRerollText(snapshot: FixtureSnapshot): string | null {
@@ -432,6 +486,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
   })
 
   beforeEach(() => {
+    _setPluginRuntimePhaseForTesting('ready')
     resetProviderState()
     resetSideEffectCalls()
     resetServerCompletionCalls()
@@ -439,12 +494,11 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
     abortChat.set(false)
     chatProcessStage.set(0)
     uuidState.counter = 0
-    setResourceWriteGuardEnabled(false)
   })
 
   let cleanups: (() => void)[] = []
   afterEach(() => {
-    setResourceWriteGuardEnabled(false)
+    _setPluginRuntimePhaseForTesting('idle')
     while (cleanups.length > 0) cleanups.pop()!()
     vi.unstubAllGlobals()
   })
@@ -474,7 +528,6 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
 
       const stageRecorder = recordStages()
       clearCachedServerCommandRevision()
-      setResourceWriteGuardEnabled(true)
       const ok = await sendChat(-1, args)
       const stages = stageRecorder.stop()
       const captured = captureSnapshot(stages)
@@ -504,7 +557,9 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
         expect(harness.dispatchCalls).toHaveLength(1)
         expect(harness.dispatchCalls[0].inputMode).toBe(expectedMode)
         if (expectedProviderCall) {
-          expect(Array.isArray(harness.dispatchCalls[0].formated)).toBe(true)
+          expect(semanticPromptRows(harness.dispatchCalls[0].formated)).toEqual(
+            semanticPromptRows(expectedProviderCall.formated),
+          )
         }
         expect(harness.dispatchCalls[0].generationInfo.model).toBe('gpt-4o')
         expect(getServerCompletionCalls()).toEqual([])
@@ -515,7 +570,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
     }
   })
 
-  it('persists an assembly-time chat-var write server-side with zero scriptstate re-POSTs (C-A1)', async () => {
+  it('persists an assembly-time chat-var write server-side with zero scriptstate re-POSTs', async () => {
     const harness = await createRouteBackedHarness()
     try {
       const loaded = await loadFixture('simple-send')
@@ -541,8 +596,6 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       // so a later command POSTing baseRevision 2 proves the reconcile happened.
       clearCachedServerCommandRevision()
       setCachedServerCommandRevision(1)
-
-      setResourceWriteGuardEnabled(true)
       const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
       await drainRouteBackedCommands()
 
@@ -581,7 +634,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
   // These route-backed tests prove the browser consumes the server's derivation
   // (the scriptstate patch + final text on the terminal `done` frame) and no longer
   // re-derives it (zero scriptstate re-POSTs; editoutput applied server-side).
-  it('derives an output-trigger scriptstate delta server-side with zero browser re-POSTs (A2)', async () => {
+  it('derives an output-trigger scriptstate delta server-side with zero browser re-POSTs', async () => {
     const harness = await createRouteBackedHarness()
     try {
       const loaded = await loadFixture('simple-send')
@@ -606,7 +659,6 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       // bumped revision is the SSE reconcile on the post-gen `done` frame.
       clearCachedServerCommandRevision()
       setCachedServerCommandRevision(1)
-      setResourceWriteGuardEnabled(true)
       const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
       await drainRouteBackedCommands()
       expect(ok).toBe(true)
@@ -641,7 +693,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
     }
   })
 
-  it('applies the server-owned editoutput final text to the assistant message (A2)', async () => {
+  it('applies the server-owned editoutput final text to the assistant message', async () => {
     const harness = await createRouteBackedHarness()
     try {
       const loaded = await loadFixture('simple-send')
@@ -657,7 +709,6 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       harness.setDispatchText('route-backed reply')
 
       clearCachedServerCommandRevision()
-      setResourceWriteGuardEnabled(true)
       const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
       await drainRouteBackedCommands()
       expect(ok).toBe(true)
@@ -688,7 +739,55 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
     }
   })
 
-  it('assembles inlay multimodal bytes server-side with byte-parity to the local golden (slice 3a)', async () => {
+  it('appends IGP to the streamed server terminal derived text with row preconditions', async () => {
+    const harness = await createRouteBackedHarness()
+    try {
+      const loaded = await loadFixture('simple-send')
+      cleanups.push(loaded.cleanup)
+      prepareRouteBackedFixture('simple-send')
+      testDatabaseState.db.characters[0].customscript = [
+        { comment: '', in: 'reply', out: 'REPLY', type: 'editoutput', flag: '', ableFlag: false },
+      ]
+      testDatabaseState.db.igpPrompt = '<|im_start|>system<|im_sep|>Append a marker.<|im_end|>'
+      installProviderScript([{ type: 'success', result: '::IGP' }])
+      await harness.seed(testDatabaseState.db)
+      vi.stubGlobal('fetch', harness.fetch)
+      harness.setDispatchText('route-backed reply')
+
+      clearCachedServerCommandRevision()
+      const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
+      await drainRouteBackedCommands()
+
+      expect(ok).toBe(true)
+      const assistant = [...testDatabaseState.db.characters[0].chats[0].message]
+        .reverse()
+        .find((message) => message.role === 'char')
+      expect(assistant?.data).toBe('route-backed REPLY::IGP')
+      expect(getProviderCalls()).toEqual([
+        {
+          arg: expect.objectContaining({
+            formated: [expect.objectContaining({ role: 'system', content: 'Append a marker.' })],
+          }),
+          model: 'emotion',
+        },
+      ])
+
+      const igpCommand = harness.commandCalls.find(
+        (call) => call.method === 'PATCH' && /^\/api\/v1\/commands\/messages\/[^/]+$/.test(call.url),
+      )
+      expect(igpCommand?.body).toMatchObject({
+        patch: { data: 'route-backed REPLY::IGP' },
+        expectedData: 'route-backed REPLY',
+        expectedChatId: 'chat-route-backed',
+        expectedGenerationId: expect.any(String),
+      })
+    } finally {
+      await drainRouteBackedCommands()
+      await harness.close()
+    }
+  })
+
+  it('assembles inlay multimodal bytes server-side with byte parity to the local golden', async () => {
     const harness = await createRouteBackedHarness()
     try {
       const loaded = await loadFixture('multimodal-image')
@@ -730,7 +829,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       // pre-existing multimodal concern; clear it to `undefined` so the
       // format-order path runs and a real prompt (with the inlay row) assembles.
       ;(testDatabaseState.db as unknown as { promptTemplate?: unknown }).promptTemplate = undefined
-      markFixtureActiveChatGenerationSettingsReady()
+      markFixtureActiveChatGenerationSettingsReady({ canonicalOpenAiProfile: true })
 
       await harness.seed(testDatabaseState.db)
       const inlayUpload = await harness.app.inject({
@@ -747,7 +846,6 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       harness.setDispatchText('I see a small image.')
 
       clearCachedServerCommandRevision()
-      setResourceWriteGuardEnabled(true)
       const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
       expect(ok).toBe(true)
 
@@ -805,7 +903,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
   ] as const
 
   it.each(IMAGE_GEN_PARITY)(
-    'assembles the $name view instruction row server-side with byte-parity to the local golden (slice 3c)',
+    'assembles the $name view instruction row server-side with byte parity to the local golden',
     async ({ name, marker, expected }) => {
       const harness = await createRouteBackedHarness()
       try {
@@ -840,14 +938,13 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
           ...(testDatabaseState.db.promptSettings ?? {}),
         }
         ;(testDatabaseState.db as unknown as { promptTemplate?: unknown }).promptTemplate = undefined
-        markFixtureActiveChatGenerationSettingsReady()
+        markFixtureActiveChatGenerationSettingsReady({ canonicalOpenAiProfile: true })
 
         await harness.seed(testDatabaseState.db)
         vi.stubGlobal('fetch', harness.fetch)
         harness.setDispatchText('Hello there!')
 
         clearCachedServerCommandRevision()
-        setResourceWriteGuardEnabled(true)
         const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
         expect(ok).toBe(true)
 
@@ -886,7 +983,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
   // (A *Lua* editinput char can't run here for
   // the same wasmoon-under-jsdom reason noted below; the Lua path is proven in
   // the server suite.)
-  it('runs a regex editinput transform server-side and reconciles the projection (slice 3b-4)', async () => {
+  it('runs a regex editinput transform server-side and reconciles the projection', async () => {
     const harness = await createRouteBackedHarness()
     try {
       const loaded = await loadFixture('simple-send')
@@ -902,7 +999,6 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       harness.setDispatchText('reply')
 
       clearCachedServerCommandRevision()
-      setResourceWriteGuardEnabled(true)
       const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
       expect(ok).toBe(true)
 
@@ -950,6 +1046,24 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
 
   const serverChatFixtureFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+    const messageUpdate = url.match(/\/api\/v1\/commands\/messages\/([^/]+)$/)
+    if (messageUpdate && (init?.method ?? 'GET') === 'PATCH') {
+      const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as { baseRevision?: unknown }) : undefined
+      const baseRevision = typeof body?.baseRevision === 'number' ? body.baseRevision : contextCommandRevision
+      contextCommandRevision = Math.max(contextCommandRevision, baseRevision) + 1
+      return new Response(
+        JSON.stringify({
+          revision: contextCommandRevision,
+          event: {
+            type: 'message.updated',
+            revision: contextCommandRevision,
+            resource: 'message',
+            id: decodeURIComponent(messageUpdate[1]),
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }
     if (
       (/\/api\/v1\/commands\/characters\/[^/]+$/.test(url) && (init?.method ?? 'GET') === 'PATCH') ||
       (/\/api\/v1\/commands\/chats\/[^/]+\/messages\/tail$/.test(url) && (init?.method ?? 'GET') === 'POST')
@@ -993,19 +1107,24 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     chatProcessStage.set(0)
     uuidState.counter = 0
     contextCommandRevision = 1
-    setResourceWriteGuardEnabled(false)
+    _setPluginRuntimePhaseForTesting('ready')
+    chatOutputListeners.clear()
+    terminalEffectMocks.notify.mockClear()
+    terminalEffectMocks.embedding.mockClear()
+    terminalEffectMocks.completionSound.mockClear()
   })
 
   let cleanups: (() => void)[] = []
   afterEach(() => {
-    setResourceWriteGuardEnabled(false)
+    _setPluginRuntimePhaseForTesting('idle')
+    chatOutputListeners.clear()
     while (cleanups.length > 0) cleanups.pop()!()
   })
 
   it('pins hypav3-memory server-backed prompt rows and progress side effects', async () => {
     const loaded = await loadFixture('hypav3-memory')
     cleanups.push(loaded.cleanup)
-    markFixtureActiveChatGenerationSettingsReady()
+    markFixtureActiveChatGenerationSettingsReady({ canonicalOpenAiProfile: true })
     const expected = await loadExpected('hypav3-memory')
     const providerCall = expected.providerCalls[0]
     expect(providerCall).toBeDefined()
@@ -1056,7 +1175,6 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     ])
 
     const stageRecorder = recordStages()
-    setResourceWriteGuardEnabled(true)
     await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
     const stages = stageRecorder.stop()
     const captured = captureSnapshot(stages)
@@ -1066,12 +1184,6 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     expect(captured.stages).toEqual([1, 3, 4])
     expect(captured.doingChat).toBe(false)
     expect(captured.providerCalls).toEqual([])
-    expect(get(hypaV3ProgressStore)).toEqual({
-      open: true,
-      miniMsg: '2',
-      msg: '[Hypa V3] Summarizing...',
-      subMsg: '2 queued',
-    })
     expect(getServerChatCalls()).toHaveLength(1)
     expect(getServerChatCalls()[0]).toMatchObject({
       url: '/api/v1/generate/chat',
@@ -1085,7 +1197,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
   it('rolls back server-applied chat mutations when /chat dispatch fails after streaming starts', async () => {
     const loaded = await loadFixture('simple-send')
     cleanups.push(loaded.cleanup)
-    markFixtureActiveChatGenerationSettingsReady()
+    markFixtureActiveChatGenerationSettingsReady({ canonicalOpenAiProfile: true })
     const originalMessages = JSON.parse(
       JSON.stringify(testDatabaseState.db.characters[0].chats[0].message),
     ) as Chat['message']
@@ -1131,8 +1243,8 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
       },
       'uuid-0',
     )
-
-    setResourceWriteGuardEnabled(true)
+    testDatabaseState.db.igpPrompt = '<|im_start|>system<|im_sep|>Append a marker.<|im_end|>'
+    installProviderScript([{ type: 'success', result: '::SHOULD-NOT-RUN' }])
     const result = await sendChat(-1, {})
 
     expect(result).toBe(false)
@@ -1144,12 +1256,227 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     })
     expect(getServerChatCalls()).toHaveLength(1)
     expect(getServerCompletionCalls()).toEqual([])
+    expect(getProviderCalls()).toEqual([])
   })
 
-  it('runs server-sent tts side effects once on successful /chat dispatch', async () => {
+  it('forwards the synthetic say-nothing marker on the server-backed send', async () => {
     const loaded = await loadFixture('simple-send')
     cleanups.push(loaded.cleanup)
-    markFixtureActiveChatGenerationSettingsReady()
+    markFixtureActiveChatGenerationSettingsReady({ canonicalOpenAiProfile: true })
+    testDatabaseState.db.characters[0].chats[0].message.at(-1)!.data = '*says nothing*'
+
+    setServerChatDispatchResult('Hello there!', { model: 'gpt-4o' }, 'uuid-0')
+    const result = await sendChat(-1, { syntheticSayNothing: true })
+
+    expect(result).toBe(true)
+    expect(getServerChatCalls()).toHaveLength(1)
+    expect(getServerChatCalls()[0]).toMatchObject({
+      mode: 'send',
+      userMessage: '*says nothing*',
+      syntheticSayNothing: true,
+    })
+  })
+
+  it.each([
+    { changed: false, finalText: 'evicted prefix retained suffix' },
+    { changed: true, finalText: 'server-derived complete reply' },
+  ])(
+    'settles every terminal consumer from the complete replay result (post-generation changed: $changed)',
+    async ({ changed, finalText }) => {
+      const loaded = await loadFixture('simple-send')
+      cleanups.push(loaded.cleanup)
+      testDatabaseState.db.characters[0].chats[0].id = 'chat-canonical-replay'
+      markFixtureActiveChatGenerationSettingsReady({ canonicalOpenAiProfile: true })
+      testDatabaseState.db.notification = true
+      testDatabaseState.db.emotionProcesser = 'embedding'
+      testDatabaseState.db.igpPrompt = '<|im_start|>system<|im_sep|>Append a marker.<|im_end|>'
+      const currentChar = testDatabaseState.db.characters[0]
+      currentChar.viewScreen = 'emotion'
+      currentChar.emotionImages = [['happy', 'happy.png']]
+      installProviderScript([{ type: 'success', result: '::IGP' }])
+
+      const listener = vi.fn()
+      addChatOutputListener('output', listener)
+      setServerChatDispatchResult('evicted prefix retained suffix', { model: 'gpt-4o' }, 'uuid-0', {
+        streamedResult: 'retained suffix',
+        ...(changed ? { postGeneration: { finalText } } : {}),
+      })
+      const result = await sendChat(-1, {})
+
+      expect(result).toBe(true)
+      expect(listener).toHaveBeenCalledOnce()
+      const listenerChat = listener.mock.calls[0]?.[0].chat as Chat
+      expect(listenerChat.message.find((message) => message.role === 'char')?.data).toBe(finalText)
+      expect(getProviderCalls()).toHaveLength(1)
+      const assistant = testDatabaseState.db.characters[0].chats[0].message.find((message) => message.role === 'char')
+      expect(assistant?.data).toBe(`${finalText}::IGP`)
+      expect(terminalEffectMocks.notify).toHaveBeenCalledWith(
+        expect.objectContaining({ body: 'evicted prefix retained suffix' }),
+      )
+      expect(terminalEffectMocks.embedding).toHaveBeenCalledWith(
+        expect.objectContaining({ result: 'evicted prefix retained suffix' }),
+      )
+      expect(terminalEffectMocks.completionSound).toHaveBeenCalledOnce()
+    },
+  )
+
+  it.each([
+    {
+      fixture: 'simple-send' as const,
+      args: {},
+      rawResult: 'complete send reply',
+      suffix: 'send reply',
+      changed: false,
+      expected: 'complete send reply',
+    },
+    {
+      fixture: 'simple-send' as const,
+      args: {},
+      rawResult: 'complete send reply',
+      suffix: 'send reply',
+      changed: true,
+      expected: 'derived complete send reply',
+    },
+    {
+      fixture: 'continue' as const,
+      args: { continue: true },
+      rawResult: ' and then complete',
+      suffix: ' complete',
+      changed: false,
+      expected: 'Once upon a time and then complete',
+    },
+    {
+      fixture: 'continue' as const,
+      args: { continue: true },
+      rawResult: ' and then complete',
+      suffix: ' complete',
+      changed: true,
+      expected: 'Derived complete continued row.',
+    },
+    {
+      fixture: 'regenerate' as const,
+      args: { regenerateMessageId: 'msg-char-1' },
+      rawResult: 'complete regenerated reply',
+      suffix: 'regenerated reply',
+      changed: false,
+      expected: 'complete regenerated reply',
+    },
+    {
+      fixture: 'regenerate' as const,
+      args: { regenerateMessageId: 'msg-char-1' },
+      rawResult: 'complete regenerated reply',
+      suffix: 'regenerated reply',
+      changed: true,
+      expected: 'derived complete regenerated reply',
+    },
+  ])(
+    'projects the complete $fixture terminal onto the owned row (post-generation changed: $changed)',
+    async ({ fixture, args, rawResult, suffix, changed, expected }) => {
+      const loaded = await loadFixture(fixture)
+      cleanups.push(loaded.cleanup)
+      prepareRouteBackedFixture(fixture)
+      setServerChatDispatchResult(rawResult, { model: 'gpt-4o' }, 'uuid-0', {
+        streamedResult: suffix,
+        ...(changed
+          ? {
+              postGeneration: {
+                messageId: fixture === 'simple-send' ? 'uuid-0' : 'msg-char-1',
+                finalText: expected,
+              },
+            }
+          : {}),
+      })
+      const result = await sendChat(-1, args)
+
+      expect(result).toBe(true)
+      const messages = testDatabaseState.db.characters[0].chats[0].message
+      const assistants = messages.filter((message) => message.role === 'char')
+      if (fixture !== 'regenerate') expect(assistants).toHaveLength(1)
+      expect(assistants.at(-1)?.data).toBe(expected)
+    },
+  )
+
+  it('reconciles a cancelled partial snapshot but suppresses every success-only terminal consumer', async () => {
+    const loaded = await loadFixture('simple-send')
+    cleanups.push(loaded.cleanup)
+    testDatabaseState.db.characters[0].chats[0].id = 'chat-cancelled-replay'
+    markFixtureActiveChatGenerationSettingsReady({ canonicalOpenAiProfile: true })
+    testDatabaseState.db.notification = true
+    testDatabaseState.db.emotionProcesser = 'embedding'
+    testDatabaseState.db.igpPrompt = '<|im_start|>system<|im_sep|>Must not run.<|im_end|>'
+    const currentChar = testDatabaseState.db.characters[0]
+    currentChar.viewScreen = 'emotion'
+    currentChar.emotionImages = [['happy', 'happy.png']]
+    installProviderScript([{ type: 'success', result: '::MUST-NOT-RUN' }])
+
+    const listener = vi.fn()
+    addChatOutputListener('output', listener)
+    setServerChatDispatchResult('complete partial reply', { model: 'gpt-4o' }, 'uuid-0', {
+      streamedResult: 'partial reply',
+      outcome: 'cancelled',
+      emitTtsSideEffect: true,
+      alternates: ['must not become a reroll'],
+      postGeneration: {
+        messageId: 'uuid-0',
+        revision: 3,
+        finalText: '*says nothing*complete partial reply',
+      },
+    })
+    const onReattachOutcome = vi.fn()
+    const result = await sendChat(-1, { reattachJobId: 'job-cancelled', onReattachOutcome })
+
+    expect(result).toBe(false)
+    expect(onReattachOutcome).toHaveBeenCalledWith({ status: 'cancelled' })
+    const assistant = testDatabaseState.db.characters[0].chats[0].message.find((message) => message.role === 'char')
+    expect(assistant?.data).toBe('*says nothing*complete partial reply')
+    expect(listener).not.toHaveBeenCalled()
+    expect(getProviderCalls()).toEqual([])
+    expect(terminalEffectMocks.notify).not.toHaveBeenCalled()
+    expect(terminalEffectMocks.embedding).not.toHaveBeenCalled()
+    expect(terminalEffectMocks.completionSound).not.toHaveBeenCalled()
+    expect(getSideEffectCalls().filter((call) => ['addRerolls', 'runInlayScreen', 'sayTTS'].includes(call.fn))).toEqual(
+      [],
+    )
+  })
+
+  it('evaluates IGP once after a reattached stream applies its terminal derived text', async () => {
+    const loaded = await loadFixture('simple-send')
+    cleanups.push(loaded.cleanup)
+    testDatabaseState.db.characters[0].chats[0].id = 'chat-reattach'
+    markFixtureActiveChatGenerationSettingsReady({ canonicalOpenAiProfile: true })
+    testDatabaseState.db.igpPrompt = '<|im_start|>system<|im_sep|>Append a marker.<|im_end|>'
+    let textAtIgpEvaluation = ''
+    const requestModule = await import('../request/request')
+    const igpRequest = vi.spyOn(requestModule, 'requestChatData').mockImplementationOnce(async () => {
+      textAtIgpEvaluation =
+        [...testDatabaseState.db.characters[0].chats[0].message].reverse().find((message) => message.role === 'char')
+          ?.data ?? ''
+      return { type: 'success', result: '::IGP' }
+    })
+    try {
+      setServerChatDispatchResult(
+        'raw reattached reply',
+        { model: 'gpt-4o', generationId: 'reattached-generation' },
+        'reattached-generation',
+        { postGeneration: { finalText: 'derived reattached reply' } },
+      )
+      const result = await sendChat(-1, { reattachJobId: 'job-reattach' })
+
+      expect(result).toBe(true)
+      expect(igpRequest).toHaveBeenCalledTimes(1)
+      expect(textAtIgpEvaluation).toBe('derived reattached reply')
+      expect(igpRequest.mock.calls[0][1]).toBe('emotion')
+      expect(getServerChatCalls()).toHaveLength(1)
+      expect(getServerChatCalls()[0].url).toContain('/api/v1/generate/chat/job-reattach/stream')
+    } finally {
+      igpRequest.mockRestore()
+    }
+  })
+
+  it('speaks every server-derived choice after browser-owned inlay processing', async () => {
+    const loaded = await loadFixture('simple-send')
+    cleanups.push(loaded.cleanup)
+    markFixtureActiveChatGenerationSettingsReady({ canonicalOpenAiProfile: true })
     testDatabaseState.db.ttsAutoSpeech = true
 
     setServerChatPrompt(
@@ -1161,7 +1488,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     )
     setServerChatInfo(233, 200)
     setServerChatDispatchResult(
-      'Hello there!',
+      'raw primary',
       {
         model: 'gpt-4o',
         inputTokens: 233,
@@ -1169,17 +1496,33 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
         maxContext: 4000,
       },
       'uuid-0',
-      { emitTtsSideEffect: true },
+      { postGeneration: { finalText: 'derived primary' } },
     )
-
-    setResourceWriteGuardEnabled(true)
+    setServerChatSideEffects([
+      { kind: 'tts', payload: { text: 'derived primary', characterId: 'char-tess' } },
+      { kind: 'tts', payload: { text: 'derived alternate', characterId: 'char-tess' } },
+    ])
     const result = await sendChat(-1, {})
 
     expect(result).toBe(true)
     expect(getSideEffectCalls().filter((call) => call.fn === 'sayTTS')).toEqual([
       {
         fn: 'sayTTS',
-        args: [{ chaId: 'char-tess', name: 'Tess' }, 'Hello there!'],
+        args: [{ chaId: 'char-tess', name: 'Tess' }, 'derived primary'],
+      },
+      {
+        fn: 'sayTTS',
+        args: [{ chaId: 'char-tess', name: 'Tess' }, 'derived alternate'],
+      },
+    ])
+    expect(getSideEffectCalls().filter((call) => call.fn === 'runInlayScreen')).toEqual([
+      {
+        fn: 'runInlayScreen',
+        args: [{ chaId: 'char-tess', name: 'Tess' }, 'derived primary'],
+      },
+      {
+        fn: 'runInlayScreen',
+        args: [{ chaId: 'char-tess', name: 'Tess' }, 'derived alternate'],
       },
     ])
   })

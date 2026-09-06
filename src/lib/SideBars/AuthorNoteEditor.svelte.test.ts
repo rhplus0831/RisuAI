@@ -39,7 +39,6 @@ const authorNoteMocks = vi.hoisted(() => ({
       },
     }
   }),
-  syncServerBackedChatMetadataBaselines: vi.fn(),
   tokenizeAccurate: vi.fn(async () => 0),
 }))
 
@@ -58,10 +57,6 @@ vi.mock('src/ts/chatCommands', () => ({
   applyChatNoteValueLocally: authorNoteMocks.applyChatNoteValueLocally,
   dispatchStagedChatNoteMutation: authorNoteMocks.dispatchStagedChatNoteMutation,
   stageChatNoteMutation: authorNoteMocks.stageChatNoteMutation,
-}))
-
-vi.mock('src/ts/server/chatBridge.svelte', () => ({
-  syncServerBackedChatMetadataBaselines: authorNoteMocks.syncServerBackedChatMetadataBaselines,
 }))
 
 vi.mock('src/ts/server/pendingMutationOutbox', () => ({
@@ -89,7 +84,7 @@ vi.mock('../Others/Help.svelte', async () => {
 import AuthorNoteEditor from './AuthorNoteEditor.svelte'
 import AuthorNoteEditorTestHost from './AuthorNoteEditor.testHost.svelte'
 import type { character } from 'src/ts/storage/database.svelte'
-import { flushRegisteredPendingBridgePatches } from 'src/ts/server/pendingBridgeFlushRegistry'
+import { flushRegisteredPendingOwnerMutations } from 'src/ts/server/pendingOwnerMutationRegistry'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -179,7 +174,6 @@ describe('AuthorNoteEditor debounce persistence', () => {
     await tick()
 
     expect(chara.chats[0].note).toBe('draft before close')
-    expect(authorNoteMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
     expect(authorNoteMocks.stageChatNoteMutation).toHaveBeenCalledWith({
       chatId: 'chat-a',
       characterId: 'character-a',
@@ -246,7 +240,7 @@ describe('AuthorNoteEditor debounce persistence', () => {
     textarea.value = 'draft before pagehide'
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
 
-    flushRegisteredPendingBridgePatches({ keepalive: true })
+    flushRegisteredPendingOwnerMutations({ keepalive: true })
 
     expect(authorNoteMocks.dispatchStagedChatNoteMutation).toHaveBeenCalledOnce()
     expect(authorNoteMocks.dispatchStagedChatNoteMutation).toHaveBeenCalledWith(
@@ -254,8 +248,6 @@ describe('AuthorNoteEditor debounce persistence', () => {
       expect.objectContaining({ note: 'initial note' }),
       { keepalive: true },
     )
-    expect(authorNoteMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
-
     vi.advanceTimersByTime(300)
     expect(authorNoteMocks.dispatchStagedChatNoteMutation).toHaveBeenCalledOnce()
   })

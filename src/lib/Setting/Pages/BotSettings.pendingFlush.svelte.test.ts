@@ -1,6 +1,8 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IDBFactory } from 'fake-indexeddb'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 const botSettingsMocks = vi.hoisted(() => {
   function deferredResult() {
@@ -23,6 +25,7 @@ const botSettingsMocks = vi.hoisted(() => {
     failNextEnableTransient: false,
     failNextPromptItemUpdateTransient: false,
     promptItemUpdateInputs: [] as Array<Record<string, unknown>>,
+    promptPresetUpdateInputs: [] as Array<Record<string, unknown>>,
     replayInlineResults: [] as Array<Record<string, unknown>>,
     replayResults: [] as Array<Record<string, unknown>>,
     replayInlineInputs: [] as Array<{
@@ -127,10 +130,13 @@ vi.mock('src/ts/server/commands', () => ({
     status: 'ok',
     revision: Number(input.baseRevision) + 1,
   })),
-  updatePromptPresetCommand: vi.fn(async (input: Record<string, unknown>) => ({
-    status: 'ok',
-    revision: Number(input.baseRevision) + 1,
-  })),
+  updatePromptPresetCommand: vi.fn(async (input: Record<string, unknown>) => {
+    botSettingsMocks.promptPresetUpdateInputs.push(input)
+    return {
+      status: 'ok',
+      revision: Number(input.baseRevision) + 1,
+    }
+  }),
   updatePromptItemCommand: vi.fn(async (input: Record<string, unknown>) => {
     botSettingsMocks.promptItemUpdateInputs.push(input)
     botSettingsMocks.networkOrder.push('row-live')
@@ -142,11 +148,12 @@ vi.mock('src/ts/server/commands', () => ({
   }),
 }))
 
-vi.mock('src/ts/server/settingsBridge.svelte', async () => {
+vi.mock('src/ts/server/settingsOwner.svelte', async () => {
   const { fromStore, writable } = await import('svelte/store')
 
   return {
     applyServerBackedSetting: vi.fn(),
+    flushPendingSettingsOwnerMutations: vi.fn(),
     persistServerBackedSettingsPatchWithSettlement: vi.fn(async () => ({ status: 'accepted' as const })),
     createServerBackedSettingDraft: (key: string, fallback: unknown) => {
       const initialValue = botSettingsMocks.settingDraftInitialValues.has(key)
@@ -184,7 +191,6 @@ vi.mock('src/ts/server/settingsBridge.svelte', async () => {
       botSettingsMocks.settingDrafts.set(key, draft)
       return draft
     },
-    watchServerBackedSettings: vi.fn(() => vi.fn()),
   }
 })
 
@@ -200,9 +206,10 @@ vi.mock('src/ts/server/promptTemplateHydration', async () => {
     ensurePromptTemplateHydrated: vi.fn(async () => true),
     hasPromptTemplateOwnerProjectionEpochChanged: vi.fn(() => false),
     isPromptTemplateHydrated: vi.fn(() => true),
+    isPromptTemplateHydratedInState: vi.fn(() => true),
     markPromptTemplateOwnerAcknowledgementTainted: vi.fn(),
     peekPromptTemplateOwnerRevision: vi.fn(() => 100),
-    promptTemplateHydratedStore: readable(true),
+    promptTemplateHydrationStateStore: readable({ hydratedOwnerIds: new Set([null]), version: 0 }),
     promptTemplateOwnerUsesSelectedFallback: vi.fn(() => false),
   }
 })
@@ -227,7 +234,6 @@ vi.mock('src/ts/pluginCommands', async (importActual) => {
 
 vi.mock('src/ts/tokenizer', () => ({
   tokenizeAccurate: vi.fn(async () => 0),
-  tokenizerList: [],
 }))
 
 vi.mock('src/ts/model/nanogpt', () => ({
@@ -255,9 +261,9 @@ import BotSettings from './BotSettings.svelte'
 import { language } from 'src/lang'
 import { customProviderStore } from 'src/ts/plugins/plugins.svelte'
 import { dispatchSelectPluginProvider } from 'src/ts/pluginCommands'
-import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
-import { flushRegisteredPendingBridgePatches } from 'src/ts/server/pendingBridgeFlushRegistry'
-import { resetServerResourceState } from 'src/ts/server/resourceState.svelte'
+import { setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { flushRegisteredPendingOwnerMutations } from 'src/ts/server/pendingOwnerMutationRegistry'
+import { resetServerResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
 import {
   beginPendingMutationDispatch,
   clearPendingMutationOutbox,
@@ -270,8 +276,9 @@ import {
   queuePromptItemProjectionUpdate,
   reapplyPendingPromptTemplateStructuralProjections,
   resetPendingPromptTemplateStructuralMutationsForTests,
-} from 'src/ts/server/promptTemplateBridge.svelte'
+} from 'src/ts/server/promptTemplateMutations.svelte'
 import type { PromptItem } from 'src/ts/process/prompt'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -291,6 +298,7 @@ beforeEach(() => {
   botSettingsMocks.failNextEnableTransient = false
   botSettingsMocks.failNextPromptItemUpdateTransient = false
   botSettingsMocks.promptItemUpdateInputs.length = 0
+  botSettingsMocks.promptPresetUpdateInputs.length = 0
   botSettingsMocks.replayInlineResults.length = 0
   botSettingsMocks.replayResults.length = 0
   botSettingsMocks.replayInlineInputs.length = 0
@@ -337,6 +345,19 @@ afterEach(() => {
 })
 
 describe('BotSettings legacy layout synchronization', () => {
+  it('uses explicit settings, collection, model, and prompt owners', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/lib/Setting/Pages/BotSettings.svelte'), 'utf8')
+
+    expect(source).toContain('settingsResourceState')
+    expect(source).toContain('collectionsResourceState')
+    expect(source).toContain('modelSettingsOwner')
+    expect(source).toContain('capturePromptTemplateOwnerMutationFence')
+    expect(source).not.toContain('getDatabase(')
+    expect(source).not.toContain('withTrustedResourceWrite')
+    expect(source).not.toContain('getServerResourceApplyEpoch')
+    expect(source).not.toContain('captureSettingsGroupProjectionEpoch')
+  })
+
   it('switches a mounted legacy page with authoritative useLegacyGUI updates', async () => {
     if (component) unmount(component)
     setDatabaseLite({ ...getDatabase({ snapshot: true }), useLegacyGUI: false } as any)
@@ -352,6 +373,70 @@ describe('BotSettings legacy layout synchronization', () => {
     setDatabaseLite({ ...getDatabase({ snapshot: true }), useLegacyGUI: false } as any)
     await tick()
     expect(target.querySelector('[data-risu-bot-settings-tabs]')).toBeTruthy()
+  })
+})
+
+describe('BotSettings Ooba Legacy streaming compatibility', () => {
+  it('renders buffered-only streaming controls as disabled with a localized notice', async () => {
+    if (component) unmount(component)
+    setDatabaseLite({
+      ...getDatabase({ snapshot: true }),
+      aiModel: 'mancer',
+      subModel: '',
+      textgenWebUIBlockingURL: 'http://localhost:5000/api/v1/blocking',
+      useLegacyGUI: false,
+    } as any)
+    component = mount(BotSettings, { target, props: { settingsKind: 'legacy' } })
+    await tick()
+
+    const streaming = target.querySelector<HTMLInputElement>(`input[aria-label="Response ${language.streaming}"]`)
+    const halfStreaming = target.querySelector<HTMLInputElement>(`input[aria-label="${language.halfStreaming}"]`)
+    const notice = target.querySelector('[data-ooba-legacy-buffered-notice]')
+
+    expect(streaming?.checked).toBe(false)
+    expect(streaming?.disabled).toBe(true)
+    expect(halfStreaming?.checked).toBe(false)
+    expect(halfStreaming?.disabled).toBe(true)
+    expect(notice?.textContent?.trim()).toBe(language.oobaLegacyBufferedOnlyNotice)
+  })
+})
+
+describe('BotSettings recommended model preset', () => {
+  it('renders model presets for the selected prompt and persists a recommendation by id', async () => {
+    if (component) unmount(component)
+    setDatabaseLite({
+      ...getDatabase({ snapshot: true }),
+      modelPresets: [
+        { id: 'model-a', name: 'Model A' },
+        { id: 'model-b', name: 'Model B' },
+      ],
+      modelPresetsId: 0,
+      promptPresets: [{ id: 'prompt-a', name: 'Prompt A', mainPrompt: 'prompt' }],
+      promptPresetsId: 0,
+    } as any)
+    component = mount(BotSettings, { target, props: { settingsKind: 'prompt' } })
+    await tick()
+
+    const select = target.querySelector<HTMLSelectElement>('[data-risu-recommended-model-preset] select')
+    expect(select).toBeTruthy()
+    expect(Array.from(select!.options).map((option) => [option.value, option.textContent])).toEqual([
+      ['', language.none],
+      ['model-a', 'Model A'],
+      ['model-b', 'Model B'],
+    ])
+
+    select!.value = 'model-b'
+    select!.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+    expect(getDatabase().promptPresets[0].recommendedModelPresetId).toBe('model-b')
+
+    await vi.advanceTimersByTimeAsync(250)
+    await botSettingsMocks.runTail
+    expect(botSettingsMocks.promptPresetUpdateInputs).toHaveLength(1)
+    expect(botSettingsMocks.promptPresetUpdateInputs[0]).toMatchObject({
+      promptPresetId: 'prompt-a',
+      patch: { recommendedModelPresetId: 'model-b' },
+    })
   })
 })
 
@@ -424,6 +509,32 @@ describe('BotSettings pending prompt persistence', () => {
     )
   }
 
+  it('displays selected prompt-owner fields when the flat projection is stale', async () => {
+    if (component) {
+      unmount(component)
+      component = undefined
+    }
+
+    setDatabaseLite({
+      aiModel: 'gpt35',
+      subModel: 'gpt35',
+      promptPresets: [{ id: 'prompt-a', name: 'Prompt A', mainPrompt: 'canonical prompt owner' }],
+      promptPresetsId: 0,
+      promptTemplate: [],
+      mainPrompt: 'stale flat projection',
+      botPresets: [],
+      useLegacyGUI: false,
+      formatingOrder: [],
+    } as any)
+    component = mount(BotSettings, { target, props: { settingsKind: 'prompt' } })
+
+    await tick()
+
+    expect(target.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${language.mainPrompt}"]`)?.value).toBe(
+      'canonical prompt owner',
+    )
+  })
+
   it('persists a selection that matches the provider from before an authoritative update', async () => {
     if (component) {
       unmount(component)
@@ -448,13 +559,13 @@ describe('BotSettings pending prompt persistence', () => {
     )
     expect(providerSelect?.value).toBe('provider-a')
 
-    getDatabase().currentPluginProvider = 'provider-b'
+    settingsResourceState.value.currentPluginProvider = 'provider-b'
     await tick()
     expect(providerSelect?.value).toBe('provider-b')
 
     customProviderStore.set(['provider-a', 'provider-b'])
     await tick()
-    getDatabase().currentPluginProvider = 'provider-b'
+    settingsResourceState.value.currentPluginProvider = 'provider-b'
     await tick()
     vi.mocked(dispatchSelectPluginProvider).mockClear()
     const liveProviderSelect = Array.from(target.querySelectorAll<HTMLSelectElement>('select')).find(
@@ -484,7 +595,7 @@ describe('BotSettings pending prompt persistence', () => {
 
     expect(botSettingsMocks.patchInputs).toHaveLength(0)
 
-    flushRegisteredPendingBridgePatches({ keepalive: true })
+    flushRegisteredPendingOwnerMutations({ keepalive: true })
     await Promise.resolve()
 
     expect(botSettingsMocks.patchInputs).toEqual([
@@ -825,9 +936,7 @@ describe('BotSettings pending prompt persistence', () => {
       await vi.waitFor(() => expect(botSettingsMocks.enableInputs).toHaveLength(1))
       await botSettingsMocks.runTail
       await tick()
-      expect(target.querySelector('[data-testid="prompt-template-toggle-mutation-status"]')?.textContent).toContain(
-        language.promptTemplateMutation.queued,
-      )
+      expect(target.querySelector('[data-testid="prompt-template-toggle-mutation-status"]')).toBeNull()
       expect(getDatabase().promptPresets[0].promptTemplate).toBeUndefined()
 
       setDatabaseLite(database() as any)

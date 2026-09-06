@@ -9,7 +9,8 @@ import { buildApp } from '../src/app.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
-import { serializeChatGenerationSettingsDigestInput } from '../../../src/ts/chatGenerationSettings.js'
+import { serializeChatGenerationSettingsDigestInput } from '@risuai/shared-core/chat-generation-settings'
+import { createBardWikiDocument } from '../src/bardWikiRepository.js'
 
 // Single character-row / single chat-row regression. Character/chat metadata
 // edits write only their target row plus documented conditional co-writes instead
@@ -259,7 +260,7 @@ afterEach(async () => {
   rmSync(harness.dataDir, { recursive: true, force: true })
 })
 
-describe('Phase 3 single character-row paths', () => {
+describe('single character-row paths', () => {
   it('PATCH characters/:id writes only the character row', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
@@ -403,7 +404,7 @@ describe('Phase 3 single character-row paths', () => {
   })
 })
 
-describe('Phase 3 single chat-row paths', () => {
+describe('single chat-row paths', () => {
   it('PATCH chats/:id/scriptstate writes only the chat row', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
@@ -582,8 +583,8 @@ describe('Phase 3 single chat-row paths', () => {
     expect(readChat('chat-a-1').localLore).toEqual([entry])
   })
 
-  it('preserves degraded sibling fields across every character/chat lorebook mutation', async () => {
-    let revision = await importDatabase(seedDatabase())
+  it('rejects malformed stored child lorebooks across every character/chat lorebook mutation', async () => {
+    const revision = await importDatabase(seedDatabase())
     const entry = (id: string, content = id) => ({
       id,
       key: id,
@@ -595,11 +596,6 @@ describe('Phase 3 single chat-row paths', () => {
       alwaysActive: false,
       selective: false,
     })
-    const withoutField = (row: Record<string, unknown>, field: string): Record<string, unknown> => {
-      const result = structuredClone(row)
-      delete result[field]
-      return result
-    }
 
     mutateRawDb((db) => {
       const characterRow = db.prepare('SELECT data_json FROM characters WHERE id = ?').get('char-a') as {
@@ -627,119 +623,85 @@ describe('Phase 3 single chat-row paths', () => {
       db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(JSON.stringify(chat), 'chat-a-1')
     })
 
-    const characterSiblings = withoutField(readCharacter('char-a'), 'globalLore')
-    const chatSiblings = withoutField(readChat('chat-a-1'), 'localLore')
+    const characterBefore = readCharacter('char-a')
+    const chatBefore = readChat('chat-a-1')
     const before = rowidSnapshot()
 
-    const characterCommands: Array<{
+    const commands: Array<{
       method: 'DELETE' | 'POST' | 'PUT'
       url: string
       payload: Record<string, unknown>
-      expected?: Record<string, unknown>
+      error: string
     }> = [
       {
         method: 'PUT',
         url: '/api/v1/commands/characters/char-a/lorebooks/entries/char-c',
         payload: { entry: entry('char-c', 'created') },
-        expected: { entryId: 'char-c', entryIndex: 1, created: true },
+        error: 'character char-a.globalLore[0].key must be a string',
       },
       {
         method: 'POST',
         url: '/api/v1/commands/characters/char-a/lorebooks/entries/reorder',
-        payload: { entryIds: ['char-c', 'legacy-character-entry'] },
+        payload: { entryIds: ['legacy-character-entry'] },
+        error: 'character char-a.globalLore[0].key must be a string',
       },
       {
         method: 'DELETE',
         url: '/api/v1/commands/characters/char-a/lorebooks/entries/legacy-character-entry',
         payload: {},
-        expected: { entryId: 'legacy-character-entry', entryIndex: 1 },
+        error: 'character char-a.globalLore[0].key must be a string',
       },
       {
         method: 'PUT',
         url: '/api/v1/commands/characters/char-a/lorebooks',
         payload: { entries: [entry('char-a'), entry('char-b')] },
+        error: 'character char-a.globalLore[0].key must be a string',
       },
-    ]
-
-    for (let index = 0; index < characterCommands.length; index++) {
-      const command = characterCommands[index]
-      const result = await runCommand({
-        method: command.method,
-        url: command.url,
-        payload: { ...command.payload, baseRevision: revision },
-      })
-      revision = result.revision
-      expect(result.metric.mutationPath).toBe('targeted-character-row')
-      expect(result.metric.writtenTables).toEqual(['characters'])
-      assertCommandMetricGate(result.metric)
-      expectNoChurn(before)
-      expect(withoutField(readCharacter('char-a'), 'globalLore')).toStrictEqual(characterSiblings)
-      if (index === 0) {
-        expect((readCharacter('char-a').globalLore as Array<Record<string, unknown>>)[0]).toMatchObject({
-          id: 'legacy-character-entry',
-          key: '',
-          mode: 'normal',
-        })
-      }
-      if (command.expected) expect(result.body).toMatchObject(command.expected)
-    }
-
-    const chatCommands: Array<{
-      method: 'DELETE' | 'POST' | 'PUT'
-      url: string
-      payload: Record<string, unknown>
-      expected?: Record<string, unknown>
-    }> = [
       {
         method: 'PUT',
         url: '/api/v1/commands/chats/chat-a-1/lorebooks/entries/chat-c',
         payload: { entry: entry('chat-c', 'created') },
-        expected: { entryId: 'chat-c', entryIndex: 1, created: true },
+        error: 'chat chat-a-1.localLore[0].key must be a string',
       },
       {
         method: 'POST',
         url: '/api/v1/commands/chats/chat-a-1/lorebooks/entries/reorder',
-        payload: { entryIds: ['chat-c', 'legacy-chat-entry'] },
+        payload: { entryIds: ['legacy-chat-entry'] },
+        error: 'chat chat-a-1.localLore[0].key must be a string',
       },
       {
         method: 'DELETE',
         url: '/api/v1/commands/chats/chat-a-1/lorebooks/entries/legacy-chat-entry',
         payload: {},
-        expected: { entryId: 'legacy-chat-entry', entryIndex: 1 },
+        error: 'chat chat-a-1.localLore[0].key must be a string',
       },
       {
         method: 'PUT',
         url: '/api/v1/commands/chats/chat-a-1/lorebooks',
         payload: { entries: [entry('chat-a'), entry('chat-b')] },
+        error: 'chat chat-a-1.localLore[0].key must be a string',
       },
     ]
 
-    for (let index = 0; index < chatCommands.length; index++) {
-      const command = chatCommands[index]
-      const result = await runCommand({
+    for (const command of commands) {
+      const response = await harness.app.inject({
         method: command.method,
         url: command.url,
+        headers: { 'risu-auth': assertion },
         payload: { ...command.payload, baseRevision: revision },
       })
-      revision = result.revision
-      expect(result.metric.mutationPath).toBe('targeted-chat-row')
-      expect(result.metric.writtenTables).toEqual(['chats'])
-      assertCommandMetricGate(result.metric)
-      expectNoChurn(before)
-      expect(withoutField(readChat('chat-a-1'), 'localLore')).toStrictEqual(chatSiblings)
-      if (index === 0) {
-        expect((readChat('chat-a-1').localLore as Array<Record<string, unknown>>)[0]).toMatchObject({
-          id: 'legacy-chat-entry',
-          key: '',
-          mode: 'normal',
-        })
-      }
-      if (command.expected) expect(result.body).toMatchObject(command.expected)
+      expect(response.statusCode).toBe(400)
+      expect(response.json().error).toBe(command.error)
     }
+
+    expect(readRevision()).toBe(revision)
+    expect(readCharacter('char-a')).toStrictEqual(characterBefore)
+    expect(readChat('chat-a-1')).toStrictEqual(chatBefore)
+    expectNoChurn(before)
   })
 })
 
-describe('Phase 3 character + chat-row cascade paths', () => {
+describe('character + chat-row cascade paths', () => {
   it('DELETE chat-folders/:id writes the character row + the re-homed chat rows', async () => {
     const revision = await importDatabase(seedDatabase())
     expect(readChat('chat-a-1').folderId, 'folderId preserved on import').toBe('folder-1')
@@ -783,7 +745,7 @@ describe('Phase 3 character + chat-row cascade paths', () => {
   })
 })
 
-describe('Phase 3 fork (character row + chat rows + surgical messages)', () => {
+describe('fork (character row + chat rows + surgical messages)', () => {
   it('forks a chat: inserts the new chat + its messages, preserves the source messages', async () => {
     const revision = await importDatabase(seedDatabase())
     // Give the source chat an existing message so we can prove it survives.
@@ -796,6 +758,22 @@ describe('Phase 3 fork (character row + chat rows + surgical messages)', () => {
       },
     })
     expect(readChatMessageIds('chat-a-1')).toEqual(['src-msg-1'])
+    const bardWikiDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      createBardWikiDocument(bardWikiDb, {
+        id: 'source-bardwiki-document',
+        chatId: 'chat-a-1',
+        kind: 'event',
+        title: 'Future source fact',
+        logicalPath: 'Events/Future source fact',
+        markdown: 'This authoritative row belongs only to the source chat.',
+        actor: 'model',
+        reason: 'analysis',
+        commandRevision: appended.revision,
+      })
+    } finally {
+      bardWikiDb.close()
+    }
     const before = rowidSnapshot()
 
     const { metric, body } = await runCommand({
@@ -823,9 +801,9 @@ describe('Phase 3 fork (character row + chat rows + surgical messages)', () => {
     expect(metric.mutationPath).toBe('targeted-character-row')
     expect(metric.writtenTables).toEqual(['characters', 'chats', 'messages'])
     assertCommandMetricGate(metric)
-    // Existing character/chat rows are UPDATEd in place (rowids stable); the
-    // forked chat is a new row, ignored by the before-snapshot.
-    expectNoChurn(before)
+    // Existing character/chat rows are UPDATEd in place (rowids stable); only
+    // the explicitly targeted fork row may be inserted.
+    expectNoChurn(before, { chats: ['fork-1'] })
     expect(body.chatId).toBe('fork-1')
     // The forked chat lands at the head; the source chat shifts down.
     expect(readChatOrder('char-a')).toEqual(['fork-1', 'chat-a-1', 'chat-a-2'])
@@ -837,6 +815,15 @@ describe('Phase 3 fork (character row + chat rows + surgical messages)', () => {
       extensionPayload: { preserved: true },
     })
     expect(readChatMessageIds('chat-a-1')).toEqual(['src-msg-1'])
+    const verify = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      expect(verify.prepare('SELECT id FROM bardwiki_documents WHERE chat_id = ?').all('chat-a-1')).toEqual([
+        { id: 'source-bardwiki-document' },
+      ])
+      expect(verify.prepare('SELECT id FROM bardwiki_documents WHERE chat_id = ?').all('fork-1')).toEqual([])
+    } finally {
+      verify.close()
+    }
   })
 
   it('rejects unloaded placeholders in fork and create transcripts without writing anything', async () => {
@@ -928,7 +915,7 @@ describe('Phase 3 fork (character row + chat rows + surgical messages)', () => {
   })
 })
 
-describe('Phase 3 message replacement placeholder guard', () => {
+describe('message replacement placeholder guard', () => {
   it('rejects an unloaded placeholder atomically instead of replacing the transcript', async () => {
     const revision = await importDatabase(seedDatabase())
     const appended = await runCommand({

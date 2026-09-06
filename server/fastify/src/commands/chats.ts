@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
+import { normalizeChatPageIndex } from '@risuai/shared-core/chat-page'
+import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 import {
   CHAT_GENERATION_SETTINGS_KEYS,
@@ -7,6 +9,7 @@ import {
   applySparseChatGenerationSettingsUpdate,
   resolveChatGenerationSettingsReadiness,
   serializeChatGenerationSettingsDigestInput,
+  type ChatGenerationAgentReference,
   type ChatGenerationAgentPresetReference,
   type ChatGenerationModelPresetReference,
   type ChatGenerationModuleReference,
@@ -14,9 +17,10 @@ import {
   type ChatGenerationPromptPresetReference,
   type ChatGenerationSettings,
   type SparseChatGenerationSettingsUpdate,
-} from '../../../../src/ts/chatGenerationSettings.js'
+} from '@risuai/shared-core/chat-generation-settings'
 import { repairStoredChatGenerationSettings } from '../chatGenerationSettingsStorage.js'
 import { type CharacterRecord, ensureCharacterCollection, readCharacterId, readJsonObject } from './characters.js'
+import { repairCreatedLorebookEntries } from './lorebooks.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -28,12 +32,15 @@ export interface ChatRecord extends JsonRecord {
   localLore: unknown[]
   scriptstate?: Record<string, string | number | boolean>
   folderId?: string | null
+  hypaContextTruncationAcknowledged?: boolean
   selectedDraftHookId?: string
+  translatorPresetId?: string
   autoTranslate?: boolean
   autoTranslateBotOnly?: boolean
   bilingualDisplay?: boolean
   bilingualEmphasis?: 'original' | 'translation'
   modules?: string[]
+  pinned?: boolean
   generationSettings?: ChatGenerationSettings
 }
 
@@ -60,6 +67,8 @@ export interface ChatGenerationSettingsValidationContext {
   modelPresets: readonly ChatGenerationModelPresetReference[]
   promptPresets: readonly ChatGenerationPromptPresetWithModuleIntegration[]
   agentPresets?: readonly ChatGenerationAgentPresetReference[]
+  agents?: readonly ChatGenerationAgentReference[]
+  effectiveAgentPresetId?: string
   modules?: readonly ChatGenerationModuleReference[]
   enabledModuleIds?: readonly string[]
   characterModuleIds?: readonly string[]
@@ -71,10 +80,12 @@ const ALLOWED_CHAT_PATCH_KEYS = new Set([
   'note',
   'sdData',
   'lastMemory',
+  'hypaContextTruncationAcknowledged',
   'suggestMessages',
   'bindedPersona',
   'fmIndex',
   'selectedDraftHookId',
+  'translatorPresetId',
   'autoTranslate',
   'autoTranslateBotOnly',
   'bilingualDisplay',
@@ -84,6 +95,7 @@ const ALLOWED_CHAT_PATCH_KEYS = new Set([
   'bookmarks',
   'bookmarkNames',
   'modules',
+  'pinned',
 ])
 
 const ALLOWED_CHAT_FOLDER_PATCH_KEYS = new Set(['name', 'color', 'folded'])
@@ -123,7 +135,7 @@ export function ensureCharacterChats(character: CharacterRecord): ChatRecord[] {
     }
   }
 
-  normalizeChatPage(character, chats)
+  character.chatPage = normalizeChatPageIndex(character.chatPage, chats.length)
   return chats
 }
 
@@ -150,6 +162,23 @@ export function ensureCharacterChatFolders(character: CharacterRecord): ChatFold
   })
   character.chatFolders = folders
   return folders
+}
+
+export function readStrictCharacterChatFolders(character: CharacterRecord): ChatFolderRecord[] {
+  if (!Array.isArray(character.chatFolders)) {
+    throw new ValidationError('character.chatFolders must be an array')
+  }
+  const seen = new Set<string>()
+  return character.chatFolders.map((raw, index) => {
+    const folder = readJsonObject(raw, `chatFolder[${index}]`) as ChatFolderRecord
+    const folderId = readChatFolderId(folder.id, `chatFolder[${index}].id`)
+    if (seen.has(folderId)) {
+      throw new ValidationError(`Duplicate chat folder id: ${folderId}`)
+    }
+    seen.add(folderId)
+    validateChatFolderRecord(folder, `chatFolder[${index}]`)
+    return folder
+  })
 }
 
 export function chatFolderIdExists(characters: readonly CharacterRecord[], folderId: string): boolean {
@@ -179,7 +208,10 @@ export function createChatRecord(input: unknown, label = 'chat'): ChatRecord {
   chat.message = Array.isArray(chat.message) ? chat.message : []
   chat.note = typeof chat.note === 'string' ? chat.note : ''
   chat.name = typeof chat.name === 'string' && chat.name.trim() ? chat.name : 'New Chat'
-  chat.localLore = Array.isArray(chat.localLore) ? chat.localLore : []
+  chat.localLore = repairCreatedLorebookEntries(
+    Array.isArray(chat.localLore) ? chat.localLore : [],
+    `${label}.localLore`,
+  )
   validateChatRecord(chat, label)
   return chat
 }
@@ -370,6 +402,7 @@ export function readChatGenerationSettingsWrite(
 
   if (hasFullSettings) {
     const canonical = readChatGenerationSettingsSave(body.generationSettings, context)
+    assertRequiredSidebarToggleValuesPreserved(current, canonical, context)
     return {
       mode: 'full',
       requested: cloneJsonValue(body.generationSettings as ChatGenerationSettings),
@@ -444,10 +477,12 @@ export function readChatGenerationSettingsWrite(
     ...(sidebarToggleDeleteKeys.length ? { sidebarToggleDeleteKeys } : {}),
   }
   const requested = applySparseChatGenerationSettingsUpdate(current, update)
+  const canonical = readChatGenerationSettingsSave(requested, context)
+  assertRequiredSidebarToggleValuesPreserved(current, canonical, context)
   return {
     mode: 'sparse',
     requested,
-    canonical: readChatGenerationSettingsSave(requested, context),
+    canonical,
     update,
     baseMatches:
       body.baseGenerationSettingsDigest ===
@@ -491,6 +526,7 @@ export function readChatGenerationSettingsSave(
       key !== 'configured' &&
       key !== 'personaId' &&
       key !== 'modelPresetId' &&
+      key !== 'modelPresetSelectionSource' &&
       key !== 'promptPresetId' &&
       key !== 'agentPresetId' &&
       key !== 'togglePresetId' &&
@@ -528,12 +564,22 @@ export function readChatGenerationSettingsSave(
     }
   }
 
+  if (hasOwn(raw, 'modelPresetSelectionSource')) {
+    if (raw.modelPresetSelectionSource !== 'manual' && raw.modelPresetSelectionSource !== 'prompt-recommendation') {
+      throw new ValidationError(`${label}.modelPresetSelectionSource must be manual or prompt-recommendation`)
+    }
+    if (typeof normalized.modelPresetId !== 'string' || normalized.modelPresetId.trim() === '') {
+      throw new ValidationError(`${label}.modelPresetSelectionSource requires modelPresetId`)
+    }
+    normalized.modelPresetSelectionSource = raw.modelPresetSelectionSource
+  }
+
   if (hasOwn(raw, 'promptPresetId')) {
     if (typeof raw.promptPresetId !== 'string') {
       throw new ValidationError(`${label}.promptPresetId must be a string`)
     }
     normalized.promptPresetId = raw.promptPresetId
-    if (raw.promptPresetId.trim() !== '' && !context.promptPresets.some((preset) => preset.id === raw.promptPresetId)) {
+    if (raw.promptPresetId.trim() !== '' && !resolveUniquePromptPreset(context.promptPresets, raw.promptPresetId)) {
       throw new ValidationError(`Unknown prompt preset id in ${label}.promptPresetId: ${raw.promptPresetId}`)
     }
   }
@@ -571,14 +617,7 @@ export function readChatGenerationSettingsSave(
     normalized.sidebarToggles = readSidebarToggleValueMap(raw.sidebarToggles, `${label}.sidebarToggles`)
   }
 
-  const selectedPromptPreset = isNonEmptyString(normalized.promptPresetId)
-    ? context.promptPresets.find((preset) => preset.id === normalized.promptPresetId)
-    : undefined
-  const readiness = resolveChatGenerationSettingsReadiness({
-    ...context,
-    settings: normalized,
-    moduleIntegration: readOptionalStringValue(selectedPromptPreset?.moduleIntergration),
-  })
+  const readiness = resolveChatGenerationSettingsSaveReadiness(normalized, context)
   if (readiness.staleSidebarToggleKeys.length > 0 && normalized.sidebarToggles) {
     const pruned = { ...normalized.sidebarToggles }
     for (const key of readiness.staleSidebarToggleKeys) {
@@ -588,6 +627,42 @@ export function readChatGenerationSettingsSave(
   }
 
   return normalized
+}
+
+function resolveChatGenerationSettingsSaveReadiness(
+  settings: ChatGenerationSettings,
+  context: ChatGenerationSettingsValidationContext,
+) {
+  const selectedPromptPreset = isNonEmptyString(settings.promptPresetId)
+    ? resolveUniquePromptPreset(context.promptPresets, settings.promptPresetId)
+    : undefined
+  return resolveChatGenerationSettingsReadiness({
+    ...context,
+    settings,
+    moduleIntegration: readOptionalStringValue(selectedPromptPreset?.moduleIntergration),
+  })
+}
+
+function assertRequiredSidebarToggleValuesPreserved(
+  current: ChatGenerationSettings | undefined,
+  next: ChatGenerationSettings,
+  context: ChatGenerationSettingsValidationContext,
+): void {
+  if (!current?.sidebarToggles) return
+  // A stale client may submit a destructive snapshot assembled from partial
+  // hydration. Values can disappear only after their post-update definition is
+  // genuinely inactive in the server's authoritative activation context.
+  const requiredToggles = resolveChatGenerationSettingsSaveReadiness(next, context).requirements.sidebarToggles
+  for (const toggle of requiredToggles) {
+    if (
+      typeof current.sidebarToggles[toggle.key] === 'string' &&
+      typeof next.sidebarToggles?.[toggle.key] !== 'string'
+    ) {
+      throw new ValidationError(
+        `${CHAT_GENERATION_SETTINGS_FIELD}.sidebarToggles.${toggle.key} cannot remove a required existing toggle value`,
+      )
+    }
+  }
 }
 
 export function requireChatLocation(characters: readonly CharacterRecord[], chatId: string): ChatLocation {
@@ -605,6 +680,46 @@ export function requireChatLocation(characters: readonly CharacterRecord[], chat
     }
   }
   throw new EntityNotFoundError(`Chat not found: ${chatId}`)
+}
+
+/**
+ * Locate a chat without normalizing any character or sibling chat rows.
+ * Targeted command reads may intentionally contain lightweight sibling shells;
+ * repairing those shells would mint IDs/defaults outside the command range.
+ */
+export function requireChatLocationExact(characters: readonly CharacterRecord[], chatId: string): ChatLocation {
+  for (let characterIndex = 0; characterIndex < characters.length; characterIndex++) {
+    const character = characters[characterIndex]
+    if (!Array.isArray(character.chats)) continue
+    const chatIndex = character.chats.findIndex(
+      (chat) => !!chat && typeof chat === 'object' && !Array.isArray(chat) && (chat as JsonRecord).id === chatId,
+    )
+    if (chatIndex !== -1) {
+      return {
+        character,
+        characterIndex,
+        chat: character.chats[chatIndex] as ChatRecord,
+        chatIndex,
+      }
+    }
+  }
+  throw new EntityNotFoundError(`Chat not found: ${chatId}`)
+}
+
+/**
+ * Strict ordinary-command locator. It validates only the addressed character
+ * and chat rows and never fills defaults, repairs generation settings, or
+ * touches the id-only sibling chat shells supplied by scoped loaders.
+ */
+export function requireStrictChatLocation(characters: readonly CharacterRecord[], chatId: string): ChatLocation {
+  const location = requireChatLocationExact(characters, chatId)
+  readCharacterId(location.character.chaId, 'character.chaId')
+  const storedChatId = readChatId(location.chat.id, 'chat.id')
+  if (storedChatId !== chatId) {
+    throw new ValidationError(`chat.id must match chatId: ${chatId}`)
+  }
+  validateChatRecord(location.chat, 'chat', { stored: true })
+  return location
 }
 
 export function requireCharacterChat(
@@ -691,6 +806,26 @@ export function selectedChatId(character: CharacterRecord): string | null {
   return chats[index]?.id ?? null
 }
 
+/** Read the selected chat pointer without normalizing chatPage or chat rows. */
+export function selectedChatIdStrict(character: CharacterRecord): string | null {
+  if (!Array.isArray(character.chats)) {
+    throw new ValidationError('character.chats must be an array')
+  }
+  if (!Number.isInteger(character.chatPage)) {
+    throw new ValidationError('character.chatPage must be an integer')
+  }
+  const index = character.chatPage as number
+  if (index === -1 && character.chats.length === 0) return null
+  if (index < 0 || index >= character.chats.length) {
+    throw new ValidationError('character.chatPage must select an existing chat')
+  }
+  const selected = character.chats[index]
+  if (!selected || typeof selected !== 'object' || Array.isArray(selected)) {
+    throw new ValidationError('selected chat must be an object')
+  }
+  return readChatId((selected as JsonRecord).id, 'selected chat.id')
+}
+
 export function selectChat(character: CharacterRecord, chatId: string): void {
   const { chatIndex } = requireCharacterChat(character, chatId)
   character.chatPage = chatIndex
@@ -745,18 +880,6 @@ function normalizeGlobalChatFolderIds(characters: readonly CharacterRecord[]): v
   }
 }
 
-function normalizeChatPage(character: CharacterRecord, chats: readonly ChatRecord[]): void {
-  if (!Number.isInteger(character.chatPage as number)) {
-    character.chatPage = chats.length > 0 ? 0 : -1
-  }
-  if ((character.chatPage as number) >= chats.length) {
-    character.chatPage = chats.length > 0 ? chats.length - 1 : -1
-  }
-  if ((character.chatPage as number) < -1) {
-    character.chatPage = chats.length > 0 ? 0 : -1
-  }
-}
-
 function readOptionalJsonObject(value: unknown): JsonRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {}
@@ -764,7 +887,11 @@ function readOptionalJsonObject(value: unknown): JsonRecord {
   return value as JsonRecord
 }
 
-function validateChatRecord(record: JsonRecord, label: string, options: { partial?: boolean } = {}): void {
+function validateChatRecord(
+  record: JsonRecord,
+  label: string,
+  options: { partial?: boolean; stored?: boolean } = {},
+): void {
   if ('id' in record && (typeof record.id !== 'string' || record.id.trim() === '')) {
     throw new ValidationError(`${label}.id must be a non-empty string`)
   }
@@ -778,7 +905,7 @@ function validateChatRecord(record: JsonRecord, label: string, options: { partia
       throw new ValidationError(`${label}.note must be a string`)
     }
   }
-  if (!options.partial || 'message' in record) {
+  if ((!options.partial && !options.stored) || 'message' in record) {
     if (!Array.isArray(record.message)) {
       throw new ValidationError(`${label}.message must be an array`)
     }
@@ -830,7 +957,21 @@ function validateChatRecord(record: JsonRecord, label: string, options: { partia
   ) {
     throw new ValidationError(`${label}.selectedDraftHookId must be a non-empty string, null, or undefined`)
   }
-  for (const field of ['autoTranslate', 'autoTranslateBotOnly', 'bilingualDisplay'] as const) {
+  if (
+    'translatorPresetId' in record &&
+    record.translatorPresetId !== undefined &&
+    record.translatorPresetId !== null &&
+    (typeof record.translatorPresetId !== 'string' || record.translatorPresetId.trim() === '')
+  ) {
+    throw new ValidationError(`${label}.translatorPresetId must be a non-empty string, null, or undefined`)
+  }
+  for (const field of [
+    'hypaContextTruncationAcknowledged',
+    'autoTranslate',
+    'autoTranslateBotOnly',
+    'bilingualDisplay',
+    'pinned',
+  ] as const) {
     if (
       field in record &&
       record[field] !== undefined &&

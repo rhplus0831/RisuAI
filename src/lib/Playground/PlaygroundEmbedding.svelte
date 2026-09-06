@@ -6,7 +6,7 @@
   import SelectInput from '../UI/GUI/SelectInput.svelte'
   import Button from '../UI/GUI/Button.svelte'
   import { HypaProcesser } from 'src/ts/process/memory/hypamemory'
-  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsOwner.svelte'
   import { alertError } from 'src/ts/alert'
 
   let query = $state('')

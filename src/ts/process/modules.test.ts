@@ -8,19 +8,25 @@ const alertModuleSelect = vi.hoisted(() => vi.fn())
 const alertNormal = vi.hoisted(() => vi.fn())
 const alertError = vi.hoisted(() => vi.fn())
 const alertConfirm = vi.hoisted(() => vi.fn())
+const alertWait = vi.hoisted(() => vi.fn())
 const saveAsset = vi.hoisted(() => vi.fn())
 const saveAssets = vi.hoisted(() => vi.fn())
 const decodeRPack = vi.hoisted(() => vi.fn(async (data: Uint8Array) => data))
 const sleep = vi.hoisted(() => vi.fn())
 const createGlobalModule = vi.hoisted(() => vi.fn())
+const importLocalModuleFileFromServer = vi.hoisted(() => vi.fn())
 const getCurrentCharacter = vi.hoisted(() => vi.fn())
 const getCurrentChatMock = vi.hoisted(() => vi.fn())
 type ModuleDatabaseFixture = {
+  agentPresetDefaultId?: string
+  agentPresets?: Array<Record<string, unknown>>
   characters?: unknown[]
   enabledModules?: string[]
   enableLorebookStubs?: boolean
   moduleIntergration?: string
+  personas?: Array<Record<string, unknown>>
   promptPresets?: Array<Record<string, unknown>>
+  selectedPersona?: number
   modules: Array<Record<string, unknown>>
 }
 const getDatabase = vi.hoisted(() => vi.fn((): ModuleDatabaseFixture => ({ modules: [] })))
@@ -48,7 +54,6 @@ const dispatchCharacterOwnedDurableBatch = vi.hoisted(() => vi.fn())
 const characterRowEpochState = vi.hoisted(() => ({ epoch: 0 }))
 const characterLorebookEpochState = vi.hoisted(() => ({ epoch: 0 }))
 const moduleCollectionEpochState = vi.hoisted(() => ({ epoch: 0 }))
-const destructiveRefreshEpochState = vi.hoisted(() => ({ epoch: 0 }))
 const ensureCharacterLorebookHydrated = vi.hoisted(() => vi.fn(async () => true))
 const testDatabaseState: { db: Record<string, any> } = {
   db: { modules: [], characters: [] },
@@ -65,7 +70,7 @@ vi.mock('../alert', () => ({
   alertModuleSelect,
   alertNormal,
   alertStore: { set: vi.fn() },
-  alertWait: vi.fn(),
+  alertWait,
 }))
 
 vi.mock('../storage/database.svelte', () => ({
@@ -84,7 +89,35 @@ vi.mock('../server/resourceState.svelte', () => ({
     characterLorebookEpochState.epoch !== epoch,
   hasCharacterRowProjectionEpochChanged: (_characterId: string, epoch: number) =>
     characterRowEpochState.epoch !== epoch,
+  getCharacterResourceOwner: (characterId: string) =>
+    (getDatabase().characters ?? []).find((candidate: any) => candidate?.chaId === characterId),
 }))
+
+vi.mock('../activeChatGenerationSettings', () => ({
+  readActiveModuleDatabase: () => getDatabase(),
+  resolveActiveChatGenerationSettings: () => {
+    const db = getDatabase()
+    const character = getCurrentCharacter()
+    return {
+      db,
+      character,
+      chat: getCurrentChatMock() ?? character?.chats?.[character.chatPage],
+    }
+  },
+}))
+
+vi.mock('./moduleReadDatabase.svelte', async () => {
+  const { resolveActiveModuleStates } = await import('../moduleActivation')
+  return {
+    getModuleReadDatabase: () => getDatabase(),
+    getActiveModuleReadModules: () =>
+      resolveActiveModuleStates(
+        getDatabase() as never,
+        getCurrentCharacter(),
+        getCurrentChatMock() ?? getCurrentCharacter()?.chats?.[getCurrentCharacter()?.chatPage],
+      ).map((state) => state.module),
+  }
+})
 
 vi.mock('../globalApi.svelte', () => ({
   AppendableBuffer: class {
@@ -104,7 +137,10 @@ vi.mock('../util', () => ({
 
 vi.mock('../filePicker', () => ({
   selectSingleFile: vi.fn(async () => selectedFileState.file),
+  selectFileByDom: vi.fn(async () => (selectedFileState.file ? [selectedFileState.file] : null)),
 }))
+
+vi.mock('../server/localFileImport', () => ({ importLocalModuleFileFromServer }))
 
 vi.mock('./lorebook.svelte', () => ({
   convertExternalLorebook: vi.fn(() => []),
@@ -130,7 +166,7 @@ vi.mock('../moduleCommands', () => ({
   createGlobalModule,
 }))
 
-vi.mock('../server/lorebookBridge.svelte', () => ({
+vi.mock('../server/lorebookOwner.svelte', () => ({
   currentLorebookStateSnapshot: vi.fn(() => ({ loreBook: [], characters: [], modules: [] })),
   currentLorebookCollectionScopedSnapshot,
   dispatchReplaceCharacterLorebooks,
@@ -140,7 +176,7 @@ vi.mock('../server/lorebookBridge.svelte', () => ({
   rollbackCharacterLorebookReplacement,
 }))
 
-vi.mock('../server/scriptDefinitionBridge.svelte', () => ({
+vi.mock('../server/scriptDefinitionOwner.svelte', () => ({
   acknowledgeCharacterScriptDefinitionStructuralWrite,
   beginCharacterScriptDefinitionStructuralWrite,
   currentScriptDefinitionStateSnapshot: vi.fn(() => ({ characters: [], modules: [] })),
@@ -163,11 +199,6 @@ vi.mock('../server/pendingMutationOutbox', () => ({
   pendingMutationCharacterTriggersProjectionTarget: (characterId: string) => `character-triggers:${characterId}`,
 }))
 
-vi.mock('../server/staleStateGuards', () => ({
-  captureDestructiveRefreshEpoch: () => destructiveRefreshEpochState.epoch,
-  hasDestructiveRefreshEpochChanged: (epoch: number) => destructiveRefreshEpochState.epoch !== epoch,
-}))
-
 vi.mock('../server/chatMessageHydration.svelte', () => ({
   ensureCharacterLorebookHydrated,
 }))
@@ -178,21 +209,21 @@ vi.mock('../server/commands', () => ({
   replaceCharacterTriggersCommand,
 }))
 
-vi.mock('../server/resourceWriteGuard.svelte', () => ({
-  withTrustedResourceWrite: (fn: () => void) => fn(),
-}))
-
 import {
   applyModule,
+  getModuleAssets,
   getModuleRegexScripts,
+  getModuleTriggerOwner,
   getModuleTriggers,
   importModule,
+  importRisuModuleData,
   importRisuModuleObject,
   moduleUpdate,
+  moduleForSingleItemExport,
   refreshModules,
 } from './modules'
 import { moduleBackgroundEmbedding, reloadGuiAfterDefinitionChange } from '../stores.svelte'
-import type { character, customscript, loreBook, triggerscript } from '../storage/database.svelte'
+import type { Chat, character, customscript, loreBook, triggerscript } from '../storage/database.svelte'
 import { language } from 'src/lang'
 
 type TestModuleApplyStep = {
@@ -346,12 +377,12 @@ describe('module imports', () => {
     characterRowEpochState.epoch = 0
     characterLorebookEpochState.epoch = 0
     moduleCollectionEpochState.epoch = 0
-    destructiveRefreshEpochState.epoch = 0
     ensureCharacterLorebookHydrated.mockReset()
     ensureCharacterLorebookHydrated.mockResolvedValue(true)
     selectedFileState.file = null
     testDatabaseState.db = { modules: [], characters: [] }
     alertError.mockClear()
+    alertWait.mockClear()
     saveAsset.mockClear()
     saveAssets.mockReset()
     saveAssets.mockImplementation(async (assets: readonly unknown[]) => assets.map((_, index) => `asset-${index}`))
@@ -360,6 +391,13 @@ describe('module imports', () => {
     sleep.mockReset()
     createGlobalModule.mockReset()
     createGlobalModule.mockResolvedValue(null)
+    importLocalModuleFileFromServer.mockReset()
+    importLocalModuleFileFromServer.mockResolvedValue({
+      status: 'ok',
+      revision: 10,
+      event: { type: 'module.created', resource: 'moduleCreated', revision: 10 },
+      moduleId: 'server-module',
+    })
     alertConfirm.mockReset()
     alertConfirm.mockResolvedValue(true)
     alertModuleSelect.mockReset()
@@ -419,7 +457,29 @@ describe('module imports', () => {
     refreshModules()
   })
 
-  it('imports ordinary .risum modules through asset upload and module command helpers', async () => {
+  it('keeps script model profile ids local to the installation', async () => {
+    const module = {
+      id: 'module-local-models',
+      name: 'Local models',
+      description: '',
+      scriptModelOverrides: {
+        llmProfileId: 'local-main',
+        axLlmProfileId: 'local-aux',
+      },
+    }
+
+    const organizedModule = { ...module, folderId: 'local-folder' }
+    expect(moduleForSingleItemExport(organizedModule)).not.toHaveProperty('scriptModelOverrides')
+    expect(moduleForSingleItemExport(organizedModule)).not.toHaveProperty('folderId')
+    expect(module).toHaveProperty('scriptModelOverrides.llmProfileId', 'local-main')
+
+    await importRisuModuleObject(module)
+    expect(createGlobalModule).toHaveBeenCalledWith(
+      expect.not.objectContaining({ scriptModelOverrides: expect.anything() }),
+    )
+  })
+
+  it('uploads an ordinary .risum once and lets the server process and create it', async () => {
     const assetData = new Uint8Array([7, 8, 9])
     selectedFileState.file = {
       name: 'module.risum',
@@ -436,16 +496,59 @@ describe('module imports', () => {
 
     await importModule()
 
-    expect(saveAssets).toHaveBeenCalledWith([{ data: Buffer.from(assetData), fileName: 'portrait.webp' }])
-    expect(createGlobalModule).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: expect.not.stringMatching(/^old-id$/),
-        name: 'Imported module',
-        description: 'Imported',
-        assets: [['portrait', 'asset-0', 'portrait.webp']],
-      }),
+    expect(importLocalModuleFileFromServer).toHaveBeenCalledWith(
+      expect.objectContaining({ file: selectedFileState.file, fileName: 'module.risum' }),
     )
+    expect(saveAssets).not.toHaveBeenCalled()
+    expect(createGlobalModule).not.toHaveBeenCalled()
     expect(alertNormal).toHaveBeenCalled()
+  })
+
+  it('reports each module asset only after its upload completes', async () => {
+    const assets = [new Uint8Array([1]), new Uint8Array([2]), new Uint8Array([3])]
+    const save = createDeferred<string[]>()
+    saveAssets.mockReturnValueOnce(save.promise)
+    selectedFileState.file = {
+      name: 'module.risum',
+      data: buildRisum(
+        {
+          id: 'old-id',
+          name: 'Imported module',
+          description: 'Imported',
+          assets: assets.map((_, index) => [`asset-${index}`, '', `asset-${index}.png`]),
+        },
+        assets,
+      ),
+    }
+
+    const importPromise = importRisuModuleData(selectedFileState.file.data)
+    await vi.waitFor(() => expect(saveAssets).toHaveBeenCalledOnce())
+
+    expect(alertWait.mock.calls.map(([message]) => message)).toEqual(['Loading... (Adding Assets 0 / 3)'])
+    expect(createGlobalModule).not.toHaveBeenCalled()
+
+    const progress = saveAssets.mock.calls[0][1].onProgress
+    progress(1, 3)
+    progress(2, 3)
+    progress(3, 3)
+
+    expect(alertWait.mock.calls.map(([message]) => message)).toEqual([
+      'Loading... (Adding Assets 0 / 3)',
+      'Loading... (Adding Assets 1 / 3)',
+      'Loading... (Adding Assets 2 / 3)',
+      'Loading... (Adding Assets 3 / 3)',
+    ])
+    expect(createGlobalModule).not.toHaveBeenCalled()
+
+    save.resolve(['asset-0', 'asset-1', 'asset-2'])
+    await importPromise
+
+    expect(alertWait.mock.calls.map(([message]) => message)).toEqual([
+      'Loading... (Adding Assets 0 / 3)',
+      'Loading... (Adding Assets 1 / 3)',
+      'Loading... (Adding Assets 2 / 3)',
+      'Loading... (Adding Assets 3 / 3)',
+    ])
   })
 
   it('does not announce .risum import success when module creation fails', async () => {
@@ -460,7 +563,7 @@ describe('module imports', () => {
       }),
     }
 
-    const importPromise = importModule()
+    const importPromise = importRisuModuleData(selectedFileState.file.data)
     await vi.waitFor(() => expect(createGlobalModule).toHaveBeenCalledOnce())
     expect(alertNormal).not.toHaveBeenCalled()
 
@@ -513,7 +616,7 @@ describe('module imports', () => {
       },
     ],
   ])('reports unavailable creation for converted %s imports', async (_kind, payload) => {
-    createGlobalModule.mockResolvedValueOnce({ status: 'unavailable' })
+    importLocalModuleFileFromServer.mockResolvedValueOnce({ status: 'unavailable' })
     selectedFileState.file = {
       name: 'converted.json',
       data: Buffer.from(JSON.stringify(payload)),
@@ -521,7 +624,7 @@ describe('module imports', () => {
 
     await importModule()
 
-    expect(createGlobalModule).toHaveBeenCalledOnce()
+    expect(importLocalModuleFileFromServer).toHaveBeenCalledOnce()
     expect(alertError).toHaveBeenCalledWith(language.moduleImport.commandUnavailable)
   })
 
@@ -540,9 +643,11 @@ describe('module imports', () => {
       ),
     }
 
-    await importModule()
+    await importRisuModuleData(selectedFileState.file.data)
 
-    expect(saveAssets).toHaveBeenCalledWith([{ data: Buffer.from(assetData), fileName: '' }])
+    expect(saveAssets).toHaveBeenCalledWith([{ data: Buffer.from(assetData), fileName: '' }], {
+      onProgress: expect.any(Function),
+    })
     expect(createGlobalModule).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'Imported module',
@@ -568,9 +673,11 @@ describe('module imports', () => {
       ),
     }
 
-    await importModule()
+    await importRisuModuleData(selectedFileState.file.data)
 
-    expect(saveAssets).toHaveBeenCalledWith([{ data: Buffer.from(avifData), fileName: 'asset.avif' }])
+    expect(saveAssets).toHaveBeenCalledWith([{ data: Buffer.from(avifData), fileName: 'asset.avif' }], {
+      onProgress: expect.any(Function),
+    })
     expect(createGlobalModule).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'Imported module',
@@ -595,7 +702,7 @@ describe('module imports', () => {
       ),
     }
 
-    await importModule()
+    await importRisuModuleData(selectedFileState.file.data)
 
     expect(alertConfirm).toHaveBeenCalled()
     expect(saveAssets).not.toHaveBeenCalled()
@@ -619,13 +726,14 @@ describe('module imports', () => {
       ),
     }
 
-    await importModule()
+    await importRisuModuleData(selectedFileState.file.data)
 
     expect(alertError).not.toHaveBeenCalled()
     expect(alertConfirm).toHaveBeenCalled()
-    expect(saveAssets).toHaveBeenCalledWith([
-      { data: Buffer.from(new Uint8Array([7, 8, 9])), fileName: 'portrait.webp' },
-    ])
+    expect(saveAssets).toHaveBeenCalledWith(
+      [{ data: Buffer.from(new Uint8Array([7, 8, 9])), fileName: 'portrait.webp' }],
+      { onProgress: expect.any(Function) },
+    )
     expect(createGlobalModule).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'MCP module',
@@ -651,7 +759,7 @@ describe('module imports', () => {
       ),
     }
 
-    await importModule()
+    await importRisuModuleData(selectedFileState.file.data)
 
     expect(alertError).toHaveBeenCalledWith(language.moduleImport.mcpInvalidUrl)
     expect(alertConfirm).not.toHaveBeenCalled()
@@ -665,7 +773,7 @@ describe('module imports', () => {
       data: new Uint8Array([111, 0, 0, 0]),
     }
 
-    await importModule()
+    await importRisuModuleData(selectedFileState.file.data)
 
     expect(alertError).toHaveBeenCalledWith(language.errors.noData)
     expect(saveAssets).not.toHaveBeenCalled()
@@ -689,7 +797,7 @@ describe('module imports', () => {
       ),
     }
 
-    await importModule()
+    await importRisuModuleData(selectedFileState.file.data)
 
     expect(decodeRPack).toHaveBeenCalledTimes(2)
     expect(sleep).not.toHaveBeenCalled()
@@ -711,7 +819,7 @@ describe('module imports', () => {
       ),
     }
 
-    await importModule()
+    await importRisuModuleObject(JSON.parse(Buffer.from(selectedFileState.file.data).toString()))
 
     expect(createGlobalModule).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -786,6 +894,63 @@ describe('module imports', () => {
     expect(rejectCharacterScriptDefinitionStructuralWrite).not.toHaveBeenCalled()
     expect(alertNormal).toHaveBeenCalledWith(language.successApplyModule)
     expect(alertError).not.toHaveBeenCalled()
+  })
+
+  it('repairs only cloned module-application rows before projecting the canonical character', async () => {
+    const currentCharacter = installCompleteModuleApplyFixture()
+    const before = {
+      globalLore: snapshotJson(currentCharacter.globalLore),
+      customscript: snapshotJson(currentCharacter.customscript),
+      triggerscript: snapshotJson(currentCharacter.triggerscript),
+    }
+    const assignMissingIds = (prefix: string) => (entries: unknown) => {
+      for (const [index, entry] of (entries as Array<Record<string, unknown>>).entries()) {
+        if (!entry.id) entry.id = `${prefix}-${index}`
+      }
+      return entries
+    }
+    ensureClientLorebookEntryIds.mockImplementation(assignMissingIds('lore'))
+    ensureClientScriptDefinitionIds.mockImplementation(assignMissingIds('script'))
+    ensureClientTriggerDefinitionIds.mockImplementation(assignMissingIds('trigger'))
+
+    let canonicalBeforeProjection: typeof before | undefined
+    dispatchCharacterOwnedDurableBatch.mockImplementationOnce(
+      async (_characterId: string, steps: TestModuleApplyStep[]) => {
+        canonicalBeforeProjection = {
+          globalLore: snapshotJson(currentCharacter.globalLore),
+          customscript: snapshotJson(currentCharacter.customscript),
+          triggerscript: snapshotJson(currentCharacter.triggerscript),
+        }
+        expect(steps.map((step) => step.body)).toEqual([
+          {
+            entries: [
+              { id: 'lore-0', comment: 'Existing lore', content: 'old' },
+              { id: 'lore-1', comment: 'Module lore', content: 'lore' },
+            ],
+          },
+          {
+            scripts: [
+              { id: 'script-0', comment: 'Existing regex', in: 'old', out: 'old' },
+              { id: 'script-1', comment: 'Module regex', in: 'in', out: 'out' },
+            ],
+          },
+          {
+            triggers: [
+              { id: 'trigger-0', comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] },
+              { id: 'trigger-1', comment: 'Module trigger', type: 'manual', conditions: [], effect: [] },
+            ],
+          },
+        ])
+        expect(steps[0].body.entries[0]).not.toBe(currentCharacter.globalLore?.[0])
+        expect(steps[1].body.scripts[0]).not.toBe(currentCharacter.customscript?.[0])
+        expect(steps[2].body.triggers[0]).not.toBe(currentCharacter.triggerscript?.[0])
+        return { status: 'ok', acceptedCount: steps.length }
+      },
+    )
+
+    await applyModule()
+
+    expect(canonicalBeforeProjection).toEqual(before)
   })
 
   it('projects only after staging and does not announce success before durable settlement', async () => {
@@ -1026,14 +1191,14 @@ describe('module imports', () => {
     expect(alertNormal).toHaveBeenCalledWith(language.moduleApply.queued)
   })
 
-  it('does not reassert a retained suffix after a destructive authoritative refresh', async () => {
+  it('does not reassert a retained suffix after a newer character-owner projection', async () => {
     const currentCharacter = installCompleteModuleApplyFixture()
     const previousLorebooks = [{ comment: 'Existing lore', content: 'old' }] as loreBook[]
     dispatchCharacterOwnedDurableBatch.mockImplementationOnce(
       async (_characterId: string, steps: TestModuleApplyStep[]) => {
         await Promise.resolve()
         currentCharacter.globalLore = cloneJsonValue(previousLorebooks)
-        destructiveRefreshEpochState.epoch += 1
+        characterRowEpochState.epoch += 1
         steps[0].reapply?.(() => true)
         return {
           status: 'retained',
@@ -1096,6 +1261,32 @@ describe('module imports', () => {
       type: 'triggerlua',
       code: 'new triggerlua with AOS',
     })
+  })
+
+  it('refreshes active modules when a module id or namespace is mutated in place', () => {
+    const module = {
+      id: 'inactive-id',
+      name: 'Mutable Module',
+      namespace: 'inactive-space',
+      regex: [{ comment: 'mutable regex', in: 'MUTABLE', out: 'mutable', type: 'editdisplay' }],
+    }
+    const db = {
+      enabledModules: ['active-id'],
+      moduleIntergration: 'active-space',
+      modules: [module],
+    }
+    getDatabase.mockReturnValue(db)
+
+    expect(getModuleRegexScripts()).toEqual([])
+
+    module.namespace = 'active-space'
+    expect(getModuleRegexScripts().map((script) => script.comment)).toEqual(['mutable regex'])
+
+    module.namespace = 'inactive-space'
+    expect(getModuleRegexScripts()).toEqual([])
+
+    module.id = 'active-id'
+    expect(getModuleRegexScripts().map((script) => script.comment)).toEqual(['mutable regex'])
   })
 
   it('refreshes module background embedding when an active module row is replaced in place', () => {
@@ -1210,6 +1401,100 @@ describe('module imports', () => {
     expect(getModuleRegexScripts().map((script) => script.comment)).toEqual(['chat regex'])
   })
 
+  it('resolves modules linked to the Persona selected for the active chat', () => {
+    getCurrentChatMock.mockReturnValue({
+      modules: [],
+      generationSettings: { personaId: 'persona-chat' },
+    })
+    getCurrentCharacter.mockReturnValue({ modules: [] })
+    getDatabase.mockReturnValue({
+      selectedPersona: 0,
+      personas: [
+        { id: 'persona-global', modules: [] },
+        { id: 'persona-chat', modules: ['persona-module'] },
+      ],
+      enabledModules: [],
+      modules: [
+        {
+          id: 'persona-module',
+          regex: [{ comment: 'persona regex', in: 'PERSONA', out: 'persona', type: 'editdisplay' }],
+        },
+      ],
+    })
+
+    expect(getModuleRegexScripts().map((script) => script.comment)).toEqual(['persona regex'])
+  })
+
+  it('resolves module assets from an explicit character and chat context', () => {
+    getCurrentCharacter.mockReturnValue({ modules: ['selected-character-module'] })
+    getCurrentChatMock.mockReturnValue({ modules: ['selected-chat-module'] })
+    getDatabase.mockReturnValue({
+      enabledModules: [],
+      modules: [
+        {
+          id: 'selected-character-module',
+          assets: [['selected-character', 'selected-character-asset', 'png']],
+        },
+        {
+          id: 'selected-chat-module',
+          assets: [['selected-chat', 'selected-chat-asset', 'png']],
+        },
+        {
+          id: 'explicit-character-module',
+          assets: [['explicit-character', 'explicit-character-asset', 'png']],
+        },
+        {
+          id: 'explicit-chat-module',
+          assets: [['explicit-chat', 'explicit-chat-asset', 'png']],
+        },
+      ],
+    })
+    const explicitCharacter = { modules: ['explicit-character-module'] } as unknown as character
+    const explicitChat = { modules: ['explicit-chat-module'] } as unknown as Chat
+
+    expect(getModuleAssets({ character: explicitCharacter, chat: explicitChat })).toEqual([
+      ['explicit-character', 'explicit-character-asset', 'png'],
+      ['explicit-chat', 'explicit-chat-asset', 'png'],
+    ])
+  })
+
+  it('adds module integration from the effective default Agent Preset', () => {
+    getCurrentChatMock.mockReturnValue({
+      modules: [],
+      generationSettings: {
+        promptPresetId: 'chat-preset',
+      },
+    })
+    getCurrentCharacter.mockReturnValue({ modules: [] })
+    getDatabase.mockReturnValue({
+      enabledModules: [],
+      moduleIntergration: '',
+      promptPresets: [{ id: 'chat-preset', moduleIntergration: 'prompt-space' }],
+      agentPresetDefaultId: 'agent-preset-default',
+      agentPresets: [
+        {
+          id: 'agent-preset-default',
+          enabled: true,
+          moduleIntergration: 'agent-space',
+        },
+      ],
+      modules: [
+        {
+          id: 'prompt-module',
+          namespace: 'prompt-space',
+          regex: [{ comment: 'prompt regex', in: 'PROMPT', out: 'prompt', type: 'editdisplay' }],
+        },
+        {
+          id: 'agent-module',
+          namespace: 'agent-space',
+          regex: [{ comment: 'agent regex', in: 'AGENT', out: 'agent', type: 'editdisplay' }],
+        },
+      ],
+    })
+
+    expect(getModuleRegexScripts().map((script) => script.comment)).toEqual(['prompt regex', 'agent regex'])
+  })
+
   it('does not use global prompt integration when the active chat selected prompt has none', () => {
     getCurrentChatMock.mockReturnValue({
       modules: [],
@@ -1309,6 +1594,10 @@ describe('module imports', () => {
     expect(resolvedTrigger).toMatchObject({
       comment: 'readonly trigger',
       lowLevelAccess: true,
+    })
+    expect(getModuleTriggerOwner(resolvedTrigger)).toEqual({
+      moduleId: 'module-a',
+      scriptModelOverrides: {},
     })
     expect('lowLevelAccess' in trigger).toBe(false)
   })

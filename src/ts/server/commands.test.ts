@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 import { serializeChatGenerationSettingsDigestInput } from '../chatGenerationSettings'
-import { PROMPT_SETTINGS_KEYS } from '../promptSettings'
+import { PROMPT_SETTINGS_KEYS } from '@risuai/shared-core/prompt-settings'
 import {
   serializePersonaCollectionDigestInput,
   serializePersonaIdsDigestInput,
@@ -9,6 +9,11 @@ import {
 } from '../personaMutationCertificate'
 import { serializeScriptDefinitionCollectionDigestInput } from './scriptDefinitionMutations'
 import { resetWriterAccessLostForTests } from './activeWriterSession'
+import {
+  recordStartupMilestone,
+  resetStartupReadinessForTests,
+  revokeStartupWriterCapabilities,
+} from '../startupReadiness'
 
 vi.mock('../platform', () => ({ isFastifyServer: true }))
 
@@ -20,16 +25,20 @@ import {
   acknowledgeServerMutationReceipts,
   appendMessageCommand,
   bulkPluginStorageCommand,
+  createAgentCommand,
   createAgentPresetCommand,
   createAgentPresetStepCommand,
+  createAgentPresetUseCommand,
   createChatCommand,
   createChatFolderCommand,
   createAndSelectCharacterCommand,
   createCharacterCommand,
   createLoadoutCommand,
   createModuleCommand,
+  createModuleFolderCommand,
   createPersonaCommand,
   createPluginCommand,
+  createBardWikiDocumentCommand,
   clearAppliedServerResourceRevision,
   clearCachedServerCommandRevision,
   completeOnboardingCommand,
@@ -39,11 +48,14 @@ import {
   createTranslatorPresetCommand,
   createAndBindModelProfileCommand,
   createModelProfileCommand,
+  createProviderCredentialCommand,
   createGlobalLorebookCommand,
   convertLegacyModelProfilesCommand,
   copyPresetCommand,
   deleteAgentPresetCommand,
   deleteAgentPresetStepCommand,
+  deleteAgentPresetUseCommand,
+  deleteAgentCommand,
   deleteCharacterLorebookEntryCommand,
   deleteChatCommand,
   deleteChatFolderCommand,
@@ -54,10 +66,13 @@ import {
   deleteLoadoutCommand,
   deleteMessageCommand,
   deleteModelProfileCommand,
+  deleteProviderCredentialCommand,
   deleteModuleCommand,
+  deleteModuleFolderCommand,
   deleteModuleLorebookEntryCommand,
   deletePersonaCommand,
   deletePluginCommand,
+  deleteBardWikiDocumentCommand,
   deletePluginStorageCommand,
   deferOwnServerCommandReconciliation,
   deletePromptItemCommand,
@@ -72,12 +87,16 @@ import {
   patchChatScriptstateCommand,
   patchServerBackedSettings,
   patchRuntimeSettings,
+  patchBardWikiChatSettingsCommand,
+  previewBardWikiRebuildCommand,
+  queueBardWikiRebuildCommand,
+  importBardWikiVaultCommand,
   patchSettingsGroup,
   patchSettingsObjectFieldsCommand,
   peekAppliedServerResourceRevision,
   peekCachedServerCommandRevision,
   importPresetCommand,
-  initializeServerDatabase,
+  initializeServerDatabaseForBootstrap,
   mutateCharacterScriptsCommand,
   mutateGlobalScriptsCommand,
   mutateCharacterTriggersCommand,
@@ -86,19 +105,23 @@ import {
   persistGenerationResultCommand,
   duplicateAgentPresetCommand,
   duplicateAgentPresetStepCommand,
+  duplicateAgentCommand,
   duplicateModelProfileCommand,
   putPluginStorageCommand,
   saveChatGenerationSettingsCommand,
   reorderCharactersCommand,
   reorderChatFoldersCommand,
   reorderChatsCommand,
+  resetChatsCommand,
   reorderPersonasCommand,
   reorderGlobalLorebooksCommand,
   reorderCharacterLorebookEntriesCommand,
   reorderCharacterModulesCommand,
   reorderChatLorebookEntriesCommand,
   reorderModulesCommand,
+  reorderModuleFoldersCommand,
   reorderModelPresetsCommand,
+  reorderModelProfilesCommand,
   reorderGlobalLorebookEntriesCommand,
   reorderModuleLorebookEntriesCommand,
   reorderPluginsCommand,
@@ -107,6 +130,8 @@ import {
   reorderPromptItemsCommand,
   reorderAgentPresetsCommand,
   reorderAgentPresetStepsCommand,
+  reorderAgentPresetUsesCommand,
+  reorderAgentsCommand,
   reorderPresetsCommand,
   replayDurableMutationRequests,
   replayDurableMutationRequestsInline,
@@ -123,6 +148,7 @@ import {
   replaceModuleLorebooksCommand,
   replaceModuleScriptsCommand,
   replaceModuleTriggersCommand,
+  updateModuleFolderCommand,
   selectCharacterCommand,
   selectGlobalLorebookCommand,
   setAgentPresetDefaultCommand,
@@ -132,6 +158,7 @@ import {
   selectTranslatorPresetCommand,
   touchLoadoutCommand,
   truncateMessagesCommand,
+  translateGreetingCommand,
   translateMessageCommand,
   withDirectServerCommandEventReconciliation,
   updateCharacterCommand,
@@ -139,16 +166,20 @@ import {
   updateChatFolderCommand,
   updateAgentPresetCommand,
   updateAgentPresetStepCommand,
+  updateAgentPresetUseCommand,
+  updateAgentCommand,
   updateGlobalLorebookCommand,
   updateLoadoutCommand,
   updateMessageCommand,
   updateModelProfileCommand,
+  updateProviderCredentialCommand,
   updateModelRoleProfilesCommand,
   updateModelRuntimeDefaultsCommand,
   updateModelPresetCommand,
   updateModuleCommand,
   updatePersonaCommand,
   updatePluginCommand,
+  updateBardWikiDocumentCommand,
   upsertCharacterLorebookEntryCommand,
   upsertChatLorebookEntryCommand,
   upsertGlobalLorebookEntryCommand,
@@ -250,6 +281,10 @@ function canonicalLoadoutSnapshot(id = 'loadout-a') {
 }
 
 beforeEach(() => {
+  resetStartupReadinessForTests()
+  for (const milestone of ['entry', 'shell-mounted', 'observer-ready', 'writer-ready'] as const) {
+    recordStartupMilestone(milestone)
+  }
   resetWriterAccessLostForTests()
   clearAppliedServerResourceRevision()
   clearCachedServerCommandRevision()
@@ -258,11 +293,353 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  resetStartupReadinessForTests()
   resetWriterAccessLostForTests()
   vi.unstubAllGlobals()
 })
 
 describe('server command API adapter', () => {
+  it('dispatches BardWiki settings and fenced document commands to their focused routes', async () => {
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 2,
+      event: { type: 'bardwiki.updated', revision: 2, resource: 'bardWikiDocument' },
+      settings: {},
+      document: { id: 'document-a' },
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const fence = { expectedVersion: 3, expectedContentHash: 'a'.repeat(64) }
+
+    await patchBardWikiChatSettingsCommand({
+      baseRevision: 1,
+      chatId: 'chat/a',
+      patch: { enabledOverride: true },
+    })
+    await createBardWikiDocumentCommand({
+      baseRevision: 1,
+      chatId: 'chat/a',
+      document: { kind: 'event', title: 'Arrival', logicalPath: 'Events/Arrival', markdown: 'Hello.' },
+    })
+    await updateBardWikiDocumentCommand({
+      baseRevision: 1,
+      chatId: 'chat/a',
+      documentId: 'document/a',
+      ...fence,
+      patch: { title: 'Return' },
+    })
+    await deleteBardWikiDocumentCommand({
+      baseRevision: 1,
+      chatId: 'chat/a',
+      documentId: 'document/a',
+      ...fence,
+    })
+    await previewBardWikiRebuildCommand('chat/a', 'full')
+    await queueBardWikiRebuildCommand({
+      baseRevision: 1,
+      chatId: 'chat/a',
+      policy: 'full',
+      expectedSourceCount: 4,
+    })
+    await importBardWikiVaultCommand({
+      baseRevision: 1,
+      chatId: 'chat/a',
+      dryRun: false,
+      strategy: 'rename',
+      archiveBase64: 'UEs=',
+      expectedTargets: [],
+    })
+
+    expect(commandFetch.calls.map(({ url, method, body }) => ({ url, method, body }))).toEqual([
+      {
+        url: '/api/v1/commands/bardwiki/chats/chat%2Fa/settings',
+        method: 'PATCH',
+        body: { baseRevision: 1, patch: { enabledOverride: true } },
+      },
+      {
+        url: '/api/v1/commands/bardwiki/chats/chat%2Fa/documents',
+        method: 'POST',
+        body: {
+          baseRevision: 1,
+          document: { kind: 'event', title: 'Arrival', logicalPath: 'Events/Arrival', markdown: 'Hello.' },
+        },
+      },
+      {
+        url: '/api/v1/commands/bardwiki/chats/chat%2Fa/documents/document%2Fa',
+        method: 'PATCH',
+        body: { baseRevision: 1, ...fence, patch: { title: 'Return' } },
+      },
+      {
+        url: '/api/v1/commands/bardwiki/chats/chat%2Fa/documents/document%2Fa',
+        method: 'DELETE',
+        body: { baseRevision: 1, ...fence },
+      },
+      {
+        url: '/api/v1/commands/bardwiki/chats/chat%2Fa/rebuilds',
+        method: 'POST',
+        body: { preview: true, policy: 'full' },
+      },
+      {
+        url: '/api/v1/commands/bardwiki/chats/chat%2Fa/rebuilds',
+        method: 'POST',
+        body: {
+          baseRevision: 1,
+          preview: false,
+          confirm: true,
+          policy: 'full',
+          expectedSourceCount: 4,
+        },
+      },
+      {
+        url: '/api/v1/commands/bardwiki/chats/chat%2Fa/imports',
+        method: 'POST',
+        body: {
+          baseRevision: 1,
+          dryRun: false,
+          strategy: 'rename',
+          archiveBase64: 'UEs=',
+          expectedTargets: [],
+        },
+      },
+    ])
+  })
+
+  it('accepts exact eventless BardWiki rebuild previews and vault dry runs', async () => {
+    const preview = {
+      chatId: 'chat/a',
+      policy: 'full',
+      sourceCount: 4,
+      replaceDerivedDocumentCount: 2,
+      preserveUserDocumentCount: 1,
+      activeJobId: null,
+    }
+    const plan = {
+      format: 'risu-bardwiki-vault',
+      version: 1,
+      strategy: 'rename',
+      creates: 1,
+      replacements: 0,
+      noops: 0,
+      skips: 0,
+      renames: 0,
+      applicable: true,
+      actions: [
+        {
+          sourceDocumentId: 'source-a',
+          targetDocumentId: 'target-a',
+          action: 'create',
+          logicalPath: 'Imported/Arrival',
+          conflict: null,
+        },
+      ],
+    }
+    const responses = [
+      { revision: 7, preview },
+      { revision: 7, dryRun: true, plan },
+    ]
+    const commandFetch = makeCommandFetch(() => responses.shift())
+    const reconciler = vi.fn()
+    setServerCommandSuccessReconciler(reconciler)
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(previewBardWikiRebuildCommand('chat/a', 'full')).resolves.toEqual({
+      status: 'ok',
+      revision: 7,
+      preview,
+    })
+    await expect(
+      importBardWikiVaultCommand({
+        chatId: 'chat/a',
+        dryRun: true,
+        strategy: 'rename',
+        archiveBase64: 'UEs=',
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 7, dryRun: true, plan })
+    expect(reconciler).not.toHaveBeenCalled()
+    expect(peekCachedServerCommandRevision()).toBe(7)
+  })
+
+  it('rejects malformed or incorrect eventless BardWiki receipts', async () => {
+    const preview = {
+      chatId: 'chat/a',
+      policy: 'full',
+      sourceCount: 4,
+      replaceDerivedDocumentCount: 2,
+      preserveUserDocumentCount: 1,
+      activeJobId: null,
+    }
+    const plan = {
+      format: 'risu-bardwiki-vault',
+      version: 1,
+      strategy: 'rename',
+      creates: 1,
+      replacements: 0,
+      noops: 0,
+      skips: 0,
+      renames: 0,
+      applicable: true,
+      actions: [
+        {
+          sourceDocumentId: 'source-a',
+          targetDocumentId: 'target-a',
+          action: 'create',
+          logicalPath: 'Imported/Arrival',
+          conflict: null,
+        },
+      ],
+    }
+    const previewCommand = () => previewBardWikiRebuildCommand('chat/a', 'full')
+    const dryRunCommand = () =>
+      importBardWikiVaultCommand({
+        chatId: 'chat/a',
+        dryRun: true,
+        strategy: 'rename',
+        archiveBase64: 'UEs=',
+      })
+    const cases: Array<{ label: string; response: unknown; command: () => Promise<unknown> }> = [
+      {
+        label: 'preview for another chat',
+        response: { revision: 7, preview: { ...preview, chatId: 'chat/b' } },
+        command: previewCommand,
+      },
+      {
+        label: 'preview with a malformed count',
+        response: { revision: 7, preview: { ...preview, sourceCount: 1.5 } },
+        command: previewCommand,
+      },
+      {
+        label: 'preview with an explicit null event',
+        response: { revision: 7, event: null, preview },
+        command: previewCommand,
+      },
+      {
+        label: 'dry run with the wrong strategy',
+        response: { revision: 7, dryRun: true, plan: { ...plan, strategy: 'skip' } },
+        command: dryRunCommand,
+      },
+      {
+        label: 'dry run with inconsistent action counts',
+        response: { revision: 7, dryRun: true, plan: { ...plan, creates: 0 } },
+        command: dryRunCommand,
+      },
+      {
+        label: 'dry run with a malformed action',
+        response: {
+          revision: 7,
+          dryRun: true,
+          plan: { ...plan, actions: [{ ...plan.actions[0], unexpected: true }] },
+        },
+        command: dryRunCommand,
+      },
+      {
+        label: 'dry run response marked as a mutation',
+        response: { revision: 7, dryRun: false, plan },
+        command: dryRunCommand,
+      },
+      {
+        label: 'mutating import without an event',
+        response: { revision: 8, dryRun: false, plan },
+        command: () =>
+          importBardWikiVaultCommand({
+            baseRevision: 7,
+            chatId: 'chat/a',
+            dryRun: false,
+            strategy: 'rename',
+            archiveBase64: 'UEs=',
+          }),
+      },
+      {
+        label: 'queued rebuild without an event',
+        response: { revision: 8, job: { id: 'job-a' } },
+        command: () =>
+          queueBardWikiRebuildCommand({
+            baseRevision: 7,
+            chatId: 'chat/a',
+            policy: 'full',
+            expectedSourceCount: 4,
+          }),
+      },
+    ]
+
+    for (const testCase of cases) {
+      setCachedServerCommandRevision(6)
+      const reconciler = vi.fn()
+      setServerCommandSuccessReconciler(reconciler)
+      vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(testCase.response)) as unknown as typeof fetch)
+
+      await expect(testCase.command(), testCase.label).resolves.toEqual({
+        status: 'error',
+        error: 'Invalid command response',
+      })
+      expect(reconciler, testCase.label).not.toHaveBeenCalled()
+      expect(peekCachedServerCommandRevision(), testCase.label).toBe(6)
+    }
+  })
+
+  it('blocks ordinary APIs before writer readiness while allowing only initialization and pending replay', async () => {
+    resetStartupReadinessForTests()
+    const command = vi.fn()
+    const commandFetch = makeCommandFetch((url) =>
+      url.endsWith('/state/initialize')
+        ? {
+            revision: 1,
+            initialized: true,
+            event: { type: 'state.initialized', revision: 1, resource: 'state' },
+          }
+        : {
+            revision: 2,
+            event: { type: 'settings.updated', revision: 2, resource: 'settings' },
+          },
+    )
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(patchRuntimeSettings({ baseRevision: 0, patch: { maxContext: 4_000 } })).resolves.toEqual({
+      status: 'unavailable',
+    })
+    await expect(runServerCommand({ command })).resolves.toEqual({ status: 'unavailable' })
+    expect(command).not.toHaveBeenCalled()
+    expect(commandFetch.fetch).not.toHaveBeenCalled()
+
+    await expect(initializeServerDatabaseForBootstrap()).resolves.toMatchObject({ status: 'ok', revision: 1 })
+    await expect(
+      replayDurableMutationRequests(
+        [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { maxContext: 8_000 } } }],
+        'pending-before-ready',
+        'database-a',
+      ),
+    ).resolves.toEqual({ status: 'ok' })
+    expect(commandFetch.fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('rechecks ordinary capability after a queued command loses writer ownership', async () => {
+    setCachedServerCommandRevision(1)
+    type HeldCommandResult = {
+      status: 'ok'
+      revision: number
+      event: { type: string; revision: number; resource: string }
+    }
+    let releaseFirst!: (result: HeldCommandResult) => void
+    const firstCommand = vi.fn(
+      (_baseRevision: number) =>
+        new Promise<HeldCommandResult>((resolve) => {
+          releaseFirst = resolve
+        }),
+    )
+    const secondCommand = vi.fn()
+
+    const first = runServerCommand({ command: firstCommand })
+    await vi.waitFor(() => expect(firstCommand).toHaveBeenCalledOnce())
+    const second = runServerCommand({ command: secondCommand })
+    revokeStartupWriterCapabilities()
+    releaseFirst({
+      status: 'ok',
+      revision: 2,
+      event: { type: 'settings.updated', revision: 2, resource: 'settings' },
+    })
+
+    await expect(first).resolves.toMatchObject({ status: 'ok' })
+    await expect(second).resolves.toEqual({ status: 'unavailable' })
+    expect(secondCommand).not.toHaveBeenCalled()
+  })
+
   it('patches runtime settings with the auth header and baseRevision', async () => {
     const event = { type: 'settings.updated', revision: 2, resource: 'settings' }
     const commandFetch = makeCommandFetch(() => ({ revision: 2, event }))
@@ -346,20 +723,20 @@ describe('server command API adapter', () => {
     const commandFetch = makeCommandFetch(() => responses.shift())
     vi.stubGlobal('fetch', commandFetch.fetch)
 
-    await expect(initializeServerDatabase()).resolves.toEqual({
+    await expect(initializeServerDatabaseForBootstrap()).resolves.toEqual({
       status: 'ok',
       revision: 7,
       initialized: false,
     })
-    await expect(initializeServerDatabase()).resolves.toEqual({
+    await expect(initializeServerDatabaseForBootstrap()).resolves.toEqual({
       status: 'error',
       error: 'Invalid command response',
     })
-    await expect(initializeServerDatabase()).resolves.toEqual({
+    await expect(initializeServerDatabaseForBootstrap()).resolves.toEqual({
       status: 'error',
       error: 'Invalid command response',
     })
-    await expect(initializeServerDatabase()).resolves.toEqual({
+    await expect(initializeServerDatabaseForBootstrap()).resolves.toEqual({
       status: 'ok',
       revision: 8,
       initialized: true,
@@ -372,7 +749,7 @@ describe('server command API adapter', () => {
     const commandFetch = makeCommandFetch(() => jsonResponse({ error: 'initialize_conflict' }, 409))
     vi.stubGlobal('fetch', commandFetch.fetch)
 
-    await expect(initializeServerDatabase()).resolves.toEqual({
+    await expect(initializeServerDatabaseForBootstrap()).resolves.toEqual({
       status: 'error',
       error: 'initialize_conflict',
       reason: 'initialize-conflict',
@@ -810,7 +1187,18 @@ describe('server command API adapter', () => {
   })
 
   it('notifies the command success reconciler before resolving an ok command', async () => {
-    const event = { type: 'settings.updated', revision: 3, resource: 'settings', origin: { writerSessionId: 'w1' } }
+    const event = {
+      type: 'generation.persisted',
+      revision: 3,
+      resource: 'generation',
+      id: 'message-a',
+      parentId: 'chat-a',
+      databaseLineage: 'database-a',
+      operationId: 'operation-a',
+      sourceMessageId: 'message-user-a',
+      jobId: 'job-a',
+      origin: { writerSessionId: 'w1' },
+    }
     const commandFetch = makeCommandFetch(() => ({ revision: 3, event }))
     vi.stubGlobal('fetch', commandFetch.fetch)
     const observed: unknown[] = []
@@ -1718,6 +2106,7 @@ describe('server command API adapter', () => {
     expect(settingsGroupForKey('notification')).toBe('display')
     expect(settingsGroupForKey('useAutoSuggestions')).toBe('runtime')
     expect(settingsGroupForKey('useAutoTranslateInput')).toBe('language')
+    expect(settingsGroupForKey('translatorExcludeThoughts')).toBe('language')
     expect(settingsGroupForKey('globalChatVariables')).toBe('sidebar')
     expect(settingsGroupForKey('jailbreakToggle')).toBe('sidebar')
     expect(settingsGroupForKey('customSidebarItems')).toBe('sidebar')
@@ -1750,6 +2139,7 @@ describe('server command API adapter', () => {
     expect(settingsGroupForKey('useInstructPrompt')).toBe('providers')
     expect(settingsGroupForKey('instructChatTemplate')).toBe('providers')
     expect(settingsGroupForKey('JinjaTemplate')).toBe('providers')
+    expect(settingsGroupForKey('providerCredentials')).toBe('providers')
     expect(settingsGroupForKey('modelProfiles')).toBe('providers')
     expect(settingsGroupForKey('modelRoleProfiles')).toBe('providers')
     expect(settingsGroupForKey('modelRuntimeDefaults')).toBe('providers')
@@ -1767,6 +2157,7 @@ describe('server command API adapter', () => {
     expect(settingsGroupForKey('doNotWarnExternalServers')).toBe('advanced')
     expect(settingsGroupForKey('pluginCompatibilityMode')).toBe('advanced')
     expect(settingsGroupForKey('strictScriptCheck')).toBe('advanced')
+    expect(settingsGroupForKey('regexOutputSizeLimitMiB')).toBe('advanced')
     expect(settingsGroupForKey('sdProvider')).toBe('media')
     expect(settingsGroupForKey('webUiUrl')).toBe('media')
     expect(settingsGroupForKey('sdSteps')).toBe('media')
@@ -2529,29 +2920,36 @@ describe('server command API adapter', () => {
       baseRevision: 3,
       profileId: 'source-profile',
       name: 'Copy',
-      includeSecrets: true,
+    })
+    await reorderModelProfilesCommand({
+      baseRevision: 4,
+      order: [
+        { kind: 'profile', profileId: 'profile-b' },
+        { kind: 'divider', id: 'divider-a' },
+        { kind: 'profile', profileId: 'profile-a' },
+      ],
     })
     await deleteModelProfileCommand({
-      baseRevision: 4,
+      baseRevision: 5,
       profileId: 'profile-a',
       reassignments: { memory: { mode: 'inherit' } },
     })
     await updateModelRoleProfilesCommand({
-      baseRevision: 5,
+      baseRevision: 6,
       bindings: { memory: { mode: 'profile', profileId: 'profile-a' } },
       modelPresetId: 'model-preset-a',
     })
     await createAndBindModelProfileCommand({
-      baseRevision: 6,
+      baseRevision: 7,
       role: 'memory',
       profile: { name: 'Bound', modelId: 'gpt-5' },
     })
     await updateModelRuntimeDefaultsCommand({
-      baseRevision: 7,
-      runtimeDefaults: { temperature: 55 },
+      baseRevision: 8,
+      runtimeDefaults: { temperature: 55, stripCoT: true },
     })
     await convertLegacyModelProfilesCommand({
-      baseRevision: 8,
+      baseRevision: 9,
     })
 
     expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
@@ -2578,14 +2976,25 @@ describe('server command API adapter', () => {
         body: {
           baseRevision: 3,
           name: 'Copy',
-          includeSecrets: true,
+        },
+      },
+      {
+        url: '/api/v1/commands/model-profiles/reorder',
+        method: 'POST',
+        body: {
+          baseRevision: 4,
+          order: [
+            { kind: 'profile', profileId: 'profile-b' },
+            { kind: 'divider', id: 'divider-a' },
+            { kind: 'profile', profileId: 'profile-a' },
+          ],
         },
       },
       {
         url: '/api/v1/commands/model-profiles/profile-a',
         method: 'DELETE',
         body: {
-          baseRevision: 4,
+          baseRevision: 5,
           reassignments: { memory: { mode: 'inherit' } },
         },
       },
@@ -2593,7 +3002,7 @@ describe('server command API adapter', () => {
         url: '/api/v1/commands/model-role-profiles',
         method: 'PUT',
         body: {
-          baseRevision: 5,
+          baseRevision: 6,
           bindings: { memory: { mode: 'profile', profileId: 'profile-a' } },
           modelPresetId: 'model-preset-a',
         },
@@ -2602,7 +3011,7 @@ describe('server command API adapter', () => {
         url: '/api/v1/commands/model-profiles/create-and-bind',
         method: 'POST',
         body: {
-          baseRevision: 6,
+          baseRevision: 7,
           role: 'memory',
           profile: { name: 'Bound', modelId: 'gpt-5' },
         },
@@ -2611,16 +3020,66 @@ describe('server command API adapter', () => {
         url: '/api/v1/commands/model-runtime-defaults',
         method: 'PUT',
         body: {
-          baseRevision: 7,
-          runtimeDefaults: { temperature: 55 },
+          baseRevision: 8,
+          runtimeDefaults: { temperature: 55, stripCoT: true },
         },
       },
       {
         url: '/api/v1/commands/model-profiles/convert-legacy',
         method: 'POST',
         body: {
-          baseRevision: 8,
+          baseRevision: 9,
         },
+      },
+    ])
+  })
+
+  it('dispatches provider credential commands through typed helpers', async () => {
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 99,
+      event: { type: 'providerCredential.test', revision: 99, resource: 'providerCredential' },
+      credentialId: 'credential-a',
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const credential = { id: 'credential-a', name: 'Credential A', type: 'apiKey' as const, apiKey: 'secret' }
+
+    await createProviderCredentialCommand({
+      baseRevision: 1,
+      credential: { name: credential.name, type: credential.type, apiKey: credential.apiKey },
+    })
+    await updateProviderCredentialCommand({
+      baseRevision: 2,
+      credentialId: 'credential/a',
+      credential,
+      expectedCredential: { ...credential, name: 'Old name' },
+    })
+    await deleteProviderCredentialCommand({
+      baseRevision: 3,
+      credentialId: 'credential/a',
+    })
+
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
+      {
+        url: '/api/v1/commands/provider-credentials',
+        method: 'POST',
+        body: {
+          baseRevision: 1,
+          credential: { name: 'Credential A', type: 'apiKey', apiKey: 'secret' },
+        },
+      },
+      {
+        url: '/api/v1/commands/provider-credentials/credential%2Fa',
+        method: 'PATCH',
+        body: {
+          baseRevision: 2,
+          credential,
+          expectedCredential: { ...credential, name: 'Old name' },
+        },
+      },
+      {
+        url: '/api/v1/commands/provider-credentials/credential%2Fa',
+        method: 'DELETE',
+        body: { baseRevision: 3 },
       },
     ])
   })
@@ -2813,6 +3272,118 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('dispatches standalone Agent and preset-use commands through typed helpers', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      const event = { type: 'agent.test', revision: 99, resource: 'agentPreset' }
+      if (url.endsWith('/agents/ag_a/duplicate')) {
+        return { revision: 99, event, agentId: 'ag_b', sourceAgentId: 'ag_a' }
+      }
+      if (url.endsWith('/agents/ag_b')) return { revision: 99, event, agentId: 'ag_b' }
+      if (url.endsWith('/agents/ag_a')) return { revision: 99, event, agentId: 'ag_a' }
+      if (url.endsWith('/agents/reorder')) return { revision: 99, event }
+      if (url.endsWith('/agents')) return { revision: 99, event, agentId: 'ag_a' }
+      if (url.endsWith('/agent-presets/ap_a/uses/use_a')) {
+        return { revision: 99, event, presetId: 'ap_a', stepId: 'use_a', useId: 'use_a', agentId: 'ag_a' }
+      }
+      return { revision: 99, event, presetId: 'ap_a', stepId: 'use_a', useId: 'use_a', agentId: 'ag_a' }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const agent = {
+      name: 'Researcher',
+      instruction: 'Collect facts.',
+      modelDefaults: { mode: 'inheritMain' as const },
+      runtimeDefaults: { timeoutMs: 30_000 },
+      inputScopes: ['currentUserMessage' as const],
+      outputFormat: 'text' as const,
+    }
+    await createAgentCommand({ baseRevision: 1, agent })
+    await updateAgentCommand({ baseRevision: 2, agentId: 'ag_a', patch: { instruction: 'Verify facts.' } })
+    await duplicateAgentCommand({ baseRevision: 3, agentId: 'ag_a', name: 'Researcher Copy' })
+    await deleteAgentCommand({ baseRevision: 4, agentId: 'ag_b' })
+    await reorderAgentsCommand({ baseRevision: 5, agentIds: ['ag_a'] })
+    await createAgentPresetUseCommand({
+      baseRevision: 6,
+      presetId: 'ap_a',
+      use: {
+        agentId: 'ag_a',
+        enabled: true,
+        phase: 'beforeMain',
+        dependencies: [],
+        outputKey: 'facts',
+        destination: 'promptOutput',
+        failurePolicy: { mode: 'required' },
+      },
+    })
+    await updateAgentPresetUseCommand({
+      baseRevision: 7,
+      presetId: 'ap_a',
+      useId: 'use_a',
+      patch: { runtimeOverride: { timeoutMs: 45_000 } },
+    })
+    await deleteAgentPresetUseCommand({ baseRevision: 8, presetId: 'ap_a', useId: 'use_a' })
+    await reorderAgentPresetUsesCommand({ baseRevision: 9, presetId: 'ap_a', useIds: ['use_b'] })
+
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
+      {
+        url: '/api/v1/commands/agents',
+        method: 'POST',
+        body: { baseRevision: 1, agent },
+      },
+      {
+        url: '/api/v1/commands/agents/ag_a',
+        method: 'PATCH',
+        body: { baseRevision: 2, patch: { instruction: 'Verify facts.' } },
+      },
+      {
+        url: '/api/v1/commands/agents/ag_a/duplicate',
+        method: 'POST',
+        body: { baseRevision: 3, name: 'Researcher Copy' },
+      },
+      {
+        url: '/api/v1/commands/agents/ag_b',
+        method: 'DELETE',
+        body: { baseRevision: 4 },
+      },
+      {
+        url: '/api/v1/commands/agents/reorder',
+        method: 'POST',
+        body: { baseRevision: 5, agentIds: ['ag_a'] },
+      },
+      {
+        url: '/api/v1/commands/agent-presets/ap_a/uses',
+        method: 'POST',
+        body: {
+          baseRevision: 6,
+          use: {
+            agentId: 'ag_a',
+            enabled: true,
+            phase: 'beforeMain',
+            dependencies: [],
+            outputKey: 'facts',
+            destination: 'promptOutput',
+            failurePolicy: { mode: 'required' },
+          },
+        },
+      },
+      {
+        url: '/api/v1/commands/agent-presets/ap_a/uses/use_a',
+        method: 'PATCH',
+        body: { baseRevision: 7, patch: { runtimeOverride: { timeoutMs: 45_000 } } },
+      },
+      {
+        url: '/api/v1/commands/agent-presets/ap_a/uses/use_a',
+        method: 'DELETE',
+        body: { baseRevision: 8 },
+      },
+      {
+        url: '/api/v1/commands/agent-presets/ap_a/uses/reorder',
+        method: 'POST',
+        body: { baseRevision: 9, useIds: ['use_b'] },
+      },
+    ])
+  })
+
   it('exposes exact Agent Preset field acknowledgements without serializing optimistic proof', async () => {
     const commandFetch = makeCommandFetch((url) => {
       if (url.endsWith('/agent-presets/ap_a/steps/aps_a')) {
@@ -2842,9 +3413,9 @@ describe('server command API adapter', () => {
           id: 'ap_a',
         },
         presetId: 'ap_a',
-        acknowledgedKeys: ['name', 'description'],
+        acknowledgedKeys: ['name', 'description', 'moduleIntergration'],
         canonicalValues: { name: 'Canonical Name' },
-        canonicalDeletedKeys: ['description'],
+        canonicalDeletedKeys: ['description', 'moduleIntergration'],
         updatedAt: 300,
       }
     })
@@ -2857,12 +3428,13 @@ describe('server command API adapter', () => {
     await updateAgentPresetCommand({
       baseRevision: 2,
       presetId: 'ap_a',
-      patch: { name: '  Canonical Name  ', description: null },
+      patch: { name: '  Canonical Name  ', description: null, moduleIntergration: null },
       optimisticAcknowledgement: {
         settingsProjectionEpoch: 12,
         attemptedFields: {
           name: { present: true, value: '  Canonical Name  ' },
           description: { present: true, value: null },
+          moduleIntergration: { present: true, value: null },
         },
       },
     })
@@ -2891,6 +3463,10 @@ describe('server command API adapter', () => {
             attempted: { present: true, value: null },
             canonical: { present: false },
           },
+          moduleIntergration: {
+            attempted: { present: true, value: null },
+            canonical: { present: false },
+          },
         },
         updatedAt: 300,
       },
@@ -2911,7 +3487,7 @@ describe('server command API adapter', () => {
     expect(commandFetch.calls.map((call) => call.body)).toEqual([
       {
         baseRevision: 2,
-        patch: { name: '  Canonical Name  ', description: null },
+        patch: { name: '  Canonical Name  ', description: null, moduleIntergration: null },
       },
       {
         baseRevision: 3,
@@ -3268,7 +3844,7 @@ describe('server command API adapter', () => {
       createPromptItemCommand({
         baseRevision: 2,
         promptPresetId: 'prompt-preset-a',
-        promptItem: { id: 'item-b', type: 'memory' },
+        promptItem: { id: 'item-b', type: 'memory', role2: 'assistant' },
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 3, itemId: 'item-b' })
 
@@ -3277,7 +3853,7 @@ describe('server command API adapter', () => {
         baseRevision: 3,
         promptPresetId: 'prompt-preset-a',
         itemId: 'item-b',
-        patch: { type: 'description' },
+        patch: { type: 'description', role2: 'char' },
         deleteKeys: ['text'],
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 4, itemId: 'item-b' })
@@ -3326,7 +3902,11 @@ describe('server command API adapter', () => {
       {
         url: '/api/v1/commands/prompt-items',
         method: 'POST',
-        body: { baseRevision: 2, promptPresetId: 'prompt-preset-a', promptItem: { id: 'item-b', type: 'memory' } },
+        body: {
+          baseRevision: 2,
+          promptPresetId: 'prompt-preset-a',
+          promptItem: { id: 'item-b', type: 'memory', role2: 'bot' },
+        },
       },
       {
         url: '/api/v1/commands/prompt-items/item-b',
@@ -3334,7 +3914,7 @@ describe('server command API adapter', () => {
         body: {
           baseRevision: 3,
           promptPresetId: 'prompt-preset-a',
-          patch: { type: 'description' },
+          patch: { type: 'description', role2: 'bot' },
           deleteKeys: ['text'],
         },
       },
@@ -3662,6 +4242,7 @@ describe('server command API adapter', () => {
         collectionProjectionEpoch: 17,
         attemptedFields: {
           name: { present: true, value: 'Optimistic name' },
+          agents: { present: false },
           agentPresets: { present: false },
           agentPresetDefaultId: { present: true, value: 'missing-agent' },
         },
@@ -4202,16 +4783,15 @@ describe('server command API adapter', () => {
     ])
   })
 
-  it('keeps persona delete reconciliation authoritative while acknowledging other structural mutations', async () => {
+  it('acknowledges stable structural persona owners while keeping delete cascade reconciliation authoritative', async () => {
     const profileA = { name: 'A', icon: 'asset-a', personaPrompt: 'Prompt A', note: 'Note A' }
     const profileB = { name: 'B', icon: 'asset-b', personaPrompt: 'Prompt B', note: 'Note B' }
     const personaA = { id: 'persona-a', ...profileA }
     const personaB = { id: 'persona-b', ...profileB }
-    const [idsAB, collectionAB, collectionB, collectionBA, profileBDigest] = await Promise.all([
+    const [idsAB, collectionAB, collectionB, profileBDigest] = await Promise.all([
       sha256Hex(serializePersonaIdsDigestInput(['persona-a', 'persona-b'])),
       sha256Hex(serializePersonaCollectionDigestInput([personaA, personaB])),
       sha256Hex(serializePersonaCollectionDigestInput([personaB])),
-      sha256Hex(serializePersonaCollectionDigestInput([personaB, personaA])),
       sha256Hex(serializePersonaProfileDigestInput(profileB)),
     ])
     const commandFetch = makeCommandFetch((url) => {
@@ -4226,8 +4806,8 @@ describe('server command API adapter', () => {
           selectedPersonaId: 'persona-b',
           collectionWritten: false,
           settingsWritten: true,
-          legacyProfileProjectionApplied: true,
-          legacyProfileDigest: profileBDigest,
+          legacyProfileProjectionApplied: false,
+          legacyProfileDigest: null,
         }
       }
       if (url.endsWith('/personas/reorder')) {
@@ -4236,8 +4816,8 @@ describe('server command API adapter', () => {
           event: { type: 'persona.reordered', revision: 5, resource: 'persona' },
           personaMutationCertificate: 'persona-mutation-v1',
           operation: 'reorder',
-          personaProjectionDigest: collectionBA,
-          selectedPersonaId: 'persona-a',
+          personaProjectionDigest: collectionAB,
+          selectedPersonaId: 'persona-b',
           collectionWritten: true,
           settingsWritten: true,
           legacyProfileProjectionApplied: false,
@@ -4269,8 +4849,8 @@ describe('server command API adapter', () => {
         selectedPersonaId: 'persona-b',
         collectionWritten: true,
         settingsWritten: true,
-        legacyProfileProjectionApplied: true,
-        legacyProfileDigest: profileBDigest,
+        legacyProfileProjectionApplied: false,
+        legacyProfileDigest: null,
       }
     })
     vi.stubGlobal('fetch', commandFetch.fetch)
@@ -4282,7 +4862,7 @@ describe('server command API adapter', () => {
     await createPersonaCommand({
       baseRevision: 1,
       persona: personaB,
-      mirrorLegacyProfile: true,
+      mirrorLegacyProfile: false,
       optimisticAcknowledgement: {
         operation: 'create',
         collectionProjectionEpoch: 10,
@@ -4294,8 +4874,8 @@ describe('server command API adapter', () => {
         attemptedSelectedPersonaId: 'persona-b',
         collectionWritten: true,
         settingsWritten: true,
-        legacyProfileProjectionExpected: true,
-        attemptedLegacyProfile: profileB,
+        legacyProfileProjectionExpected: false,
+        attemptedLegacyProfile: null,
       },
     })
     await deletePersonaCommand({
@@ -4322,7 +4902,7 @@ describe('server command API adapter', () => {
     await selectPersonaCommand({
       baseRevision: 3,
       personaId: 'persona-b',
-      mirrorLegacyProfile: true,
+      mirrorLegacyProfile: false,
       saveCurrent: false,
       optimisticAcknowledgement: {
         operation: 'select',
@@ -4331,26 +4911,26 @@ describe('server command API adapter', () => {
         beforePersonaIds: ['persona-a', 'persona-b'],
         attemptedPersonaIds: ['persona-a', 'persona-b'],
         attemptedPersonas: [{ ...personaA, displayName: 'Unsent unrelated edit' }, personaB],
-        beforeSelectedPersonaId: 'persona-a',
+        beforeSelectedPersonaId: 'persona-b',
         attemptedSelectedPersonaId: 'persona-b',
         collectionWritten: false,
         settingsWritten: true,
-        legacyProfileProjectionExpected: true,
-        attemptedLegacyProfile: profileB,
+        legacyProfileProjectionExpected: false,
+        attemptedLegacyProfile: null,
       },
     })
     await reorderPersonasCommand({
       baseRevision: 4,
-      personaIds: ['persona-b', 'persona-a'],
+      personaIds: ['persona-a', 'persona-b'],
       optimisticAcknowledgement: {
         operation: 'reorder',
         collectionProjectionEpoch: 13,
         settingsProjectionEpoch: 23,
         beforePersonaIds: ['persona-a', 'persona-b'],
-        attemptedPersonaIds: ['persona-b', 'persona-a'],
-        attemptedPersonas: [personaB, personaA],
-        beforeSelectedPersonaId: 'persona-a',
-        attemptedSelectedPersonaId: 'persona-a',
+        attemptedPersonaIds: ['persona-a', 'persona-b'],
+        attemptedPersonas: [personaA, personaB],
+        beforeSelectedPersonaId: 'persona-b',
+        attemptedSelectedPersonaId: 'persona-b',
         collectionWritten: true,
         settingsWritten: true,
         legacyProfileProjectionExpected: false,
@@ -4419,6 +4999,7 @@ describe('server command API adapter', () => {
       { ...exactResponse, legacyProfileDigest: 'f'.repeat(64) },
       { ...exactResponse, event: { ...exactResponse.event, resource: 'settings' } },
       exactResponse,
+      exactResponse,
     ]
     let responseIndex = 0
     const commandFetch = makeCommandFetch(() => responses[responseIndex++])
@@ -4449,11 +5030,15 @@ describe('server command API adapter', () => {
         mirrorLegacyProfile: true,
         saveCurrent: true,
         optimisticAcknowledgement:
-          index === responses.length - 1 ? { ...acknowledgement, collectionWritten: false } : acknowledgement,
+          index === responses.length - 1
+            ? { ...acknowledgement, settingsWritten: false }
+            : index === responses.length - 2
+              ? { ...acknowledgement, collectionWritten: false }
+              : acknowledgement,
       })
     }
 
-    expect(observedEffectCounts).toEqual([0, 0, 0, 0])
+    expect(observedEffectCounts).toEqual([0, 0, 0, 0, 0])
   })
 
   it('exposes an exact persona PATCH acknowledgement without serializing optimistic proof', async () => {
@@ -4855,6 +5440,124 @@ describe('server command API adapter', () => {
     expect(commandFetch.calls[0]?.body).not.toHaveProperty('optimisticAcknowledgement')
   })
 
+  it('accepts server-added legacy mirror keys for a steps-only translator preset PATCH acknowledgement', async () => {
+    const event = {
+      type: 'translatorPreset.updated',
+      revision: 3,
+      resource: 'translatorPreset',
+      id: 'translator-b',
+    }
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 3,
+      event,
+      presetId: 'translator-b',
+      acknowledgedKeys: ['steps', 'prompt', 'maxResponse'],
+      selectedPresetId: 'translator-a',
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const steps = [
+      {
+        id: 'step-a',
+        name: 'Renamed step',
+        enabled: true,
+        prompt: 'Translate the input',
+        maxResponse: 300,
+        model: { mode: 'inheritTranslate' as const },
+        outputKey: 'translation',
+      },
+    ]
+    const attemptedPreset = {
+      id: 'translator-b',
+      name: 'B',
+      prompt: steps[0].prompt,
+      maxResponse: steps[0].maxResponse,
+      steps,
+    }
+
+    await updateTranslatorPresetCommand({
+      baseRevision: 2,
+      presetId: 'translator-b',
+      patch: { steps },
+      optimisticAcknowledgement: {
+        collectionProjectionEpoch: 11,
+        languageSettingsProjectionEpoch: 17,
+        selectedPresetId: 'translator-a',
+        attemptedPreset,
+      },
+    })
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'translatorPresetPatch',
+        presetId: 'translator-b',
+        collectionProjectionEpoch: 11,
+        languageSettingsProjectionEpoch: 17,
+        selectedPresetId: 'translator-a',
+        attemptedPatch: { steps },
+        attemptedPreset,
+      },
+    ])
+    expect(commandFetch.calls[0]?.body).toEqual({
+      baseRevision: 2,
+      patch: { steps },
+    })
+  })
+
+  it('rejects unrelated extra keys in a steps-only translator preset PATCH acknowledgement', async () => {
+    const event = {
+      type: 'translatorPreset.updated',
+      revision: 3,
+      resource: 'translatorPreset',
+      id: 'translator-b',
+    }
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 3,
+      event,
+      presetId: 'translator-b',
+      acknowledgedKeys: ['steps', 'name'],
+      selectedPresetId: 'translator-a',
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const steps = [
+      {
+        id: 'step-a',
+        name: 'Renamed step',
+        enabled: true,
+        prompt: 'Translate the input',
+        maxResponse: 300,
+        model: { mode: 'inheritTranslate' as const },
+      },
+    ]
+
+    await updateTranslatorPresetCommand({
+      baseRevision: 2,
+      presetId: 'translator-b',
+      patch: { steps },
+      optimisticAcknowledgement: {
+        collectionProjectionEpoch: 11,
+        languageSettingsProjectionEpoch: 17,
+        selectedPresetId: 'translator-a',
+        attemptedPreset: {
+          id: 'translator-b',
+          name: 'B',
+          prompt: steps[0].prompt,
+          maxResponse: steps[0].maxResponse,
+          steps,
+        },
+      },
+    })
+
+    expect(observedEffects).toEqual([])
+  })
+
   it('keeps malformed or contradictory translator preset PATCH receipts on authoritative reconciliation', async () => {
     const exactEvent = {
       type: 'translatorPreset.updated',
@@ -4874,6 +5577,16 @@ describe('server command API adapter', () => {
       },
     }
     const cases = [
+      {
+        body: {
+          revision: 3,
+          event: exactEvent,
+          presetId: 'translator-b',
+          acknowledgedKeys: [],
+          selectedPresetId: 'translator-a',
+        },
+        acknowledgement: exactAcknowledgement,
+      },
       {
         body: {
           revision: 3,
@@ -5926,6 +6639,41 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('dispatches an atomic all-chat reset through the typed helper', async () => {
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 12,
+      event: {
+        type: 'chats.reset',
+        revision: 12,
+        resource: 'characterRow',
+        id: 'chat-new',
+        parentId: 'char-a',
+      },
+      chatId: 'chat-new',
+      selectedChatId: 'chat-new',
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      resetChatsCommand({
+        baseRevision: 11,
+        characterId: 'char-a',
+        chat: { id: 'chat-new', name: 'Chat 1', note: '', message: [], localLore: [], fmIndex: -1 },
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 12, chatId: 'chat-new' })
+
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
+      {
+        url: '/api/v1/commands/characters/char-a/chats',
+        method: 'PUT',
+        body: {
+          baseRevision: 11,
+          chat: { id: 'chat-new', name: 'Chat 1', note: '', message: [], localLore: [], fmIndex: -1 },
+        },
+      },
+    ])
+  })
+
   it('emits strict opt-in local effects for optimistic chat structure mutations', async () => {
     const optimisticEpoch = captureDestructiveRefreshEpoch()
     const optimisticRowEpoch = 0
@@ -6235,6 +6983,57 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('dispatches greeting translation immediately outside the durable mutation lane', async () => {
+    const translation = {
+      text: 'translated greeting',
+      source: 'raw',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'google',
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 123,
+    }
+    const reconciled: number[] = []
+    setServerCommandSuccessReconciler((event) => {
+      reconciled.push(event.revision)
+    })
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 2,
+      event: {
+        type: 'character.greetingTranslation.updated',
+        revision: 2,
+        resource: 'greetingTranslation',
+        id: 'char a',
+      },
+      characterId: 'char a',
+      chatId: 'chat-a',
+      greetingIndex: -1,
+      jobId: 'greeting-job-a',
+      settingsHash: 'b'.repeat(64),
+      translation,
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      translateGreetingCommand({
+        baseRevision: 1,
+        characterId: 'char a',
+        chatId: 'chat-a',
+        greetingIndex: -1,
+        jobId: 'greeting-job-a',
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 2, greetingIndex: -1, translation })
+    expect(reconciled).toEqual([2])
+    expect(commandFetch.calls).toEqual([
+      expect.objectContaining({
+        url: '/api/v1/commands/characters/char%20a/greetings/-1/translate',
+        method: 'POST',
+        body: { baseRevision: 1, chatId: 'chat-a', jobId: 'greeting-job-a' },
+      }),
+    ])
+  })
+
   it('defers an own translation SSE echo until the canonical response arrives', async () => {
     const response = createDeferred<Response>()
     const translation = {
@@ -6333,6 +7132,34 @@ describe('server command API adapter', () => {
     // An echo delivered after the response reconciliation is no longer held;
     // bootstrap will see the advanced applied cursor and treat it as a no-op.
     expect(deferOwnServerCommandReconciliation(event)).toBe(false)
+  })
+
+  it('forwards a direct response local effect through reconciliation', async () => {
+    const event = {
+      type: 'message.appended',
+      revision: 2,
+      resource: 'message',
+      id: 'message-a',
+      parentId: 'chat-a',
+    }
+    const localEffect: ServerCommandLocalEffect = {
+      kind: 'messageMutation',
+      operation: 'append',
+      chatId: 'chat-a',
+      messageId: 'message-a',
+      chatBodyProjectionEpoch: 4,
+    }
+    const reconciledEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      reconciledEffects.push(...localEffects.values())
+    })
+
+    await withDirectServerCommandEventReconciliation(
+      (candidate) => candidate.type === 'message.appended' && candidate.id === 'message-a',
+      async (reconcileResponseEvent) => reconcileResponseEvent(event, localEffect),
+    )
+
+    expect(reconciledEffects).toEqual([localEffect])
   })
 
   it('releases unmatched and failed direct events through ordinary reconciliation', async () => {
@@ -8448,7 +9275,11 @@ describe('server command API adapter', () => {
 
   it('dispatches module record and enablement commands through typed helpers', async () => {
     const commandFetch = makeCommandFetch((url) => {
-      if (url.includes('/modules') || url.includes('/characters/char-a/modules/reorder')) {
+      if (
+        url.includes('/modules') ||
+        url.includes('/module-folders') ||
+        url.includes('/characters/char-a/modules/reorder')
+      ) {
         return {
           revision: 9,
           event: {
@@ -8476,12 +9307,20 @@ describe('server command API adapter', () => {
     })
     await deleteModuleCommand({ baseRevision: 3, moduleId: 'mod-a' })
     await enableModuleCommand({ baseRevision: 4, moduleId: 'mod-a', enabled: true })
-    await reorderModulesCommand({ baseRevision: 5, moduleIds: ['mod-b', 'mod-a'] })
+    await reorderModulesCommand({
+      baseRevision: 5,
+      moduleIds: ['mod-b', 'mod-a'],
+      folderByModuleId: { 'mod-a': null, 'mod-b': 'folder-a' },
+    })
     await reorderCharacterModulesCommand({
       baseRevision: 6,
       characterId: 'char-a',
       moduleIds: ['mod-a'],
     })
+    await createModuleFolderCommand({ baseRevision: 7, folder: { id: 'folder-a', name: 'Folder A' } })
+    await updateModuleFolderCommand({ baseRevision: 8, folderId: 'folder-a', patch: { name: 'Renamed' } })
+    await reorderModuleFoldersCommand({ baseRevision: 9, folderIds: ['folder-b', 'folder-a'] })
+    await deleteModuleFolderCommand({ baseRevision: 10, folderId: 'folder-a' })
 
     expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
@@ -8513,12 +9352,36 @@ describe('server command API adapter', () => {
       {
         url: '/api/v1/commands/modules/reorder',
         method: 'POST',
-        body: { baseRevision: 5, moduleIds: ['mod-b', 'mod-a'] },
+        body: {
+          baseRevision: 5,
+          moduleIds: ['mod-b', 'mod-a'],
+          folderByModuleId: { 'mod-a': null, 'mod-b': 'folder-a' },
+        },
       },
       {
         url: '/api/v1/commands/characters/char-a/modules/reorder',
         method: 'POST',
         body: { baseRevision: 6, moduleIds: ['mod-a'] },
+      },
+      {
+        url: '/api/v1/commands/module-folders',
+        method: 'POST',
+        body: { baseRevision: 7, folder: { id: 'folder-a', name: 'Folder A' } },
+      },
+      {
+        url: '/api/v1/commands/module-folders/folder-a',
+        method: 'PATCH',
+        body: { baseRevision: 8, patch: { name: 'Renamed' } },
+      },
+      {
+        url: '/api/v1/commands/module-folders/reorder',
+        method: 'POST',
+        body: { baseRevision: 9, folderIds: ['folder-b', 'folder-a'] },
+      },
+      {
+        url: '/api/v1/commands/module-folders/folder-a',
+        method: 'DELETE',
+        body: { baseRevision: 10 },
       },
     ])
   })
@@ -9007,7 +9870,7 @@ describe('server command API adapter', () => {
   })
 })
 
-describe('L36 runner rejection rollback (stability/perf plan, Phase 3)', () => {
+describe('runner rejection rollback', () => {
   it('rolls back a failed command result when no destructive refresh occurred', async () => {
     setCachedServerCommandRevision(12)
     const rollback = vi.fn()
@@ -9051,7 +9914,7 @@ describe('L36 runner rejection rollback (stability/perf plan, Phase 3)', () => {
     expect(rollback).toHaveBeenCalledTimes(1)
   })
 
-  it('L36: a rejected command factory rolls back once and resolves to an error result', async () => {
+  it('a rejected command factory rolls back once and resolves to an error result', async () => {
     const commandFetch = makeCommandFetch((url) => {
       if (url === '/api/v1/bootstrap') return { revision: 7 }
       return jsonResponse({ error: 'unexpected' }, 500)
@@ -9078,7 +9941,7 @@ describe('L36 runner rejection rollback (stability/perf plan, Phase 3)', () => {
     consoleError.mockRestore()
   })
 
-  it('L36: a synchronous factory throw is also surfaced and rolled back', async () => {
+  it('a synchronous factory throw is also surfaced and rolled back', async () => {
     const commandFetch = makeCommandFetch((url) => {
       if (url === '/api/v1/bootstrap') return { revision: 7 }
       return jsonResponse({ error: 'unexpected' }, 500)

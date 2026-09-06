@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { collectAgentPresetDiagnosticRuns, normalizeAgentPresetGenerationDiagnostic } from './agentPresetDiagnostics'
+import { charactersResourceState } from './server/resourceState.svelte'
 
 function diagnostic(presetId: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -164,5 +165,56 @@ describe('Agent Preset diagnostics', () => {
 
     expect(collected.total).toBe(4)
     expect(collected.runs.map((run) => run.messageTime)).toEqual([4, 3])
+  })
+
+  it('reads canonical character and chat owners once resources are ready', () => {
+    const previousStatus = charactersResourceState.status
+    const previousCharacters = charactersResourceState.characters
+    try {
+      charactersResourceState.characters = [
+        {
+          chaId: 'char-canonical',
+          name: 'Canonical Character',
+          chats: [{ id: 'chat-canonical', name: 'Canonical Chat', message: [message('ap_a', 42)] }],
+        } as any,
+      ]
+      charactersResourceState.status = 'ready'
+
+      const collected = collectAgentPresetDiagnosticRuns(
+        {
+          characters: [{ chaId: 'char-stale', name: 'Stale Character', chats: [] }],
+        },
+        'ap_a',
+      )
+
+      expect(collected.total).toBe(1)
+      expect(collected.runs[0]).toMatchObject({
+        characterId: 'char-canonical',
+        characterName: 'Canonical Character',
+        chatId: 'chat-canonical',
+      })
+    } finally {
+      charactersResourceState.characters = previousCharacters
+      charactersResourceState.status = previousStatus
+    }
+  })
+
+  it('fails closed for malformed or duplicate canonical character/chat identities', () => {
+    const previousStatus = charactersResourceState.status
+    const previousCharacters = charactersResourceState.characters
+    try {
+      charactersResourceState.status = 'ready'
+      charactersResourceState.characters = [
+        { chaId: 'duplicate', chats: [{ id: 'chat-a', message: [] }] },
+        { chaId: 'duplicate', chats: [{ id: 'chat-b', message: [] }] },
+      ] as any
+      expect(collectAgentPresetDiagnosticRuns({}, 'ap_a')).toEqual({ runs: [], total: 0 })
+
+      charactersResourceState.characters = [{ chaId: 'valid', chats: [{ message: [message('ap_a', 1)] }] }] as any
+      expect(collectAgentPresetDiagnosticRuns({}, 'ap_a')).toEqual({ runs: [], total: 0 })
+    } finally {
+      charactersResourceState.characters = previousCharacters
+      charactersResourceState.status = previousStatus
+    }
   })
 })
