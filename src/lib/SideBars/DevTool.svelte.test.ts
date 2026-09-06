@@ -17,6 +17,15 @@ const devToolMocks = vi.hoisted(() => ({
     persistant: 0,
     dynamic: 0,
   })),
+  getChatVisibleTokens: vi.fn(async () => 3),
+  fetchLoreTokenCounts: vi.fn(async (_characterId: string, _chatId: string, _signal?: AbortSignal) => ({
+    character: 2,
+    module: 4,
+    chat: 6,
+    hasRandomActivation: false,
+  })),
+  hydrateChatMessages: vi.fn(async (_id: string, _options?: unknown) => {}),
+  isTranscriptHydrated: vi.fn(() => true),
   getChatToken: vi.fn<(chat: unknown) => Promise<number>>(async () => 0),
   tokenizePreset: vi.fn(async () => 0),
   appendCurrentChatUserMessageForSend: vi.fn<(...args: any[]) => Promise<any>>(async () => ({
@@ -75,6 +84,19 @@ vi.mock('src/ts/process/modules', () => ({
 
 vi.mock('src/ts/process/lorebook.svelte', () => ({
   loadLoreBookV3Prompt: vi.fn(async () => ({ actives: [] })),
+}))
+
+vi.mock('src/ts/server/lorebookOwner.svelte', async (importActual) => ({
+  ...(await importActual<typeof import('src/ts/server/lorebookOwner.svelte')>()),
+  isCharacterLorebookMutationReady: () => true,
+}))
+vi.mock('src/ts/chatVisibleTokens', () => ({ getChatVisibleTokens: devToolMocks.getChatVisibleTokens }))
+vi.mock('src/ts/server/loreTokenCounts', () => ({ fetchLoreTokenCounts: devToolMocks.fetchLoreTokenCounts }))
+vi.mock('src/ts/server/routeResourceLoader', () => ({ ensureResourceSurfaces: vi.fn(async () => {}) }))
+vi.mock('src/ts/server/chatMessageHydration.svelte', async (importActual) => ({
+  ...(await importActual<typeof import('src/ts/server/chatMessageHydration.svelte')>()),
+  hydrateChatMessages: devToolMocks.hydrateChatMessages,
+  isChatMessageTranscriptHydrated: devToolMocks.isTranscriptHydrated,
 }))
 
 vi.mock('src/ts/filePicker', () => ({
@@ -175,6 +197,12 @@ beforeEach(() => {
   devToolMocks.clearAlertWait.mockReset().mockReturnValue(true)
   devToolMocks.getCharToken.mockResolvedValue({ persistant: 0, dynamic: 0 })
   devToolMocks.getChatToken.mockResolvedValue(0)
+  devToolMocks.getChatVisibleTokens.mockReset().mockResolvedValue(3)
+  devToolMocks.fetchLoreTokenCounts
+    .mockReset()
+    .mockResolvedValue({ character: 2, module: 4, chat: 6, hasRandomActivation: false })
+  devToolMocks.hydrateChatMessages.mockReset().mockResolvedValue(undefined)
+  devToolMocks.isTranscriptHydrated.mockReset().mockReturnValue(true)
   devToolMocks.appendCurrentChatUserMessageForSend.mockReset().mockResolvedValue({
     status: 'ok',
     messageId: 'message-b',
@@ -371,6 +399,105 @@ describe('DevTool chat generation ownership', () => {
     await settle()
 
     expect(devToolMocks.tokenizePreset).toHaveBeenCalledWith(canonicalTemplate)
+  })
+
+  it('calculates only when opened and shows each category and conditional warning', async () => {
+    expect(devToolMocks.fetchLoreTokenCounts).not.toHaveBeenCalled()
+    expect(devToolMocks.getChatVisibleTokens).not.toHaveBeenCalled()
+    devToolMocks.fetchLoreTokenCounts.mockResolvedValue({ character: 2, module: 4, chat: 6, hasRandomActivation: true })
+    const panel = await openSection('Tokens')
+    await settle()
+    for (const label of [
+      'Character Dynamic (All)',
+      'Character Dynamic (Active)',
+      'Module Dynamic (Active)',
+      'Chat Lore (Active)',
+      'Current Chat (Visible)',
+    ])
+      expect(panel.textContent).toContain(label)
+    expect(panel.querySelector('[data-testid="token-random-warning"]')?.textContent).toContain(
+      language.tokenCounts.randomWarning,
+    )
+    devToolMocks.fetchLoreTokenCounts.mockResolvedValue({
+      character: 2,
+      module: 4,
+      chat: 6,
+      hasRandomActivation: false,
+    })
+    Array.from(panel.querySelectorAll('button'))
+      .find((button) => button.textContent === language.tokenCounts.recalculate)!
+      .click()
+    await settle()
+    expect(panel.querySelector('[data-testid="token-random-warning"]')).toBeNull()
+  })
+
+  it('waits for full hydration before counting and does not display partial history as a total', async () => {
+    devToolMocks.isTranscriptHydrated.mockReturnValue(false)
+    const hydration = deferred<void>()
+    devToolMocks.hydrateChatMessages.mockReturnValue(hydration.promise)
+    const panel = await openSection('Tokens')
+    expect(devToolMocks.getChatToken).not.toHaveBeenCalled()
+    expect(panel.textContent).toContain(language.loading)
+    devToolMocks.isTranscriptHydrated.mockReturnValue(true)
+    const transcript = Array.from({ length: 40 }, (_, index) => ({
+      role: 'user',
+      data: `message ${index}`,
+      chatId: `row-${index}`,
+    }))
+    applyServerChatMessagesResource('chat-b', transcript, undefined, [])
+    hydration.resolve()
+    await settle()
+    expect(devToolMocks.getChatToken).toHaveBeenCalledWith(expect.objectContaining({ message: transcript }))
+    expect(devToolMocks.getChatVisibleTokens).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ message: transcript }),
+      expect.any(AbortSignal),
+    )
+  })
+
+  it('reports failure and supports retry instead of counting incomplete history', async () => {
+    devToolMocks.isTranscriptHydrated.mockReturnValue(false)
+    devToolMocks.hydrateChatMessages.mockRejectedValue(new Error('offline'))
+    const panel = await openSection('Tokens')
+    await settle()
+    expect(devToolMocks.getChatToken).not.toHaveBeenCalled()
+    expect(panel.querySelector('[role="alert"]')?.textContent).toBe(language.tokenCounts.failed)
+    devToolMocks.isTranscriptHydrated.mockReturnValue(true)
+    Array.from(panel.querySelectorAll('button'))
+      .find((button) => button.textContent === language.retry)!
+      .click()
+    await settle()
+    expect(devToolMocks.getChatToken).toHaveBeenCalled()
+    expect(panel.querySelector('[role="alert"]')).toBeNull()
+  })
+
+  it('aborts a pending calculation when Tokens closes', async () => {
+    const calculation = deferred<number>()
+    devToolMocks.getChatToken.mockReturnValue(calculation.promise)
+    await openSection('Tokens')
+    const signal = devToolMocks.fetchLoreTokenCounts.mock.calls.at(-1)![2]!
+    Array.from(target.querySelectorAll('button'))
+      .find((button) => button.textContent?.trim() === 'Tokens')!
+      .click()
+    await settle()
+    expect(signal.aborted).toBe(true)
+    calculation.resolve(999)
+    await settle()
+    expect(devToolMocks.getChatVisibleTokens).not.toHaveBeenCalled()
+    expect(target.textContent).not.toContain('999 Tokens')
+  })
+
+  it('discards obsolete totals after a same-chat edit', async () => {
+    const oldCount = deferred<number>()
+    devToolMocks.getChatToken.mockReturnValueOnce(oldCount.promise).mockResolvedValue(12)
+    const panel = await openSection('Tokens')
+    applyServerChatMessagesResource('chat-b', [{ role: 'user', chatId: 'edited', data: 'edited body' }], undefined, [])
+    await settle()
+    oldCount.resolve(999)
+    await settle()
+    expect(panel.textContent).toContain('12 Tokens')
+    expect(panel.textContent).not.toContain('999 Tokens')
+    expect(devToolMocks.getChatVisibleTokens).toHaveBeenCalledTimes(1)
   })
 
   it('counts the canonical transcript owner instead of a divergent chat row', async () => {

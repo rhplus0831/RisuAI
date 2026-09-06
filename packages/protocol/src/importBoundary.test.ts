@@ -89,6 +89,7 @@ describe('@risuai/protocol import boundary', () => {
       'hypaContextTruncation.ts',
       'imageGenerationOperation.ts',
       'index.ts',
+      'loreTokenCounts.ts',
       'mcpOAuthRefresh.ts',
       'moduleOrganization.ts',
       'providerOperation.ts',

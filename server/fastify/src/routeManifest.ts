@@ -371,6 +371,11 @@ export const PROTOCOL_ROUTE_POLICIES = [
     },
   },
   {
+    id: 'chat-lore-token-counts',
+    auth: { decision: 'required', reason: 'Lore token counts describe private chat context.' },
+    activeWriter: { decision: 'not-applicable', reason: 'Read-only evaluation on an isolated chat copy.' },
+  },
+  {
     id: 'chat-display-sources',
     auth: {
       decision: 'required',

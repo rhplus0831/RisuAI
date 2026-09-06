@@ -38,6 +38,7 @@ import {
 } from './routes/generationChat.js'
 import { registerGenerationOperationRoutes } from './routes/generationOperations.js'
 import { registerGenerationEffectRoutes } from './routes/generationEffects.js'
+import { registerLoreTokenCountRoutes } from './routes/loreTokenCounts.js'
 import { registerDisplaySourceRoutes } from './routes/displaySources.js'
 import { DisplaySourceService } from './displaySourceService.js'
 import { bootPromptVariables } from './prompt/promptVariablesBoot.js'
@@ -457,6 +458,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     { wakeWorker: () => bardWikiWorker?.wake() },
   )
   registerDisplaySourceRoutes(app, authState, displaySourceService)
+  registerLoreTokenCountRoutes(app, db, config.dataDir, authState)
   registerEventsRoutes(app, db, authState, commandEventSink, memoryEventBus, activeWriterState)
   registerAssetsRoutes(app, db, authState, config.dataDir, activeWriterState)
   registerBackupRoutes(app, db, authState, config.dataDir, commandEventSink, {

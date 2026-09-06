@@ -1,4 +1,20 @@
 const languageKoreanBase = {
+  tokenCounts: {
+    characterPersistent: '캐릭터 고정',
+    characterAll: '캐릭터 동적 (전체)',
+    characterActive: '캐릭터 동적 (활성)',
+    moduleActive: '모듈 동적 (활성)',
+    chatLoreActive: '채팅 로어북 (활성)',
+    currentChat: '현재 채팅',
+    visibleChat: '현재 채팅 (표시 텍스트)',
+    promptTemplate: '프롬프트 템플릿',
+    estimate: '추정치입니다. 실제 토큰 수와 다를 수 있습니다.',
+    randomWarning: '무작위로 활성화되는 로어북 항목이 있어 추정치가 실제 사용량과 다를 수 있습니다.',
+    unavailable: '계산 불가',
+    failed: '일부 토큰 수를 계산하지 못했습니다. 다시 시도해 주세요.',
+    recalculate: '다시 계산',
+  },
+
   transcriptShowMessages: (from: number, to: number) => `${from}–${to}번 메시지 표시`,
   transcriptInteractionLimit:
     '다른 작업을 시작하려면 편집을 마치거나 메시지 작업이 완료될 때까지 기다려 주세요. 동시에 최대 8개 메시지에서 작업할 수 있습니다.',

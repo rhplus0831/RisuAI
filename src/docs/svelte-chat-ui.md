@@ -593,6 +593,35 @@ field is allowed by both `src/ts/chatCommands.ts` and
 `server/fastify/src/commands/chats.ts`; behavior is covered in
 `src/ts/process/__tests__/sendChat.serverPreview.test.ts`.
 
+## Advanced Tools Token Estimates
+
+The Tokens accordion mounts `src/lib/SideBars/DevToolChatTokens.svelte` only
+while open. Current Chat waits for complete, strict transcript hydration and
+counts stored message bodies, including history outside the display window.
+Current Chat (Visible) parses every stored row in bounded batches through the
+normal CBS/editdisplay/Markdown pipeline, then extracts static readable text
+with `src/ts/parser/staticVisibleText.ts`. Closed details contribute only their
+summary. Hidden elements, styles, scripts, and embedded documents contribute no
+text. Unconditional embedded CSS and inline visibility declarations are applied;
+media/container queries, viewport geometry, and interactive UI state are not
+simulated. Saved raw translations follow the chat's automatic/bilingual display
+settings without requesting translations. Both chat totals exclude the separate
+character greeting and app-owned controls.
+
+Character Dynamic (All) retains the character lore total. Character Dynamic
+(Active), Module Dynamic (Active), and Chat Lore (Active) share one server
+activation evaluation, with original source categories retained independently of
+entry names. `/api/v1/chats/:chatId/lore-token-counts` reads selected effective
+generation configuration and complete history, evaluates an isolated working
+chat, and never persists sticky activation flags. Final lore-to-lore injected
+text is recounted in the receiving entry's category. Applicable probability
+entries trigger a warning even if the random draw excluded them. These values
+remain estimates, rather than the exact final provider request budget.
+
+Edits, relevant state changes, explicit Recalculate, and reopening the accordion
+refresh its counts; closing or changing targets cancels/discards obsolete work.
+Failed hydration cannot present a partial transcript count as a complete total.
+
 ## Focused Tests
 
 Start with `src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts`,

@@ -6,7 +6,10 @@
   import { getRequestLog } from 'src/ts/globalApi.svelte'
   import { alertError, alertMd, beginAlertWait, clearAlertWait } from 'src/ts/alert'
   import Accordion from '../UI/Accordion.svelte'
-  import { getCharToken, getChatToken } from 'src/ts/tokenizer'
+  import DevToolChatTokens from './DevToolChatTokens.svelte'
+  import { getCharToken } from 'src/ts/tokenizer'
+  import { ensureCharacterLorebookHydrated } from 'src/ts/server/chatMessageHydration.svelte'
+  import { isCharacterLorebookMutationReady } from 'src/ts/server/lorebookOwner.svelte'
   import { tokenizePreset } from 'src/ts/process/prompt'
   import { resolveEffectivePromptTemplate } from '@risuai/shared-core/effective-prompt-template'
 
@@ -18,7 +21,6 @@
     getChatMetadataOwnerState,
     settingsResourceState,
   } from 'src/ts/server/resourceState.svelte'
-  import { getChatMessageOwnerState } from 'src/ts/server/chatMessageHydration.svelte'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import { HardDriveUploadIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
   import { selectSingleFile } from 'src/ts/filePicker'
@@ -159,20 +161,16 @@
     return getChatMetadataOwnerState(chat.id)?.chatId === chat.id ? chat : undefined
   }
 
-  function currentDevToolTranscriptChat(): Chat | undefined {
-    const chat = currentDevToolChat()
-    const transcript = chat?.id ? getChatMessageOwnerState(chat.id) : undefined
-    return chat && transcript ? { ...chat, message: transcript.messages } : undefined
-  }
-
   async function currentDevToolCharacterTokens() {
     const character = currentDevToolCharacter()
-    return character ? getCharToken(character) : { persistant: 0, dynamic: 0 }
-  }
-
-  async function currentDevToolChatTokens() {
-    const chat = currentDevToolTranscriptChat()
-    return chat ? getChatToken(chat) : 0
+    if (!character) return { persistant: 0, dynamic: 0 }
+    // Capture all text dependencies synchronously for Svelte's await block.
+    const tokenCharacter = { ...character, globalLore: character.globalLore?.map((entry) => ({ ...entry })) ?? [] }
+    if (!isCharacterLorebookMutationReady(character.chaId)) {
+      if (!(await ensureCharacterLorebookHydrated(character.chaId))) throw new Error('Character lore unavailable')
+      tokenCharacter.globalLore = character.globalLore?.map((entry) => ({ ...entry })) ?? []
+    }
+    return getCharToken(tokenCharacter)
   }
 
   function currentScriptstateEntries(): Array<[string, unknown]> {
@@ -209,37 +207,39 @@
   </div>
 </Accordion>
 
-<Accordion styled name={'Tokens'}>
+<Accordion styled name={language.tokens}>
   <div class="rounded-md border border-darkborderc grid grid-cols-2 gap-2 p-2">
     {#await currentDevToolCharacterTokens()}
-      <span>Character Persistant</span>
-      <div class="p-2 text-center">Loading...</div>
-      <span>Character Dynamic</span>
-      <div class="p-2 text-center">Loading...</div>
+      <span>{language.tokenCounts.characterPersistent}</span>
+      <div class="p-2 text-center">{language.loading}...</div>
+      <span>{language.tokenCounts.characterAll}</span>
+      <div class="p-2 text-center">{language.loading}...</div>
     {:then token}
-      <span>Character Persistant</span>
-      <div class="p-2 text-center">{token.persistant} Tokens</div>
-      <span>Character Dynamic</span>
-      <div class="p-2 text-center">{token.dynamic} Tokens</div>
+      <span>{language.tokenCounts.characterPersistent}</span>
+      <div class="p-2 text-center">{token.persistant} {language.tokens}</div>
+      <span>{language.tokenCounts.characterAll}</span>
+      <div class="p-2 text-center">{token.dynamic} {language.tokens}</div>
+    {:catch}
+      <span>{language.tokenCounts.characterPersistent}</span>
+      <div class="p-2 text-center">{language.tokenCounts.unavailable}</div>
+      <span>{language.tokenCounts.characterAll}</span>
+      <div class="p-2 text-center">{language.tokenCounts.unavailable}</div>
     {/await}
-    {#await currentDevToolChatTokens()}
-      <span>Current Chat</span>
-      <div class="p-2 text-center">Loading...</div>
-    {:then token}
-      <span>Current Chat</span>
-      <div class="p-2 text-center">{token} Tokens</div>
-    {/await}
+    <DevToolChatTokens character={currentDevToolCharacter()} chat={currentDevToolChat()} />
     {#if promptTemplate}
       {#await tokenizePreset(promptTemplate)}
-        <span>Prompt Template</span>
-        <div class="p-2 text-center">Loading...</div>
+        <span>{language.tokenCounts.promptTemplate}</span>
+        <div class="p-2 text-center">{language.loading}...</div>
       {:then token}
-        <span>Prompt Template</span>
-        <div class="p-2 text-center">{token} Tokens</div>
+        <span>{language.tokenCounts.promptTemplate}</span>
+        <div class="p-2 text-center">{token} {language.tokens}</div>
+      {:catch}
+        <span>{language.tokenCounts.promptTemplate}</span>
+        <div class="p-2 text-center">{language.tokenCounts.unavailable}</div>
       {/await}
     {/if}
   </div>
-  <span class="text-sm text-textcolor2">This is a estimate. The actual token count may be different.</span>
+  <span class="text-sm text-textcolor2">{language.tokenCounts.estimate}</span>
 </Accordion>
 
 <Accordion styled name={'Autopilot'}>

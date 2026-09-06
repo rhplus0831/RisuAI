@@ -335,6 +335,16 @@ export const PROTOCOL_ROUTE_OPERATION_CATALOG = [
     response: 'structured',
   },
   {
+    id: 'chat-lore-token-counts',
+    methods: ['GET'],
+    path: '/api/v1/chats/:chatId/lore-token-counts',
+    match: 'pattern',
+    streaming: 'none',
+    cache: 'no-store',
+    durability: 'none',
+    response: 'structured',
+  },
+  {
     id: 'chat-display-sources',
     methods: ['POST'],
     path: '/api/v1/chats/:chatId/display-sources',

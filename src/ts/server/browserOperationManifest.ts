@@ -294,6 +294,18 @@ export const BROWSER_OPERATION_BINDINGS = [
     owner: 'src/ts/server/hydrationReads.ts#fetchServerBulkChatMessages',
   }),
   operation({
+    key: 'chat-lore-token-counts',
+    family: 'resource',
+    routeOperationId: 'chat-lore-token-counts',
+    method: 'GET',
+    examplePath: '/api/v1/chats/chat-1/lore-token-counts',
+    cache: 'no-store',
+    streaming: 'none',
+    durability: 'none',
+    response: 'structured',
+    owner: 'src/ts/server/loreTokenCounts.ts#fetchLoreTokenCounts',
+  }),
+  operation({
     key: 'chat-display-sources',
     family: 'resource',
     routeOperationId: 'chat-display-sources',

@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import type {
   FastifyChat as Chat,
   FastifyCharacter as character,
@@ -10,6 +10,7 @@ import type { ServerModule as RisuModule } from '../src/prompt/moduleDescriptors
 import {
   activateLorebook,
   activateLorebookAsync,
+  countActiveLoreTokens,
   buildLorebookContext,
   getLorebookSearchEntryListInstrumentation,
   getLorebookSearchNormalizationInstrumentation,
@@ -1855,5 +1856,82 @@ describe('lorebook search entry lists', () => {
       depthSliceBuilds: 1,
       combinedSearchEntryArrayBuilds: 0,
     })
+  })
+})
+
+describe('lore token diagnostics', () => {
+  it.each(['strict', 'worker'] as const)(
+    'evaluates all sources together and leaves activation flags unchanged (%s)',
+    async (mode) => {
+      const currentChat = makeChat({
+        localLore: [makeLore({ content: 'local', comment: 'same name' })],
+        message: [makeMessage({ data: 'start' })],
+      })
+      const currentChar = makeChar({
+        globalLore: [
+          makeLore({
+            id: 'once',
+            key: 'start',
+            alwaysActive: false,
+            comment: 'same name',
+            content: '@@dont_activate_after_match\nmodule-key',
+          }),
+        ],
+      })
+      const database = makeDb({
+        complexRegexCompatibilityMode: mode,
+        enabledModules: ['mod-1'],
+        modules: [
+          makeModule({
+            lorebook: [makeLore({ key: 'module-key', alwaysActive: false, content: 'module', comment: 'same name' })],
+          }),
+        ],
+      })
+      const before = structuredClone({ currentChat, currentChar, database })
+      const writer = vi.fn()
+      const counts = await countActiveLoreTokens({ database, currentChar, currentChat, writeChatVar: writer })
+      expect(counts.character).toBeGreaterThan(0)
+      expect(counts.chat).toBeGreaterThan(0)
+      expect(counts.module).toBeGreaterThan(0)
+      expect(counts.hasRandomActivation).toBe(false)
+      expect({ currentChat, currentChar, database }).toEqual(before)
+      expect(writer).not.toHaveBeenCalled()
+      expect(await countActiveLoreTokens({ database, currentChar, currentChat })).toEqual(counts)
+    },
+  )
+
+  it('shares the lore budget across categories', async () => {
+    const currentChar = makeChar({ globalLore: [makeLore({ content: 'hello', insertorder: 200 })] })
+    const currentChat = makeChat({ localLore: [makeLore({ content: 'world', insertorder: 100 })] })
+    const counts = await countActiveLoreTokens({ database: makeDb({ loreBookToken: 1 }), currentChar, currentChat })
+    expect(counts).toMatchObject({ character: 1, chat: 0, module: 0 })
+  })
+
+  it('warns before a random entry is filtered out and ignores inactive modules and agent-only lore', async () => {
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.99)
+    try {
+      const probabilityLore = makeLore({ content: '@@probability 20\nrandom entry' })
+      const currentChat = makeChat()
+      const currentChar = makeChar({ globalLore: [probabilityLore] })
+      const database = makeDb()
+      expect(await countActiveLoreTokens({ database, currentChar, currentChat })).toMatchObject({
+        character: 0,
+        hasRandomActivation: true,
+      })
+      currentChar.globalLore = [makeLore({ ...probabilityLore, agentOnly: true })]
+      database.modules = [makeModule({ lorebook: [probabilityLore] })]
+      expect(await countActiveLoreTokens({ database, currentChar, currentChat })).toMatchObject({
+        hasRandomActivation: false,
+      })
+    } finally {
+      random.mockRestore()
+    }
+  })
+
+  it('recounts injected text in the receiving category without double-counting the injector', async () => {
+    const currentChar = makeChar({ globalLore: [makeLore({ comment: 'target', content: 'hello' })] })
+    const currentChat = makeChat({ localLore: [makeLore({ content: '@@inject_lore target\nworld' })] })
+    const counts = await countActiveLoreTokens({ database: makeDb(), currentChar, currentChat })
+    expect(counts).toMatchObject({ character: 2, chat: 0 })
   })
 })

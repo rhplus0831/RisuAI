@@ -8,8 +8,8 @@ import {
 
 describe('route-operation catalog', () => {
   it('publishes unique reviewed operation identifiers and exact descriptors', () => {
-    expect(PROTOCOL_ROUTE_OPERATION_CATALOG).toHaveLength(106)
-    expect(new Set(PROTOCOL_ROUTE_OPERATION_CATALOG.map(({ id }) => id)).size).toBe(106)
+    expect(PROTOCOL_ROUTE_OPERATION_CATALOG).toHaveLength(107)
+    expect(new Set(PROTOCOL_ROUTE_OPERATION_CATALOG.map(({ id }) => id)).size).toBe(107)
 
     for (const operation of PROTOCOL_ROUTE_OPERATION_CATALOG) {
       expect(isProtocolRouteOperationDescriptor(operation), operation.id).toBe(true)
@@ -47,6 +47,7 @@ describe('route-operation catalog', () => {
       'collection-cache-read:request-hash',
       'character-aggregate-cache-read:request-hash',
       'characters-cache-read:request-hash',
+      'chat-lore-token-counts:no-store',
       'character-lorebook-cache-read:request-hash',
       'legacy-preset-cache-read:request-hash',
       'prompt-preset-template-cache-read:request-hash',

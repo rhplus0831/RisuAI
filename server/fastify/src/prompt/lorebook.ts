@@ -91,7 +91,11 @@ export type LorePosition =
   | 'scenario'
   | `pt_${string}`
 
+export type LoreSourceKind = 'character' | 'module' | 'chat'
+
 export interface LoreEntryActive {
+  /** Included only for diagnostics; source remains the user-facing lore name. */
+  sourceKind?: LoreSourceKind
   depth: number
   pos: LorePosition
   prompt: string
@@ -128,6 +132,7 @@ export interface LorebookActivationReport {
 }
 
 export interface ActivateLorebookInput {
+  includeSources?: boolean
   resolveSpeakerName?: (characterId: string) => string | undefined
   database: Database
   currentChar: character
@@ -144,12 +149,16 @@ export interface ActivateLorebookInput {
 
 const POSITION_NAMED = new Set(['after_desc', 'before_desc', 'personality', 'scenario'])
 
-function collectEntries(input: ActivateLorebookInput): loreBook[] {
+function collectEntries(input: ActivateLorebookInput): Array<loreBook & { sourceKind?: LoreSourceKind }> {
   const { database, currentChar, currentChat } = input
   const characterLore = currentChar.globalLore ?? []
   const chatLore = currentChat.localLore ?? []
   const moduleLore = getActiveModules(database, currentChar, currentChat).flatMap((m) => m.lorebook ?? [])
-  return [...characterLore, ...chatLore, ...moduleLore].filter((entry) => !isAgentOnlyLorebookEntry(entry))
+  return [
+    ...characterLore.map((entry) => (input.includeSources ? { ...entry, sourceKind: 'character' as const } : entry)),
+    ...chatLore.map((entry) => (input.includeSources ? { ...entry, sourceKind: 'chat' as const } : entry)),
+    ...moduleLore.map((entry) => (input.includeSources ? { ...entry, sourceKind: 'module' as const } : entry)),
+  ].filter((entry) => !isAgentOnlyLorebookEntry(entry))
 }
 
 function findCharByChaId(database: Database, chaId: string | undefined): character | undefined {
@@ -886,6 +895,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
         priority,
         tokens: countLorebookTokens(input, stripped, encoding),
         source: entry.comment || `lorebook ${i}`,
+        ...(input.includeSources ? { sourceKind: entry.sourceKind } : {}),
         inject,
       })
       activatedIndexes.add(i)
@@ -1242,6 +1252,7 @@ export async function activateLorebookAsync(input: ActivateLorebookInput): Promi
         priority,
         tokens: countLorebookTokens(input, stripped, encoding),
         source: entry.comment || `lorebook ${i}`,
+        ...(input.includeSources ? { sourceKind: entry.sourceKind } : {}),
         inject,
       })
       activatedIndexes.add(i)
@@ -1451,4 +1462,44 @@ export function buildLorebookContext(
     positionParser: createPositionParser(report),
     depthPrompts: getDepthPrompts(report),
   }
+}
+
+/** Diagnostics keep all activation writes inside the supplied, isolated working chat.
+ * Lore-to-lore injections are counted in the final receiving entry's category.
+ */
+export async function countActiveLoreTokens(source: ActivateLorebookInput) {
+  const currentChat = structuredClone(source.currentChat)
+  const currentChar = { ...source.currentChar, chats: [currentChat], chatPage: 0 }
+  const database = { ...source.database, characters: [currentChar], currentChar: 0 }
+  const input: ActivateLorebookInput = {
+    ...source,
+    database,
+    currentChar,
+    currentChat,
+    writeChatVar: undefined,
+    cbsContext: {
+      resolveSpeakerName: source.resolveSpeakerName,
+      ...source.cbsContext,
+      database,
+      selectedCharID: 0,
+      chatPage: 0,
+    },
+  }
+  let hasRandomActivation = false
+  for (const entry of collectEntries(input)) {
+    if (entry.mode === 'folder' || (!entry.alwaysActive && !entry.key)) continue
+    CCardLib.decorator.parse(entry.content, (name, args) => {
+      if (name === 'probability') {
+        const probability = parseInt(args[0])
+        if (Number.isFinite(probability) && probability >= 0 && probability < 100) hasRandomActivation = true
+      }
+    })
+  }
+  const report = await activateLorebookAsync({ ...input, includeSources: true, writeChatVar: undefined })
+  const counts = { character: 0, module: 0, chat: 0, hasRandomActivation }
+  const encoding = tokenizerEncodingFromDb(input.database)
+  for (const entry of report.actives) {
+    if (entry.sourceKind) counts[entry.sourceKind] += countLorebookTokens(input, entry.prompt, encoding)
+  }
+  return counts
 }

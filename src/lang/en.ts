@@ -1,4 +1,20 @@
 export const languageEnglish = {
+  tokenCounts: {
+    characterPersistent: 'Character Persistent',
+    characterAll: 'Character Dynamic (All)',
+    characterActive: 'Character Dynamic (Active)',
+    moduleActive: 'Module Dynamic (Active)',
+    chatLoreActive: 'Chat Lore (Active)',
+    currentChat: 'Current Chat',
+    visibleChat: 'Current Chat (Visible)',
+    promptTemplate: 'Prompt Template',
+    estimate: 'This is an estimate. The actual token count may be different.',
+    randomWarning: 'Some lorebook entries activate randomly, so these estimates may differ from actual usage.',
+    unavailable: 'Unavailable',
+    failed: 'Some token counts could not be calculated. Please retry.',
+    recalculate: 'Recalculate',
+  },
+
   diagnostics: {
     title: 'Diagnostics',
     description:

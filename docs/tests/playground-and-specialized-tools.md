@@ -47,6 +47,17 @@ This area covers the Playground route and durable starter chat, parser/tokenizer
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/lib/Others/IrisModal.svelte.test.ts`: canonical `otherAx` availability; hidden metadata removal; newer typing animation/destroy timer; focused Close/Backlog/dialogue key ownership; Escape from input; sprite hit-testing/z-order; wait for saved hydration; empty/think-only/direction-only output preserves submitted line; hidden-only input rejected; reset ignores late success/failure; only supplied RisuAccess tool executes in bounded follow-up; unsupplied tool error; multibyte UTF-8 truncation; destroy abort without late output/error; failed request restores prior line; stacked backlog focus/restore. | Protects a conversational modal with persistence, animation, model calls, a privileged tool round, and nested focus. | Critical protocol and interaction coverage. | Broad state/DOM/request assertions catch realistic stale-response and tool-name regressions. Some tests invoke the component-exposed `pushDialogue` method and mock animation/storage/request internals, increasing implementation coupling. No browser conversation/tool journey exists. |
 
+## DevTool token estimates
+
+`src/lib/SideBars/DevTool.svelte.test.ts` covers accordion lifetime, complete
+transcript hydration, failure/retry, cancellation, stale counts, and source rows.
+`src/ts/chatVisibleTokens.dom.test.ts` covers all-row display parsing and saved
+translation layers; `src/ts/parser/staticVisibleText.dom.test.ts` covers closed
+details and static HTML/CSS visibility. `server/fastify/__tests__/lorebook.test.ts`
+covers source attribution, shared budgets, random warnings and isolated sticky
+state; `server/fastify/__tests__/loreTokenCounts.test.ts` covers authenticated
+full-history reads without persistence or revision changes.
+
 ## DevTool import
 
 | Relevant locations and included cases                                                                                                                              | Behavior and scenarios verified             | Importance  | Effectiveness and regression value                                                                            |

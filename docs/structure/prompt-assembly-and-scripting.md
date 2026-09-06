@@ -328,6 +328,15 @@ cases in `server/fastify/__tests__/templates.test.ts` pin the ordering.
 does not implement the old browser embedding-based additional-information
 retrieval and does not include this field in the static description.
 
+The advanced Tokens menu uses the authenticated, read-only
+`GET /api/v1/chats/:chatId/lore-token-counts` diagnostics route. It resolves the
+selected generation inputs, then `countActiveLoreTokens()` evaluates a copied
+chat without a persistent variable writer. Diagnostic source categories are
+optional on activation results so normal generation reports retain their shape.
+Character, module, and chat totals share one budget and recursive evaluation;
+lore-to-lore injected text belongs to the receiving entry. The warning for
+probability decorators inspects applicable entries before random selection.
+
 ## Prompt Template Ownership And Roles
 
 A chat-scoped `generationSettings.promptPresetId` wins; otherwise the selected
