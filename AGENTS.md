@@ -44,13 +44,20 @@ Start by reading `STRUCTURE.md` to understand the project structure.
 
 # Test Workflow
 
-- While working, run only narrowly scoped tests using `pnpm test -- <test-or-source-file>`.
-- Once all work is complete, run `pnpm test:agent` and check for bugs.
-  - “all work is complete” means there is nothing left to do except testing.
-- `pnpm test:agent` owns the core typechecks, current-document validation,
-  topology validation, frontend and server tests, and browser-smoke build. The
-  user and CI retain `pnpm test:all` for formatting, compatibility, coverage,
-  scale, performance, and full Playwright verification.
+- Choose validation based on the actual changes and their impact, not merely on task completion or the number of files changed.
+- For investigation, explanation, or review without implementation changes, run tests only when needed to reproduce a problem or verify a specific hypothesis. Do not run `pnpm test:agent` solely because the task is complete.
+- While working, prefer narrowly scoped tests using `pnpm test -- <test-or-source-file>`, or the smallest relevant typecheck, validator, or build check.
+- For localized changes whose impact is adequately covered by focused validation, stop after that validation passes. Documentation-only or non-functional edits should use only the relevant checks.
+- Run `pnpm test:agent` only when:
+
+  - the user explicitly requests it;
+  - changes affect shared behavior or contracts across multiple areas, such as shared state, API contracts, dependencies, or build/test configuration; or
+  - there is a concrete integration risk or uncertainty about the change's impact that focused validation cannot adequately resolve.
+- When required, run `pnpm test:agent` after implementation and self-review are complete, with no known remaining work except validation and any fixes it reveals. Do not run it after every edit or intermediate step.
+- After a validation failure, rerun the failing check while fixing it. Repeat the broader suite only when needed to confirm the final changes against the applicable validation requirement.
+- `pnpm test:agent` covers core typechecks, current-document validation, topology validation, frontend and server tests, and the browser-smoke build. This coverage does not make it mandatory for every task.
+- The user and CI retain `pnpm test:all` for formatting, compatibility, coverage, scale, performance, and full Playwright verification. Do not run it unless explicitly requested.
+- In the final response, briefly state what validation was performed and any material gaps. If broader validation was needed, identify the specific reason.
 
 # Language File
 
