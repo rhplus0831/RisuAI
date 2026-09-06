@@ -56,6 +56,8 @@ import ModelPresetList from './ModelPresetList.svelte'
 import { setDatabaseLite } from 'src/ts/storage/database.svelte'
 import { language } from 'src/lang'
 import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
+import { collectionsResourceState } from 'src/ts/server/resourceState.svelte'
+import { normalizeModelRoleProfiles } from 'src/ts/model/modelProfileRecords'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -77,18 +79,35 @@ async function settle(): Promise<void> {
 }
 
 function buttonWithText(text: string, index = 0): HTMLButtonElement {
-  const buttons = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).filter((button) =>
-    button.textContent?.includes(text),
+  const buttons = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).filter(
+    (button) => button.textContent?.trim() === text,
   )
   const button = buttons[index]
   if (!button) throw new Error(`Button not found: ${text}`)
   return button
 }
 
-function presetNameInput(index = 0): HTMLInputElement {
-  const input = target.querySelectorAll<HTMLInputElement>('input[aria-label]')[index]
-  if (!input) throw new Error(`Preset name input not found at index ${index}`)
+function presetNameInput(): HTMLInputElement {
+  const input = target.querySelector<HTMLInputElement>('input[id$="-rename-name"]')
+  if (!input) throw new Error('Preset name editor not found')
   return input
+}
+
+async function openActions(name = 'Model A'): Promise<HTMLButtonElement> {
+  const button = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+    (candidate) => candidate.getAttribute('aria-label') === language.modelProfiles.itemActions(name),
+  )
+  if (!button) throw new Error(`Preset actions not found: ${name}`)
+  button.click()
+  await tick()
+  return button
+}
+
+async function openRename(): Promise<HTMLInputElement> {
+  await openActions()
+  buttonWithText(language.modelProfiles.renameModelPreset).click()
+  await tick()
+  return presetNameInput()
 }
 
 beforeEach(() => {
@@ -141,9 +160,9 @@ describe('ModelPresetList', () => {
     await tick()
 
     expect(target.querySelector('table')).toBeNull()
-    expect(target.querySelectorAll('[role="button"]')).toHaveLength(2)
+    expect(target.querySelectorAll('[data-model-preset-select]')).toHaveLength(2)
 
-    const nameInput = presetNameInput()
+    const nameInput = await openRename()
 
     const event = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
     nameInput.dispatchEvent(event)
@@ -155,45 +174,41 @@ describe('ModelPresetList', () => {
     expect(getDatabase().modelPresetsId).toBe(0)
   })
 
-  it.each([
-    [
-      'rename',
-      () => {
-        mutationSpies.updateModelPreset.mockResolvedValueOnce({ status: 'failed' })
-        const input = presetNameInput()
-        input.value = 'Rejected rename'
-        input.dispatchEvent(new Event('change', { bubbles: true }))
-      },
-    ],
-    [
-      'delete',
-      () => {
+  it.each(['rename', 'delete', 'reorder'])('surfaces a failed model-preset %s', async (action) => {
+    component = mount(ModelPresetList, { target })
+    await tick()
+
+    if (action === 'rename') {
+      mutationSpies.updateModelPreset.mockResolvedValueOnce({ status: 'failed' })
+      const input = await openRename()
+      input.value = 'Rejected rename'
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      buttonWithText(language.save).click()
+    } else {
+      await openActions()
+      if (action === 'delete') {
         mutationSpies.deleteModelPreset.mockResolvedValueOnce({ status: 'failed' })
         vi.stubGlobal(
           'confirm',
           vi.fn(() => true),
         )
         buttonWithText(language.modelProfiles.delete).click()
-      },
-    ],
-    [
-      'reorder',
-      () => {
+      } else {
         mutationSpies.reorderModelPresets.mockResolvedValueOnce({ status: 'failed' })
         buttonWithText(language.modelProfiles.moveDown).click()
-      },
-    ],
-  ])('surfaces a failed model-preset %s', async (_action, runAction) => {
-    component = mount(ModelPresetList, { target })
-    await tick()
-
-    runAction()
+      }
+    }
     await settle()
 
     expect(target.querySelector('[data-risu-preset-mutation-status]')?.textContent).toContain(
       language.presetMutationFailed,
     )
     expect(alertSpies.alertError).toHaveBeenCalledWith(language.presetMutationFailed)
+    expect(mutationSpies.selectModelPreset).not.toHaveBeenCalled()
+    if (action === 'rename') {
+      expect(presetNameInput().value).toBe('Rejected rename')
+      expect(presetNameInput().disabled).toBe(false)
+    }
   })
 
   it('recovers from a rejected selection and permits a retry', async () => {
@@ -204,7 +219,7 @@ describe('ModelPresetList', () => {
     component = mount(ModelPresetList, { target, props: { embedded: true, afterApply } })
     await tick()
 
-    const modelB = target.querySelectorAll<HTMLElement>('[role="button"]')[1]
+    const modelB = target.querySelectorAll<HTMLElement>('[data-model-preset-select]')[1]
     if (!modelB) throw new Error('Model B preset row was not rendered')
     modelB.click()
     await settle()
@@ -231,6 +246,9 @@ describe('ModelPresetList', () => {
     await tick()
 
     buttonWithText(language.modelProfiles.saveCurrentRolesAsPreset).click()
+    await tick()
+    expect(mutationSpies.createModelPreset).not.toHaveBeenCalled()
+    buttonWithText(language.save).click()
     await settle()
 
     expect(target.querySelector('[data-risu-preset-mutation-status]')).toBeNull()
@@ -242,5 +260,119 @@ describe('ModelPresetList', () => {
       language.presetMutationFailed,
     )
     expect(alertSpies.alertError).toHaveBeenCalledWith(language.presetMutationFailed)
+  })
+
+  it('keeps routine metadata in Details without applying the preset', async () => {
+    collectionsResourceState.values.modelPresets = [
+      {
+        id: 'model-a',
+        name: 'Model A',
+        modelRoleProfiles: normalizeModelRoleProfiles(undefined),
+        aiModel: 'legacy-main',
+      },
+    ]
+    component = mount(ModelPresetList, { target })
+    await tick()
+
+    expect(target.textContent).not.toContain('model-a')
+    expect(target.textContent).not.toContain(language.modelProfiles.modelPresetLegacyBadge)
+    expect(target.querySelectorAll('input')).toHaveLength(0)
+    expect(target.querySelector('[data-model-preset-select]')?.getAttribute('aria-pressed')).toBe('true')
+    expect(target.textContent).toContain(language.modelProfiles.modelPresetSelected)
+
+    const trigger = await openActions()
+    buttonWithText(language.modelProfiles.modelPresetDetails).click()
+    await tick()
+
+    expect(target.textContent).toContain('model-a')
+    expect(target.textContent).toContain(language.modelProfiles.roleBindingsColumn)
+    expect(target.textContent).toContain(language.modelProfiles.modelPresetLegacyBadge)
+    expect(mutationSpies.selectModelPreset).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(trigger)
+
+    await openActions()
+    buttonWithText(language.modelProfiles.modelPresetDetails).click()
+    await tick()
+    expect(target.textContent).not.toContain('model-a')
+  })
+
+  it('keeps missing-model warnings visible while hiding their IDs', async () => {
+    collectionsResourceState.values.modelPresets = [
+      {
+        id: 'model-a',
+        name: 'Model A',
+        modelRoleProfiles: normalizeModelRoleProfiles({
+          chatMain: { mode: 'profile', profileId: 'missing-profile-id' },
+        }),
+      },
+    ]
+    component = mount(ModelPresetList, { target })
+    await tick()
+
+    expect(target.textContent).toContain(language.modelProfiles.modelPresetMissingModels(1))
+    expect(target.textContent).not.toContain('missing-profile-id')
+
+    await openActions()
+    buttonWithText(language.modelProfiles.modelPresetDetails).click()
+    await tick()
+    expect(target.textContent).toContain('missing-profile-id')
+  })
+
+  it('resolves included models when summarizing a preset', async () => {
+    collectionsResourceState.values.modelPresets = [
+      {
+        id: 'model-a',
+        name: 'Model A',
+        modelRoleProfiles: normalizeModelRoleProfiles({ chatMain: { mode: 'profile', profileId: 'included-model' } }),
+        modelProfiles: [
+          { id: 'included-model', name: 'Included model', providerId: 'debug-echo', modelId: 'echo_model' },
+        ],
+      },
+    ]
+    component = mount(ModelPresetList, { target })
+    await tick()
+
+    expect(target.textContent).toContain('Included model')
+    expect(target.textContent).toContain(language.modelProfiles.modelPresetSettingsNotice)
+    expect(target.textContent).not.toContain(language.modelProfiles.modelPresetMissingModels(1))
+  })
+
+  it('retains a queued rename until acceptance and does not apply it as a selection', async () => {
+    const settlement = deferred<'accepted' | 'failed'>()
+    mutationSpies.updateModelPreset.mockResolvedValueOnce({ status: 'queued', settlement: settlement.promise })
+    component = mount(ModelPresetList, { target })
+    await tick()
+
+    const input = await openRename()
+    input.value = 'New name'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await settle()
+
+    expect(mutationSpies.updateModelPreset).toHaveBeenCalledWith(0, { name: 'New name' })
+    expect(mutationSpies.selectModelPreset).not.toHaveBeenCalled()
+    expect(presetNameInput().value).toBe('New name')
+    expect(presetNameInput().disabled).toBe(true)
+    expect(target.querySelector('[role="status"]')?.textContent).toContain(language.presetMutationQueued)
+
+    settlement.resolve('accepted')
+    await settle()
+    expect(target.querySelector('input[id$="-rename-name"]')).toBeNull()
+  })
+
+  it('cancels a rename with Escape and restores the action trigger focus', async () => {
+    component = mount(ModelPresetList, { target })
+    await tick()
+    const input = await openRename()
+    input.value = 'Unsubmitted name'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    input.dispatchEvent(escape)
+    await tick()
+
+    expect(escape.defaultPrevented).toBe(true)
+    expect(target.querySelector('input')).toBeNull()
+    expect(document.activeElement?.getAttribute('aria-label')).toBe(language.modelProfiles.itemActions('Model A'))
+    expect(mutationSpies.updateModelPreset).not.toHaveBeenCalled()
   })
 })

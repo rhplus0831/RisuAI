@@ -378,7 +378,15 @@ half-streaming only where its compatibility model supports streaming.
 
 `src/lib/Setting/Pages/Model/ModelPresetList.svelte`, embedded by
 `src/lib/Setting/botpreset.svelte`, owns the Model Preset list and its current
-role-snapshot actions. NanoGPT compatibility/account UI remains in
+role-snapshot actions. Compact rows show the name, Main Chat/Auxiliary summary,
+and an explicit selected marker. `ModelItemActions` exposes rename, duplicate,
+reorder, details, and delete; IDs, binding counts, and stored-field metadata appear
+only in details. Preset action menus use viewport positioning to remain reachable
+outside the dialog's scroll area. Missing-model warnings, broader model-setting changes, prompt
+overrides, and mutation feedback remain visible. Creation and rename use explicit
+Save/Cancel forms and retain their drafts while saving or queued, and on failure.
+The Model assignments launcher labels the selected model preset and its Change
+action. NanoGPT compatibility/account UI remains in
 `src/lib/Setting/Pages/BotSettings.svelte` with
 `src/lib/UI/NanoGPTDashboard.svelte` and
 `src/lib/UI/NanoGPTProviderPicker.svelte`; the dashboard fetches balance and

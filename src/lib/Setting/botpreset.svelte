@@ -807,7 +807,7 @@
   }
 
   .preset-modal.modelPresetManager {
-    width: min(72rem, calc(100vw - 2rem));
-    max-width: 72rem;
+    width: min(48rem, calc(100vw - 2rem));
+    max-width: 48rem;
   }
 </style>

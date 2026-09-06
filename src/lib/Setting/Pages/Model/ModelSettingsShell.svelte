@@ -63,7 +63,7 @@
     const index = selectedOwnerIndex(settingsResourceState.value.modelPresetsId)
     const presets = collectionsResourceState.values.modelPresets
     const preset = Array.isArray(presets) ? presets[index] : undefined
-    if (!preset) return language.modelPresets
+    if (!preset) return language.none
 
     const name = typeof preset.name === 'string' ? preset.name.trim() : ''
     return name || language.modelProfiles.defaultPresetName(index + 1)
@@ -244,7 +244,11 @@
         }}
         className="flex w-full min-w-0 items-center justify-start gap-2 text-left">
         <ListIcon size={16} class="shrink-0" />
-        <span class="truncate">{selectedModelPresetButtonLabel}</span>
+        <span class="min-w-0 flex-1 break-words text-textcolor">
+          <span class="text-textcolor2">{language.modelProfiles.modelPresetLabel}:</span>
+          {selectedModelPresetButtonLabel}
+        </span>
+        <span class="shrink-0">{language.modelProfiles.changeModelPreset}</span>
       </Button>
     </div>
     <ModelProfileRoleList />

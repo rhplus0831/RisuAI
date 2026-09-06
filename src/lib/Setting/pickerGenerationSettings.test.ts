@@ -478,7 +478,7 @@ function mountPersonaPicker(mode: GenerationSettingsPickerMode, close = vi.fn())
 
 function globalPresetSelectionControl(kind: 'model' | 'prompt'): HTMLElement {
   if (kind === 'prompt') return pickerSelectionControl('prompt', 'preset-b')
-  const rows = target.querySelectorAll<HTMLElement>('section [role="button"][tabindex="0"]')
+  const rows = target.querySelectorAll<HTMLElement>('[data-model-preset-select]')
   expect(rows).toHaveLength(2)
   return rows[1]
 }
@@ -1391,9 +1391,9 @@ describe('generation settings picker mode', () => {
         expectPickerRowSelection('prompt', 'preset-a', true)
         expectPickerRowSelection('prompt', 'preset-b', false)
       } else {
-        const rows = target.querySelectorAll<HTMLElement>('section [role="button"][tabindex="0"]')
-        expect(rows[0].classList.contains('bg-selected')).toBe(true)
-        expect(rows[1].classList.contains('bg-selected')).toBe(false)
+        const rows = target.querySelectorAll<HTMLElement>('[data-model-preset-select]')
+        expect(rows[0].getAttribute('aria-pressed')).toBe('true')
+        expect(rows[1].getAttribute('aria-pressed')).toBe('false')
       }
     })
   })
