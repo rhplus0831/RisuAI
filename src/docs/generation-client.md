@@ -170,9 +170,15 @@ When an `info` frame carries `halfStreaming: true`,
 buffers provider text in `tokenResult` instead of enqueueing it into the visible
 stream. Progress remains live through `src/ts/process/halfStreamingProgress.ts`:
 token frames use cumulative server-tokenized `generatedTokens` and
-provider-dispatch `elapsedMs` when present, preserving throughput across
-gateway-batched chunks, with frame counting as the older server fallback. The
-buffered text is enqueued once on `done`.
+provider-dispatch `elapsedMs` when present. The row displays the cumulative token
+count alongside average output speed: tokens received after the first non-empty
+sample divided by server elapsed time since that sample. Subtracting the first
+sample's count and time excludes the initial wait and avoids inflating the rate
+with a batched first chunk. Speed stays zero until a later sample provides a
+positive time interval; replay uses server timestamps rather than arrival timing.
+Counts and timing reset for each generation or reattachment, and regressive
+samples are ignored. Local and older server streams retain the frame-counting
+estimate. The buffered text is enqueued once on `done`.
 Stop keeps a server-backed half-stream viewer attached until the raw buffered
 partial and cancelled terminal arrive, then reconciles the exact processed
 persisted snapshot. As a fallback, reconciliation can recreate a placeholder

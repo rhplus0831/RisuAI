@@ -2287,12 +2287,15 @@ describe('DefaultChatScreen live generation progress ownership', () => {
     beginHalfStreamingProgress(halfSecond)
     recordHalfStreamingToken(halfFirst, 2_000, { generatedTokens: 4, elapsedMs: 1_000 })
     recordHalfStreamingToken(halfSecond, 3_000, { generatedTokens: 12, elapsedMs: 2_000 })
+    recordHalfStreamingToken(halfFirst, 3_000, { generatedTokens: 8, elapsedMs: 2_000 })
+    recordHalfStreamingToken(halfSecond, 4_000, { generatedTokens: 18, elapsedMs: 3_000 })
 
     mountScreen()
     await waitFor(() => {
       expect(target.textContent).toContain('Agent progress A')
       expect(target.textContent).toContain('Post progress A')
       expect(target.querySelector('[data-testid="half-streaming-throughput"]')?.textContent).toBe('4')
+      expect(target.querySelector('[data-testid="half-streaming-token-count"]')?.textContent).toBe('8')
     })
     expect(target.textContent).not.toContain('Agent progress B')
     expect(target.textContent).not.toContain('Post progress B')
@@ -2302,6 +2305,7 @@ describe('DefaultChatScreen live generation progress ownership', () => {
       expect(target.textContent).toContain('Agent progress B')
       expect(target.textContent).toContain('Post progress B')
       expect(target.querySelector('[data-testid="half-streaming-throughput"]')?.textContent).toBe('6')
+      expect(target.querySelector('[data-testid="half-streaming-token-count"]')?.textContent).toBe('18')
     })
     expect(target.textContent).not.toContain('Agent progress A')
     expect(target.textContent).not.toContain('Post progress A')

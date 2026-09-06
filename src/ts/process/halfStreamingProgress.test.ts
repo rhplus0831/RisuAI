@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 import {
   beginHalfStreamingProgress,
@@ -21,6 +21,8 @@ describe('halfStreamingProgress', () => {
     resetHalfStreamingProgressForTests()
   })
 
+  afterEach(() => vi.useRealTimers())
+
   it('reports token-frame throughput from the first received token', () => {
     beginHalfStreamingProgress(target)
     recordHalfStreamingToken(target)
@@ -41,7 +43,7 @@ describe('halfStreamingProgress', () => {
     )
   })
 
-  it('uses server token counts when one gateway frame contains many tokens', () => {
+  it('counts a batched first sample without inventing a generation interval', () => {
     beginHalfStreamingProgress(target)
 
     recordHalfStreamingToken(target, 3_500, { generatedTokens: 12, elapsedMs: 2_500 })
@@ -49,9 +51,73 @@ describe('halfStreamingProgress', () => {
     expect(get(halfStreamingProgress)).toContainEqual(
       expect.objectContaining({
         generatedTokens: 12,
-        tokensPerSecond: 4.8,
+        tokensPerSecond: 0,
       }),
     )
+  })
+
+  it('keeps constant output speed as token totals grow after a long initial wait', () => {
+    beginHalfStreamingProgress(target)
+    recordHalfStreamingToken(target, 11_000, { generatedTokens: 50, elapsedMs: 10_000 })
+
+    // Each later batch represents 10 tokens/s, regardless of response length.
+    for (const sample of [
+      { generatedTokens: 60, elapsedMs: 11_000 },
+      { generatedTokens: 150, elapsedMs: 20_000 },
+      { generatedTokens: 550, elapsedMs: 60_000 },
+    ]) {
+      recordHalfStreamingToken(target, 1_000 + sample.elapsedMs, sample)
+      expect(get(halfStreamingProgress)[0]).toMatchObject({
+        generatedTokens: sample.generatedTokens,
+        tokensPerSecond: 10,
+      })
+    }
+  })
+
+  it('uses server timing even when replayed samples arrive together', () => {
+    beginHalfStreamingProgress(target)
+    recordHalfStreamingToken(target, 100_000, { generatedTokens: 100, elapsedMs: 10_000 })
+    recordHalfStreamingToken(target, 100_000, { generatedTokens: 120, elapsedMs: 12_000 })
+
+    expect(get(halfStreamingProgress)[0]).toMatchObject({ generatedTokens: 120, tokensPerSecond: 10 })
+  })
+
+  it('does not inflate totals or speed on duplicate, regressive, or incomplete samples', () => {
+    beginHalfStreamingProgress(target)
+    recordHalfStreamingToken(target, 2_000, { generatedTokens: 10, elapsedMs: 1_000 })
+    recordHalfStreamingToken(target, 3_000, { generatedTokens: 20, elapsedMs: 2_000 })
+    recordHalfStreamingToken(target, 3_100, { generatedTokens: 20, elapsedMs: 2_000 })
+    recordHalfStreamingToken(target, 3_200, { generatedTokens: 10, elapsedMs: 1_000 })
+    recordHalfStreamingToken(target, 3_300, { generatedTokens: 15, elapsedMs: 3_000 })
+    recordHalfStreamingToken(target, 3_400, { generatedTokens: 20, elapsedMs: Number.NaN })
+    recordHalfStreamingToken(target, 3_500)
+
+    expect(get(halfStreamingProgress)[0]).toMatchObject({ generatedTokens: 20, tokensPerSecond: 10 })
+  })
+
+  it('handles zero counts and equal sample timestamps without dividing by zero', () => {
+    beginHalfStreamingProgress(target)
+    recordHalfStreamingToken(target, 1_000, { generatedTokens: 0, elapsedMs: 0 })
+    recordHalfStreamingToken(target, 6_000, { generatedTokens: 10, elapsedMs: 5_000 })
+    recordHalfStreamingToken(target, 6_000, { generatedTokens: 20, elapsedMs: 5_000 })
+    expect(get(halfStreamingProgress)[0]).toMatchObject({ generatedTokens: 20, tokensPerSecond: 0 })
+
+    recordHalfStreamingToken(target, 7_000, { generatedTokens: 30, elapsedMs: 6_000 })
+    expect(get(halfStreamingProgress)[0]).toMatchObject({ generatedTokens: 30, tokensPerSecond: 20 })
+  })
+
+  it.each(['generation-1', 'generation-2'])('resets count and timing when beginning %s', (generationId) => {
+    beginHalfStreamingProgress(target)
+    recordHalfStreamingToken(target, 2_000, { generatedTokens: 100, elapsedMs: 1_000 })
+    recordHalfStreamingToken(target, 3_000, { generatedTokens: 200, elapsedMs: 2_000 })
+
+    const nextTarget = { ...target, generationId }
+    beginHalfStreamingProgress(nextTarget)
+    expect(get(halfStreamingProgress)[0]).toMatchObject({ generatedTokens: 0, tokensPerSecond: 0 })
+    recordHalfStreamingToken(nextTarget, 20_000, { generatedTokens: 2, elapsedMs: 10_000 })
+    recordHalfStreamingToken(nextTarget, 21_000, { generatedTokens: 12, elapsedMs: 11_000 })
+
+    expect(get(halfStreamingProgress)[0]).toMatchObject({ generatedTokens: 12, tokensPerSecond: 10 })
   })
 
   it('does not let an old generation clear a newer generation', () => {
@@ -75,17 +141,18 @@ describe('halfStreamingProgress', () => {
     recordHalfStreamingToken(target, 2_000, { generatedTokens: 4, elapsedMs: 1_000 })
     recordHalfStreamingToken(otherTarget, 3_000, { generatedTokens: 9, elapsedMs: 2_000 })
     recordHalfStreamingToken(target, 4_000, { generatedTokens: 12, elapsedMs: 3_000 })
+    recordHalfStreamingToken(otherTarget, 5_000, { generatedTokens: 18, elapsedMs: 4_000 })
 
     expect(get(halfStreamingProgress)).toEqual([
       expect.objectContaining({ chatId: 'chat-1', generatedTokens: 12, tokensPerSecond: 4 }),
-      expect.objectContaining({ chatId: 'chat-2', generatedTokens: 9, tokensPerSecond: 4.5 }),
+      expect.objectContaining({ chatId: 'chat-2', generatedTokens: 18, tokensPerSecond: 4.5 }),
     ])
 
     clearHalfStreamingProgress(target)
     recordHalfStreamingToken(target, 5_000, { generatedTokens: 20, elapsedMs: 4_000 })
 
     expect(get(halfStreamingProgress)).toEqual([
-      expect.objectContaining({ chatId: 'chat-2', generatedTokens: 9, tokensPerSecond: 4.5 }),
+      expect.objectContaining({ chatId: 'chat-2', generatedTokens: 18, tokensPerSecond: 4.5 }),
     ])
   })
 

@@ -290,6 +290,7 @@
     generationPresentationMode?: 'send' | 'regenerate'
     isChatGenerating?: boolean
     halfStreamingTokensPerSecond?: number
+    halfStreamingGeneratedTokens?: number
     generationPersistenceState?: GenerationPersistenceIndicatorState | null
     generationPhase?: ChatGenerationLoadingPhase
     generationStartedAt?: number
@@ -366,6 +367,7 @@
     generationPresentationMode = undefined,
     isChatGenerating = false,
     halfStreamingTokensPerSecond = undefined,
+    halfStreamingGeneratedTokens = undefined,
     generationPersistenceState = null,
     generationPhase = undefined,
     generationStartedAt = undefined,
@@ -1816,7 +1818,12 @@
   let halfStreamingLoadingText = $derived(
     halfStreamingTokensPerSecond === undefined
       ? undefined
-      : language.halfStreamingTokensPerSecond(halfStreamingTokensPerSecond),
+      : [
+          language.halfStreamingTokensPerSecond(halfStreamingTokensPerSecond),
+          ...(halfStreamingGeneratedTokens === undefined
+            ? []
+            : [language.halfStreamingGeneratedTokens(halfStreamingGeneratedTokens)]),
+        ].join(' · '),
   )
   let generationPersistenceStatusText = $derived.by(() => {
     switch (generationPersistenceState) {

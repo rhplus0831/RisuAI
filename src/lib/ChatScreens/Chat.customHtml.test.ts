@@ -179,17 +179,24 @@ vi.mock('./ChatBody.svelte', async () => {
   return { default: mock.default }
 })
 
-vi.mock('../../lang', () => ({
-  language: new Proxy(
-    {},
-    {
-      get: (_target, property) =>
-        property === 'playground'
-          ? { translationRunFailed: (detail: string) => `Translation failed: ${detail}` }
-          : String(property),
-    },
-  ),
-}))
+vi.mock('../../lang', async () => {
+  const { languageEnglish } = await import('../../lang/en')
+  return {
+    language: new Proxy(
+      {
+        halfStreamingTokensPerSecond: languageEnglish.halfStreamingTokensPerSecond,
+        halfStreamingGeneratedTokens: languageEnglish.halfStreamingGeneratedTokens,
+      },
+      {
+        get: (target, property) =>
+          target[property as keyof typeof target] ??
+          (property === 'playground'
+            ? { translationRunFailed: (detail: string) => `Translation failed: ${detail}` }
+            : String(property)),
+      },
+    ),
+  }
+})
 
 vi.mock('src/ts/globalApi.svelte', () => ({
   aiLawApplies: () => false,
@@ -598,6 +605,8 @@ function mountCustomHtmlRows(
     onAutoTranslationEligibilityConsumed: () => void
     isChatGenerating: boolean
     isGenerationLoading: boolean
+    halfStreamingTokensPerSecond: number
+    halfStreamingGeneratedTokens: number
     messageGenerationInfo: { model?: string; generationId?: string }
     generationPersistenceState: 'queued' | 'stalled' | 'terminal' | 'stalled_legacy' | null
   }> = {},
@@ -936,6 +945,22 @@ describe('regeneration row feedback', () => {
     expect(target.textContent).not.toContain('retranslate')
     expect(target.textContent).not.toContain('Mock-model')
     expect(target.querySelector('.button-icon-reroll')).toBeNull()
+  })
+})
+
+describe('half-streaming row feedback', () => {
+  it.each(['', 'visible previous response'])('shows speed and total output tokens with message=%j', async (message) => {
+    seedDatabase(1, null as unknown as string)
+    mountCustomHtmlRows(1, 'char', {
+      message,
+      isGenerationLoading: message.length === 0,
+      isChatGenerating: true,
+      halfStreamingTokensPerSecond: 12.5,
+      halfStreamingGeneratedTokens: 250,
+    })
+    await settle()
+
+    expect(target.querySelector('.chat-generation-loading')?.textContent).toContain('12.5 tokens/s · 250 tokens')
   })
 })
 

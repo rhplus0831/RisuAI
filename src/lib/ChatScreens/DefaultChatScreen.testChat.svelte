@@ -17,6 +17,7 @@
     generationStartedAt = undefined,
     generationStage = 0,
     halfStreamingTokensPerSecond = undefined,
+    halfStreamingGeneratedTokens = undefined,
     onInitialDisplayParseStart = undefined,
     onInitialDisplayParseSettled = undefined,
     displayPriority = 'normal',
@@ -33,6 +34,7 @@
     generationStartedAt?: number
     generationStage?: number
     halfStreamingTokensPerSecond?: number
+    halfStreamingGeneratedTokens?: number
     onInitialDisplayParseStart?: (registration: symbol) => void
     onInitialDisplayParseSettled?: (registration: symbol) => void
     displayPriority?: DisplaySourcePriority
@@ -84,4 +86,7 @@
 </div>
 {#if halfStreamingTokensPerSecond !== undefined}
   <div data-testid="half-streaming-throughput">{halfStreamingTokensPerSecond}</div>
+{/if}
+{#if halfStreamingGeneratedTokens !== undefined}
+  <div data-testid="half-streaming-token-count">{halfStreamingGeneratedTokens}</div>
 {/if}

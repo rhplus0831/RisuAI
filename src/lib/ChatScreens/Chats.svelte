@@ -211,12 +211,11 @@
       }
     })
   }, tick)
-  let activeHalfStreamingTokensPerSecond = $derived.by(() => {
+  let activeHalfStreamingProgress = $derived.by(() => {
     const currentChatId = getCurrentChatRoomId()
-    const progress = $halfStreamingProgress.find(
+    return $halfStreamingProgress.find(
       (entry) => entry.characterId === currentCharacter.chaId && entry.chatId === currentChatId,
     )
-    return progress?.tokensPerSecond
   })
   let activeRegenerateProjection = $derived.by(() => {
     const currentChatId = getCurrentChatRoomId()
@@ -1588,7 +1587,11 @@
           isChatGenerating={isGenerationActive}
           halfStreamingTokensPerSecond={row.isAppendGenerationPresentation ||
           (row.idx === messages.length - 1 && row.message.role === 'char')
-            ? activeHalfStreamingTokensPerSecond
+            ? activeHalfStreamingProgress?.tokensPerSecond
+            : undefined}
+          halfStreamingGeneratedTokens={row.isAppendGenerationPresentation ||
+          (row.idx === messages.length - 1 && row.message.role === 'char')
+            ? activeHalfStreamingProgress?.generatedTokens
             : undefined}
           autoTranslateOnReady={typeof row.message.chatId === 'string' &&
             $automaticTranslationMessageIds.includes(row.message.chatId) &&
