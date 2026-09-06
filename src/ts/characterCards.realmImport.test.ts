@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { alertData } from './types/alert'
 
 const dbState = vi.hoisted(() => ({
   db: {
@@ -48,19 +49,31 @@ const settingsState = vi.hoisted(() => ({
   settingsOpenSet: vi.fn(),
 }))
 
-vi.mock('./alert', () => ({
-  alertCardExport: vi.fn(),
-  alertConfirm: alertState.alertConfirm,
-  alertError: alertState.alertError,
-  alertInput: vi.fn(async () => ''),
-  alertNormal: alertState.alertNormal,
-  alertProgress: alertState.alertProgress,
-  alertStore: {
-    set: alertState.alertStoreSet,
-  },
-  alertRealmTerms: alertState.alertRealmTerms,
-  alertWait: alertState.alertWait,
-}))
+vi.mock('./alert', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./alert')>()
+  return {
+    ...actual,
+    alertCardExport: vi.fn(),
+    alertConfirm: alertState.alertConfirm.mockImplementation(actual.alertConfirm),
+    alertError: alertState.alertError,
+    alertInput: vi.fn(async () => ''),
+    alertNormal: alertState.alertNormal,
+    alertProgress: alertState.alertProgress.mockImplementation(actual.alertProgress),
+    alertStore: {
+      set: alertState.alertStoreSet.mockImplementation(actual.alertStore.set),
+    },
+    alertRealmTerms: alertState.alertRealmTerms,
+    alertWait: alertState.alertWait,
+  }
+})
+
+vi.mock('./stores/coreStores.svelte', async () => {
+  const { writable } = await import('svelte/store')
+  return {
+    alertStore: writable<alertData>({ type: 'none', msg: '' }),
+    selectedCharID: writable(-1),
+  }
+})
 
 vi.mock('./storage/database.svelte', () => ({
   appVer: 'test',
@@ -227,6 +240,8 @@ import {
   showRealmInfoStore,
 } from './characterCards'
 import { get } from 'svelte/store'
+import { resolveAlertConfirmation } from './alert'
+import { alertStore as alertPresentationStore } from './stores/coreStores.svelte'
 
 type Deferred<T> = {
   promise: Promise<T>
@@ -285,6 +300,7 @@ function fallbackRealmCard(name: string) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  alertPresentationStore.set({ type: 'none', msg: '' })
   cancelPendingRealmInfoRequest()
   showRealmInfoStore.set(null)
   dbState.db = {
@@ -292,7 +308,6 @@ beforeEach(() => {
     characterOrder: [],
     goCharacterOnImport: false,
   }
-  alertState.alertConfirm.mockResolvedValue(true)
   alertState.alertRealmTerms.mockResolvedValue(true)
   characterCommandState.applyCharacterCreateOptimistically.mockImplementation((character: { chaId: string }) => {
     if (dbState.db.characters.some((candidate) => candidate?.chaId === character.chaId)) return -1
@@ -433,23 +448,78 @@ describe('Realm character import finish refresh', () => {
     expect(realmImportState.importRealmCharacterFromServer).not.toHaveBeenCalled()
   })
 
-  it('passes the pending charx token when retrying after low-level confirmation', async () => {
+  it.each([
+    { presentation: 'card-reading progress', reportProgress: true, confirmed: true },
+    { presentation: 'card-reading progress', reportProgress: true, confirmed: false },
+    { presentation: 'initial wait', reportProgress: false, confirmed: true },
+    { presentation: 'initial wait', reportProgress: false, confirmed: false },
+  ])(
+    'shows low-level confirmation after $presentation and handles confirmed=$confirmed',
+    async ({ reportProgress, confirmed }) => {
+      realmImportState.importRealmCharacterFromServer
+        .mockResolvedValue(okRealmImport('char-imported', 21))
+        .mockImplementationOnce(async (_id, options) => {
+          if (reportProgress) {
+            options.onProgress({ phase: 'extract', message: 'Reading character card', percent: 32 })
+          }
+          expect(get(alertPresentationStore).type).toBe(reportProgress ? 'progress' : 'wait')
+          return { status: 'low-level-access', pendingImportToken: 'pending-token' }
+        })
+
+      const download = downloadRisuHub('realm-id')
+
+      await vi.waitFor(() =>
+        expect(get(alertPresentationStore)).toMatchObject({ type: 'ask', msg: 'Low-level access?' }),
+      )
+      expect(realmImportState.importRealmCharacterFromServer).toHaveBeenCalledTimes(1)
+      expect(resourceRefreshState.refreshServerRealmImportResources).not.toHaveBeenCalled()
+
+      expect(resolveAlertConfirmation(get(alertPresentationStore).dialogOwner, confirmed)).toBe(true)
+      await download
+
+      if (confirmed) {
+        expect(realmImportState.importRealmCharacterFromServer).toHaveBeenCalledTimes(2)
+        expect(realmImportState.importRealmCharacterFromServer.mock.calls[1]).toEqual([
+          'realm-id',
+          {
+            allowLowLevelAccess: true,
+            pendingImportToken: 'pending-token',
+            onProgress: expect.any(Function),
+          },
+        ])
+        expect(resourceRefreshState.refreshServerRealmImportResources).toHaveBeenCalledTimes(1)
+      } else {
+        expect(realmImportState.importRealmCharacterFromServer).toHaveBeenCalledTimes(1)
+        expect(resourceRefreshState.refreshServerRealmImportResources).not.toHaveBeenCalled()
+        expect(characterState.changeChar).not.toHaveBeenCalled()
+        expect(get(alertPresentationStore).type).toBe('none')
+      }
+      expect(alertState.alertError).not.toHaveBeenCalled()
+    },
+  )
+
+  it('ignores a stale low-level confirmation result while a newer import shows progress', async () => {
+    const olderResult = deferred<any>()
+    const newerResult = deferred<any>()
     realmImportState.importRealmCharacterFromServer
-      .mockResolvedValueOnce({ status: 'low-level-access', pendingImportToken: 'pending-token' })
-      .mockResolvedValueOnce(okRealmImport('char-imported', 21))
+      .mockReturnValueOnce(olderResult.promise)
+      .mockImplementationOnce((_id, options) => {
+        options.onProgress({ phase: 'download', message: 'Newer import', percent: 20 })
+        return newerResult.promise
+      })
 
-    await downloadRisuHub('realm-id', { forceRedirect: true })
+    const older = downloadRisuHub('older-realm', { forceRedirect: true })
+    const newer = downloadRisuHub('newer-realm', { forceRedirect: true })
+    olderResult.resolve({ status: 'low-level-access', pendingImportToken: 'stale-token' })
+    await older
 
-    expect(alertState.alertConfirm).toHaveBeenCalledWith('Low-level access?')
+    expect(get(alertPresentationStore)).toMatchObject({ type: 'progress', msg: 'Newer import', progress: 20 })
+    expect(alertState.alertConfirm).not.toHaveBeenCalled()
+    expect(alertState.alertStoreSet).not.toHaveBeenCalled()
+
+    newerResult.resolve(okRealmImport('new-char', 31))
+    await newer
     expect(realmImportState.importRealmCharacterFromServer).toHaveBeenCalledTimes(2)
-    expect(realmImportState.importRealmCharacterFromServer.mock.calls[1]).toEqual([
-      'realm-id',
-      {
-        allowLowLevelAccess: true,
-        pendingImportToken: 'pending-token',
-        onProgress: expect.any(Function),
-      },
-    ])
   })
 
   it('uses the returned event for a fenced targeted refresh and navigates by imported character id', async () => {

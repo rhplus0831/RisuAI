@@ -2108,6 +2108,8 @@ export async function downloadRisuHub(
       if (!isLatestRealmImportOperation(realmImportOperationToken)) {
         return
       }
+      // Release the progress overlay so the queued confirmation can be shown.
+      alertStore.set({ type: 'none', msg: '' })
       const confirmed = await alertConfirm(language.lowLevelAccessConfirm)
       if (!confirmed) {
         if (isLatestRealmImportOperation(realmImportOperationToken)) {
