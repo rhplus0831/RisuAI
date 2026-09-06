@@ -236,18 +236,21 @@
           <div class="flex items-center gap-2">
             <button
               type="button"
-              class="flex min-w-0 flex-1 flex-col gap-1 py-3 text-left"
+              class="flex min-w-0 flex-1 items-center gap-2 py-3 text-left"
               disabled={busy || mutationPending || editorOpen}
               onclick={() => openEdit(credential)}
               aria-label={`${language.modelProfiles.edit}: ${credential.name}`}>
-              <span class="break-words font-medium">{credential.name}</span>
-              <span class="text-xs text-textcolor2">
-                {credential.type === 'apiKey'
-                  ? language.modelProfiles.apiKeyCredentialType
-                  : language.modelProfiles.vertexCredentialType}
+              <span class="flex min-w-0 flex-1 flex-col gap-1">
+                <span class="break-words font-medium">{credential.name}</span>
+                <span class="text-xs text-textcolor2">
+                  {credential.type === 'apiKey'
+                    ? language.modelProfiles.apiKeyCredentialType
+                    : language.modelProfiles.vertexCredentialType}
+                </span>
               </span>
+              <span class="pointer-events-none shrink-0 text-textcolor2" aria-hidden="true"
+                ><PencilIcon size={16} /></span>
             </button>
-            <span class="pointer-events-none text-textcolor2" aria-hidden="true"><PencilIcon size={16} /></span>
             <ModelItemActions
               label={language.modelProfiles.itemActions(credential.name)}
               disabled={busy || mutationPending || editorOpen}>

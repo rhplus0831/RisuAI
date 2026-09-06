@@ -106,6 +106,25 @@ afterEach(() => {
 })
 
 describe('ProviderCredentialList', () => {
+  it.each([
+    ['name', 'article button span'],
+    ['edit icon', 'article .lucide-pencil'],
+  ])('opens the credential editor when clicking the %s', async (_case, selector) => {
+    component = mount(ProviderCredentialList, { target })
+    await tick()
+
+    expect(target.querySelector('[data-provider-credential-editor]')).toBeNull()
+    const editTarget = target.querySelector(selector)
+    if (!editTarget) throw new Error(`Credential edit target not found: ${selector}`)
+    editTarget.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await tick()
+
+    const editor = target.querySelector('[data-provider-credential-editor]')
+    expect(editor).not.toBeNull()
+    expect(editor?.querySelector('input:not([type="password"])')).toHaveProperty('value', 'OpenAI')
+    expect(mutationSpies.updateProviderCredentialDurably).not.toHaveBeenCalled()
+  })
+
   it('fails closed on credential deletion when profile owner IDs are ambiguous', async () => {
     settingsResourceState.value.modelProfiles = [
       {

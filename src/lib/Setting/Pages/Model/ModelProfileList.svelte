@@ -534,25 +534,27 @@
             </span>
             <button
               type="button"
-              class="flex min-w-0 flex-1 flex-col gap-1 py-3 text-left"
+              class="flex min-w-0 flex-1 items-center gap-1 py-3 text-left"
               disabled={busy || mutationQueued}
               onclick={() => openEditEditor(profile)}
               aria-label={`${language.modelProfiles.edit}: ${profile.name}`}>
-              <span class="font-medium break-words">{profile.name}</span>
-              <span class="break-words text-xs text-textcolor2">
-                {providerLabel(profile.providerId)} · {modelLabel(profile)}
-                {#if profile.providerOptions?.requestModel?.trim() && profile.providerOptions.requestModel.trim() !== profile.modelId}
-                  · {requestModelLabel(profile)}
+              <span class="flex min-w-0 flex-1 flex-col gap-1">
+                <span class="font-medium break-words">{profile.name}</span>
+                <span class="break-words text-xs text-textcolor2">
+                  {providerLabel(profile.providerId)} · {modelLabel(profile)}
+                  {#if profile.providerOptions?.requestModel?.trim() && profile.providerOptions.requestModel.trim() !== profile.modelId}
+                    · {requestModelLabel(profile)}
+                  {/if}
+                  {#if profile.fallbacks?.length}
+                    · {fallbackCount(profile)}{/if}
+                </span>
+                {#if statusLabel(profile) !== language.modelProfiles.statusBuckets.ready}
+                  <span class="text-xs text-yellow-300">{statusLabel(profile)}</span>
                 {/if}
-                {#if profile.fallbacks?.length}
-                  · {fallbackCount(profile)}{/if}
               </span>
-              {#if statusLabel(profile) !== language.modelProfiles.statusBuckets.ready}
-                <span class="text-xs text-yellow-300">{statusLabel(profile)}</span>
-              {/if}
+              <span class="pointer-events-none shrink-0 text-textcolor2" aria-hidden="true"
+                ><PencilIcon size={16} /></span>
             </button>
-            <span class="pointer-events-none shrink-0 text-textcolor2" aria-hidden="true"
-              ><PencilIcon size={16} /></span>
             <ModelItemActions
               label={language.modelProfiles.itemActions(profile.name)}
               disabled={busy || mutationQueued}>

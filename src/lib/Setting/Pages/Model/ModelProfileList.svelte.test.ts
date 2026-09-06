@@ -166,6 +166,25 @@ afterEach(() => {
 })
 
 describe('ModelProfileList', () => {
+  it.each([
+    ['name', '[data-model-profile-row] > button span'],
+    ['edit icon', '[data-model-profile-row] .lucide-pencil'],
+  ])('opens the model editor when clicking the %s', async (_case, selector) => {
+    component = mount(ModelProfileList, { target })
+    await tick()
+
+    expect(target.querySelector('[role="dialog"]')).toBeNull()
+    const editTarget = target.querySelector(selector)
+    if (!editTarget) throw new Error(`Model edit target not found: ${selector}`)
+    editTarget.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await tick()
+
+    const dialog = target.querySelector('[role="dialog"]')
+    expect(dialog).not.toBeNull()
+    expect(dialog?.querySelector('input')?.value).toBe('Profile 1')
+    expect(commandSpies.updateModelProfileDurably).not.toHaveBeenCalled()
+  })
+
   it('discloses secondary actions and returns keyboard focus after Escape', async () => {
     component = mount(ModelProfileList, { target })
     await tick()
