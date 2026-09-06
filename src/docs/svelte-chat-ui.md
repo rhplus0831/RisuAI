@@ -150,7 +150,12 @@ the row bound; interaction admission and stable draft ownership still apply.
 
 On chat entry, `Chats.svelte` waits for the newest persisted row to render and
 aligns the beginning of that row with the transcript scrollport's start. A
-measured trailing spacer supplies the reverse-scroll range required by a short
+completed initial display parse removes the loading cover, then reasserts the
+owned start anchor after the DOM update in the same microtask turn. The hidden
+rows have no measurable height; waiting for the resize observer's next frame
+would briefly reveal the reverse scroller's natural end. This correction is
+fenced by chat/message identity and leaves user-released or streaming anchors
+alone. A measured trailing spacer supplies the reverse-scroll range required by a short
 newest row. The viewport records a keyed `start`, `end`, or `free` anchor. While
 `start` owns the viewport, `ResizeObserver`s may resize the spacer and correct
 the transcript scroll in the same frame so the row's start does not move; a row

@@ -191,6 +191,25 @@
   setContext(CHAT_DISPLAY_SCHEDULER, displayScheduler)
   const initialDisplayReadiness = createInitialDisplayReadiness((pending) => {
     initialDisplayPending = pending
+    if (pending || chatsComponentDestroyed) return
+
+    const chatRoomId = getCurrentChatRoomId()
+    const latestMessageKey = getLatestMessageAlignmentKey()
+    // The loading cover uses display:none for the transcript rows. Wait for
+    // its removal, then measure and align in this microtask turn; waiting for
+    // ResizeObserver's next animation frame exposes the natural end first.
+    void tick().then(() => {
+      if (
+        !chatsComponentDestroyed &&
+        !initialDisplayPending &&
+        chatRoomId &&
+        getCurrentChatRoomId() === chatRoomId &&
+        getLatestMessageAlignmentKey() === latestMessageKey &&
+        currentTranscriptAnchor() === 'start'
+      ) {
+        void alignLatestMessageToStart(chatRoomId, latestMessageKey)
+      }
+    })
   }, tick)
   let activeHalfStreamingTokensPerSecond = $derived.by(() => {
     const currentChatId = getCurrentChatRoomId()
