@@ -24,6 +24,7 @@ import { closeMaintenance, openMaintenance } from './maintenanceCoordinator.js'
 import { ASSET_BULK_BINARY_CONTENT_TYPE, registerAssetsRoutes } from './routes/assets.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerBackupRoutes } from './routes/backups.js'
+import { registerStorageUsageRoutes } from './routes/storageUsage.js'
 import { registerBootstrapRoutes } from './routes/bootstrap.js'
 import { registerCommandRoutes } from './routes/commands.js'
 import { registerResourceReadRoutes } from './routes/resourceReads.js'
@@ -461,6 +462,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerLoreTokenCountRoutes(app, db, config.dataDir, authState)
   registerEventsRoutes(app, db, authState, commandEventSink, memoryEventBus, activeWriterState)
   registerAssetsRoutes(app, db, authState, config.dataDir, activeWriterState)
+  registerStorageUsageRoutes(app, authState, config.dataDir)
   registerBackupRoutes(app, db, authState, config.dataDir, commandEventSink, {
     automaticBackupRetention: config.automaticBackupRetention ?? DEFAULT_AUTOMATIC_BACKUP_RETENTION,
     serverInstanceId,

@@ -26,6 +26,12 @@ vi.mock('src/ts/storage/exportAsDataset', () => ({
   exportAsDataset: userSettingsMocks.exportAsDataset,
 }))
 
+vi.mock('src/ts/server/storageUsage', () => ({
+  fetchStorageUsage: vi.fn(async () => {
+    throw new Error('unavailable')
+  }),
+}))
+
 vi.mock('src/ts/globalApi.svelte', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/globalApi.svelte')>()
   return {

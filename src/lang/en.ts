@@ -1,4 +1,40 @@
 export const languageEnglish = {
+  storageUsage: {
+    title: 'Server storage',
+    description: 'See how much space your RisuAI data uses on the server.',
+    total: 'RisuAI file total',
+    refresh: 'Refresh',
+    retry: 'Retry',
+    loading: 'Measuring storage…',
+    failed: 'Could not load storage usage. Try again.',
+    refreshFailed: 'Could not refresh storage usage. The previous measurement is shown below.',
+    diskTitle: 'Server data volume',
+    diskAvailable: (available: string, total: string) => `${available} available of ${total}`,
+    diskUnavailable: 'Disk capacity is unavailable on this server.',
+    partial: 'Some files could not be measured or were skipped, including symbolic links. The total may be incomplete.',
+    measurementNote:
+      'File totals are an estimate and can change during measurement. Linked copies count once. Disk capacity is for the volume containing the data folder and also includes other apps and filesystem overhead.',
+    measuredAt: (time: string) => `Last measured: ${time}`,
+    categories: {
+      database: 'Database',
+      journal: 'Database working files',
+      assets: 'Media & assets',
+      backups: 'Server backups',
+      legacy: 'Compatibility files',
+      logs: 'Trace logs',
+      other: 'Other server files',
+    },
+    descriptions: {
+      database:
+        'Chats, characters, settings, memories, plugin data, request history, and other records stored in the main database.',
+      journal: 'Temporary database journals and shared memory used while saving changes.',
+      assets: 'Uploaded images, audio, video, and other asset files.',
+      backups: 'Server backup snapshots, including their copied media and compatibility files.',
+      legacy: 'Files retained for compatibility with older storage and plugin features.',
+      logs: 'Request trace logs and their saved body files, when tracing is enabled.',
+      other: 'Other files in the data folder, including server configuration and temporary work files.',
+    },
+  },
   tokenCounts: {
     characterPersistent: 'Character Persistent',
     characterAll: 'Character Dynamic (All)',

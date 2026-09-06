@@ -723,6 +723,17 @@ export const PROTOCOL_ROUTE_POLICIES = [
     },
   },
   {
+    id: 'storage-usage',
+    auth: {
+      decision: 'required',
+      reason: 'Storage totals describe private server data.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only file sizes and filesystem capacity.',
+    },
+  },
+  {
     id: 'backup-list',
     auth: {
       decision: 'required',

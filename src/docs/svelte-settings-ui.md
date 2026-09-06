@@ -84,6 +84,13 @@ deletion uses the authenticated operational delete route. Its detail view keeps
 RisuAI request metadata separate from additional non-content metadata returned
 by the provider API.
 
+Backup & Restore also mounts `src/lib/Setting/Pages/StorageUsage.svelte` for
+server file totals, a colored category breakdown with expandable explanations,
+and available disk capacity. It measures on entry and manual refresh, preserving
+the previous measurement on refresh failure. The measurement scope and backend
+owners are documented in
+[Storage Usage](../../docs/structure/assets-and-saves.md#storage-usage).
+
 The Source Code page groups the upstream RisuAI repository and this Fastify
 fork behind one short Advanced & About navigation item. The repository cards
 identify their relationship explicitly and open protected external links.

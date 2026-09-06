@@ -62,6 +62,11 @@ export const assetExistsRateLimit: RateLimitOptions = {
   timeWindow: MINUTE,
 }
 
+export const storageUsageRateLimit: RateLimitOptions = {
+  max: 10,
+  timeWindow: MINUTE,
+}
+
 export const generationSubmitRateLimit: RateLimitOptions = {
   max: 60,
   timeWindow: MINUTE,

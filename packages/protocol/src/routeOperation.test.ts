@@ -8,8 +8,8 @@ import {
 
 describe('route-operation catalog', () => {
   it('publishes unique reviewed operation identifiers and exact descriptors', () => {
-    expect(PROTOCOL_ROUTE_OPERATION_CATALOG).toHaveLength(107)
-    expect(new Set(PROTOCOL_ROUTE_OPERATION_CATALOG.map(({ id }) => id)).size).toBe(107)
+    expect(PROTOCOL_ROUTE_OPERATION_CATALOG).toHaveLength(108)
+    expect(new Set(PROTOCOL_ROUTE_OPERATION_CATALOG.map(({ id }) => id)).size).toBe(108)
 
     for (const operation of PROTOCOL_ROUTE_OPERATION_CATALOG) {
       expect(isProtocolRouteOperationDescriptor(operation), operation.id).toBe(true)
@@ -58,6 +58,7 @@ describe('route-operation catalog', () => {
       'bardwiki-receipts-read:conditional',
       'events:no-cache',
       'asset-read:immutable',
+      'storage-usage:no-store',
       'request-history-list:no-store',
       'request-history-detail:no-store',
       'mcp-oauth-refresh:no-store',

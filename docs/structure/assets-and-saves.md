@@ -14,6 +14,32 @@ data with unreferenced legacy payloads. Save/import/export and user-upload flows
 should use server asset ids and `/api/v1/assets/:id` URLs, not static `/public`
 paths.
 
+## Storage Usage
+
+Backup & Restore displays `src/lib/Setting/Pages/StorageUsage.svelte`, backed by
+the authenticated, read-only storage-usage route in
+`server/fastify/src/routes/storageUsage.ts`. Its shared contract lives in
+`packages/protocol/src/storageUsage.ts`; the browser adapter is
+`src/ts/server/storageUsage.ts`.
+
+`server/fastify/src/storageUsage.ts` asynchronously measures file lengths under
+the configured data directory, grouped into database, database working files,
+assets, backups, compatibility files, trace logs, and other files. It streams
+directory entries and never loads database or asset contents. Hard links count
+once, with live files preferred over backups; child symlinks and unreadable or
+disappearing files yield an explicitly partial estimate. The configured root
+itself can be a symlink. File lengths are not allocated disk blocks or an atomic
+snapshot. Capacity is reported separately for the data root's filesystem, so
+files on other mounted volumes are never subtracted from that capacity.
+
+The card loads on mount, offers manual refresh, and retains the last result
+with a failure message when refresh fails. Missing filesystem-capacity support
+does not hide file totals. Requests are rate limited and concurrent scans are
+coalesced; completed results are not cached. Cancellation on server shutdown
+stops the scan. Coverage lives in
+`server/fastify/__tests__/storageUsage.test.ts`, the route-protection suite, and
+`src/lib/Setting/Pages/StorageUsage.svelte.test.ts`.
+
 ## Assets
 
 | Path | Role |

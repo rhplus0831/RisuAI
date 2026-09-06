@@ -125,6 +125,7 @@ const RATE_LIMIT_OWNERS: Record<string, Owner> = {
   proxyStreamCreateRateLimit: rateOwner('server/fastify/src/routes/streamJobs.ts', 'proxyStreamCreateRateLimit'),
   importRateLimit: rateOwner('server/fastify/src/routes/save.ts', 'importRateLimit'),
   assetExistsRateLimit: rateOwner('server/fastify/src/routes/assets.ts', 'assetExistsRateLimit'),
+  storageUsageRateLimit: rateOwner('server/fastify/src/routes/storageUsage.ts', 'storageUsageRateLimit'),
   generationSubmitRateLimit: rateOwner('server/fastify/src/routes/generationChat.ts', 'generationSubmitRateLimit'),
 }
 

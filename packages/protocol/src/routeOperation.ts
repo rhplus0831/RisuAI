@@ -655,6 +655,16 @@ export const PROTOCOL_ROUTE_OPERATION_CATALOG = [
     response: 'structured',
   },
   {
+    id: 'storage-usage',
+    methods: ['GET', 'HEAD'],
+    path: '/api/v1/storage-usage',
+    match: 'exact',
+    streaming: 'none',
+    cache: 'no-store',
+    durability: 'none',
+    response: 'structured',
+  },
+  {
     id: 'backup-list',
     methods: ['GET', 'HEAD'],
     path: '/api/v1/backups',
