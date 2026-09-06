@@ -731,8 +731,15 @@ export const RESOURCE_SURFACE_MANIFEST = {
   },
   'overlay:hypa-memory': {
     family: 'overlay',
-    owners: ['src/lib/Others/HypaV3Modal.svelte', 'src/lib/Others/HypaV3Progress.svelte'],
+    owners: [
+      'src/lib/Others/HypaV3Modal.svelte',
+      'src/lib/Others/HypaV3Progress.svelte',
+      'src/ts/process/memory/hypav3.ts',
+    ],
     requirements: [
+      group('providers', ['generate']),
+      group('models', ['generate']),
+      group('runtime', ['generate']),
       group('memory', ['render', 'interact', 'mutate']),
       group('display', ['render'], ['hypaV3ProgressOpenChatOnly']),
       collection('hypaV3Presets', ['render', 'interact', 'mutate']),

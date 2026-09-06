@@ -462,6 +462,10 @@
       "policy": "cross-cutting:test-fixture",
       "files": [
         {
+          "file": "src/lib/Others/HypaV3Modal.reroll.dom.test.ts",
+          "count": 1
+        },
+        {
           "file": "src/ts/__tests__/sendCloneCountProbe.ts",
           "count": 1
         },

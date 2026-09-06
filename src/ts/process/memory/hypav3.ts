@@ -18,6 +18,7 @@ import {
 } from 'src/ts/server/memoryJobProjection.svelte'
 import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
 import { getHypaV3PresetOwnerStateSnapshot, settingsResourceState } from 'src/ts/server/resourceState.svelte'
+import { ensureResourceSurfaces } from 'src/ts/server/routeResourceLoader'
 
 export interface HypaV3Preset {
   id: string
@@ -1485,7 +1486,14 @@ function sanitizeSummaryContent(content: string): string {
   return content.replace(inlayTokenRegex, '[Image]')
 }
 
+/** Summary tools can open before the settings pages that own their inputs. */
+export async function ensureHypaV3SummaryResources(): Promise<void> {
+  hypaV3RuntimeDatabase()
+  await ensureResourceSurfaces(['overlay:hypa-memory'])
+}
+
 export async function summarize(oaiMessages: OpenAIChat[], isResummarize: boolean = false): Promise<string> {
+  await ensureHypaV3SummaryResources()
   const db = hypaV3RuntimeDatabase()
   const settings = getCurrentHypaV3Preset().settings
 
@@ -1511,11 +1519,12 @@ export async function summarize(oaiMessages: OpenAIChat[], isResummarize: boolea
   ]
 
   // API
-  if (settings.summarizationModel === 'subModel') {
+  if (settings.summarizationModel === 'subModel' || settings.summarizationModel === 'memory') {
     console.log(logPrefix, `Using ax model ${db.subModel} for summarization.`)
 
     const response = await requestChatData(
       {
+        database: safeStructuredClone(db),
         formated,
         bias: {},
         useStreaming: false,

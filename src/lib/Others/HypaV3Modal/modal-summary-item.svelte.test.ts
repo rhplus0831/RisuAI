@@ -48,6 +48,7 @@ vi.mock('src/lang', () => ({
 }))
 
 vi.mock('src/ts/process/memory/hypav3', () => ({
+  ensureHypaV3SummaryResources: vi.fn(async () => {}),
   getCurrentHypaV3Preset: vi.fn(() => ({ settings: { processRegexScript: false } })),
   summarize: vi.fn(async () => 'Rerolled summary'),
 }))

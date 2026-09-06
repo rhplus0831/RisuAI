@@ -2356,6 +2356,7 @@ export const languageEnglish = {
     toggleSummaryTranslationAction: 'Show or hide summary translation',
     toggleSummaryImportantAction: 'Toggle the summary important mark',
     rerollSummaryAction: 'Reroll summary',
+    rerollFailed: 'Reroll failed: {0}',
     deleteSummaryAction: 'Delete summary',
     deleteFollowingSummariesAction: 'Delete following summaries',
     toggleRerolledSummaryTranslationAction: 'Show or hide rerolled summary translation',

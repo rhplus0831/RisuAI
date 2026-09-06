@@ -18,6 +18,7 @@
     type SerializableSummary,
     summarize,
     getCurrentHypaV3Preset,
+    ensureHypaV3SummaryResources,
   } from 'src/ts/process/memory/hypav3'
   import { type OpenAIChat } from 'src/ts/process/index.svelte'
   import { getCurrentChat, type Chat, type Message } from 'src/ts/storage/database.svelte'
@@ -339,7 +340,10 @@
       rerollReady = true
     } catch (error) {
       if (!isCurrentReroll(run, owner)) return
-      rerolled = 'Reroll failed'
+      rerolled = language.hypaV3Modal.rerollFailed.replace(
+        '{0}',
+        error instanceof Error ? error.message : String(error),
+      )
       rerollReady = false
     } finally {
       if (isCurrentReroll(run, owner)) isRerolling = false
@@ -347,6 +351,7 @@
   }
 
   async function getMessageFromChatMemo(chatMemo: string | null): Promise<Message | null> {
+    await ensureHypaV3SummaryResources()
     const shouldProcess = getCurrentHypaV3Preset().settings.processRegexScript
 
     let msg = null

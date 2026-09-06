@@ -1627,6 +1627,7 @@ const languageKoreanBase = {
     toggleSummaryTranslationAction: '요약 번역 표시/숨기기',
     toggleSummaryImportantAction: '중요 표시 전환',
     rerollSummaryAction: '요약 재생성',
+    rerollFailed: '요약 재생성 실패: {0}',
     deleteSummaryAction: '요약 삭제',
     deleteFollowingSummariesAction: '이후 요약 모두 삭제',
     toggleRerolledSummaryTranslationAction: '재생성된 요약 번역 표시/숨기기',
